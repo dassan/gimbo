@@ -194,3 +194,31 @@ Todos os utilitários devem ser funções puras adicionadas em `src/lib/utils.ts
 |----|-----------|------------|--------|
 | R-15 | **`src/test/` — Testes unitários para cálculos das 4 views.** Cobrir: (a) `CashFlowView` — agregação mensal com barras, saldo acumulado, exclusão de `CREDIT_PAYMENT`, respeito ao `includeUnpaid`; (b) `CategoriasView` — agrupamento por categoria com ícone, valor e %; (c) `ContasView` — resumo de período por conta, contas CREDIT em seção separada; (d) `TagsView` — ranking decrescente, filtragem OR, filtragem AND, estado vazio sem tags cadastradas. | alta | resolvido |
 | R-16 | **`src/test/components/` — Testes de componente para modais e drill-downs.** Cobrir: (a) drill-down de Categorias — abrir modal ao clicar, exibir transações corretas, fechar ao clicar no fundo e no botão; (b) drill-down de Contas — clicar num card exibe Cash Flow filtrado, botão "Voltar" restaura o grid; (c) `PeriodSelector` — navegação de mês (‹ ›), abertura do dropdown, aplicação de range personalizado. | alta | resolvido |
+
+---
+
+## Patrimônio Líquido (Net Worth) — F-24
+
+Página dedicada na navbar que mostra o patrimônio líquido do usuário: todas as contas não-CREDIT somam como ativos; contas CREDIT contribuem como passivos (fatura em aberto deduzida). Além do snapshot atual, exibe gráfico de evolução histórica mensal. As fases são dependentes entre si — não iniciar uma fase sem a anterior estar completa e com testes passando.
+
+### Fase 1 — Fundação: Rota, Navbar e Snapshot
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| NW-01 | **`App.tsx` + `components/Navbar.tsx` — Adicionar rota `/net-worth` e item de navegação.** Criar rota `<Route path="/net-worth" element={<NetWorth />} />` em `App.tsx` entre as rotas existentes. Em `Navbar.tsx`, adicionar item "Patrimônio" (ícone `TrendingUp` do Lucide) posicionado entre "Relatórios" e "Configurações". Adicionar chaves i18n `nav.netWorth` (`pt-BR`: "Patrimônio", `en-US`: "Net Worth") em ambos os locales. | crítica | aberto |
+| NW-02 | **`pages/NetWorth/index.tsx` — Criar página com cards de resumo.** Criar componente que lê `data.accounts` e `data.transactions` do `useDataStore`. Calcular via `useMemo`: (a) **Ativos totais** — soma dos saldos derivados de todas as contas não-CREDIT (`account.balance + INCOME − EXPENSE ± TRANSFER` para cada conta); (b) **Passivos totais** — soma de `getCurrentInvoiceBalance(transactions, account)` para cada conta CREDIT; (c) **Patrimônio líquido** = Ativos − Passivos. Exibir três stat cards no topo: "Ativos", "Passivos" (em vermelho), "Patrimônio Líquido" (colorido por sinal). | crítica | aberto |
+| NW-03 | **`pages/NetWorth/index.tsx` — Seção de breakdown por conta.** Abaixo dos stat cards, exibir duas seções: (a) **Ativos** — lista de todas as contas não-CREDIT com nome, tipo (ícone via `ACCOUNT_TYPE_ICONS`), saldo derivado e percentual do total de ativos; ordenadas por saldo decrescente; (b) **Passivos** — lista das contas CREDIT com nome, ícone da emissora (`issuerIcon`), fatura em aberto (via `getCurrentInvoiceBalance`) e percentual do total de passivos. Contas com saldo zero são exibidas normalmente. Adicionar chaves i18n `netWorth.assets`, `netWorth.liabilities`, `netWorth.netWorth`, `netWorth.noAccounts` em ambos os locales. | alta | aberto |
+
+### Fase 2 — Gráfico de Evolução Histórica
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| NW-04 | **`lib/utils.ts` — Implementar `getAccountBalanceAtMonth(account, transactions, year, month): number`.** Função pura que calcula o saldo de uma conta não-CREDIT ao final do mês `(year, month)`: filtra transações `tx.accountId === account.id` com `parseDateLocal(tx.date)` ≤ último dia do mês, soma `INCOME` e subtrai `EXPENSE` (e NET de `TRANSFER`), e adiciona `account.balance` (saldo inicial). Para contas CREDIT, retorna o negativo do total de despesas cujo `getInvoicePeriod` pertença ao mês informado. Testes obrigatórios: conta sem transações retorna `account.balance`; transações de meses futuros não são incluídas; conta CREDIT retorna valor negativo das despesas do período. | crítica | aberto |
+| NW-05 | **`lib/utils.ts` — Implementar `getNetWorthHistory(data, months): Array<{ label: string; assets: number; liabilities: number; netWorth: number }>`.** Função pura que itera sobre os últimos `months` meses (padrão 12) a partir do mês atual, calculando para cada mês: `assets` = soma de `getAccountBalanceAtMonth` para todas as contas não-CREDIT; `liabilities` = soma do absoluto de `getAccountBalanceAtMonth` para contas CREDIT; `netWorth` = assets − liabilities. `label` no formato `"MMM YYYY"` localizado (usar `Intl.DateTimeFormat`). Retorna array ordenado do mais antigo ao mais recente. Testes obrigatórios: retorna exatamente `months` entradas; mês sem nenhuma transação reflete apenas saldos iniciais; CREDIT contribui como passivo positivo (não negativo). | crítica | aberto |
+| NW-06 | **`pages/NetWorth/index.tsx` — Adicionar gráfico de evolução com `AreaChart`.** Abaixo do breakdown, adicionar `AreaChart` do Recharts com os dados de `getNetWorthHistory(data, 12)`: área preenchida para "Ativos" (`#22C55E` com opacidade), área para "Passivos" (`#FF8A83`), linha para "Patrimônio Líquido" (cor primária do design system); eixo X com labels de mês; tooltip com `formatCurrency`; legenda. Estado vazio (sem transações): mensagem centralizada. | alta | aberto |
+
+### Fase 3 — Testes
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| NW-07 | **`src/test/` — Testes unitários e de componente para o módulo Net Worth.** (a) `src/test/lib/utils.test.ts` — ampliar com casos de `getAccountBalanceAtMonth` e `getNetWorthHistory`: valores positivos/negativos, meses sem dados, mix de contas CREDIT e não-CREDIT; (b) `src/test/components/NetWorth.test.tsx` — renderizar página com fixture `makeDataFile()`, verificar que os três stat cards exibem valores corretos, que a seção Ativos lista as contas não-CREDIT e a seção Passivos lista as CREDIT, e que o gráfico renderiza sem erros. | alta | aberto |

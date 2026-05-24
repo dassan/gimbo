@@ -49,6 +49,7 @@ O Gimbo é um aplicativo web (PWA Client-side) de gestão de finanças pessoais 
 * **F-21:** Gestão de Lifecycle de Cartões de Crédito — `creditMetadata`, motor de fatura virtual, saldo disponível, página `/credit-card/:accountId`, painel de pagamento dedicado.
 * **F-22:** Parcelas — N transações com sufixo `" (X/N)"`, modal de exclusão "só esta / todas".
 * **F-23:** Pagamento de Fatura — tipo `CREDIT_PAYMENT`, exclusão dos totais de receita/despesa.
+* **F-24:** Patrimônio Líquido (Net Worth) — página dedicada na navbar com snapshot e evolução histórica mensal. Todas as contas participam: não-CREDIT somam como ativos, CREDIT contribui como passivo. Ver épico `plan/BACKLOG.md` (NW-01 a NW-07).
 
 ### Fora do Escopo (Futuro)
 * **X-1:** Criptografia do arquivo JSON.
@@ -111,6 +112,7 @@ Documentação detalhada em `ARCHITECTURE.md`. Resumo:
 | F-21 | Cartões de crédito — creditMetadata, motor de fatura virtual, saldo disponível, página dedicada, ícone de emissora, painel de pagamento | ✅ |
 | F-22 | Parcelas — N transações com sufixo, modal de exclusão | ✅ |
 | F-23 | Pagamento de fatura — CREDIT_PAYMENT, exclusão dos totais | ✅ |
+| F-24 | Patrimônio Líquido — página dedicada, snapshot + gráfico de evolução | 🔲 planejado |
 
 ### Melhorias implementadas (M-01 a M-33)
 
@@ -142,8 +144,9 @@ Todas as 33 melhorias planejadas foram implementadas, incluindo:
 
 **474 testes unitários** (28 arquivos) + **19 testes E2E** (4 specs). Cobertura: ~97% statements.
 
-### Melhoria em aberto
+### Melhorias e features em aberto
 
 | ID | Descrição | Prioridade |
 |----|-----------|-----------|
 | M-22 | Estornos e chargebacks em contas CREDIT | baixa |
+| F-24 | Patrimônio Líquido — página dedicada (NW-01 a NW-07) | média |
