@@ -5,6 +5,14 @@ import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 
 export default defineConfig({
+  optimizeDeps: {
+    // wa-sqlite ships pre-built ESM — prevent esbuild from re-bundling it
+    exclude: ['wa-sqlite'],
+  },
+  worker: {
+    // Worker must be an ES module so it can use import statements
+    format: 'es',
+  },
   plugins: [
     react(),
     tailwindcss(),
