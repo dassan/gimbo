@@ -5,7 +5,7 @@ import Settings from '@/pages/Settings'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '@/test/fixtures/dataFile'
 import { downloadDataFile, openDataFile, isFsaSupported } from '@/lib/storage/fileSystem'
-import { importFileToIdb } from '@/lib/storage/sync'
+import { storage } from '@/services/storage'
 import type { Account, Transaction } from '@/types'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -22,13 +22,13 @@ vi.mock('@/lib/storage/fileSystem', () => ({
   saveWorkspace: vi.fn(),
 }))
 
-vi.mock('@/lib/storage/sync', () => ({
-  importFileToIdb: vi.fn(),
-}))
-
 vi.mock('@/lib/storage/indexedDb', () => ({
   saveFileHandle: vi.fn(),
   saveSyncMeta: vi.fn(),
+}))
+
+vi.mock('@/services/storage', () => ({
+  storage: { replaceAll: vi.fn().mockResolvedValue(undefined) },
 }))
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
@@ -36,6 +36,7 @@ vi.mock('@/lib/storage/indexedDb', () => ({
 beforeEach(() => {
   useDataStore.setState({ data: makeDataFile(), unsyncedCount: 0 })
   vi.clearAllMocks()
+  vi.mocked(storage).replaceAll.mockResolvedValue(undefined)
 })
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -50,7 +51,6 @@ async function triggerImportFailure() {
     handle: {} as FileSystemFileHandle,
     file: new File(['not valid json'], 'corrupt.json', { type: 'application/json' }),
   })
-  vi.mocked(importFileToIdb).mockRejectedValue(new Error('Zod validation failed'))
 
   await userEvent.click(screen.getByRole('button', { name: /settings\.importData/i }))
   await screen.findByText('settings.importFileError')
@@ -93,9 +93,8 @@ describe('Settings — FSA fallback import (M-18)', () => {
     vi.mocked(isFsaSupported).mockReturnValue(false)
   })
 
-  it('calls importFileToIdb with the selected file when FSA is not supported', async () => {
+  it('imports a valid file without showing an error when FSA is not supported', async () => {
     const data = makeDataFile()
-    vi.mocked(importFileToIdb).mockResolvedValue(data)
 
     await renderDataSection()
 
@@ -103,12 +102,12 @@ describe('Settings — FSA fallback import (M-18)', () => {
     const input = document.querySelector('input[type="file"]') as HTMLInputElement
     await userEvent.upload(input, file)
 
-    expect(vi.mocked(importFileToIdb)).toHaveBeenCalledWith(file)
+    // Give the async handler time to complete
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByText('settings.importFileError')).not.toBeInTheDocument()
   })
 
   it('shows the import error when the fallback file is invalid', async () => {
-    vi.mocked(importFileToIdb).mockRejectedValue(new Error('Zod validation failed'))
-
     await renderDataSection()
 
     const file = new File(['not valid json'], 'corrupt.json', { type: 'application/json' })

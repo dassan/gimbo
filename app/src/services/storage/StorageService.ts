@@ -7,6 +7,7 @@ import type {
   Category,
   CategoryType,
   CreditMetadata,
+  DataFile,
   Installment,
   Settings,
   Tag,
@@ -52,7 +53,7 @@ type WorkerResponse = {
   error?: string
 }
 
-type QueryResult = { rows: unknown[][], columns: string[] }
+type QueryResult = { rows: unknown[][]; columns: string[] }
 type Row = Record<string, unknown>
 
 // ─── StorageService ───────────────────────────────────────────────────────────
@@ -65,6 +66,12 @@ export class StorageService {
   >()
 
   constructor() {
+    // Guard: Web Workers are unavailable in test environments (jsdom).
+    // All methods become no-ops so unit tests can import the store freely.
+    if (typeof Worker === 'undefined') {
+      this.worker = null as unknown as Worker
+      return
+    }
     this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
     this.worker.addEventListener('message', (event: MessageEvent<WorkerResponse>) => {
       const { id, result, error } = event.data
@@ -82,6 +89,8 @@ export class StorageService {
   // ─── Low-level worker bridge ────────────────────────────────────────────────
 
   private call<T>(method: string, args: unknown[] = [], transfer: Transferable[] = []): Promise<T> {
+    // No-op in environments where the Worker could not be created (e.g. tests).
+    if (!this.worker) return Promise.resolve(undefined as unknown as T)
     return new Promise((resolve, reject) => {
       const id = crypto.randomUUID()
       this.pending.set(id, {
@@ -124,7 +133,7 @@ export class StorageService {
          name = excluded.name,
          email = excluded.email,
          updated_at = excluded.updated_at`,
-      [user.name, user.email, user.createdAt, user.updatedAt],
+      [user.name, user.email, user.createdAt, user.updatedAt]
     )
   }
 
@@ -144,7 +153,7 @@ export class StorageService {
          file_created_at = excluded.file_created_at,
          file_updated_at = excluded.file_updated_at,
          audit_log_retention_limit = excluded.audit_log_retention_limit`,
-      [settings.fileCreatedAt, settings.fileUpdatedAt, settings.auditLogRetentionLimit],
+      [settings.fileCreatedAt, settings.fileUpdatedAt, settings.auditLogRetentionLimit]
     )
   }
 
@@ -176,7 +185,7 @@ export class StorageService {
         data.issuerIcon ?? null,
         now,
         now,
-      ],
+      ]
     )
     const rows = await this.query('SELECT * FROM accounts WHERE id = ?', [id])
     return rowToAccount(rows[0])
@@ -203,7 +212,7 @@ export class StorageService {
         merged.issuerIcon ?? null,
         new Date().toISOString(),
         id,
-      ],
+      ]
     )
     return merged
   }
@@ -226,7 +235,7 @@ export class StorageService {
     await this.run(
       `INSERT INTO categories (id, parent_id, name, icon, color, type, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, data.parentId ?? null, data.name, data.icon, data.color, data.type, now, now],
+      [id, data.parentId ?? null, data.name, data.icon, data.color, data.type, now, now]
     )
     const rows = await this.query('SELECT * FROM categories WHERE id = ?', [id])
     return rowToCategory(rows[0])
@@ -240,8 +249,15 @@ export class StorageService {
       `UPDATE categories
        SET parent_id = ?, name = ?, icon = ?, color = ?, type = ?, updated_at = ?
        WHERE id = ?`,
-      [merged.parentId ?? null, merged.name, merged.icon, merged.color, merged.type,
-       new Date().toISOString(), id],
+      [
+        merged.parentId ?? null,
+        merged.name,
+        merged.icon,
+        merged.color,
+        merged.type,
+        new Date().toISOString(),
+        id,
+      ]
     )
     return merged
   }
@@ -263,7 +279,7 @@ export class StorageService {
     const now = new Date().toISOString()
     await this.run(
       'INSERT INTO tags (id, name, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-      [id, data.name, data.color, now, now],
+      [id, data.name, data.color, now, now]
     )
     const rows = await this.query('SELECT * FROM tags WHERE id = ?', [id])
     return rowToTag(rows[0])
@@ -273,10 +289,12 @@ export class StorageService {
     const rows = await this.query('SELECT * FROM tags WHERE id = ?', [id])
     if (rows.length === 0) throw new Error(`Tag not found: ${id}`)
     const merged: Tag = { ...rowToTag(rows[0]), ...data }
-    await this.run(
-      'UPDATE tags SET name = ?, color = ?, updated_at = ? WHERE id = ?',
-      [merged.name, merged.color, new Date().toISOString(), id],
-    )
+    await this.run('UPDATE tags SET name = ?, color = ?, updated_at = ? WHERE id = ?', [
+      merged.name,
+      merged.color,
+      new Date().toISOString(),
+      id,
+    ])
     return merged
   }
 
@@ -325,7 +343,7 @@ export class StorageService {
        ${where}
        GROUP BY t.id
        ORDER BY t.date DESC, t.created_at DESC`,
-      params,
+      params
     )
     return rows.map(rowToTransaction)
   }
@@ -354,14 +372,14 @@ export class StorageService {
         data.installment?.total ?? null,
         now,
         now,
-      ],
+      ]
     )
     if (data.tags.length > 0) {
       for (const tagId of data.tags) {
-        await this.run(
-          'INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)',
-          [id, tagId],
-        )
+        await this.run('INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)', [
+          id,
+          tagId,
+        ])
       }
     }
     const rows = await this.query(
@@ -370,7 +388,7 @@ export class StorageService {
        LEFT JOIN transaction_tags tt ON t.id = tt.transaction_id
        WHERE t.id = ?
        GROUP BY t.id`,
-      [id],
+      [id]
     )
     return rowToTransaction(rows[0])
   }
@@ -382,7 +400,7 @@ export class StorageService {
        LEFT JOIN transaction_tags tt ON t.id = tt.transaction_id
        WHERE t.id = ?
        GROUP BY t.id`,
-      [id],
+      [id]
     )
     if (rows.length === 0) throw new Error(`Transaction not found: ${id}`)
     const merged: Transaction = { ...rowToTransaction(rows[0]), ...data }
@@ -407,14 +425,14 @@ export class StorageService {
         merged.installment?.total ?? null,
         new Date().toISOString(),
         id,
-      ],
+      ]
     )
     await this.run('DELETE FROM transaction_tags WHERE transaction_id = ?', [id])
     for (const tagId of merged.tags) {
-      await this.run(
-        'INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)',
-        [id, tagId],
-      )
+      await this.run('INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)', [
+        id,
+        tagId,
+      ])
     }
     return merged
   }
@@ -425,10 +443,9 @@ export class StorageService {
   }
 
   async deleteTransactionGroup(parentId: string): Promise<void> {
-    const rows = await this.query(
-      'SELECT id FROM transactions WHERE installment_parent_id = ?',
-      [parentId],
-    )
+    const rows = await this.query('SELECT id FROM transactions WHERE installment_parent_id = ?', [
+      parentId,
+    ])
     for (const row of rows) {
       await this.addDeletedId(row.id as string)
     }
@@ -446,7 +463,7 @@ export class StorageService {
     const id = crypto.randomUUID()
     await this.run(
       'INSERT INTO audit_log (id, timestamp, action, entity, entity_id, summary) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, entry.timestamp, entry.action, entry.entity, entry.entityId, entry.summary],
+      [id, entry.timestamp, entry.action, entry.entity, entry.entityId, entry.summary]
     )
     return { id, ...entry }
   }
@@ -456,7 +473,7 @@ export class StorageService {
       `DELETE FROM audit_log WHERE id NOT IN (
          SELECT id FROM audit_log ORDER BY timestamp DESC LIMIT ?
        )`,
-      [maxEntries],
+      [maxEntries]
     )
   }
 
@@ -487,6 +504,42 @@ export class StorageService {
   async getDatabaseVersion(): Promise<number> {
     const rows = await this.query('PRAGMA user_version')
     return (rows[0]?.user_version ?? 0) as number
+  }
+
+  // ─── Bulk read / write ───────────────────────────────────────────────────────
+
+  /** Load every table and assemble a DataFile. Returns null if the DB is empty (no user row). */
+  async loadDataFile(): Promise<DataFile | null> {
+    const user = await this.getUser()
+    if (!user) return null
+    const settings = await this.getSettings()
+    if (!settings) return null
+
+    const [accounts, categories, tags, transactions, auditLog, deletedIds] = await Promise.all([
+      this.getAccounts(),
+      this.getCategories(),
+      this.getTags(),
+      this.getTransactions(),
+      this.getAuditLog(),
+      this.getDeletedIds(),
+    ])
+
+    return {
+      schemaVersion: 2,
+      user,
+      settings,
+      accounts,
+      categories,
+      tags,
+      transactions,
+      auditLog,
+      deletedIds,
+    }
+  }
+
+  /** Atomically replace every table with the content of a DataFile. */
+  replaceAll(data: DataFile): Promise<void> {
+    return this.call<void>('replaceAll', [data])
   }
 
   // ─── Lifecycle ───────────────────────────────────────────────────────────────

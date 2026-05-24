@@ -18,22 +18,18 @@ import {
   requestHandlePermission,
 } from '@/lib/storage/fileSystem'
 import { syncToFile } from '@/lib/storage/sync'
-import { saveToIdb, saveSyncMeta } from '@/lib/storage/indexedDb'
 import { applyRetention } from '@/lib/storage/schema'
+import { storage } from '@/services/storage'
 import { uuid, now } from '@/lib/utils'
 
 // ─── Debounce helper ──────────────────────────────────────────────────────────
 
-let _idbTimer: ReturnType<typeof setTimeout> | null = null
+let _sqliteTimer: ReturnType<typeof setTimeout> | null = null
 
-function debouncedSaveToIdb(data: DataFile, unsyncedCount: number) {
-  if (_idbTimer) clearTimeout(_idbTimer)
-  _idbTimer = setTimeout(() => {
-    Promise.all([saveToIdb(data), saveSyncMeta(unsyncedCount)]).catch((err: unknown) => {
-      if (err instanceof DOMException && err.name === 'QuotaExceededError') {
-        useDataStore.setState({ idbQuotaExceeded: true })
-      }
-    })
+function debouncedReplaceAll(data: DataFile) {
+  if (_sqliteTimer) clearTimeout(_sqliteTimer)
+  _sqliteTimer = setTimeout(() => {
+    void storage.replaceAll(data)
   }, 300)
 }
 
@@ -80,7 +76,6 @@ interface DataStore {
   permissionNeeded: boolean
   isSecondaryTab: boolean
   writeError: boolean
-  idbQuotaExceeded: boolean
 
   loadData: (data: DataFile) => void
   clearData: () => void
@@ -117,7 +112,6 @@ export const useDataStore = create<DataStore>((set, get) => ({
   permissionNeeded: false,
   isSecondaryTab: false,
   writeError: false,
-  idbQuotaExceeded: false,
 
   loadData: (data) => set({ data, unsyncedCount: 0 }),
   clearData: () => set({ data: null, unsyncedCount: 0 }),
@@ -391,7 +385,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
       // Apply new policy immediately
       data.auditLog = applyRetention(data.auditLog, limit)
       const unsyncedCount = s.unsyncedCount + 1
-      debouncedSaveToIdb(data, unsyncedCount)
+      debouncedReplaceAll(data)
       return { data, unsyncedCount }
     }),
 
@@ -449,9 +443,8 @@ export const useDataStore = create<DataStore>((set, get) => ({
     const merged = await syncToFile(updated, diskSnapshot)
     if (merged) {
       set({ data: merged, unsyncedCount: 0, fileHandleLost: false, writeError: false })
-      // Keep IDB in sync so a reload shows unsyncedCount = 0.
-      void saveToIdb(merged)
-      void saveSyncMeta(0)
+      // Persist the merged result (which may include changes from disk) back to SQLite.
+      void storage.replaceAll(merged)
     } else if (isHandleLost()) {
       set({ fileHandleLost: true })
     } else {
@@ -476,7 +469,7 @@ function mutate(state: DataStore, fn: (data: DataFile) => void): Partial<DataSto
   const data = structuredClone(state.data)
   fn(data)
   const unsyncedCount = state.unsyncedCount + 1
-  debouncedSaveToIdb(data, unsyncedCount)
+  debouncedReplaceAll(data)
   return { data, unsyncedCount }
 }
 

@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { useDataStore } from '@/store/useDataStore'
-import { loadFromIdb, loadFileHandle, loadSyncMeta } from '@/lib/storage/indexedDb'
+import { loadFromIdb, loadFileHandle, clearIdb } from '@/lib/storage/indexedDb'
 import { checkHandlePermission } from '@/lib/storage/fileSystem'
 import { initTabGuard } from '@/lib/tabGuard'
+import { storage } from '@/services/storage'
 import AppLayout from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import Onboarding from '@/pages/Onboarding'
@@ -48,19 +49,25 @@ export default function App() {
     async function init() {
       try {
         initWorkspace()
-        const [saved, handle, syncMeta] = await Promise.all([
-          loadFromIdb(),
-          loadFileHandle(),
-          loadSyncMeta(),
-        ])
-        if (saved) {
-          loadData(saved)
-          // loadData() resets unsyncedCount to 0; restore the persisted count
-          // so the badge survives page reloads.
-          if (syncMeta && syncMeta.unsyncedCount > 0) {
-            useDataStore.setState({ unsyncedCount: syncMeta.unsyncedCount })
+
+        // Primary store: SQLite (OPFS via wa-sqlite)
+        let saved = await storage.loadDataFile()
+
+        // Legacy migration: if SQLite is empty but IDB has data from the old
+        // JSON-based storage, migrate once and clear IDB.
+        if (!saved) {
+          const legacyData = await loadFromIdb()
+          if (legacyData) {
+            await storage.replaceAll(legacyData)
+            await clearIdb()
+            saved = legacyData
           }
         }
+
+        if (saved) loadData(saved)
+
+        // Restore FSA file handle for disk-backup sync (kept as explicit action).
+        const handle = await loadFileHandle()
         if (handle) {
           const state = await checkHandlePermission(handle)
           if (state === 'prompt') {
@@ -86,7 +93,7 @@ export default function App() {
     )
   }, [])
 
-  // Avoid flash of onboarding while IDB is loading
+  // Avoid flash of onboarding while storage is loading
   if (!hydrated) return null
 
   if (initError) {

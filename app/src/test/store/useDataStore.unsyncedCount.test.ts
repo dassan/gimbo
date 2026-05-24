@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '@/test/fixtures/dataFile'
@@ -34,7 +35,10 @@ vi.mock('@/lib/storage/sync', () => ({
   syncToFile: vi.fn(),
 }))
 
-import { saveSyncMeta, saveToIdb } from '@/lib/storage/indexedDb'
+vi.mock('@/services/storage', () => ({
+  storage: { replaceAll: vi.fn().mockResolvedValue(undefined) },
+}))
+
 import { syncToFile } from '@/lib/storage/sync'
 import {
   isHandleLost,
@@ -42,6 +46,7 @@ import {
   readCurrentDataFile,
   getLastWrittenModified,
 } from '@/lib/storage/fileSystem'
+import { storage } from '@/services/storage'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -76,6 +81,7 @@ beforeEach(() => {
   vi.mocked(isPermissionNeeded).mockReturnValue(false)
   vi.mocked(readCurrentDataFile).mockResolvedValue(null)
   vi.mocked(getLastWrittenModified).mockReturnValue(null)
+  vi.mocked(storage).replaceAll.mockResolvedValue(undefined)
   vi.useFakeTimers()
 })
 
@@ -85,51 +91,55 @@ afterEach(() => {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('debouncedSaveToIdb — persists unsyncedCount (M-19)', () => {
-  it('calls saveSyncMeta with the new unsyncedCount after a mutation', async () => {
-    vi.mocked(saveToIdb).mockResolvedValue(undefined)
-    vi.mocked(saveSyncMeta).mockResolvedValue(undefined)
-
+describe('debouncedReplaceAll — persists mutations to SQLite (M-19)', () => {
+  it('calls storage.replaceAll after a mutation', async () => {
     useDataStore.getState().addTransaction(makeTx({ id: 'tx-1' }))
 
     await vi.runAllTimersAsync()
 
-    expect(saveSyncMeta).toHaveBeenCalledWith(1)
+    const { replaceAll } = vi.mocked(storage)
+    expect(replaceAll).toHaveBeenCalledTimes(1)
   })
 
-  it('passes the incremented count, not zero, to saveSyncMeta', async () => {
-    useDataStore.setState({ unsyncedCount: 3 })
-    vi.mocked(saveToIdb).mockResolvedValue(undefined)
-    vi.mocked(saveSyncMeta).mockResolvedValue(undefined)
-
+  it('debounces rapid mutations into a single replaceAll call', async () => {
+    useDataStore.getState().addTransaction(makeTx({ id: 'tx-1' }))
     useDataStore.getState().addTransaction(makeTx({ id: 'tx-2' }))
+    useDataStore.getState().addTransaction(makeTx({ id: 'tx-3' }))
 
     await vi.runAllTimersAsync()
 
-    expect(saveSyncMeta).toHaveBeenCalledWith(4)
+    const { replaceAll } = vi.mocked(storage)
+    expect(replaceAll).toHaveBeenCalledTimes(1)
+  })
+
+  it('in-memory data and unsyncedCount are updated even before SQLite write completes', () => {
+    const before = useDataStore.getState().data!.transactions.length
+
+    useDataStore.getState().addTransaction(makeTx({ id: 'tx-1' }))
+
+    expect(useDataStore.getState().data!.transactions.length).toBe(before + 1)
+    expect(useDataStore.getState().unsyncedCount).toBe(1)
   })
 })
 
-describe('persist — IDB sync after successful write (M-19)', () => {
-  it('calls saveToIdb and saveSyncMeta(0) after a successful sync', async () => {
+describe('persist — SQLite sync after successful disk write (M-19)', () => {
+  it('calls storage.replaceAll with merged data after a successful sync', async () => {
     const merged = makeDataFile()
     vi.mocked(syncToFile).mockResolvedValue(merged)
-    vi.mocked(saveToIdb).mockResolvedValue(undefined)
-    vi.mocked(saveSyncMeta).mockResolvedValue(undefined)
 
     await useDataStore.getState().persist()
 
-    expect(saveToIdb).toHaveBeenCalledWith(merged)
-    expect(saveSyncMeta).toHaveBeenCalledWith(0)
+    const { replaceAll } = vi.mocked(storage)
+    expect(replaceAll).toHaveBeenCalledWith(merged)
   })
 
-  it('does not call saveSyncMeta(0) when the write fails', async () => {
+  it('does not call storage.replaceAll when the disk write fails', async () => {
     vi.mocked(syncToFile).mockResolvedValue(null)
     vi.mocked(isHandleLost).mockReturnValue(false)
-    vi.mocked(saveSyncMeta).mockResolvedValue(undefined)
 
     await useDataStore.getState().persist()
 
-    expect(saveSyncMeta).not.toHaveBeenCalledWith(0)
+    const { replaceAll } = vi.mocked(storage)
+    expect(replaceAll).not.toHaveBeenCalled()
   })
 })

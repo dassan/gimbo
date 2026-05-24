@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { ShieldCheck, Lock, ArrowRight, RefreshCw, FileJson } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
-import { createEmptyDataFile } from '@/lib/storage/schema'
+import { createEmptyDataFile, validateDataFile } from '@/lib/storage/schema'
 import {
   openDataFile,
   createNewDataFile,
@@ -12,7 +12,7 @@ import {
   isFsaSupported,
 } from '@/lib/storage/fileSystem'
 import { saveFileHandle } from '@/lib/storage/indexedDb'
-import { importFileToIdb } from '@/lib/storage/sync'
+import { storage } from '@/services/storage'
 import { cn } from '@/lib/utils'
 import type { Locale } from '@/types'
 
@@ -38,6 +38,9 @@ export default function Onboarding() {
 
     const data = createEmptyDataFile(name.trim(), email.trim())
 
+    // Seed SQLite with the new profile before navigating.
+    await storage.replaceAll(data)
+
     if (isFsaSupported()) {
       // Open the save picker so the user can choose filename and location.
       // Must be called directly inside the click handler to satisfy the
@@ -57,8 +60,8 @@ export default function Onboarding() {
         // Non-fatal — the app functions without a persisted handle.
       }
     } else {
-      // FSA not available (Firefox/Safari): save to IDB and trigger a download
-      // so the user keeps a copy of their data file.
+      // FSA not available (Firefox/Safari): trigger a download so the user
+      // keeps an external backup of their data file.
       downloadDataFile(data)
     }
 
@@ -71,10 +74,9 @@ export default function Onboarding() {
   async function handleImportFile(file: File) {
     setFileError(null)
     try {
-      // importFileToIdb: validates via Zod, clears IDB, saves new data (total replace).
-      // No handle available from <input type="file"> — sync icon will prompt
-      // the user to re-link a file on first save attempt.
-      const data = await importFileToIdb(file)
+      const text = await file.text()
+      const data = validateDataFile(JSON.parse(text) as unknown)
+      await storage.replaceAll(data)
       loadData(data)
       void navigate('/dashboard')
     } catch {
@@ -89,8 +91,9 @@ export default function Onboarding() {
       if (!result) return // User cancelled picker
 
       const { handle, file } = result
-      // importFileToIdb: validates via Zod, clears IDB, saves new data (total replace).
-      const data = await importFileToIdb(file)
+      const text = await file.text()
+      const data = validateDataFile(JSON.parse(text) as unknown)
+      await storage.replaceAll(data)
       // Best-effort: persist the handle so future sessions can reuse it.
       try {
         await saveFileHandle(handle)

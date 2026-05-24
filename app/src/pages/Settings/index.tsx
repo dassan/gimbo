@@ -40,8 +40,8 @@ import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { downloadDataFile, openDataFile, isFsaSupported } from '@/lib/storage/fileSystem'
 import { saveFileHandle } from '@/lib/storage/indexedDb'
 import { formatCurrency, cn, uuid, now, getCurrentInvoiceBalance } from '@/lib/utils'
-import { AUDIT_RETENTION_DEFAULT, SchemaVersionError } from '@/lib/storage/schema'
-import { importFileToIdb } from '@/lib/storage/sync'
+import { AUDIT_RETENTION_DEFAULT, SchemaVersionError, validateDataFile } from '@/lib/storage/schema'
+import { storage } from '@/services/storage'
 import type {
   Account,
   AccountType,
@@ -218,7 +218,9 @@ export default function Settings() {
   async function handleImportFile(file: File) {
     setImportError(null)
     try {
-      const data = await importFileToIdb(file)
+      const text = await file.text()
+      const data = validateDataFile(JSON.parse(text) as unknown)
+      await storage.replaceAll(data)
       loadData(data)
     } catch (err) {
       if (err instanceof SchemaVersionError) {
@@ -239,8 +241,9 @@ export default function Settings() {
     if (!result) return
     const { handle, file } = result
     try {
-      // importFileToIdb: validates via Zod, clears IDB, saves new data (total replace).
-      const data = await importFileToIdb(file)
+      const text = await file.text()
+      const data = validateDataFile(JSON.parse(text) as unknown)
+      await storage.replaceAll(data)
       try {
         await saveFileHandle(handle)
       } catch {
