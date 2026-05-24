@@ -197,6 +197,20 @@ Todos os utilitários devem ser funções puras adicionadas em `src/lib/utils.ts
 
 ---
 
+## Demo Mode & Deploy Público — F-25
+
+Versão pública do Gimbo acessível via URL sem necessidade de download. Dados sintéticos pré-carregados no bundle; toda mutação do store é descartada ao recarregar (persist no-op). Ativado pela env var `VITE_DEMO_MODE=true` no build de deploy. As fases são dependentes entre si — não iniciar uma fase sem a anterior concluída.
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| DM-01 | **`src/lib/demo.ts` — Criar utilitário `isDemoMode()` e asset de dados sintéticos.** Criar função `isDemoMode(): boolean` que retorna `import.meta.env.VITE_DEMO_MODE === 'true'`. Copiar `data/nexus-import-sintetic-data.json` para `src/assets/demo-data.json` como asset estático importável. Adicionar `VITE_DEMO_MODE=false` no `.env` local e `VITE_DEMO_MODE=true` no `.env.demo` (não commitado). Adicionar `VITE_DEMO_MODE` ao `env.d.ts` (ou equivalente) para tipagem. | crítica | aberto |
+| DM-02 | **`store/useDataStore.ts` — No-op de persistência em modo demo.** Quando `isDemoMode()`, a função `persist()` (e qualquer chamada a `syncToFile`/`saveDataFile`) deve retornar imediatamente sem executar nenhuma escrita. O `unsyncedCount` não deve ser incrementado. O hook de auto-save do IDB também deve ser desabilitado. Adicionar testes unitários cobrindo: `persist()` no-op em demo mode, `persist()` executa normalmente fora de demo mode. | crítica | aberto |
+| DM-03 | **`store/useDataStore.ts` — Boot com dados sintéticos em modo demo.** Quando `isDemoMode()`, o store deve ignorar o IndexedDB no startup e carregar diretamente o `demo-data.json` importado em DM-01, pulando a tela de onboarding. A store deve ser hidratada como se o arquivo já estivesse aberto (estado `ready`), sem FileHandle e sem badge de sync. Fora de demo mode, o comportamento de boot permanece idêntico ao atual. | crítica | aberto |
+| DM-04 | **`components/Navbar.tsx` (ou layout raiz) — Banner de modo demo.** Quando `isDemoMode()`, exibir faixa fixa no topo do app com texto "Modo demonstração — alterações não são salvas" (chave i18n `demo.banner`; `pt-BR` e `en-US`). A faixa deve ter fundo de cor de aviso (ex: `#F59E0B`) e texto contrastante. O restante do layout deve deslocar para baixo sem sobrepor conteúdo. Adicionar chave i18n `demo.banner` em ambos os locales. | alta | aberto |
+| DM-05 | **Vercel — Configurar deploy público da branch `dassan/demo-v0.1.0`.** Criar projeto no Vercel apontando para o repositório GitHub, branch `dassan/demo-v0.1.0`. Configurar: `Root Directory = app`, `Build Command = npm run build`, `Output Directory = dist`. Adicionar env var `VITE_DEMO_MODE=true` nas configurações do projeto no Vercel. Verificar que o deploy resultante carrega os dados sintéticos, exibe o banner e não persiste mutações. | alta | aberto |
+
+---
+
 ## Patrimônio Líquido (Net Worth) — F-24
 
 Página dedicada na navbar que mostra o patrimônio líquido do usuário: todas as contas não-CREDIT somam como ativos; contas CREDIT contribuem como passivos (fatura em aberto deduzida). Além do snapshot atual, exibe gráfico de evolução histórica mensal. As fases são dependentes entre si — não iniciar uma fase sem a anterior estar completa e com testes passando.

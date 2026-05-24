@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, FlaskConical } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { downloadDataFile, isFsaSupported } from '@/lib/storage/fileSystem'
+import { isDemoMode } from '@/lib/demo'
 import Navbar from '@/components/Navbar'
 import FAB from '@/components/FAB'
 import TransactionDrawer from '@/components/TransactionDrawer'
@@ -95,14 +96,25 @@ export default function AppLayout() {
         }}
       />
 
+      {isDemoMode() && (
+        <div className="fixed top-14 left-0 right-0 z-40 flex items-center justify-center gap-2 bg-amber-400 px-6 py-2.5 text-xs font-medium text-amber-950">
+          <FlaskConical size={14} strokeWidth={2} className="shrink-0" />
+          <span>{t('demo.banner')}</span>
+        </div>
+      )}
+
       {isSecondaryTab && (
-        <div className="fixed top-14 left-0 right-0 z-40 flex items-center gap-2 bg-tertiary/10 px-6 py-2.5 text-xs text-tertiary border-b border-tertiary/20">
+        <div
+          className={`fixed left-0 right-0 z-40 flex items-center gap-2 border-b border-tertiary/20 bg-tertiary/10 px-6 py-2.5 text-xs text-tertiary ${isDemoMode() ? 'top-24' : 'top-14'}`}
+        >
           <AlertTriangle size={14} strokeWidth={2} className="shrink-0" />
           <span>{t('sync.secondaryTabWarning')}</span>
         </div>
       )}
 
-      <main className={`flex-1 ${isSecondaryTab ? 'pt-24' : 'pt-14'}`}>
+      <main
+        className={`flex-1 ${isDemoMode() && isSecondaryTab ? 'pt-36' : isDemoMode() || isSecondaryTab ? 'pt-24' : 'pt-14'}`}
+      >
         {idbQuotaExceeded && (
           <div className="flex flex-col gap-2 border-b border-tertiary/20 bg-tertiary/10 px-6 py-3 text-xs text-tertiary sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
