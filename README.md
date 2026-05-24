@@ -4,6 +4,9 @@
 
 Gimbo is a **client-side PWA** that runs entirely in the browser. Your financial data lives as a portable `data.json` file on your own device. No accounts, no servers, no subscription.
 
+> **Current version: desktop Chrome / Edge only.**
+> The File System Access API — which powers automatic file sync — is not supported on Firefox, Safari, or any mobile browser. A mobile-friendly version with end-to-end encrypted cloud sync is planned (see [Roadmap](#roadmap)).
+
 <img width="1858" height="959" alt="gimbo-dashboard" src="https://github.com/user-attachments/assets/a4ef1e12-d4ba-45af-bb19-14cb0069a1b9" />
 
 ---
@@ -226,7 +229,7 @@ cd app
 npm run format:check   # Prettier
 npm run lint           # ESLint
 npx tsc -b --noEmit    # TypeScript strict
-npx vitest run --coverage  # 473 unit tests — threshold: 80% lines/functions
+npx vitest run --coverage  # 474 unit tests — threshold: 80% lines/functions
 npx playwright test    # 19 E2E tests (Chromium only)
 ```
 
@@ -262,13 +265,19 @@ Reference bug/milestone IDs when applicable: `fix(B-09): use effective cash-flow
 
 ---
 
-## Out of Scope (future)
+## Roadmap
 
-- `data.json` encryption at rest
+The current release targets **single-device desktop use** (Chrome / Edge). The planned next milestone addresses multi-device sync without compromising the privacy model:
+
+- **SQLite WASM + OPFS** — replaces the JSON file with an ACID-compliant local database, eliminating corruption on interrupted writes and enabling efficient querying at scale
+- **End-to-end encrypted sync** — the local database is encrypted with AES-256-GCM (key derived via PBKDF2, never leaves the device) and synced as an opaque blob to Google Drive or Dropbox; the storage provider sees only ciphertext
+- **Mobile support** — once sync is in place, the app works on any browser and any device without the File System Access API requirement
+
+Other items out of scope for the current cycle:
+
 - Automated Open Banking / bank import
 - Native mobile app (iOS / Android)
-- Cloud storage or online authentication
-- Chargebacks / reversals (M-22, low priority — manual workaround available)
+- Chargebacks / reversals (manual workaround: reduce the original expense amount)
 
 ---
 
