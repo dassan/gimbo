@@ -101,7 +101,7 @@ Documentação detalhada em `ARCHITECTURE.md`. Resumo:
 ## 10. Perguntas em Aberto
 *(Nenhuma pergunta pendente no momento)*
 
-## 11. Status de Implementação (2026-04-19)
+## 11. Status de Implementação (2026-05-24)
 
 ### Features Must-have — todas implementadas
 
@@ -127,20 +127,20 @@ Todas as 33 melhorias planejadas foram implementadas, incluindo:
 - M-32: Resumo de Gastos em coluna direita na tela de Lançamentos
 - M-33: Saldo inicial editável para contas
 
-### Relatórios Avançados (em andamento)
+### Relatórios Avançados — concluídos
 
-Épico detalhado em `plan/REPORTS.md`. Progresso:
+Épico detalhado em `plan/REPORTS.md`. Todas as fases implementadas:
 - ✅ Fase 1 — Navegação e Seletor de Período (R-01 a R-03)
 - ✅ Fase 2 — Feature Toggle: Ambient Shadows (R-04 a R-06)
-- Fase 3 — Cash Flow View (R-07 a R-08) — em aberto
-- Fase 4 — Categorias com Drill-Down (R-09 a R-10) — em aberto
-- Fase 5 — Contas com Drill-Down (R-11 a R-12) — em aberto
-- Fase 6 — Tags com Multi-filtro (R-13 a R-14) — em aberto
-- Fase 7 — Testes (R-15 a R-16) — em aberto
+- ✅ Fase 3 — Cash Flow View (R-07 a R-08)
+- ✅ Fase 4 — Categorias com Drill-Down (R-09 a R-10)
+- ✅ Fase 5 — Contas com Drill-Down (R-11 a R-12)
+- ✅ Fase 6 — Tags com Multi-filtro (R-13 a R-14)
+- ✅ Fase 7 — Testes (R-15 a R-16)
 
 ### Cobertura de testes
 
-**399 testes unitários** (23 arquivos) + **19 testes E2E** (4 specs). Cobertura: ~97% statements.
+**474 testes unitários** (28 arquivos) + **19 testes E2E** (4 specs). Cobertura: ~97% statements.
 
 ### Melhoria em aberto
 

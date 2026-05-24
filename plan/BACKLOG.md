@@ -166,6 +166,7 @@ Todos os utilitários devem ser funções puras adicionadas em `src/lib/utils.ts
 | R-07 | **`pages/Analytics/CashFlowView.tsx` — Criar view com `ComposedChart` (barras + linha de saldo acumulado).** Criar componente que recebe `transactions`, `accounts`, `startDate`, `endDate`, `includeUnpaid` como props. **Gráfico principal (`ComposedChart` do Recharts):** barras agrupadas com Entradas em `#22C55E` e Saídas em `#FF8A83`; linha contínua `type="monotone"` para Saldo Acumulado calculado mês a mês no período; eixo Y único; eixo X com labels de período; legenda (Entradas, Saídas, Saldo Acumulado); tooltip com `formatCurrency`. Manter lógica de `getEffectiveCashFlowDate` (CC-16) e exclusão de `CREDIT_PAYMENT` (CC-17). Estado vazio: mensagem centralizada "Sem dados". Pré-requisito: R-01. | alta | resolvido |
 | R-08 | **`pages/Analytics/CashFlowView.tsx` — Adicionar data grid table abaixo do gráfico.** Tabela estruturada sem bordas (respeita o "No-Line Rule" do design system): colunas **Período \| Entradas \| Saídas \| Resultado \| Saldo**; uma linha por sub-período do eixo do gráfico; "Resultado" = Entradas − Saídas (verde se positivo, `text-tertiary` se negativo); "Saldo" = saldo acumulado (negrito, colorido por sinal); separação por espaço vertical entre linhas sem uso de `<hr>`. | alta | resolvido |
 
+
 ### Fase 4 — View: Categorias com Drill-Down
 
 | ID | Descrição | Prioridade | Status |

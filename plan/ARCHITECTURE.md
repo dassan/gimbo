@@ -82,7 +82,7 @@ MyFinanceApp/
 │   │   │   ├── Onboarding/      # Criar perfil ou importar data.json
 │   │   │   ├── Dashboard/       # Cards mensais + Minhas Contas + Meus Cartões + donut
 │   │   │   ├── Transactions/    # Extrato de caixa (sem cartões) + resumo de gastos
-│   │   │   ├── Analytics/       # Relatórios: Cash Flow, Categorias, Contas, Tags
+│   │   │   ├── Analytics/       # Shell com 4 views: index.tsx + CashFlowView, CategoriasView, ContasView, TagsView
 │   │   │   ├── CreditCard/      # Detalhe de fatura: lançamentos, período, "Pagar Agora"
 │   │   │   └── Settings/        # Contas e Cartões, categorias, tags, perfil, preferências, dados, histórico
 │   │   └── test/                # setup, fixtures, testes unitários
@@ -362,8 +362,10 @@ Sempre `t(\`accounts.${type.toLowerCase()}\`)`. Nunca exibir enum bruto.
 Shell com 4 abas: Categorias | Cash Flow | Contas | Tags (R-01)
 - `PeriodSelector` compartilhado (R-02)
 - Toggle "Incluir não pagos" global
-- Cash Flow: `getEffectiveCashFlowDate`, exclui CREDIT_PAYMENT
-- Categorias: usa `tx.date` (perspectiva orçamentária)
+- **CashFlowView**: `ComposedChart` (barras + linha saldo acumulado) + data grid; usa `getEffectiveCashFlowDate`, exclui `CREDIT_PAYMENT`
+- **CategoriasView**: donuts split 50/50 (Receitas/Despesas) + legend com valor e %; drill-down modal por categoria; usa `tx.date`
+- **ContasView**: grid de cards por conta + resumo de período; drill-down inline com `CashFlowView` filtrado por conta
+- **TagsView**: ranked horizontal bar chart; multi-tag filter com toggle OR/AND
 
 ### CreditCard (`/credit-card/:accountId`)
 
@@ -382,9 +384,9 @@ Abas: Contas e Cartões | Categorias | Tags | Perfil | Preferências | Dados | H
 
 ## Testes
 
-### Cobertura Atual (2026-04-19)
+### Cobertura Atual (2026-05-24)
 
-- **399 testes unitários passando** — 23 arquivos
+- **474 testes unitários passando** — 28 arquivos
 - **19 testes E2E passando** — 4 specs
 - Cobertura: ~97% statements
 
