@@ -50,6 +50,7 @@ O Gimbo é um aplicativo web (PWA Client-side) de gestão de finanças pessoais 
 * **F-22:** Parcelas — N transações com sufixo `" (X/N)"`, modal de exclusão "só esta / todas".
 * **F-23:** Pagamento de Fatura — tipo `CREDIT_PAYMENT`, exclusão dos totais de receita/despesa.
 * **F-24:** Patrimônio Líquido (Net Worth) — página dedicada na navbar com snapshot e evolução histórica mensal. Todas as contas participam: não-CREDIT somam como ativos, CREDIT contribui como passivo. Ver épico `plan/BACKLOG.md` (NW-01 a NW-07).
+* **F-25:** Demo Mode — versão pública do app com dados sintéticos pré-carregados e persistência desabilitada (`persist()` no-op). Ativado via `VITE_DEMO_MODE=true`. Inclui banner de aviso e deploy no Vercel. Ver épico `plan/BACKLOG.md` (DM-01 a DM-05).
 
 ### Fora do Escopo (Futuro)
 * **X-1:** Criptografia do arquivo JSON.
@@ -150,3 +151,4 @@ Todas as 33 melhorias planejadas foram implementadas, incluindo:
 |----|-----------|-----------|
 | M-22 | Estornos e chargebacks em contas CREDIT | baixa |
 | F-24 | Patrimônio Líquido — página dedicada (NW-01 a NW-07) | média |
+| F-25 | Demo Mode — dados sintéticos + persist no-op + deploy Vercel (DM-01 a DM-05) | alta |

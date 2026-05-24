@@ -338,5 +338,8 @@
     "noData": "No data found",
     "viewAll": "View All",
     "total": "Total"
+  },
+  "demo": {
+    "banner": "Demo mode — changes are not saved"
   }
 }

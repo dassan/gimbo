@@ -5,6 +5,7 @@ import { useDataStore } from '@/store/useDataStore'
 import { loadFromIdb, loadFileHandle, loadSyncMeta } from '@/lib/storage/indexedDb'
 import { checkHandlePermission } from '@/lib/storage/fileSystem'
 import { initTabGuard } from '@/lib/tabGuard'
+import { isDemoMode, demoDataFile } from '@/lib/demo'
 import AppLayout from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import Onboarding from '@/pages/Onboarding'
@@ -48,6 +49,12 @@ export default function App() {
     async function init() {
       try {
         initWorkspace()
+
+        if (isDemoMode()) {
+          loadData(demoDataFile)
+          return
+        }
+
         const [saved, handle, syncMeta] = await Promise.all([
           loadFromIdb(),
           loadFileHandle(),
@@ -80,6 +87,7 @@ export default function App() {
   }, [initWorkspace, loadData])
 
   useEffect(() => {
+    if (isDemoMode()) return
     return initTabGuard(
       () => useDataStore.setState({ isSecondaryTab: true }),
       () => useDataStore.setState({ isSecondaryTab: false })

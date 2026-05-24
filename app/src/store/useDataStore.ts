@@ -21,12 +21,14 @@ import { syncToFile } from '@/lib/storage/sync'
 import { saveToIdb, saveSyncMeta } from '@/lib/storage/indexedDb'
 import { applyRetention } from '@/lib/storage/schema'
 import { uuid, now } from '@/lib/utils'
+import { isDemoMode } from '@/lib/demo'
 
 // ─── Debounce helper ──────────────────────────────────────────────────────────
 
 let _idbTimer: ReturnType<typeof setTimeout> | null = null
 
 function debouncedSaveToIdb(data: DataFile, unsyncedCount: number) {
+  if (isDemoMode()) return
   if (_idbTimer) clearTimeout(_idbTimer)
   _idbTimer = setTimeout(() => {
     Promise.all([saveToIdb(data), saveSyncMeta(unsyncedCount)]).catch((err: unknown) => {
@@ -398,6 +400,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
   // ── Persistence ───────────────────────────────────────────────────────────
 
   persist: async () => {
+    if (isDemoMode()) return false
     const { data, isSecondaryTab } = get()
     if (!data) return false
     if (isSecondaryTab) return false
@@ -475,6 +478,7 @@ function mutate(state: DataStore, fn: (data: DataFile) => void): Partial<DataSto
   if (state.isSecondaryTab) return {}
   const data = structuredClone(state.data)
   fn(data)
+  if (isDemoMode()) return { data }
   const unsyncedCount = state.unsyncedCount + 1
   debouncedSaveToIdb(data, unsyncedCount)
   return { data, unsyncedCount }
