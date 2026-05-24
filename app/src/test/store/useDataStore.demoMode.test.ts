@@ -4,7 +4,7 @@ import { makeDataFile } from '@/test/fixtures/dataFile'
 
 vi.mock('@/lib/demo', () => ({
   isDemoMode: vi.fn(),
-  demoDataFile: {},
+  loadDemoData: vi.fn(),
 }))
 
 vi.mock('@/lib/storage/fileSystem', () => ({
