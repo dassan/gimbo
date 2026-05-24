@@ -4,6 +4,8 @@
 
 Gimbo is a **client-side PWA** that runs entirely in the browser. Your financial data lives as a portable `data.json` file on your own device. No accounts, no servers, no subscription.
 
+<img width="1858" height="959" alt="gimbo-dashboard" src="https://github.com/user-attachments/assets/a4ef1e12-d4ba-45af-bb19-14cb0069a1b9" />
+
 ---
 
 ## Why Gimbo
