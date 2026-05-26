@@ -2,9 +2,6 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { useDataStore } from '@/store/useDataStore'
-import { loadFromIdb, loadFileHandle, clearIdb } from '@/lib/storage/indexedDb'
-import { checkHandlePermission } from '@/lib/storage/fileSystem'
-import { initTabGuard } from '@/lib/tabGuard'
 import { storage } from '@/services/storage'
 import AppLayout from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -37,7 +34,6 @@ export default function App() {
       return
     }
 
-    // system: follow prefers-color-scheme
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const apply = (matches: boolean) => root.classList.toggle('dark', matches)
     apply(mq.matches)
@@ -50,33 +46,8 @@ export default function App() {
       try {
         initWorkspace()
 
-        // Primary store: SQLite (OPFS via wa-sqlite)
-        let saved = await storage.loadDataFile()
-
-        // Legacy migration: if SQLite is empty but IDB has data from the old
-        // JSON-based storage, migrate once and clear IDB.
-        if (!saved) {
-          const legacyData = await loadFromIdb()
-          if (legacyData) {
-            await storage.replaceAll(legacyData)
-            await clearIdb()
-            saved = legacyData
-          }
-        }
-
+        const saved = await storage.loadDataFile()
         if (saved) loadData(saved)
-
-        // Restore FSA file handle for disk-backup sync (kept as explicit action).
-        const handle = await loadFileHandle()
-        if (handle) {
-          const state = await checkHandlePermission(handle)
-          if (state === 'prompt') {
-            useDataStore.setState({ permissionNeeded: true })
-          } else if (state === 'denied') {
-            useDataStore.setState({ fileHandleLost: true })
-          }
-          // 'granted' → handle injected into _dataHandle by checkHandlePermission
-        }
       } catch (err) {
         setInitError(err instanceof Error ? err.message : 'Erro ao carregar dados locais')
       } finally {
@@ -86,14 +57,6 @@ export default function App() {
     void init()
   }, [initWorkspace, loadData])
 
-  useEffect(() => {
-    return initTabGuard(
-      () => useDataStore.setState({ isSecondaryTab: true }),
-      () => useDataStore.setState({ isSecondaryTab: false })
-    )
-  }, [])
-
-  // Avoid flash of onboarding while storage is loading
   if (!hydrated) return null
 
   if (initError) {

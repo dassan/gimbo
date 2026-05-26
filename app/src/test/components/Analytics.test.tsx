@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import Analytics from '@/pages/Analytics'
 import { useDataStore } from '@/store/useDataStore'
@@ -118,7 +118,7 @@ function switchToCashFlowTab() {
 const FIXED_NOW = new Date('2026-04-15')
 
 beforeEach(() => {
-  useDataStore.setState({ data: null, unsyncedCount: 0 })
+  useDataStore.setState({ data: null })
   capturedChartProps.data = []
   vi.useFakeTimers()
   vi.setSystemTime(FIXED_NOW)
@@ -141,7 +141,6 @@ describe('Analytics — CC-16: getEffectiveCashFlowDate in cash flow chart', () 
     })
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [income] }),
-      unsyncedCount: 0,
     })
     render(<Analytics />)
     switchToCashFlowTab()
@@ -160,7 +159,6 @@ describe('Analytics — CC-16: getEffectiveCashFlowDate in cash flow chart', () 
     })
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [expense] }),
-      unsyncedCount: 0,
     })
     render(<Analytics />)
     switchToCashFlowTab()
@@ -201,7 +199,6 @@ describe('Analytics — CC-16: getEffectiveCashFlowDate in cash flow chart', () 
         accounts: [retailAccount, creditAccount],
         transactions: [retailIncome, creditExpense],
       }),
-      unsyncedCount: 0,
     })
     render(<Analytics />)
     switchToCashFlowTab()
@@ -226,7 +223,6 @@ describe('Analytics — CC-16: getEffectiveCashFlowDate in cash flow chart', () 
     })
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [creditExpense] }),
-      unsyncedCount: 0,
     })
     render(<Analytics />)
     switchToCashFlowTab()
@@ -251,7 +247,6 @@ describe('Analytics — CC-17: CREDIT_PAYMENT excluded from charts and categorie
     })
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [creditPayment] }),
-      unsyncedCount: 0,
     })
     render(<Analytics />)
     switchToCashFlowTab()
@@ -276,7 +271,6 @@ describe('Analytics — CC-17: CREDIT_PAYMENT excluded from charts and categorie
     })
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [income, creditPayment] }),
-      unsyncedCount: 0,
     })
     render(<Analytics />)
     switchToCashFlowTab()
@@ -307,7 +301,6 @@ describe('Analytics — CC-17: CREDIT_PAYMENT excluded from charts and categorie
         transactions: [income, creditPayment],
         categories: [makeCategory({ id: 'cat-income', name: 'Salário', type: 'INCOME' })],
       }),
-      unsyncedCount: 0,
     })
     render(<Analytics />)
     // Default tab is categorias — income category total = 500 (CREDIT_PAYMENT excluded)
@@ -336,7 +329,6 @@ describe('Analytics — CC-17: CREDIT_PAYMENT excluded from charts and categorie
         transactions: [expense, creditPayment],
         categories: [makeCategory({ id: 'cat-expense', name: 'Alimentação', type: 'EXPENSE' })],
       }),
-      unsyncedCount: 0,
     })
     render(<Analytics />)
     // Default tab is categorias — expense total = 400 (CREDIT_PAYMENT excluded)
@@ -371,7 +363,6 @@ describe('Analytics — CC-18: category breakdown uses tx.date, not effective ca
         transactions: [expense],
         categories: [makeCategory({ id: 'cat-expense', name: 'Restaurante', type: 'EXPENSE' })],
       }),
-      unsyncedCount: 0,
     })
     render(<Analytics />)
 
@@ -400,7 +391,6 @@ describe('Analytics — CC-18: category breakdown uses tx.date, not effective ca
         transactions: [expense],
         categories: [makeCategory({ id: 'cat-1', type: 'EXPENSE' })],
       }),
-      unsyncedCount: 0,
     })
     render(<Analytics />)
     // 9999 must not appear (outside range for category breakdown)

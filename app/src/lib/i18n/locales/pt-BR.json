@@ -24,11 +24,9 @@
     "language": "Idioma de Preferência",
     "create": "Criar Cofre de Dados",
     "import": "Importar e Iniciar",
-    "importDrop": "Arraste ou anexe seu arquivo data.json",
-    "importDropSub": "Somente arquivos exportados do Gimbo são suportados.",
-    "createFilePickerHint": "Na próxima etapa, você escolherá o nome e o local onde seu arquivo será salvo.",
-    "createFileCancelled": "Seleção de arquivo cancelada. Tente novamente.",
-    "createFileFallbackHint": "Seus dados serão salvos localmente e um arquivo será baixado automaticamente.",
+    "importDrop": "Arraste ou anexe seu arquivo de backup",
+    "importDropSub": "Arquivos .db (backup SQLite) ou .json legado são suportados.",
+    "createHint": "Seus dados serão armazenados com segurança no seu dispositivo.",
     "importFileError": "Arquivo inválido ou corrompido. Verifique se é um arquivo exportado pelo Gimbo.",
     "footer": "The Fluid Ledger",
     "privacyPolicy": "Privacy Policy",
@@ -221,7 +219,12 @@
     "categoryTypeIncome": "Receita",
     "categoryTypeExpense": "Despesa",
     "ambientShadows": "Efeito de profundidade",
-    "ambientShadowsDesc": "Aplica sombras suaves nos cards e containers para um visual flutuante"
+    "ambientShadowsDesc": "Aplica sombras suaves nos cards e containers para um visual flutuante",
+    "backupRestore": "Backup e Restauração",
+    "exportDb": "Exportar Backup",
+    "importDb": "Restaurar Backup",
+    "legacyImport": "Migração Legada",
+    "importJson": "Importar arquivo data.json antigo"
   },
   "creditCard": {
     "invoicePeriod": "Período da Fatura",

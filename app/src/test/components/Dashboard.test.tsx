@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import Dashboard from '@/pages/Dashboard'
 import { useDataStore } from '@/store/useDataStore'
@@ -72,7 +72,7 @@ function makeTransaction(overrides: Partial<Transaction> = {}): Transaction {
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  useDataStore.setState({ data: null, unsyncedCount: 0 })
+  useDataStore.setState({ data: null })
 })
 
 // ─── CC-13: accountBalances bifurcation for CREDIT accounts ──────────────────
@@ -96,7 +96,6 @@ describe('Dashboard — CC-13: accountBalances bifurcation', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [account], transactions: [income, expense] }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -110,7 +109,6 @@ describe('Dashboard — CC-13: accountBalances bifurcation', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -149,7 +147,6 @@ describe('Dashboard — CC-13: accountBalances bifurcation', () => {
         accounts: [retailAccount, creditAccount],
         transactions: [retailIncome, creditExpense],
       }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -169,7 +166,6 @@ describe('Dashboard — CC-14: Meus Cartões section', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -182,7 +178,6 @@ describe('Dashboard — CC-14: Meus Cartões section', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -196,7 +191,6 @@ describe('Dashboard — CC-14: Meus Cartões section', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -209,7 +203,6 @@ describe('Dashboard — CC-14: Meus Cartões section', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -223,7 +216,6 @@ describe('Dashboard — CC-14: Meus Cartões section', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount, creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -245,7 +237,6 @@ describe('Dashboard — CC-14: Meus Cartões section', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -259,7 +250,6 @@ describe('Dashboard — CC-14: Meus Cartões section', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -278,7 +268,6 @@ describe('Dashboard — M-25: recent transactions show only first installment', 
     const tx = makeTransaction({ id: 'tx-solo', description: 'Compra simples', date: todayStr })
     useDataStore.setState({
       data: makeDataFile({ accounts: [account], transactions: [tx] }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -299,7 +288,6 @@ describe('Dashboard — M-25: recent transactions show only first installment', 
     )
     useDataStore.setState({
       data: makeDataFile({ accounts: [account], transactions: installments }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -331,7 +319,6 @@ describe('Dashboard — M-25: recent transactions show only first installment', 
     )
     useDataStore.setState({
       data: makeDataFile({ accounts: [account], transactions: [...installments, ...others] }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -372,7 +359,6 @@ describe('Dashboard — CC-22: CREDIT_PAYMENT excluded from totals', () => {
         accounts: [retailAccount, creditAccount],
         transactions: [income, creditPayment],
       }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -409,7 +395,6 @@ describe('Dashboard — CC-22: CREDIT_PAYMENT excluded from totals', () => {
         accounts: [retailAccount, creditAccount],
         transactions: [expense, creditPayment],
       }),
-      unsyncedCount: 0,
     })
 
     render(<Dashboard />)
@@ -428,7 +413,6 @@ describe('Dashboard — M-23: credit card issuer icon color', () => {
     const creditAccount = makeCreditAccount({ issuerIcon: 'nubank' })
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
     render(<Dashboard />)
     expect(screen.getByText('Nexus Visa Gold')).toBeInTheDocument()
@@ -439,7 +423,6 @@ describe('Dashboard — M-23: credit card issuer icon color', () => {
     const creditAccount = makeCreditAccount({ issuerIcon: undefined })
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
     render(<Dashboard />)
     expect(screen.getByText('Nexus Visa Gold')).toBeInTheDocument()
@@ -449,7 +432,6 @@ describe('Dashboard — M-23: credit card issuer icon color', () => {
     const creditAccount = makeCreditAccount({ issuerIcon: 'generic' })
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
     render(<Dashboard />)
     expect(screen.getByText('Nexus Visa Gold')).toBeInTheDocument()

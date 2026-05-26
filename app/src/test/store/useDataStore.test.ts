@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+﻿import { describe, it, expect, beforeEach } from 'vitest'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '../fixtures/dataFile'
 import type { Account, Category, Tag, Transaction, CreditMetadata } from '@/types'
@@ -46,29 +46,27 @@ function makeTransaction(overrides: Partial<Transaction> = {}): Transaction {
 }
 
 beforeEach(() => {
-  useDataStore.setState({ data: null, unsyncedCount: 0 })
+  useDataStore.setState({ data: null })
 })
 
 describe('mutate guard', () => {
   it('returns no state change when data is null', () => {
     useDataStore.getState().addAccount(makeAccount())
     expect(useDataStore.getState().data).toBeNull()
-    expect(useDataStore.getState().unsyncedCount).toBe(0)
   })
 })
 
 describe('addAccount', () => {
-  it('appends account and increments unsyncedCount', () => {
-    useDataStore.setState({ data: makeDataFile(), unsyncedCount: 0 })
+  it('appends account and creates audit entry', () => {
+    useDataStore.setState({ data: makeDataFile() })
     useDataStore.getState().addAccount(makeAccount({ id: 'acc-1', name: 'Conta Corrente' }))
-    const { data, unsyncedCount } = useDataStore.getState()
+    const { data } = useDataStore.getState()
     expect(data?.accounts).toHaveLength(1)
     expect(data?.accounts[0].name).toBe('Conta Corrente')
-    expect(unsyncedCount).toBe(1)
   })
 
   it('creates a CREATE audit entry', () => {
-    useDataStore.setState({ data: makeDataFile(), unsyncedCount: 0 })
+    useDataStore.setState({ data: makeDataFile() })
     useDataStore.getState().addAccount(makeAccount({ id: 'acc-1' }))
     const log = useDataStore.getState().data?.auditLog ?? []
     expect(log.some((e) => e.action === 'CREATE' && e.entityId === 'acc-1')).toBe(true)
@@ -106,7 +104,7 @@ describe('updateAccount', () => {
 
 describe('categories', () => {
   it('addCategory appends and creates audit entry', () => {
-    useDataStore.setState({ data: makeDataFile(), unsyncedCount: 0 })
+    useDataStore.setState({ data: makeDataFile() })
     useDataStore.getState().addCategory(makeCategory({ id: 'cat-1' }))
     expect(useDataStore.getState().data?.categories).toHaveLength(1)
     expect(
@@ -133,7 +131,7 @@ describe('categories', () => {
 
 describe('tags', () => {
   it('addTag appends and creates audit entry', () => {
-    useDataStore.setState({ data: makeDataFile(), unsyncedCount: 0 })
+    useDataStore.setState({ data: makeDataFile() })
     useDataStore.getState().addTag(makeTag({ id: 'tag-1' }))
     expect(useDataStore.getState().data?.tags).toHaveLength(1)
     expect(
@@ -160,7 +158,6 @@ describe('transactions', () => {
   it('addTransaction appends and creates audit entry', () => {
     useDataStore.setState({
       data: makeDataFile({ categories: [makeCategory()] }),
-      unsyncedCount: 0,
     })
     useDataStore.getState().addTransaction(makeTransaction({ id: 'tx-1' }))
     expect(useDataStore.getState().data?.transactions).toHaveLength(1)
@@ -202,11 +199,9 @@ describe('updateUser', () => {
 })
 
 describe('loadData / clearData', () => {
-  it('loadData sets data and resets unsyncedCount', () => {
-    useDataStore.setState({ unsyncedCount: 5 })
+  it('loadData sets data', () => {
     useDataStore.getState().loadData(makeDataFile())
     expect(useDataStore.getState().data).not.toBeNull()
-    expect(useDataStore.getState().unsyncedCount).toBe(0)
   })
 
   it('clearData resets to null', () => {
@@ -297,7 +292,6 @@ describe('CREDIT_PAYMENT handling (CC-21)', () => {
     const checking = makeCheckingAccount()
     useDataStore.setState({
       data: makeDataFile({ accounts: [credit, checking] }),
-      unsyncedCount: 0,
     })
 
     const tx: import('@/types').Transaction = {
@@ -325,7 +319,6 @@ describe('CREDIT_PAYMENT handling (CC-21)', () => {
     const checking = makeCheckingAccount()
     useDataStore.setState({
       data: makeDataFile({ accounts: [credit, checking] }),
-      unsyncedCount: 0,
     })
 
     const tx: import('@/types').Transaction = {
@@ -361,7 +354,6 @@ describe('CREDIT_PAYMENT handling (CC-21)', () => {
     }
     useDataStore.setState({
       data: makeDataFile({ accounts: [checking], categories: [cat] }),
-      unsyncedCount: 0,
     })
 
     const tx: import('@/types').Transaction = {
@@ -451,7 +443,6 @@ describe('addTransaction — installment group (CC-24/CC-25)', () => {
   beforeEach(() => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], categories: [expenseCat] }),
-      unsyncedCount: 0,
     })
   })
 
@@ -635,7 +626,6 @@ describe('deleteInstallmentGroup (CC-27)', () => {
         accounts: [makeAccount({ id: 'acc-1' })],
         transactions: [...installmentTxs, otherTx],
       }),
-      unsyncedCount: 0,
     })
   })
 
@@ -667,11 +657,6 @@ describe('deleteInstallmentGroup (CC-27)', () => {
     expect(entry?.summary).toContain('Viagem')
   })
 
-  it('increments unsyncedCount', () => {
-    const before = useDataStore.getState().unsyncedCount
-    useDataStore.getState().deleteInstallmentGroup('parent-abc')
-    expect(useDataStore.getState().unsyncedCount).toBe(before + 1)
-  })
 })
 
 // ─── deletedIds tombstone (B-11) ──────────────────────────────────────────────

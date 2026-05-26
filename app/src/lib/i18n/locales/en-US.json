@@ -24,11 +24,9 @@
     "language": "Preferred Language",
     "create": "Create Data Vault",
     "import": "Import & Start",
-    "importDrop": "Drag or attach your data.json file",
-    "importDropSub": "Only files exported from Gimbo are supported.",
-    "createFilePickerHint": "In the next step, you'll choose the name and location where your file will be saved.",
-    "createFileCancelled": "File selection cancelled. Please try again.",
-    "createFileFallbackHint": "Your data will be saved locally and a file will be downloaded automatically.",
+    "importDrop": "Drag or attach your backup file",
+    "importDropSub": ".db (SQLite backup) or legacy .json files are supported.",
+    "createHint": "Your data will be stored securely on your device.",
     "importFileError": "Invalid or corrupted file. Make sure it was exported from Gimbo.",
     "footer": "The Fluid Ledger",
     "privacyPolicy": "Privacy Policy",
@@ -221,7 +219,12 @@
     "categoryTypeIncome": "Income",
     "categoryTypeExpense": "Expense",
     "ambientShadows": "Depth effect",
-    "ambientShadowsDesc": "Apply soft shadows to cards and containers for a floating look"
+    "ambientShadowsDesc": "Apply soft shadows to cards and containers for a floating look",
+    "backupRestore": "Backup & Restore",
+    "exportDb": "Export Backup",
+    "importDb": "Restore Backup",
+    "legacyImport": "Legacy Migration",
+    "importJson": "Import old data.json file"
   },
   "creditCard": {
     "invoicePeriod": "Invoice Period",

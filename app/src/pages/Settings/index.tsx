@@ -37,8 +37,6 @@ import {
 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
-import { downloadDataFile, openDataFile, isFsaSupported } from '@/lib/storage/fileSystem'
-import { saveFileHandle } from '@/lib/storage/indexedDb'
 import { formatCurrency, cn, uuid, now, getCurrentInvoiceBalance } from '@/lib/utils'
 import { AUDIT_RETENTION_DEFAULT, SchemaVersionError, validateDataFile } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
@@ -199,7 +197,8 @@ export default function Settings() {
   const [categoryModal, setCategoryModal] = useState<CategoryModalState>({ open: false })
   const [tagModal, setTagModal] = useState<TagModalState>({ open: false })
   const [importError, setImportError] = useState<string | null>(null)
-  const importInputRef = useRef<HTMLInputElement>(null)
+  const importDbInputRef = useRef<HTMLInputElement>(null)
+  const importJsonInputRef = useRef<HTMLInputElement>(null)
 
   function handleSaveProfile() {
     if (!data) return
@@ -211,45 +210,34 @@ export default function Settings() {
     void i18n.changeLanguage(locale)
   }
 
-  function handleExport() {
-    if (data) downloadDataFile(data)
+  async function handleExportDb() {
+    const blob = await storage.exportBlob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'gimbo-backup.db'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
-  async function handleImportFile(file: File) {
+  async function handleImportDb(file: File) {
     setImportError(null)
     try {
-      const text = await file.text()
-      const data = validateDataFile(JSON.parse(text) as unknown)
-      await storage.replaceAll(data)
-      loadData(data)
-    } catch (err) {
-      if (err instanceof SchemaVersionError) {
-        setImportError(t('settings.importVersionError'))
-      } else {
-        setImportError(t('settings.importFileError'))
-      }
+      await storage.importBlob(file)
+      const imported = await storage.loadDataFile()
+      if (imported) loadData(imported)
+    } catch {
+      setImportError(t('settings.importFileError'))
     }
   }
 
-  async function handleImport() {
-    if (!isFsaSupported()) {
-      importInputRef.current?.click()
-      return
-    }
+  async function handleImportJson(file: File) {
     setImportError(null)
-    const result = await openDataFile()
-    if (!result) return
-    const { handle, file } = result
     try {
       const text = await file.text()
-      const data = validateDataFile(JSON.parse(text) as unknown)
-      await storage.replaceAll(data)
-      try {
-        await saveFileHandle(handle)
-      } catch {
-        // Non-fatal — the app functions without a persisted handle.
-      }
-      loadData(data)
+      const imported = validateDataFile(JSON.parse(text) as unknown)
+      await storage.replaceAll(imported)
+      loadData(imported)
     } catch (err) {
       if (err instanceof SchemaVersionError) {
         setImportError(t('settings.importVersionError'))
@@ -778,36 +766,70 @@ export default function Settings() {
                     </span>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+
+                {/* Backup SQLite */}
+                <div className="mb-4">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-on-surface/40">
+                    {t('settings.backupRestore')}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => void handleExportDb()}
+                      className="flex flex-col items-center gap-2 rounded-2xl bg-surface-container border border-outline-variant py-6 hover:bg-surface-container-high transition-colors"
+                    >
+                      <Download size={22} className="text-on-surface/60" strokeWidth={1.5} />
+                      <span className="text-sm font-medium text-on-surface">
+                        {t('settings.exportDb')}
+                      </span>
+                      <span className="text-xs text-on-surface/40">.db</span>
+                    </button>
+                    <button
+                      onClick={() => importDbInputRef.current?.click()}
+                      className="flex flex-col items-center gap-2 rounded-2xl bg-surface-container border border-outline-variant py-6 hover:bg-surface-container-high transition-colors"
+                    >
+                      <Upload size={22} className="text-on-surface/60" strokeWidth={1.5} />
+                      <span className="text-sm font-medium text-on-surface">
+                        {t('settings.importDb')}
+                      </span>
+                      <span className="text-xs text-on-surface/40">.db</span>
+                    </button>
+                    <input
+                      ref={importDbInputRef}
+                      type="file"
+                      accept=".db"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) void handleImportDb(e.target.files[0])
+                        e.target.value = ''
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Migração de arquivo JSON legado */}
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-on-surface/40">
+                    {t('settings.legacyImport')}
+                  </p>
                   <button
-                    onClick={handleExport}
-                    className="flex flex-col items-center gap-2 rounded-2xl bg-surface-container border border-outline-variant py-6 hover:bg-surface-container-high transition-colors"
+                    onClick={() => importJsonInputRef.current?.click()}
+                    className="flex w-full items-center gap-3 rounded-2xl bg-surface-container border border-outline-variant px-5 py-4 hover:bg-surface-container-high transition-colors"
                   >
-                    <Download size={22} className="text-on-surface/60" strokeWidth={1.5} />
-                    <span className="text-sm font-medium text-on-surface">
-                      {t('settings.exportData')}
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => void handleImport()}
-                    className="flex flex-col items-center gap-2 rounded-2xl bg-surface-container border border-outline-variant py-6 hover:bg-surface-container-high transition-colors"
-                  >
-                    <Upload size={22} className="text-on-surface/60" strokeWidth={1.5} />
-                    <span className="text-sm font-medium text-on-surface">
-                      {t('settings.importData')}
-                    </span>
+                    <Upload size={18} className="text-on-surface/40" strokeWidth={1.5} />
+                    <span className="text-sm text-on-surface/60">{t('settings.importJson')}</span>
                   </button>
                   <input
-                    ref={importInputRef}
+                    ref={importJsonInputRef}
                     type="file"
                     accept=".json"
                     className="hidden"
                     onChange={(e) => {
-                      if (e.target.files?.[0]) void handleImportFile(e.target.files[0])
+                      if (e.target.files?.[0]) void handleImportJson(e.target.files[0])
                       e.target.value = ''
                     }}
                   />
                 </div>
+
                 {importError && (
                   <div className="mt-3 rounded-xl border border-tertiary/20 bg-tertiary/5 p-3 space-y-2">
                     <p className="text-xs text-tertiary">{importError}</p>
@@ -815,7 +837,7 @@ export default function Settings() {
                       {t('settings.exportLocalDataHint')}
                     </p>
                     <button
-                      onClick={handleExport}
+                      onClick={() => void handleExportDb()}
                       className="flex items-center gap-1.5 rounded-lg bg-surface-container border border-outline-variant px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors"
                     >
                       <Download size={12} strokeWidth={2} />
