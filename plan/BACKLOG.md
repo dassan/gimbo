@@ -197,6 +197,29 @@ Todos os utilitários devem ser funções puras adicionadas em `src/lib/utils.ts
 
 ---
 
+## Storage SQLite — Remoção da Camada FSA/JSON
+
+Substituição completa da camada de persistência baseada em File System Access API (FSA) + JSON pelo SQLite/OPFS já implementado. Motivação: UX mais simples (sem file picker), confiabilidade (ACID vs. JSON frágil), e fundação para sync nativo com app mobile futuro (SQLite é o padrão em ambas as plataformas). Risco aceito: dados no OPFS são perdidos se o browser limpar o site storage — mitigado pelos itens ST-01 (export/import de backup). As fases são dependentes — não iniciar sem a anterior concluída e com testes passando.
+
+### Fase 1 — Remoção da camada FSA
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| ST-01 | **Deletar `lib/storage/fileSystem.ts`, `sync.ts`, `merge.ts`, `indexedDb.ts` e `lib/tabGuard.ts`.** Antes da deleção, extrair `loadWorkspace()`/`saveWorkspace()` (localStorage, sem FSA) para novo arquivo `lib/storage/workspace.ts` e atualizar o import em `useWorkspaceStore.ts`. Deletar também todos os testes correspondentes: `test/lib/storage/fileSystem.test.ts`, `sync.test.ts`, `merge.test.ts`, `indexedDb.test.ts`, `test/lib/tabGuard.test.ts`. | crítica | aberto |
+| ST-02 | **Simplificar `store/useDataStore.ts`.** Remover do estado: `unsyncedCount`, `conflictData`, `fileHandleLost`, `permissionNeeded`, `isSecondaryTab`, `writeError`. Remover métodos: `persist()` e `resolveConflict()`. Simplificar `mutate()`: remover `unsyncedCount + 1`. Remover imports FSA. Deletar arquivos de teste obsoletos: `useDataStore.persist.test.ts`, `useDataStore.conflict.test.ts`, `useDataStore.writeError.test.ts`, `useDataStore.secondaryTab.test.ts`, `useDataStore.unsyncedCount.test.ts`. | crítica | aberto |
+| ST-03 | **Simplificar `App.tsx`.** Remover imports e chamadas de `loadFileHandle`, `clearIdb`, `checkHandlePermission`, `initTabGuard`. Remover bloco de restauração do FileHandle e o `useEffect` do tabGuard. **Manter temporariamente** o bloco de migração IDB→SQLite com comentário explícito de remoção em ST-06. Boot final: `storage.loadDataFile()` → `loadData()`. | crítica | aberto |
+| ST-04 | **Simplificar `AppLayout.tsx` e `Navbar.tsx`.** AppLayout: remover seletores FSA do store, banners (aba secundária, "browser sem FSA"), `ConflictModal`, `Toast` de erro de escrita, `useEffect` do writeError, props de sync no Navbar. Navbar: remover props `unsyncedCount`, `fileHandleLost`, `permissionNeeded`, `writeError`, `fsaSupported`, `onSync`; remover botão RefreshCw com badge; deletar `components/ConflictModal.tsx` e `test/components/ConflictModal.test.tsx`. | crítica | aberto |
+| ST-05 | **Simplificar `Onboarding/index.tsx` e `Settings/index.tsx`.** Onboarding: remover imports FSA, `handleImportPicker()`, botão "Abrir via Picker"; simplificar `handleCreate()` para apenas `storage.replaceAll(data)` → `loadData()` → navigate; atualizar hint de "Na próxima etapa você escolherá onde salvar" para "Seus dados ficam armazenados com segurança no seu navegador". Settings (aba Dados): substituir `handleExport()` JSON por `handleExportDb()` (`storage.exportBlob()` → download `gimbo-backup.db`); adicionar `handleImportDb()` (`input[accept=".db"]` → `storage.importBlob()` → `loadData()`); manter `handleImportJson()` sem FSA picker (apenas file input) como caminho de migração para usuários com `data.json` antigo; adicionar chaves i18n `settings.exportDb`, `settings.exportDbDesc`, `settings.importDb`, `settings.importDbDesc`. Remover chaves i18n obsoletas: `sync.*` (secondaryTabWarning, noFsaNotice, noFsaDismiss, writeError, writeErrorTooltip, permissionNeededTooltip, fileLostTooltip, tooltip, syncNow), `onboarding.createFilePickerHint`, `onboarding.createFileFallbackHint`, `onboarding.createFileCancelled`. | crítica | aberto |
+
+### Fase 2 — Dívida técnica pós-remoção
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| ST-06 | **Remover bloco de migração IDB→SQLite do `App.tsx`.** O bloco foi mantido intencionalmente em ST-03 para dar janela de transição de ~90 dias aos usuários com dados no IDB legado. Remover após esse prazo. Impacto zero em novos usuários (IDB sempre vazio). | média | aberto |
+| ST-07 | **Atualizar fixtures E2E para semear SQLite diretamente.** Substituir `seedIdb()` nos specs E2E por `seedSqlite()` que chama `storage.replaceAll()` via `page.evaluate()`. Executar apenas após ST-06, pois enquanto o bloco IDB existir, o seed indireto via IDB ainda funciona. | média | aberto |
+
+---
+
 ## Patrimônio Líquido (Net Worth) — F-24
 
 Página dedicada na navbar que mostra o patrimônio líquido do usuário: todas as contas não-CREDIT somam como ativos; contas CREDIT contribuem como passivos (fatura em aberto deduzida). Além do snapshot atual, exibe gráfico de evolução histórica mensal. As fases são dependentes entre si — não iniciar uma fase sem a anterior estar completa e com testes passando.

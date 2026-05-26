@@ -116,82 +116,69 @@ Ação do usuário
 | Camada | Tecnologia | Escopo | Chave / Local |
 |--------|-----------|--------|---------------|
 | Memória | Zustand (`useDataStore.data`) | Sessão atual | — |
-| Cache | IndexedDB `nexus-db` v2 | Sobrevive reload | `ledger/'current'` |
-| Sync meta | IndexedDB `nexus-db` v2 | Sobrevive reload | `ledger/'sync-meta'` |
-| FileHandle | IndexedDB `nexus-db` v2 | Sobrevive reload | `handles/'data'` |
-| Disco | File System Access API (`data.json`) | Portável, permanente | Escolhido pelo usuário |
+| Primária | SQLite via `wa-sqlite` + OPFS | Sobrevive reload, persistente no browser | `gimbo.db` no OPFS |
 | Config UI | localStorage `nexus_workspace` | Sobrevive reload | theme, locale, defaultView, useAmbientShadows |
-| FSA notice | localStorage `nexus_fsa_notice_seen` | Sobrevive reload | banner dismissível |
+
+> **Decisão arquitetural (2026-05-26):** A camada FSA/JSON (File System Access API + `data.json`) foi removida em favor do SQLite/OPFS. Motivação: UX mais simples, confiabilidade ACID vs. JSON frágil, e fundação para sync nativo com app mobile futuro (SQLite é padrão em iOS/Android). O risco de perda de dados por limpeza de cache do browser é aceito como dívida temporária, mitigado pelo mecanismo de export/import do arquivo `.db` (ST-01). Detalhes do plano em `BACKLOG.md` épico ST.
+
+> **Migração IDB legado (transitório):** `App.tsx` mantém um bloco de migração IDB→SQLite enquanto usuários com dados na versão anterior fazem a transição. Remover em ST-06 (~90 dias após deploy).
+
+---
+
+## Fluxo de Dados Principal
+
+```
+Ação do usuário
+  → Método do store (ex: addTransaction())
+  → mutate(): structuredClone + aplica mutação
+  → debouncedReplaceAll() em 300ms
+  → storage.replaceAll(data) — escreve SQLite via worker
+```
 
 ---
 
 ## Sequência de Startup (`App.tsx`)
 
 ```
-init() — executa em paralelo:
-  1. initWorkspace()           — carrega localStorage → useWorkspaceStore
-  2. loadFromIdb()             — carrega DataFile do IDB → useDataStore.loadData()
-  3. loadFileHandle()          — carrega FileSystemFileHandle do IDB
-  4. loadSyncMeta()            — carrega { unsyncedCount } do IDB
+init():
+  1. initWorkspace()              — carrega localStorage → useWorkspaceStore
+  2. storage.loadDataFile()       — lê SQLite (OPFS) → DataFile | null
+  3. [migração IDB→SQLite]        — transitório: se SQLite vazio e IDB tem dados,
+                                    migra e limpa IDB. Remover em ST-06.
+  4. Se há dados → loadData(saved)
 
-Após carregar:
-  - Se IDB tem dados → loadData(saved) → restaura unsyncedCount
-  - Se há handle → checkHandlePermission(handle)
-      'granted' → _dataHandle injetado
-      'prompt'  → permissionNeeded = true
-      'denied'  → fileHandleLost = true
-  - initTabGuard() — BroadcastChannel
-  - Route guard: data !== null → AppLayout, senão → /onboarding
+  Route guard: data !== null → AppLayout, senão → /onboarding
 ```
 
 ---
 
-## Máquina de Estados do FileHandle
+## Arquitetura do Storage SQLite
 
 ```
-startup → checkHandlePermission(handle)
-  ├── 'granted'  → _dataHandle injetado; sync pronto
-  ├── 'prompt'   → _pendingHandle; ícone azul
-  └── 'denied'   → fileHandleLost = true; ícone vermelho
-
-persist() →
-  ├── isPermissionNeeded() → requestHandlePermission()
-  ├── isHandleLost() → saveDataFile() (picker)
-  └── normal → readCurrentDataFile() → conflito? → syncToFile()
+Main Thread
+  StorageService (src/services/storage/StorageService.ts)
+    └── postMessage ──────────────────────────────────────────────► Worker
+                                                          (storage/worker.ts)
+                                                            wa-sqlite + OPFS VFS
+                                                            gimbo.db (OPFS root)
+    ◄── onmessage (result | error) ──────────────────────────────── Worker
 ```
 
----
-
-## Dois Caminhos de Persistência (`sync.ts`)
-
-| Função | Uso | Comportamento |
-|--------|-----|---------------|
-| `importFileToIdb(file)` | Onboarding e Settings import | Valida Zod, limpa IDB, salva (replace total) |
-| `syncToFile(local, diskSnapshot)` | `persist()` recorrente | Merge por UUID + write |
-
-> **CRÍTICO**: nunca misturar os dois caminhos.
+- **Fila sequencial no worker**: cada mensagem é enfileirada via Promise chain — mutations nunca interleiam entre awaits.
+- **WAL mode**: `PRAGMA journal_mode=WAL` — melhor concorrência de leitura; checkpoint antes de cada export.
+- **`replaceAll()`**: operação atômica em transação SQL — substitui todas as tabelas de uma vez.
+- **`exportBlob()`**: WAL checkpoint + leitura do arquivo OPFS → `ArrayBuffer` → transferido sem cópia.
+- **`importBlob()`**: fecha DB, escreve bytes no OPFS, remove WAL/journal, reabre e re-executa migrations.
 
 ---
 
-## Estratégia de Merge (`merge.ts`)
+## Backup e Restore (aba Dados em Configurações)
 
-- `schemaVersion`: local wins
-- `user`: local wins
-- `settings`: local wins, **exceto `fileCreatedAt`** (vem do disco)
-- `accounts`, `categories`, `tags`, `transactions`: union por `id` — local wins; itens só no disco são recuperados (exceto tombstones em `deletedIds`)
-- `auditLog`: union por `id`, ordenado por `timestamp` ASC, retenção aplicada
-- Detecção de conflito: `File.lastModified > _lastWrittenModified` → `ConflictModal`
-
----
-
-## Modo Fallback sem FSA (Firefox/Safari)
-
-Quando `typeof window?.showSaveFilePicker !== 'function'`:
-- Navbar: ícone de sync oculto
-- AppLayout: banner dismissível
-- Onboarding "Novo Perfil": `downloadDataFile()` imediato
-- Settings Import: `<input type="file">` em vez de `openDataFile()`
-- Settings Export: `downloadDataFile()` (sem mudança)
+| Ação | Mecanismo |
+|------|-----------|
+| Exportar backup | `storage.exportBlob()` → download `gimbo-backup.db` |
+| Importar backup | `input[accept=".db"]` → `storage.importBlob()` → `loadData()` |
+| Importar JSON legado | `input[accept=".json"]` → `validateDataFile()` → `storage.replaceAll()` → `loadData()` |
 
 ---
 
