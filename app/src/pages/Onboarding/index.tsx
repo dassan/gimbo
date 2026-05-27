@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { ShieldCheck, Lock, ArrowRight, FileJson } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
-import { createEmptyDataFile, validateDataFile } from '@/lib/storage/schema'
+import { createEmptyDataFile } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
 import { cn } from '@/lib/utils'
 import type { Locale } from '@/types'
@@ -39,16 +39,9 @@ export default function Onboarding() {
   async function handleImportFile(file: File) {
     setFileError(null)
     try {
-      if (file.name.endsWith('.db')) {
-        await storage.importBlob(file)
-        const imported = await storage.loadDataFile()
-        if (imported) loadData(imported)
-      } else {
-        const text = await file.text()
-        const data = validateDataFile(JSON.parse(text) as unknown)
-        await storage.replaceAll(data)
-        loadData(data)
-      }
+      await storage.importBlob(file)
+      const imported = await storage.loadDataFile()
+      if (imported) loadData(imported)
       void navigate('/dashboard')
     } catch {
       setFileError(t('onboarding.importFileError'))
@@ -202,9 +195,7 @@ export default function Onboarding() {
                   </div>
                 </div>
 
-                <p className="text-xs text-on-surface/40 pt-1">
-                  {t('onboarding.createHint')}
-                </p>
+                <p className="text-xs text-on-surface/40 pt-1">{t('onboarding.createHint')}</p>
 
                 {fileError && <p className="text-xs text-red-500">{fileError}</p>}
 
@@ -250,7 +241,7 @@ export default function Onboarding() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".db,.json"
+                    accept=".db"
                     className="hidden"
                     onChange={(e) => {
                       if (e.target.files?.[0]) void handleImportFile(e.target.files[0])

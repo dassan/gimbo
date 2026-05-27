@@ -25,7 +25,7 @@
     "create": "Create Data Vault",
     "import": "Import & Start",
     "importDrop": "Drag or attach your backup file",
-    "importDropSub": ".db (SQLite backup) or legacy .json files are supported.",
+    "importDropSub": "Select a .db file exported from Gimbo.",
     "createHint": "Your data will be stored securely on your device.",
     "importFileError": "Invalid or corrupted file. Make sure it was exported from Gimbo.",
     "footer": "The Fluid Ledger",
