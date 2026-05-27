@@ -44,14 +44,24 @@ async function renderDataSection() {
   await userEvent.click(screen.getByRole('button', { name: 'settings.dataFile' }))
 }
 
-async function triggerJsonImportFailure() {
+function getDbInput(): HTMLInputElement {
   const inputs = document.querySelectorAll('input[type="file"]')
-  const jsonInput = Array.from(inputs).find((el) =>
+  return Array.from(inputs).find((el) =>
+    (el as HTMLInputElement).accept.includes('.db')
+  ) as HTMLInputElement
+}
+
+function getJsonInput(): HTMLInputElement {
+  const inputs = document.querySelectorAll('input[type="file"]')
+  return Array.from(inputs).find((el) =>
     (el as HTMLInputElement).accept.includes('.json')
   ) as HTMLInputElement
+}
+
+async function triggerJsonImportFailure() {
   const file = new File(['not valid json'], 'corrupt.json', { type: 'application/json' })
-  await userEvent.upload(jsonInput, file)
-  await screen.findByText('settings.importFileError')
+  await userEvent.upload(getJsonInput(), file)
+  await screen.findByText('settings.importErrorGeneric')
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -61,7 +71,7 @@ describe('Settings — corrupted JSON import (M-12)', () => {
     await renderDataSection()
     await triggerJsonImportFailure()
 
-    expect(screen.getByText('settings.importFileError')).toBeInTheDocument()
+    expect(screen.getByText('settings.importErrorGeneric')).toBeInTheDocument()
   })
 
   it('shows the emergency export button after import failure', async () => {
@@ -94,7 +104,96 @@ describe('Settings — valid JSON import', () => {
     await userEvent.upload(jsonInput, file)
 
     await new Promise((r) => setTimeout(r, 50))
-    expect(screen.queryByText('settings.importFileError')).not.toBeInTheDocument()
+    expect(screen.queryByText('settings.importErrorGeneric')).not.toBeInTheDocument()
+  })
+})
+
+// ─── Settings — restore backup: códigos de erro ───────────────────────────────
+
+describe('Settings — restore backup: error codes', () => {
+  it('shows ERR_RESTORE_002 and importErrorSchema for a JSON with future schema version', async () => {
+    await renderDataSection()
+    const file = new File(
+      [JSON.stringify({ ...makeDataFile(), schemaVersion: 99 })],
+      'future.json',
+      { type: 'application/json' }
+    )
+    await userEvent.upload(getJsonInput(), file)
+    await screen.findByText('settings.importErrorSchema')
+    expect(screen.getByText('ERR_RESTORE_002')).toBeInTheDocument()
+  })
+
+  it('shows ERR_RESTORE_003 and importErrorValidation for a JSON with invalid structure', async () => {
+    await renderDataSection()
+    const file = new File([JSON.stringify({ schemaVersion: 2 })], 'invalid.json', {
+      type: 'application/json',
+    })
+    await userEvent.upload(getJsonInput(), file)
+    await screen.findByText('settings.importErrorValidation')
+    expect(screen.getByText('ERR_RESTORE_003')).toBeInTheDocument()
+  })
+
+  it('shows ERR_RESTORE_004 and importErrorCorrupt when DB import throws', async () => {
+    vi.mocked(storage).importBlob.mockRejectedValueOnce(new Error('corrupt db'))
+    await renderDataSection()
+    await userEvent.upload(getDbInput(), new File(['not sqlite'], 'corrupt.db'))
+    await screen.findByText('settings.importErrorCorrupt')
+    expect(screen.getByText('ERR_RESTORE_004')).toBeInTheDocument()
+  })
+
+  it('replaces a previous error when a new import is triggered', async () => {
+    vi.mocked(storage).importBlob.mockRejectedValueOnce(new Error('corrupt db'))
+    await renderDataSection()
+    await userEvent.upload(getDbInput(), new File(['bad'], 'bad.db'))
+    await screen.findByText('settings.importErrorCorrupt')
+
+    // second import succeeds — error must disappear
+    vi.mocked(storage).loadDataFile.mockResolvedValueOnce(makeDataFile())
+    await userEvent.upload(getDbInput(), new File(['good'], 'good.db'))
+    await screen.findByText('settings.importSuccess')
+    expect(screen.queryByText('settings.importErrorCorrupt')).not.toBeInTheDocument()
+  })
+})
+
+// ─── Settings — restore backup: feedback de sucesso ───────────────────────────
+
+describe('Settings — restore backup: success feedback', () => {
+  it('shows success Toast after valid JSON import', async () => {
+    await renderDataSection()
+    const file = new File([JSON.stringify(makeDataFile())], 'backup.json', {
+      type: 'application/json',
+    })
+    await userEvent.upload(getJsonInput(), file)
+    await screen.findByText('settings.importSuccess')
+  })
+
+  it('shows success Toast after valid DB import', async () => {
+    vi.mocked(storage).loadDataFile.mockResolvedValueOnce(makeDataFile())
+    await renderDataSection()
+    await userEvent.upload(getDbInput(), new File(['sqlite-bytes'], 'backup.db'))
+    await screen.findByText('settings.importSuccess')
+  })
+
+  it('does not show an error message on successful import', async () => {
+    await renderDataSection()
+    const file = new File([JSON.stringify(makeDataFile())], 'backup.json', {
+      type: 'application/json',
+    })
+    await userEvent.upload(getJsonInput(), file)
+    await screen.findByText('settings.importSuccess')
+    expect(screen.queryByText('ERR_RESTORE_001')).not.toBeInTheDocument()
+    expect(screen.queryByText('ERR_RESTORE_003')).not.toBeInTheDocument()
+  })
+
+  it('dismisses the success Toast when the close button is clicked', async () => {
+    await renderDataSection()
+    const file = new File([JSON.stringify(makeDataFile())], 'backup.json', {
+      type: 'application/json',
+    })
+    await userEvent.upload(getJsonInput(), file)
+    await screen.findByText('settings.importSuccess')
+    await userEvent.click(screen.getByRole('button', { name: /dismiss/i }))
+    expect(screen.queryByText('settings.importSuccess')).not.toBeInTheDocument()
   })
 })
 

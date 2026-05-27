@@ -35,11 +35,13 @@ import {
   Wrench,
   Gift,
 } from 'lucide-react'
+import { ZodError } from 'zod'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { formatCurrency, cn, uuid, now, getCurrentInvoiceBalance } from '@/lib/utils'
 import { AUDIT_RETENTION_DEFAULT, SchemaVersionError, validateDataFile } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
+import Toast from '@/components/Toast'
 import type {
   Account,
   AccountType,
@@ -129,6 +131,18 @@ type ModalState =
 type CategoryModalState = { open: false } | { open: true; category: Category | null }
 type TagModalState = { open: false } | { open: true; tag: Tag | null }
 
+type ImportResult =
+  | { status: 'success' }
+  | { status: 'error'; message: string; code: string }
+  | null
+
+const IMPORT_ERROR_CODES = {
+  GENERIC: 'ERR_RESTORE_001',
+  SCHEMA_VERSION: 'ERR_RESTORE_002',
+  VALIDATION: 'ERR_RESTORE_003',
+  CORRUPT: 'ERR_RESTORE_004',
+} as const
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function relativeTime(iso: string): string {
@@ -196,7 +210,7 @@ export default function Settings() {
   const [modal, setModal] = useState<ModalState>({ open: false })
   const [categoryModal, setCategoryModal] = useState<CategoryModalState>({ open: false })
   const [tagModal, setTagModal] = useState<TagModalState>({ open: false })
-  const [importError, setImportError] = useState<string | null>(null)
+  const [importResult, setImportResult] = useState<ImportResult>(null)
   const importDbInputRef = useRef<HTMLInputElement>(null)
   const importJsonInputRef = useRef<HTMLInputElement>(null)
 
@@ -221,28 +235,48 @@ export default function Settings() {
   }
 
   async function handleImportDb(file: File) {
-    setImportError(null)
+    setImportResult(null)
     try {
       await storage.importBlob(file)
       const imported = await storage.loadDataFile()
       if (imported) loadData(imported)
+      setImportResult({ status: 'success' })
     } catch {
-      setImportError(t('settings.importFileError'))
+      setImportResult({
+        status: 'error',
+        message: t('settings.importErrorCorrupt'),
+        code: IMPORT_ERROR_CODES.CORRUPT,
+      })
     }
   }
 
   async function handleImportJson(file: File) {
-    setImportError(null)
+    setImportResult(null)
     try {
       const text = await file.text()
       const imported = validateDataFile(JSON.parse(text) as unknown)
       await storage.replaceAll(imported)
       loadData(imported)
+      setImportResult({ status: 'success' })
     } catch (err) {
       if (err instanceof SchemaVersionError) {
-        setImportError(t('settings.importVersionError'))
+        setImportResult({
+          status: 'error',
+          message: t('settings.importErrorSchema'),
+          code: IMPORT_ERROR_CODES.SCHEMA_VERSION,
+        })
+      } else if (err instanceof ZodError) {
+        setImportResult({
+          status: 'error',
+          message: t('settings.importErrorValidation'),
+          code: IMPORT_ERROR_CODES.VALIDATION,
+        })
       } else {
-        setImportError(t('settings.importFileError'))
+        setImportResult({
+          status: 'error',
+          message: t('settings.importErrorGeneric'),
+          code: IMPORT_ERROR_CODES.GENERIC,
+        })
       }
     }
   }
@@ -830,9 +864,14 @@ export default function Settings() {
                   />
                 </div>
 
-                {importError && (
+                {importResult?.status === 'error' && (
                   <div className="mt-3 rounded-xl border border-tertiary/20 bg-tertiary/5 p-3 space-y-2">
-                    <p className="text-xs text-tertiary">{importError}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs text-tertiary">{importResult.message}</p>
+                      <span className="shrink-0 font-mono text-[10px] text-tertiary/70 bg-tertiary/10 rounded px-1.5 py-0.5">
+                        {importResult.code}
+                      </span>
+                    </div>
                     <p className="text-xs text-on-surface/40">
                       {t('settings.exportLocalDataHint')}
                     </p>
@@ -844,6 +883,13 @@ export default function Settings() {
                       {t('settings.exportLocalData')}
                     </button>
                   </div>
+                )}
+
+                {importResult?.status === 'success' && (
+                  <Toast
+                    message={t('settings.importSuccess')}
+                    onDismiss={() => setImportResult(null)}
+                  />
                 )}
               </Section>
             )}

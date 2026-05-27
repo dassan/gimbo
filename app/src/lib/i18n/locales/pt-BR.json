@@ -224,7 +224,13 @@
     "exportDb": "Exportar Backup",
     "importDb": "Restaurar Backup",
     "legacyImport": "Migração Legada",
-    "importJson": "Importar arquivo data.json antigo"
+    "importJson": "Importar arquivo data.json antigo",
+    "importSuccess": "Backup restaurado com sucesso.",
+    "importErrorGeneric": "Erro inesperado ao importar o arquivo.",
+    "importErrorSchema": "Arquivo criado em versão mais recente do Gimbo. Atualize o app.",
+    "importErrorValidation": "Estrutura de dados inválida ou incompleta.",
+    "importErrorCorrupt": "Arquivo corrompido ou ilegível.",
+    "importErrorCode": "Código: {{code}}"
   },
   "creditCard": {
     "invoicePeriod": "Período da Fatura",
