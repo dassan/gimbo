@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test'
 import { fileURLToPath } from 'url'
-import { readFileSync } from 'fs'
 import path from 'path'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))

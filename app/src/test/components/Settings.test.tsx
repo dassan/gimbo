@@ -78,6 +78,7 @@ describe('Settings — restore backup: error codes', () => {
     await userEvent.upload(getDbInput(), new File(['bad'], 'bad.db'))
     await screen.findByText('settings.importErrorCorrupt')
     await userEvent.click(screen.getByRole('button', { name: /settings\.exportLocalData/i }))
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(vi.mocked(storage).exportBlob).toHaveBeenCalled()
   })
 
