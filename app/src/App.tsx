@@ -2,9 +2,8 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { useDataStore } from '@/store/useDataStore'
-import { loadFromIdb, loadFileHandle, loadSyncMeta } from '@/lib/storage/indexedDb'
-import { checkHandlePermission } from '@/lib/storage/fileSystem'
-import { initTabGuard } from '@/lib/tabGuard'
+import { storage } from '@/services/storage'
+import { validateDataFile } from '@/lib/storage/schema'
 import { isDemoMode, loadDemoData } from '@/lib/demo'
 import AppLayout from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -37,7 +36,6 @@ export default function App() {
       return
     }
 
-    // system: follow prefers-color-scheme
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const apply = (matches: boolean) => root.classList.toggle('dark', matches)
     apply(mq.matches)
@@ -55,28 +53,27 @@ export default function App() {
           return
         }
 
-        const [saved, handle, syncMeta] = await Promise.all([
-          loadFromIdb(),
-          loadFileHandle(),
-          loadSyncMeta(),
-        ])
-        if (saved) {
-          loadData(saved)
-          // loadData() resets unsyncedCount to 0; restore the persisted count
-          // so the badge survives page reloads.
-          if (syncMeta && syncMeta.unsyncedCount > 0) {
-            useDataStore.setState({ unsyncedCount: syncMeta.unsyncedCount })
+        if (import.meta.env.DEV) {
+          const params = new URLSearchParams(window.location.search)
+          if (params.has('devSeed')) {
+            const res = await fetch('/dev/seed.json')
+            const data = validateDataFile((await res.json()) as unknown)
+            await storage.replaceAll(data)
+            window.history.replaceState(null, '', window.location.pathname)
+            loadData(data)
+            setHydrated(true)
+            return
+          }
+          if (params.has('devReset')) {
+            await storage.clearAll()
+            window.history.replaceState(null, '', window.location.pathname)
+            setHydrated(true)
+            return
           }
         }
-        if (handle) {
-          const state = await checkHandlePermission(handle)
-          if (state === 'prompt') {
-            useDataStore.setState({ permissionNeeded: true })
-          } else if (state === 'denied') {
-            useDataStore.setState({ fileHandleLost: true })
-          }
-          // 'granted' → handle injected into _dataHandle by checkHandlePermission
-        }
+
+        const saved = await storage.loadDataFile()
+        if (saved) loadData(saved)
       } catch (err) {
         setInitError(err instanceof Error ? err.message : 'Erro ao carregar dados locais')
       } finally {
@@ -86,15 +83,6 @@ export default function App() {
     void init()
   }, [initWorkspace, loadData])
 
-  useEffect(() => {
-    if (isDemoMode()) return
-    return initTabGuard(
-      () => useDataStore.setState({ isSecondaryTab: true }),
-      () => useDataStore.setState({ isSecondaryTab: false })
-    )
-  }, [])
-
-  // Avoid flash of onboarding while IDB is loading
   if (!hydrated) return null
 
   if (initError) {
@@ -103,7 +91,7 @@ export default function App() {
         <p className="text-sm font-semibold text-on-surface">
           Não foi possível carregar seus dados
         </p>
-        <p className="max-w-sm text-xs text-on-surface/50">{initError}</p>
+        <p className="max-w-xs text-xs text-on-surface/50">{initError}</p>
       </div>
     )
   }

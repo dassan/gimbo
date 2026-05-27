@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { WorkspaceFile, Theme, Locale } from '@/types'
-import { loadWorkspace, saveWorkspace } from '@/lib/storage/fileSystem'
+import { loadWorkspace, saveWorkspace } from '@/lib/storage/workspace'
 import { createDefaultWorkspace } from '@/lib/storage/schema'
 
 interface WorkspaceStore {

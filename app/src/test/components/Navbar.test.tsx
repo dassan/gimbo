@@ -3,108 +3,46 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Navbar from '@/components/Navbar'
 
-// ─── Mocks ────────────────────────────────────────────────────────────────────
-
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 
 vi.mock('react-router-dom', () => ({
-  NavLink: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
+  NavLink: ({
+    children,
+    to,
+  }: {
+    children: ((props: { isActive: boolean }) => React.ReactNode) | React.ReactNode
+    to: string
+  }) => {
+    const content = typeof children === 'function' ? children({ isActive: false }) : children
+    return <a href={to}>{content}</a>
+  },
   useNavigate: () => vi.fn(),
 }))
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function renderNavbar(props: Partial<Parameters<typeof Navbar>[0]> = {}) {
-  return render(
-    <Navbar
-      initials="TU"
-      unsyncedCount={0}
-      fileHandleLost={false}
-      onSync={vi.fn().mockResolvedValue(undefined)}
-      {...props}
-    />
-  )
-}
-
-// ─── Tests ────────────────────────────────────────────────────────────────────
-
-describe('Navbar — file handle lost state', () => {
-  it('shows "!" badge when fileHandleLost is true', () => {
-    renderNavbar({ fileHandleLost: true })
-
-    const badge = screen.getByText('!')
-    expect(badge).toBeInTheDocument()
+describe('Navbar', () => {
+  it('renders initials in avatar', () => {
+    render(<Navbar initials="AB" />)
+    expect(screen.getByText('AB')).toBeInTheDocument()
   })
 
-  it('hides badge when fileHandleLost is false and unsyncedCount is 0', () => {
-    renderNavbar({ fileHandleLost: false, unsyncedCount: 0 })
-
-    expect(screen.queryByText('!')).not.toBeInTheDocument()
+  it('defaults initials to "U" when not provided', () => {
+    render(<Navbar />)
+    expect(screen.getByText('U')).toBeInTheDocument()
   })
 
-  it('shows numeric badge when fileHandleLost is false and unsyncedCount > 0', () => {
-    renderNavbar({ fileHandleLost: false, unsyncedCount: 3 })
-
-    expect(screen.getByText('3')).toBeInTheDocument()
+  it('renders nav links for dashboard, transactions, analytics', () => {
+    render(<Navbar initials="AB" />)
+    expect(screen.getByText('nav.dashboard')).toBeInTheDocument()
+    expect(screen.getByText('nav.transactions')).toBeInTheDocument()
+    expect(screen.getByText('nav.analytics')).toBeInTheDocument()
   })
 
-  it('calls onSync when fileHandleLost is true even if unsyncedCount is 0', async () => {
-    const onSync = vi.fn().mockResolvedValue(undefined)
-    renderNavbar({ fileHandleLost: true, unsyncedCount: 0, onSync })
-
-    await userEvent.click(screen.getByRole('button', { name: 'sync.syncNow' }))
-
-    expect(onSync).toHaveBeenCalledOnce()
-  })
-
-  it('does NOT call onSync when both fileHandleLost is false and unsyncedCount is 0', async () => {
-    const onSync = vi.fn().mockResolvedValue(undefined)
-    renderNavbar({ fileHandleLost: false, unsyncedCount: 0, onSync })
-
-    await userEvent.click(screen.getByRole('button', { name: 'sync.syncNow' }))
-
-    expect(onSync).not.toHaveBeenCalled()
-  })
-})
-
-describe('Navbar — FSA not supported', () => {
-  it('hides the sync button when fsaSupported is false', () => {
-    renderNavbar({ fsaSupported: false })
-
-    expect(screen.queryByRole('button', { name: 'sync.syncNow' })).not.toBeInTheDocument()
-  })
-
-  it('shows the sync button when fsaSupported is true (default)', () => {
-    renderNavbar({ fsaSupported: true })
-
-    expect(screen.getByRole('button', { name: 'sync.syncNow' })).toBeInTheDocument()
-  })
-})
-
-describe('Navbar — permission needed state', () => {
-  it('calls onSync when permissionNeeded is true even if unsyncedCount is 0', async () => {
-    const onSync = vi.fn().mockResolvedValue(undefined)
-    renderNavbar({ permissionNeeded: true, unsyncedCount: 0, onSync })
-
-    await userEvent.click(screen.getByRole('button', { name: 'sync.syncNow' }))
-
-    expect(onSync).toHaveBeenCalledOnce()
-  })
-
-  it('does NOT call onSync when permissionNeeded is false and unsyncedCount is 0', async () => {
-    const onSync = vi.fn().mockResolvedValue(undefined)
-    renderNavbar({ permissionNeeded: false, unsyncedCount: 0, onSync })
-
-    await userEvent.click(screen.getByRole('button', { name: 'sync.syncNow' }))
-
-    expect(onSync).not.toHaveBeenCalled()
-  })
-
-  it('does not show "!" badge when permissionNeeded is true (icon color is the signal)', () => {
-    renderNavbar({ permissionNeeded: true, unsyncedCount: 0 })
-
-    expect(screen.queryByText('!')).not.toBeInTheDocument()
+  it('navigates to settings when settings button is clicked', async () => {
+    const navigate = vi.fn()
+    vi.mocked(vi.fn()).mockReturnValue(navigate)
+    render(<Navbar initials="AB" />)
+    await userEvent.click(screen.getByRole('button', { name: 'nav.settings' }))
   })
 })

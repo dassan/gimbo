@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Transactions from '@/pages/Transactions'
@@ -66,7 +66,7 @@ function makeTransaction(overrides: Partial<Transaction> = {}): Transaction {
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  useDataStore.setState({ data: null, unsyncedCount: 0 })
+  useDataStore.setState({ data: null })
 })
 
 // ─── Period selector — dropdown ───────────────────────────────────────────────
@@ -76,7 +76,6 @@ describe('Transactions — period selector (PeriodSelector component)', () => {
     const retailAccount = makeRetailAccount()
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -88,7 +87,6 @@ describe('Transactions — period selector (PeriodSelector component)', () => {
     const retailAccount = makeRetailAccount()
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -101,7 +99,6 @@ describe('Transactions — period selector (PeriodSelector component)', () => {
     const retailAccount = makeRetailAccount()
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -117,7 +114,6 @@ describe('Transactions — period selector (PeriodSelector component)', () => {
     const retailAccount = makeRetailAccount()
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -132,7 +128,6 @@ describe('Transactions — period selector (PeriodSelector component)', () => {
     const retailAccount = makeRetailAccount()
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -150,7 +145,6 @@ describe('Transactions — period selector (PeriodSelector component)', () => {
     const retailAccount = makeRetailAccount()
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -183,7 +177,6 @@ describe('Transactions — period selector (PeriodSelector component)', () => {
         accounts: [retailAccount],
         transactions: [currentMonthTx, prevMonthTx],
       }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -219,7 +212,6 @@ describe('Transactions — month navigation', () => {
     const retailAccount = makeRetailAccount()
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -232,7 +224,6 @@ describe('Transactions — month navigation', () => {
     const retailAccount = makeRetailAccount()
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -264,7 +255,6 @@ describe('Transactions — month navigation', () => {
         accounts: [retailAccount],
         transactions: [currentMonthTx, prevMonthTx],
       }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -283,7 +273,6 @@ describe('Transactions — month navigation', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [prevMonthTx] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -307,7 +296,6 @@ describe('Transactions — month navigation', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [prevMonthTx] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -338,7 +326,6 @@ describe('Transactions — month navigation', () => {
         accounts: [retailAccount],
         transactions: [currentMonthTx, prevMonthTx],
       }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -366,7 +353,6 @@ describe('Transactions — M-32: spending summary right column', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [expense] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -386,7 +372,6 @@ describe('Transactions — M-32: spending summary right column', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [income] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -408,7 +393,6 @@ describe('Transactions — M-32: spending summary right column', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [expense], categories: [cat] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -433,7 +417,6 @@ describe('Transactions — M-32: spending summary right column', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [income, expense] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -467,7 +450,6 @@ describe('Transactions — M-32: spending summary right column', () => {
         accounts: [retailAccount, creditAccount],
         transactions: [retailExpense, creditExpense],
       }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -504,7 +486,6 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
         accounts: [retailAccount, creditAccount],
         transactions: [retailExpense, creditExpense],
       }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -536,7 +517,6 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
         accounts: [retailAccount, creditAccount],
         transactions: [regularExpense, creditPayment],
       }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -551,7 +531,6 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount, creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)
@@ -599,7 +578,6 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
         accounts: [retailAccount, creditAccount],
         transactions: [income, retailExpense, creditExpense, creditPayment],
       }),
-      unsyncedCount: 0,
     })
 
     render(<Transactions />)

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import CreditCardPage from '@/pages/CreditCard'
 import { useDataStore } from '@/store/useDataStore'
@@ -56,7 +56,7 @@ function makeTransaction(overrides: Partial<Transaction> = {}): Transaction {
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  useDataStore.setState({ data: null, unsyncedCount: 0 })
+  useDataStore.setState({ data: null })
   mockNavigate.mockReset()
 })
 
@@ -69,7 +69,6 @@ describe('CreditCardPage — M-31: spending summary in right column', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [expense] }),
-      unsyncedCount: 0,
     })
 
     render(<CreditCardPage />)
@@ -83,7 +82,6 @@ describe('CreditCardPage — M-31: spending summary in right column', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<CreditCardPage />)
@@ -105,7 +103,6 @@ describe('CreditCardPage — M-31: spending summary in right column', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [expense], categories: [cat] }),
-      unsyncedCount: 0,
     })
 
     render(<CreditCardPage />)
@@ -121,7 +118,6 @@ describe('CreditCardPage — M-31: spending summary in right column', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [expense1, expense2] }),
-      unsyncedCount: 0,
     })
 
     render(<CreditCardPage />)
@@ -139,7 +135,6 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
     const creditAccount = makeCreditAccountFixed()
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<CreditCardPage />)
@@ -151,7 +146,6 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
     const creditAccount = makeCreditAccountFixed()
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<CreditCardPage />)
@@ -169,7 +163,6 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
     const creditAccount = makeCreditAccountFixed()
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<CreditCardPage />)
@@ -191,7 +184,6 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
         accounts: [creditAccount, retailAccount, anotherCredit],
         transactions: [],
       }),
-      unsyncedCount: 0,
     })
 
     render(<CreditCardPage />)
@@ -207,7 +199,6 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
     const creditAccount = makeCreditAccountFixed()
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<CreditCardPage />)
@@ -231,7 +222,6 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
         accounts: [creditAccount, retailAccount],
         transactions: [expense],
       }),
-      unsyncedCount: 0,
     })
 
     const addTransactionSpy = vi.spyOn(useDataStore.getState(), 'addTransaction')

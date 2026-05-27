@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import TransactionDrawer from '@/components/TransactionDrawer'
@@ -55,7 +55,6 @@ const testTransaction: Transaction = {
 beforeEach(() => {
   useDataStore.setState({
     data: makeDataFile({ accounts: [testAccount], categories: [testCategory] }),
-    unsyncedCount: 0,
   })
 })
 
@@ -90,7 +89,6 @@ describe('TransactionDrawer — create mode', () => {
     const onClose = vi.fn()
     useDataStore.setState({
       data: makeDataFile({ accounts: [testAccount], categories: [testCategory] }),
-      unsyncedCount: 0,
     })
     vi.spyOn(useDataStore.getState(), 'addTransaction').mockImplementation(addTransaction)
 
@@ -224,7 +222,6 @@ describe('TransactionDrawer — M-28: CREDIT_PAYMENT tab removed from type selec
         accounts: [testAccount, testCreditAccount],
         categories: [testCategory],
       }),
-      unsyncedCount: 0,
     })
   })
 
@@ -308,7 +305,6 @@ describe('TransactionDrawer — CC-20: invoice balance hint', () => {
           },
         ],
       }),
-      unsyncedCount: 0,
     })
   })
 
@@ -333,7 +329,6 @@ describe('TransactionDrawer — CC-23: installment section', () => {
         accounts: [testAccount, testCreditAccount],
         categories: [testCategory],
       }),
-      unsyncedCount: 0,
     })
   })
 
@@ -358,7 +353,6 @@ describe('TransactionDrawer — CC-23: installment section', () => {
     // Set up store with only a credit account so it auto-selects
     useDataStore.setState({
       data: makeDataFile({ accounts: [testCreditAccount], categories: [testCategory] }),
-      unsyncedCount: 0,
     })
     renderDrawer()
     // Switch to INCOME type
@@ -369,7 +363,6 @@ describe('TransactionDrawer — CC-23: installment section', () => {
   it('shows installment toggle when EXPENSE and only a CREDIT account is in store', () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [testCreditAccount], categories: [testCategory] }),
-      unsyncedCount: 0,
     })
     renderDrawer()
     // With only the credit account auto-selected and EXPENSE type, toggle appears
@@ -379,7 +372,6 @@ describe('TransactionDrawer — CC-23: installment section', () => {
   it('shows installment count field when toggle is enabled', async () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [testCreditAccount], categories: [testCategory] }),
-      unsyncedCount: 0,
     })
     renderDrawer()
     const toggle = screen.getByRole('switch', { name: 'transactions.installments' })
@@ -408,7 +400,6 @@ describe('TransactionDrawer — CC-23: installment section', () => {
   it('shows installment hint when toggle enabled and amount > 0', async () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [testCreditAccount], categories: [testCategory] }),
-      unsyncedCount: 0,
     })
     renderDrawer()
     const toggle = screen.getByRole('switch', { name: 'transactions.installments' })
@@ -425,7 +416,6 @@ describe('TransactionDrawer — CC-23: installment section', () => {
   it('calls addTransaction with installment data when enabled', async () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [testCreditAccount], categories: [testCategory] }),
-      unsyncedCount: 0,
     })
     const addTransaction = vi.fn()
     vi.spyOn(useDataStore.getState(), 'addTransaction').mockImplementation(addTransaction)
@@ -479,7 +469,6 @@ describe('TransactionDrawer — CC-26: installment deletion modal', () => {
         categories: [testCategory],
         transactions: [installmentTx],
       }),
-      unsyncedCount: 0,
     })
   })
 
@@ -540,7 +529,6 @@ describe('TransactionDrawer — CC-26: installment deletion modal', () => {
         categories: [testCategory],
         transactions: [nonInstallmentTx],
       }),
-      unsyncedCount: 0,
     })
     const deleteTransaction = vi.fn()
     const onClose = vi.fn()
@@ -562,7 +550,6 @@ describe('TransactionDrawer — M-20: auto-focus amount field on open', () => {
   beforeEach(() => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [testAccount], categories: [testCategory] }),
-      unsyncedCount: 0,
     })
   })
 

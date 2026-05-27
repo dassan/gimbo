@@ -197,17 +197,40 @@ Todos os utilitários devem ser funções puras adicionadas em `src/lib/utils.ts
 
 ---
 
+## Storage SQLite — Remoção da Camada FSA/JSON
+
+Substituição completa da camada de persistência baseada em File System Access API (FSA) + JSON pelo SQLite/OPFS já implementado. Motivação: UX mais simples (sem file picker), confiabilidade (ACID vs. JSON frágil), e fundação para sync nativo com app mobile futuro (SQLite é o padrão em ambas as plataformas). Risco aceito: dados no OPFS são perdidos se o browser limpar o site storage — mitigado pelos itens ST-01 (export/import de backup). As fases são dependentes — não iniciar sem a anterior concluída e com testes passando.
+
+### Fase 1 — Remoção da camada FSA
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| ST-01 | **Deletar `lib/storage/fileSystem.ts`, `sync.ts`, `merge.ts`, `indexedDb.ts` e `lib/tabGuard.ts`.** Antes da deleção, extrair `loadWorkspace()`/`saveWorkspace()` (localStorage, sem FSA) para novo arquivo `lib/storage/workspace.ts` e atualizar o import em `useWorkspaceStore.ts`. Deletar também todos os testes correspondentes: `test/lib/storage/fileSystem.test.ts`, `sync.test.ts`, `merge.test.ts`, `indexedDb.test.ts`, `test/lib/tabGuard.test.ts`. | crítica | resolvido |
+| ST-02 | **Simplificar `store/useDataStore.ts`.** Remover do estado: `unsyncedCount`, `conflictData`, `fileHandleLost`, `permissionNeeded`, `isSecondaryTab`, `writeError`. Remover métodos: `persist()` e `resolveConflict()`. Simplificar `mutate()`: remover `unsyncedCount + 1`. Remover imports FSA. Deletar arquivos de teste obsoletos: `useDataStore.persist.test.ts`, `useDataStore.conflict.test.ts`, `useDataStore.writeError.test.ts`, `useDataStore.secondaryTab.test.ts`, `useDataStore.unsyncedCount.test.ts`. | crítica | resolvido |
+| ST-03 | **Simplificar `App.tsx`.** Remover imports e chamadas de `loadFileHandle`, `clearIdb`, `checkHandlePermission`, `initTabGuard`. Remover bloco de restauração do FileHandle, o `useEffect` do tabGuard e o bloco de migração IDB→SQLite. Boot final: `storage.loadDataFile()` → `loadData()`. | crítica | resolvido |
+| ST-04 | **Simplificar `AppLayout.tsx` e `Navbar.tsx`.** AppLayout: remover seletores FSA do store, banners (aba secundária, "browser sem FSA"), `ConflictModal`, `Toast` de erro de escrita, `useEffect` do writeError, props de sync no Navbar. Navbar: remover props `unsyncedCount`, `fileHandleLost`, `permissionNeeded`, `writeError`, `fsaSupported`, `onSync`; remover botão RefreshCw com badge; deletar `components/ConflictModal.tsx` e `test/components/ConflictModal.test.tsx`. | crítica | resolvido |
+| ST-05 | **Simplificar `Onboarding/index.tsx` e `Settings/index.tsx`.** Onboarding: remover imports FSA, `handleImportPicker()`, botão "Abrir via Picker"; simplificar `handleCreate()` para apenas `storage.replaceAll(data)` → `loadData()` → navigate; `handleImportFile` aceita .db e .json. Settings (aba Dados): `handleExportDb()` (`storage.exportBlob()` → download `gimbo-backup.db`); `handleImportDb()` (`.db` → `storage.importBlob()`); `handleImportJson()` (`.json` legado → `storage.replaceAll()`); i18n atualizado em pt-BR e en-US. | crítica | resolvido |
+
+### Fase 2 — Dívida técnica pós-remoção
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| ST-06 | **Remover bloco de migração IDB→SQLite do `App.tsx`.** Removido antecipadamente em ST-03 (IDB já deletado junto com indexedDb.ts — não havia razão para manter o bloco). | média | resolvido |
+| ST-07 | **Atualizar fixtures E2E para semear SQLite diretamente.** Substituir `seedIdb()` nos specs E2E por `seedSqlite()` que chama `storage.replaceAll()` via `page.evaluate()`. | média | resolvido |
+
+---
+
 ## Demo Mode & Deploy Público — F-25
 
 Versão pública do Gimbo acessível via URL sem necessidade de download. Dados sintéticos pré-carregados no bundle; toda mutação do store é descartada ao recarregar (persist no-op). Ativado pela env var `VITE_DEMO_MODE=true` no build de deploy. As fases são dependentes entre si — não iniciar uma fase sem a anterior concluída.
 
 | ID | Descrição | Prioridade | Status |
 |----|-----------|------------|--------|
-| DM-01 | **`src/lib/demo.ts` — Criar utilitário `isDemoMode()` e asset de dados sintéticos.** Criar função `isDemoMode(): boolean` que retorna `import.meta.env.VITE_DEMO_MODE === 'true'`. Copiar `data/nexus-import-sintetic-data.json` para `src/assets/demo-data.json` como asset estático importável. Adicionar `VITE_DEMO_MODE=false` no `.env` local e `VITE_DEMO_MODE=true` no `.env.demo` (não commitado). Adicionar `VITE_DEMO_MODE` ao `env.d.ts` (ou equivalente) para tipagem. | crítica | aberto |
-| DM-02 | **`store/useDataStore.ts` — No-op de persistência em modo demo.** Quando `isDemoMode()`, a função `persist()` (e qualquer chamada a `syncToFile`/`saveDataFile`) deve retornar imediatamente sem executar nenhuma escrita. O `unsyncedCount` não deve ser incrementado. O hook de auto-save do IDB também deve ser desabilitado. Adicionar testes unitários cobrindo: `persist()` no-op em demo mode, `persist()` executa normalmente fora de demo mode. | crítica | aberto |
-| DM-03 | **`store/useDataStore.ts` — Boot com dados sintéticos em modo demo.** Quando `isDemoMode()`, o store deve ignorar o IndexedDB no startup e carregar diretamente o `demo-data.json` importado em DM-01, pulando a tela de onboarding. A store deve ser hidratada como se o arquivo já estivesse aberto (estado `ready`), sem FileHandle e sem badge de sync. Fora de demo mode, o comportamento de boot permanece idêntico ao atual. | crítica | aberto |
-| DM-04 | **`components/Navbar.tsx` (ou layout raiz) — Banner de modo demo.** Quando `isDemoMode()`, exibir faixa fixa no topo do app com texto "Modo demonstração — alterações não são salvas" (chave i18n `demo.banner`; `pt-BR` e `en-US`). A faixa deve ter fundo de cor de aviso (ex: `#F59E0B`) e texto contrastante. O restante do layout deve deslocar para baixo sem sobrepor conteúdo. Adicionar chave i18n `demo.banner` em ambos os locales. | alta | aberto |
-| DM-05 | **Vercel — Configurar deploy público da branch `dassan/demo-v0.1.0`.** Criar projeto no Vercel apontando para o repositório GitHub, branch `dassan/demo-v0.1.0`. Configurar: `Root Directory = app`, `Build Command = npm run build`, `Output Directory = dist`. Adicionar env var `VITE_DEMO_MODE=true` nas configurações do projeto no Vercel. Verificar que o deploy resultante carrega os dados sintéticos, exibe o banner e não persiste mutações. | alta | aberto |
+| DM-01 | **`src/lib/demo.ts` — Criar utilitário `isDemoMode()` e asset de dados sintéticos.** | crítica | resolvido |
+| DM-02 | **`store/useDataStore.ts` — No-op de persistência em modo demo.** | crítica | resolvido |
+| DM-03 | **`store/useDataStore.ts` — Boot com dados sintéticos em modo demo.** | crítica | resolvido |
+| DM-04 | **`components/AppLayout.tsx` — Banner de modo demo.** | alta | resolvido |
+| DM-05 | **Vercel — Configurar deploy público.** | alta | resolvido |
 
 ---
 

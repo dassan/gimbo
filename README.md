@@ -40,6 +40,17 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173) — the Onboarding screen will guide you through creating your first ledger.
 
+### Dev helpers (development only)
+
+Two URL parameters are available when running `npm run dev`. They are no-ops in production builds.
+
+| URL | Effect |
+|-----|--------|
+| `http://localhost:5173/?devSeed=1` | Wipes the local DB and loads the synthetic dataset (`data/nexus-import-sintetic-data.json`). Lands on the dashboard. |
+| `http://localhost:5173/?devReset=1` | Wipes the local DB and redirects to the Onboarding screen. |
+
+After the action completes the parameter is removed from the URL via `history.replaceState`.
+
 ### Reporting issues
 
 Found a bug or have a suggestion? Please open an issue on GitHub:

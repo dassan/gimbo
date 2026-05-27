@@ -37,11 +37,10 @@ import {
 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
-import { downloadDataFile, openDataFile, isFsaSupported } from '@/lib/storage/fileSystem'
-import { saveFileHandle } from '@/lib/storage/indexedDb'
 import { formatCurrency, cn, uuid, now, getCurrentInvoiceBalance } from '@/lib/utils'
-import { AUDIT_RETENTION_DEFAULT, SchemaVersionError } from '@/lib/storage/schema'
-import { importFileToIdb } from '@/lib/storage/sync'
+import { AUDIT_RETENTION_DEFAULT } from '@/lib/storage/schema'
+import { storage } from '@/services/storage'
+import Toast from '@/components/Toast'
 import type {
   Account,
   AccountType,
@@ -131,6 +130,15 @@ type ModalState =
 type CategoryModalState = { open: false } | { open: true; category: Category | null }
 type TagModalState = { open: false } | { open: true; tag: Tag | null }
 
+type ImportResult =
+  | { status: 'success' }
+  | { status: 'error'; message: string; code: string }
+  | null
+
+const IMPORT_ERROR_CODES = {
+  CORRUPT: 'ERR_RESTORE_004',
+} as const
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function relativeTime(iso: string): string {
@@ -198,8 +206,8 @@ export default function Settings() {
   const [modal, setModal] = useState<ModalState>({ open: false })
   const [categoryModal, setCategoryModal] = useState<CategoryModalState>({ open: false })
   const [tagModal, setTagModal] = useState<TagModalState>({ open: false })
-  const [importError, setImportError] = useState<string | null>(null)
-  const importInputRef = useRef<HTMLInputElement>(null)
+  const [importResult, setImportResult] = useState<ImportResult>(null)
+  const importDbInputRef = useRef<HTMLInputElement>(null)
 
   function handleSaveProfile() {
     if (!data) return
@@ -211,48 +219,29 @@ export default function Settings() {
     void i18n.changeLanguage(locale)
   }
 
-  function handleExport() {
-    if (data) downloadDataFile(data)
+  async function handleExportDb() {
+    const blob = await storage.exportBlob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'gimbo-backup.db'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
-  async function handleImportFile(file: File) {
-    setImportError(null)
+  async function handleImportDb(file: File) {
+    setImportResult(null)
     try {
-      const data = await importFileToIdb(file)
-      loadData(data)
-    } catch (err) {
-      if (err instanceof SchemaVersionError) {
-        setImportError(t('settings.importVersionError'))
-      } else {
-        setImportError(t('settings.importFileError'))
-      }
-    }
-  }
-
-  async function handleImport() {
-    if (!isFsaSupported()) {
-      importInputRef.current?.click()
-      return
-    }
-    setImportError(null)
-    const result = await openDataFile()
-    if (!result) return
-    const { handle, file } = result
-    try {
-      // importFileToIdb: validates via Zod, clears IDB, saves new data (total replace).
-      const data = await importFileToIdb(file)
-      try {
-        await saveFileHandle(handle)
-      } catch {
-        // Non-fatal — the app functions without a persisted handle.
-      }
-      loadData(data)
-    } catch (err) {
-      if (err instanceof SchemaVersionError) {
-        setImportError(t('settings.importVersionError'))
-      } else {
-        setImportError(t('settings.importFileError'))
-      }
+      await storage.importBlob(file)
+      const imported = await storage.loadDataFile()
+      if (imported) loadData(imported)
+      setImportResult({ status: 'success' })
+    } catch {
+      setImportResult({
+        status: 'error',
+        message: t('settings.importErrorCorrupt'),
+        code: IMPORT_ERROR_CODES.CORRUPT,
+      })
     }
   }
 
@@ -775,50 +764,72 @@ export default function Settings() {
                     </span>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={handleExport}
-                    className="flex flex-col items-center gap-2 rounded-2xl bg-surface-container border border-outline-variant py-6 hover:bg-surface-container-high transition-colors"
-                  >
-                    <Download size={22} className="text-on-surface/60" strokeWidth={1.5} />
-                    <span className="text-sm font-medium text-on-surface">
-                      {t('settings.exportData')}
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => void handleImport()}
-                    className="flex flex-col items-center gap-2 rounded-2xl bg-surface-container border border-outline-variant py-6 hover:bg-surface-container-high transition-colors"
-                  >
-                    <Upload size={22} className="text-on-surface/60" strokeWidth={1.5} />
-                    <span className="text-sm font-medium text-on-surface">
-                      {t('settings.importData')}
-                    </span>
-                  </button>
-                  <input
-                    ref={importInputRef}
-                    type="file"
-                    accept=".json"
-                    className="hidden"
-                    onChange={(e) => {
-                      if (e.target.files?.[0]) void handleImportFile(e.target.files[0])
-                      e.target.value = ''
-                    }}
-                  />
+
+                {/* Backup SQLite */}
+                <div className="mb-4">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-on-surface/40">
+                    {t('settings.backupRestore')}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => void handleExportDb()}
+                      className="flex flex-col items-center gap-2 rounded-2xl bg-surface-container border border-outline-variant py-6 hover:bg-surface-container-high transition-colors"
+                    >
+                      <Download size={22} className="text-on-surface/60" strokeWidth={1.5} />
+                      <span className="text-sm font-medium text-on-surface">
+                        {t('settings.exportDb')}
+                      </span>
+                      <span className="text-xs text-on-surface/40">.db</span>
+                    </button>
+                    <button
+                      onClick={() => importDbInputRef.current?.click()}
+                      className="flex flex-col items-center gap-2 rounded-2xl bg-surface-container border border-outline-variant py-6 hover:bg-surface-container-high transition-colors"
+                    >
+                      <Upload size={22} className="text-on-surface/60" strokeWidth={1.5} />
+                      <span className="text-sm font-medium text-on-surface">
+                        {t('settings.importDb')}
+                      </span>
+                      <span className="text-xs text-on-surface/40">.db</span>
+                    </button>
+                    <input
+                      ref={importDbInputRef}
+                      type="file"
+                      accept=".db"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) void handleImportDb(e.target.files[0])
+                        e.target.value = ''
+                      }}
+                    />
+                  </div>
                 </div>
-                {importError && (
+
+                {importResult?.status === 'error' && (
                   <div className="mt-3 rounded-xl border border-tertiary/20 bg-tertiary/5 p-3 space-y-2">
-                    <p className="text-xs text-tertiary">{importError}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs text-tertiary">{importResult.message}</p>
+                      <span className="shrink-0 font-mono text-[10px] text-tertiary/70 bg-tertiary/10 rounded px-1.5 py-0.5">
+                        {importResult.code}
+                      </span>
+                    </div>
                     <p className="text-xs text-on-surface/40">
                       {t('settings.exportLocalDataHint')}
                     </p>
                     <button
-                      onClick={handleExport}
+                      onClick={() => void handleExportDb()}
                       className="flex items-center gap-1.5 rounded-lg bg-surface-container border border-outline-variant px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors"
                     >
                       <Download size={12} strokeWidth={2} />
                       {t('settings.exportLocalData')}
                     </button>
                   </div>
+                )}
+
+                {importResult?.status === 'success' && (
+                  <Toast
+                    message={t('settings.importSuccess')}
+                    onDismiss={() => setImportResult(null)}
+                  />
                 )}
               </Section>
             )}

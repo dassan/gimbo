@@ -1,18 +1,11 @@
 import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { ShieldCheck, Lock, ArrowRight, RefreshCw, FileJson } from 'lucide-react'
+import { ShieldCheck, Lock, ArrowRight, FileJson } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { createEmptyDataFile } from '@/lib/storage/schema'
-import {
-  openDataFile,
-  createNewDataFile,
-  downloadDataFile,
-  isFsaSupported,
-} from '@/lib/storage/fileSystem'
-import { saveFileHandle } from '@/lib/storage/indexedDb'
-import { importFileToIdb } from '@/lib/storage/sync'
+import { storage } from '@/services/storage'
 import { cn } from '@/lib/utils'
 import type { Locale } from '@/types'
 
@@ -35,33 +28,8 @@ export default function Onboarding() {
   async function handleCreate() {
     if (!name.trim()) return
     setFileError(null)
-
     const data = createEmptyDataFile(name.trim(), email.trim())
-
-    if (isFsaSupported()) {
-      // Open the save picker so the user can choose filename and location.
-      // Must be called directly inside the click handler to satisfy the
-      // user-gesture requirement of the File System Access API.
-      const handle = await createNewDataFile(data)
-      if (!handle) {
-        // User cancelled the picker — stay on onboarding.
-        setFileError(t('onboarding.createFileCancelled'))
-        return
-      }
-
-      // Best-effort: persist the handle so future sessions can reuse it.
-      // Silently ignored if the runtime can't clone the handle (e.g. in tests).
-      try {
-        await saveFileHandle(handle)
-      } catch {
-        // Non-fatal — the app functions without a persisted handle.
-      }
-    } else {
-      // FSA not available (Firefox/Safari): save to IDB and trigger a download
-      // so the user keeps a copy of their data file.
-      downloadDataFile(data)
-    }
-
+    await storage.replaceAll(data)
     loadData(data)
     setLocale(locale)
     void i18n.changeLanguage(locale)
@@ -71,33 +39,9 @@ export default function Onboarding() {
   async function handleImportFile(file: File) {
     setFileError(null)
     try {
-      // importFileToIdb: validates via Zod, clears IDB, saves new data (total replace).
-      // No handle available from <input type="file"> — sync icon will prompt
-      // the user to re-link a file on first save attempt.
-      const data = await importFileToIdb(file)
-      loadData(data)
-      void navigate('/dashboard')
-    } catch {
-      setFileError(t('onboarding.importFileError'))
-    }
-  }
-
-  async function handleImportPicker() {
-    setFileError(null)
-    try {
-      const result = await openDataFile()
-      if (!result) return // User cancelled picker
-
-      const { handle, file } = result
-      // importFileToIdb: validates via Zod, clears IDB, saves new data (total replace).
-      const data = await importFileToIdb(file)
-      // Best-effort: persist the handle so future sessions can reuse it.
-      try {
-        await saveFileHandle(handle)
-      } catch {
-        // Non-fatal — the app functions without a persisted handle.
-      }
-      loadData(data)
+      await storage.importBlob(file)
+      const imported = await storage.loadDataFile()
+      if (imported) loadData(imported)
       void navigate('/dashboard')
     } catch {
       setFileError(t('onboarding.importFileError'))
@@ -251,11 +195,7 @@ export default function Onboarding() {
                   </div>
                 </div>
 
-                <p className="text-xs text-on-surface/40 pt-1">
-                  {isFsaSupported()
-                    ? t('onboarding.createFilePickerHint')
-                    : t('onboarding.createFileFallbackHint')}
-                </p>
+                <p className="text-xs text-on-surface/40 pt-1">{t('onboarding.createHint')}</p>
 
                 {fileError && <p className="text-xs text-red-500">{fileError}</p>}
 
@@ -301,7 +241,7 @@ export default function Onboarding() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".json"
+                    accept=".db"
                     className="hidden"
                     onChange={(e) => {
                       if (e.target.files?.[0]) void handleImportFile(e.target.files[0])
@@ -310,16 +250,6 @@ export default function Onboarding() {
                 </div>
 
                 {fileError && <p className="text-xs text-red-500">{fileError}</p>}
-
-                {isFsaSupported() && (
-                  <button
-                    onClick={() => void handleImportPicker()}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-4 text-sm font-semibold text-white transition hover:brightness-110"
-                  >
-                    {t('onboarding.import')}
-                    <RefreshCw size={16} strokeWidth={2.5} />
-                  </button>
-                )}
               </div>
             )}
           </div>

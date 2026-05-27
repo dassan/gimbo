@@ -8,22 +8,23 @@ const dataFile = JSON.parse(
   readFileSync(path.join(__dirname, 'fixtures/dataFile.json'), 'utf-8')
 ) as Record<string, unknown>
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function seedSqlite(page: import('@playwright/test').Page, data: Record<string, unknown>) {
+  await page.goto('/onboarding')
+  await page.waitForFunction(() => !!(window as Record<string, unknown>).__storage)
+  await page.evaluate((d) => {
+    return (window as Record<string, unknown>).__storage.replaceAll(d)
+  }, data)
+}
+
+// ─── Setup ────────────────────────────────────────────────────────────────────
+
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript((data) => {
-    indexedDB.deleteDatabase('nexus-db')
-    const req = indexedDB.open('nexus-db', 2)
-    req.onupgradeneeded = (e) => {
-      const db = (e.target as IDBOpenDBRequest).result
-      if (!db.objectStoreNames.contains('ledger')) db.createObjectStore('ledger')
-      if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles')
-    }
-    req.onsuccess = (e) => {
-      const db = (e.target as IDBOpenDBRequest).result
-      const tx = db.transaction('ledger', 'readwrite')
-      tx.objectStore('ledger').put(data, 'current')
-    }
-  }, dataFile)
+  await seedSqlite(page, dataFile)
 })
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
 
 test('add transaction: opens FAB drawer and saves', async ({ page }) => {
   await page.goto('/dashboard')

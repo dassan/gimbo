@@ -9,33 +9,20 @@ import type {
   AuditAction,
   AuditEntity,
 } from '@/types'
-import {
-  saveDataFile,
-  readCurrentDataFile,
-  getLastWrittenModified,
-  isHandleLost,
-  isPermissionNeeded,
-  requestHandlePermission,
-} from '@/lib/storage/fileSystem'
-import { syncToFile } from '@/lib/storage/sync'
-import { saveToIdb, saveSyncMeta } from '@/lib/storage/indexedDb'
 import { applyRetention } from '@/lib/storage/schema'
+import { storage } from '@/services/storage'
 import { uuid, now } from '@/lib/utils'
 import { isDemoMode } from '@/lib/demo'
 
 // ─── Debounce helper ──────────────────────────────────────────────────────────
 
-let _idbTimer: ReturnType<typeof setTimeout> | null = null
+let _sqliteTimer: ReturnType<typeof setTimeout> | null = null
 
-function debouncedSaveToIdb(data: DataFile, unsyncedCount: number) {
+function debouncedReplaceAll(data: DataFile) {
   if (isDemoMode()) return
-  if (_idbTimer) clearTimeout(_idbTimer)
-  _idbTimer = setTimeout(() => {
-    Promise.all([saveToIdb(data), saveSyncMeta(unsyncedCount)]).catch((err: unknown) => {
-      if (err instanceof DOMException && err.name === 'QuotaExceededError') {
-        useDataStore.setState({ idbQuotaExceeded: true })
-      }
-    })
+  if (_sqliteTimer) clearTimeout(_sqliteTimer)
+  _sqliteTimer = setTimeout(() => {
+    void storage.replaceAll(data)
   }, 300)
 }
 
@@ -76,17 +63,9 @@ function makeEntry(
 
 interface DataStore {
   data: DataFile | null
-  unsyncedCount: number
-  conflictData: { local: DataFile; disk: DataFile } | null
-  fileHandleLost: boolean
-  permissionNeeded: boolean
-  isSecondaryTab: boolean
-  writeError: boolean
-  idbQuotaExceeded: boolean
 
   loadData: (data: DataFile) => void
   clearData: () => void
-  resolveConflict: (resolution: 'overwrite' | 'load-cloud') => Promise<void>
 
   addAccount: (account: Account) => void
   updateAccount: (account: Account) => void
@@ -107,33 +86,13 @@ interface DataStore {
 
   updateUser: (patch: Partial<DataFile['user']>) => void
   setRetentionLimit: (limit: number | null) => void
-
-  persist: () => Promise<boolean>
 }
 
-export const useDataStore = create<DataStore>((set, get) => ({
+export const useDataStore = create<DataStore>((set) => ({
   data: null,
-  unsyncedCount: 0,
-  conflictData: null,
-  fileHandleLost: false,
-  permissionNeeded: false,
-  isSecondaryTab: false,
-  writeError: false,
-  idbQuotaExceeded: false,
 
-  loadData: (data) => set({ data, unsyncedCount: 0 }),
-  clearData: () => set({ data: null, unsyncedCount: 0 }),
-
-  resolveConflict: async (resolution) => {
-    const { conflictData } = get()
-    if (!conflictData) return
-    if (resolution === 'overwrite') {
-      const ok = await saveDataFile(conflictData.local)
-      if (ok) set({ data: conflictData.local, unsyncedCount: 0, conflictData: null })
-    } else {
-      set({ data: conflictData.disk, unsyncedCount: 0, conflictData: null })
-    }
-  },
+  loadData: (data) => set({ data }),
+  clearData: () => set({ data: null }),
 
   // ── Accounts ──────────────────────────────────────────────────────────────
 
@@ -271,7 +230,6 @@ export const useDataStore = create<DataStore>((set, get) => ({
           const parentId = tx.installment.parentId
           const accName = d.accounts.find((a) => a.id === tx.accountId)?.name ?? tx.accountId
 
-          // Distribute amount evenly; first installment absorbs rounding remainder
           const perInstallment = Math.round((tx.amount / N) * 100) / 100
           const remainder = Math.round((tx.amount - perInstallment * N) * 100) / 100
 
@@ -289,7 +247,6 @@ export const useDataStore = create<DataStore>((set, get) => ({
             d.transactions.push(installmentTx)
           }
 
-          // CC-25: Single audit entry for the whole group
           const totalStr = `R$ ${tx.amount.toFixed(2).replace('.', ',')}`
           const groupSummary = `Compra parcelada em ${N}x: ${tx.description || accName} — ${totalStr} em ${accName}`
           addAudit(d, makeEntry('CREATE', 'transaction', parentId, groupSummary))
@@ -300,7 +257,6 @@ export const useDataStore = create<DataStore>((set, get) => ({
         d.transactions.push(tx)
         let summary: string
         if (tx.type === 'CREDIT_PAYMENT') {
-          // Special audit log for invoice payments: "Pagamento de fatura: [credit account] ← [debit account] R$ X,XX"
           const creditAccName = d.accounts.find((a) => a.id === tx.accountId)?.name ?? tx.accountId
           const debitAccName =
             d.accounts.find((a) => a.id === tx.transferAccountId)?.name ??
@@ -354,14 +310,11 @@ export const useDataStore = create<DataStore>((set, get) => ({
   deleteInstallmentGroup: (parentId) =>
     set((s) =>
       mutate(s, (d) => {
-        // Find any installment in the group to extract description and count
         const sample = d.transactions.find((t) => t.installment?.parentId === parentId)
         const N = sample?.installment?.total ?? 0
-        // Strip the " (X/N)" suffix from the description for the audit summary
         const rawDesc = sample?.description?.replace(/\s*\(\d+\/\d+\)$/, '') ?? ''
         const accName =
           d.accounts.find((a) => a.id === sample?.accountId)?.name ?? sample?.accountId ?? ''
-        // Collect IDs before filtering for tombstone registration
         const groupIds = d.transactions
           .filter((t) => t.installment?.parentId === parentId)
           .map((t) => t.id)
@@ -390,80 +343,10 @@ export const useDataStore = create<DataStore>((set, get) => ({
       if (!s.data) return {}
       const data = structuredClone(s.data)
       data.settings.auditLogRetentionLimit = limit
-      // Apply new policy immediately
       data.auditLog = applyRetention(data.auditLog, limit)
-      const unsyncedCount = s.unsyncedCount + 1
-      debouncedSaveToIdb(data, unsyncedCount)
-      return { data, unsyncedCount }
+      debouncedReplaceAll(data)
+      return { data }
     }),
-
-  // ── Persistence ───────────────────────────────────────────────────────────
-
-  persist: async () => {
-    if (isDemoMode()) return false
-    const { data, isSecondaryTab } = get()
-    if (!data) return false
-    if (isSecondaryTab) return false
-    const updated = { ...data, settings: { ...data.settings, fileUpdatedAt: now() } }
-
-    // Permission re-authorisation path: the handle was restored from IDB but its
-    // permission state is 'prompt'. requestHandlePermission() must be called here
-    // (inside the sync button click handler) to satisfy the user-activation
-    // requirement. If granted, clear the flag and fall through to normal persist.
-    // If denied, treat the same as a lost handle.
-    if (isPermissionNeeded()) {
-      const granted = await requestHandlePermission()
-      if (granted) {
-        set({ permissionNeeded: false })
-        // Fall through to normal persist flow below.
-      } else {
-        set({ fileHandleLost: true, permissionNeeded: false })
-        return false
-      }
-    }
-
-    // Recovery path: the handle was previously lost (NotFoundError). Skip disk
-    // read and conflict check — go straight to saveDataFile() which will open
-    // showSaveFilePicker() (handle is null) so the user can re-associate the file.
-    if (isHandleLost()) {
-      const ok = await saveDataFile(updated)
-      if (ok) set({ data: updated, unsyncedCount: 0, fileHandleLost: false })
-      return ok
-    }
-
-    const diskSnapshot = await readCurrentDataFile()
-
-    // Check if readCurrentDataFile() detected a missing file mid-flight.
-    if (isHandleLost()) {
-      set({ fileHandleLost: true })
-      return false
-    }
-
-    const lastWritten = getLastWrittenModified()
-
-    // Conflict detection: if the disk file was modified after our last write
-    // (by another device, cloud sync, or manual edit), pause and ask the user.
-    if (diskSnapshot !== null && lastWritten !== null && diskSnapshot.lastModified > lastWritten) {
-      set({ conflictData: { local: updated, disk: diskSnapshot.data } })
-      return false
-    }
-
-    // syncToFile: merge by UUID + write to disk (never a total replace).
-    const merged = await syncToFile(updated, diskSnapshot)
-    if (merged) {
-      set({ data: merged, unsyncedCount: 0, fileHandleLost: false, writeError: false })
-      // Keep IDB in sync so a reload shows unsyncedCount = 0.
-      void saveToIdb(merged)
-      void saveSyncMeta(0)
-    } else if (isHandleLost()) {
-      set({ fileHandleLost: true })
-    } else {
-      // Write failed for a reason other than a missing file (e.g. disk full,
-      // OS-revoked permission). Keep unsyncedCount as-is so no data is lost.
-      set({ writeError: true })
-    }
-    return merged !== null
-  },
 }))
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -475,13 +358,10 @@ function addAudit(data: DataFile, entry: AuditEntry) {
 
 function mutate(state: DataStore, fn: (data: DataFile) => void): Partial<DataStore> {
   if (!state.data) return {}
-  if (state.isSecondaryTab) return {}
   const data = structuredClone(state.data)
   fn(data)
-  if (isDemoMode()) return { data }
-  const unsyncedCount = state.unsyncedCount + 1
-  debouncedSaveToIdb(data, unsyncedCount)
-  return { data, unsyncedCount }
+  debouncedReplaceAll(data)
+  return { data }
 }
 
 // Advances a "YYYY-MM-DD" date string by the given number of months using local

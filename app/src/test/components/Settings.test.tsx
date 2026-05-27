@@ -1,11 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Settings from '@/pages/Settings'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '@/test/fixtures/dataFile'
-import { downloadDataFile, openDataFile, isFsaSupported } from '@/lib/storage/fileSystem'
-import { importFileToIdb } from '@/lib/storage/sync'
+import { storage } from '@/services/storage'
 import type { Account, Transaction } from '@/types'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -14,28 +13,28 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { changeLanguage: vi.fn() } }),
 }))
 
-vi.mock('@/lib/storage/fileSystem', () => ({
-  downloadDataFile: vi.fn(),
-  openDataFile: vi.fn(),
-  isFsaSupported: vi.fn().mockReturnValue(true),
-  loadWorkspace: vi.fn().mockReturnValue(null),
-  saveWorkspace: vi.fn(),
+vi.mock('@/services/storage', () => ({
+  storage: {
+    replaceAll: vi.fn().mockResolvedValue(undefined),
+    exportBlob: vi.fn().mockResolvedValue(new Blob()),
+    importBlob: vi.fn().mockResolvedValue(undefined),
+    loadDataFile: vi.fn().mockResolvedValue(null),
+  },
 }))
 
-vi.mock('@/lib/storage/sync', () => ({
-  importFileToIdb: vi.fn(),
-}))
-
-vi.mock('@/lib/storage/indexedDb', () => ({
-  saveFileHandle: vi.fn(),
-  saveSyncMeta: vi.fn(),
-}))
+// jsdom does not implement URL.createObjectURL
+globalThis.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock')
+globalThis.URL.revokeObjectURL = vi.fn()
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  useDataStore.setState({ data: makeDataFile(), unsyncedCount: 0 })
+  useDataStore.setState({ data: makeDataFile() })
   vi.clearAllMocks()
+  vi.mocked(storage).replaceAll.mockResolvedValue(undefined)
+  vi.mocked(storage).exportBlob.mockResolvedValue(new Blob())
+  vi.mocked(storage).importBlob.mockResolvedValue(undefined)
+  vi.mocked(storage).loadDataFile.mockResolvedValue(null)
 })
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -45,77 +44,82 @@ async function renderDataSection() {
   await userEvent.click(screen.getByRole('button', { name: 'settings.dataFile' }))
 }
 
-async function triggerImportFailure() {
-  vi.mocked(openDataFile).mockResolvedValue({
-    handle: {} as FileSystemFileHandle,
-    file: new File(['not valid json'], 'corrupt.json', { type: 'application/json' }),
-  })
-  vi.mocked(importFileToIdb).mockRejectedValue(new Error('Zod validation failed'))
-
-  await userEvent.click(screen.getByRole('button', { name: /settings\.importData/i }))
-  await screen.findByText('settings.importFileError')
+function getDbInput(): HTMLInputElement {
+  const inputs = document.querySelectorAll('input[type="file"]')
+  return Array.from(inputs).find((el) =>
+    (el as HTMLInputElement).accept.includes('.db')
+  ) as HTMLInputElement
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('Settings — corrupted file import (M-12)', () => {
-  it('shows the import error message when the file is invalid', async () => {
-    await renderDataSection()
-    await triggerImportFailure()
+// ─── Settings — restore backup: códigos de erro ───────────────────────────────
 
-    expect(screen.getByText('settings.importFileError')).toBeInTheDocument()
+describe('Settings — restore backup: error codes', () => {
+  it('shows ERR_RESTORE_004 and importErrorCorrupt when DB import throws', async () => {
+    vi.mocked(storage).importBlob.mockRejectedValueOnce(new Error('corrupt db'))
+    await renderDataSection()
+    await userEvent.upload(getDbInput(), new File(['not sqlite'], 'corrupt.db'))
+    await screen.findByText('settings.importErrorCorrupt')
+    expect(screen.getByText('ERR_RESTORE_004')).toBeInTheDocument()
   })
 
   it('shows the emergency export button after import failure', async () => {
+    vi.mocked(storage).importBlob.mockRejectedValueOnce(new Error('corrupt db'))
     await renderDataSection()
-    await triggerImportFailure()
-
+    await userEvent.upload(getDbInput(), new File(['bad'], 'bad.db'))
+    await screen.findByText('settings.importErrorCorrupt')
     expect(screen.getByRole('button', { name: /settings\.exportLocalData/i })).toBeInTheDocument()
   })
 
-  it('calls downloadDataFile with current data when emergency export is clicked', async () => {
-    const data = makeDataFile()
-    useDataStore.setState({ data, unsyncedCount: 0 })
-
+  it('calls storage.exportBlob when emergency export is clicked', async () => {
+    vi.mocked(storage).importBlob.mockRejectedValueOnce(new Error('corrupt db'))
     await renderDataSection()
-    await triggerImportFailure()
-
+    await userEvent.upload(getDbInput(), new File(['bad'], 'bad.db'))
+    await screen.findByText('settings.importErrorCorrupt')
     await userEvent.click(screen.getByRole('button', { name: /settings\.exportLocalData/i }))
+    expect(vi.mocked(storage).exportBlob).toHaveBeenCalled()
+  })
 
-    expect(vi.mocked(downloadDataFile)).toHaveBeenCalledWith(data)
+  it('replaces a previous error when a new import is triggered', async () => {
+    vi.mocked(storage).importBlob.mockRejectedValueOnce(new Error('corrupt db'))
+    await renderDataSection()
+    await userEvent.upload(getDbInput(), new File(['bad'], 'bad.db'))
+    await screen.findByText('settings.importErrorCorrupt')
+
+    // second import succeeds — error must disappear
+    vi.mocked(storage).loadDataFile.mockResolvedValueOnce(makeDataFile())
+    await userEvent.upload(getDbInput(), new File(['good'], 'good.db'))
+    await screen.findByText('settings.importSuccess')
+    expect(screen.queryByText('settings.importErrorCorrupt')).not.toBeInTheDocument()
   })
 })
 
-// ─── Settings — FSA fallback import (M-18) ───────────────────────────────────
+// ─── Settings — restore backup: feedback de sucesso ───────────────────────────
 
-describe('Settings — FSA fallback import (M-18)', () => {
-  beforeEach(() => {
-    vi.mocked(isFsaSupported).mockReturnValue(false)
+describe('Settings — restore backup: success feedback', () => {
+  it('shows success Toast after valid DB import', async () => {
+    vi.mocked(storage).loadDataFile.mockResolvedValueOnce(makeDataFile())
+    await renderDataSection()
+    await userEvent.upload(getDbInput(), new File(['sqlite-bytes'], 'backup.db'))
+    await screen.findByText('settings.importSuccess')
   })
 
-  it('calls importFileToIdb with the selected file when FSA is not supported', async () => {
-    const data = makeDataFile()
-    vi.mocked(importFileToIdb).mockResolvedValue(data)
-
+  it('does not show an error code on successful import', async () => {
+    vi.mocked(storage).loadDataFile.mockResolvedValueOnce(makeDataFile())
     await renderDataSection()
-
-    const file = new File([JSON.stringify(data)], 'nexus.json', { type: 'application/json' })
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    await userEvent.upload(input, file)
-
-    expect(vi.mocked(importFileToIdb)).toHaveBeenCalledWith(file)
+    await userEvent.upload(getDbInput(), new File(['sqlite-bytes'], 'backup.db'))
+    await screen.findByText('settings.importSuccess')
+    expect(screen.queryByText('ERR_RESTORE_004')).not.toBeInTheDocument()
   })
 
-  it('shows the import error when the fallback file is invalid', async () => {
-    vi.mocked(importFileToIdb).mockRejectedValue(new Error('Zod validation failed'))
-
+  it('dismisses the success Toast when the close button is clicked', async () => {
+    vi.mocked(storage).loadDataFile.mockResolvedValueOnce(makeDataFile())
     await renderDataSection()
-
-    const file = new File(['not valid json'], 'corrupt.json', { type: 'application/json' })
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement
-    await userEvent.upload(input, file)
-
-    expect(await screen.findByText('settings.importFileError')).toBeInTheDocument()
+    await userEvent.upload(getDbInput(), new File(['sqlite-bytes'], 'backup.db'))
+    await screen.findByText('settings.importSuccess')
+    await userEvent.click(screen.getByRole('button', { name: /dismiss/i }))
+    expect(screen.queryByText('settings.importSuccess')).not.toBeInTheDocument()
   })
 })
 
@@ -196,7 +200,6 @@ describe('Settings — M-24: accounts section split into Contas and Cartões', (
     const creditAccount = makeCreditAccount({ name: 'Meu Cartão Visa' })
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount, creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Settings />)
@@ -208,7 +211,6 @@ describe('Settings — M-24: accounts section split into Contas and Cartões', (
   it('opens modal with CREDIT pre-selected when clicking "Novo Cartão"', async () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Settings />)
@@ -224,7 +226,6 @@ describe('Settings — M-24: accounts section split into Contas and Cartões', (
     const creditAccount = makeCreditAccount({ id: 'acc-credit', name: 'Cartão Visa' })
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount, creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Settings />)
@@ -241,7 +242,6 @@ describe('Settings — CC-15: accounts list balance bifurcation', () => {
     const creditAccount = makeCreditAccount()
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Settings />)
@@ -253,7 +253,6 @@ describe('Settings — CC-15: accounts list balance bifurcation', () => {
     const retailAccount = makeRetailAccount()
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Settings />)
@@ -276,7 +275,6 @@ describe('Settings — CC-15: accounts list balance bifurcation', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [expense] }),
-      unsyncedCount: 0,
     })
 
     render(<Settings />)
@@ -291,7 +289,6 @@ describe('Settings — CC-15: accounts list balance bifurcation', () => {
     const creditAccount = makeCreditAccount({ creditMetadata: undefined })
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
 
     render(<Settings />)
@@ -318,7 +315,6 @@ describe('Settings — CC-15: accounts list balance bifurcation', () => {
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [retailAccount], transactions: [income, expense] }),
-      unsyncedCount: 0,
     })
 
     render(<Settings />)
@@ -349,7 +345,6 @@ describe('Settings — CC-15: accounts list balance bifurcation', () => {
         accounts: [retailAccount, creditAccount],
         transactions: [retailIncome, creditExpense],
       }),
-      unsyncedCount: 0,
     })
 
     render(<Settings />)
@@ -366,7 +361,6 @@ describe('Settings — M-23: issuer icon picker', () => {
   async function openCreditModal() {
     useDataStore.setState({
       data: makeDataFile({ accounts: [], transactions: [] }),
-      unsyncedCount: 0,
     })
     render(<Settings />)
     await userEvent.click(screen.getByRole('button', { name: /settings\.newCreditCard/i }))
@@ -392,7 +386,6 @@ describe('Settings — M-23: issuer icon picker', () => {
   it('does not show the issuer section when a non-CREDIT type is selected in the modal', async () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [], transactions: [] }),
-      unsyncedCount: 0,
     })
     render(<Settings />)
     // Open a regular account modal (non-CREDIT default)
@@ -405,7 +398,6 @@ describe('Settings — M-23: issuer icon picker', () => {
     const creditAccount = makeCreditAccount({ issuerIcon: 'nubank' })
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-      unsyncedCount: 0,
     })
     render(<Settings />)
     // The credit card row should be rendered — the issuer color is applied via style
