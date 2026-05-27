@@ -842,6 +842,194 @@ Browsers que implementam a File System Access API (Chrome/Edge) expiram as permi
 
 ---
 
+---
+
+## Fase 15 — Bug Report System (F-26)
+
+> Especificação derivada de `plan/METRICS.md`. Consultar esse documento para decisões de produto e privacidade.
+
+### TASK-BR-01: `src/lib/telemetry.ts` — Ring buffer e snapshot
+
+Módulo puro de telemetria local. **Nunca importar store ou dados financeiros diretamente** — apenas receber shape estrutural via parâmetro.
+
+**Exports:**
+```typescript
+// Tipos
+type SafeEvent = NavEvent | ActionEvent | ErrorEvent | PerfEvent
+interface SnapshotOptions {
+  includeNavigation: boolean
+  includeActions: boolean
+  includeErrors: boolean
+  includePerformance: boolean
+  includeDataShape: boolean
+}
+interface DataShape {
+  accountCount: number; transactionCount: number; categoryCount: number
+  tagCount: number; schemaVersion: number; auditLogEntries: number
+}
+interface BugSnapshot {
+  appVersion: string; schemaVersion: number; browser: string
+  pwa: boolean; resolution: string; locale: string
+  recentNavigation: NavEvent[]; recentActions: ActionEvent[]
+  recentErrors: ErrorEvent[]; performance: PerfEvent[]
+  dataShape: DataShape | null
+}
+
+// Funções
+track(event: SafeEvent): void
+trackNavigation(route: string): void
+trackAction(name: string): void
+trackError(error: Error): void
+trackPerformance(metric: string, ms: number): void
+getSnapshot(): SafeEvent[]
+getCurrentRoute(): string
+buildBugReportSnapshot(options: SnapshotOptions, dataShape?: DataShape): BugSnapshot
+clearBuffer(): void   // usado nos testes
+```
+
+**Constantes:** `MAX_EVENTS = 100`
+
+### TASK-BR-02: `src/hooks/useTrackNavigation.ts`
+
+Hook que usa `useLocation()` do React Router e chama `trackNavigation(location.pathname)` em cada mudança de rota. Chamado uma vez no `AppLayout`.
+
+```typescript
+export function useTrackNavigation(): void
+```
+
+### TASK-BR-03: Integração de `trackAction` no store
+
+Em `useDataStore.ts`, adicionar chamadas a `trackAction(name)` dentro de `mutate()` para as operações principais:
+
+| Operação | Nome do evento |
+|----------|---------------|
+| `addTransaction` | `'transaction_created'` |
+| `updateTransaction` | `'transaction_updated'` |
+| `deleteTransaction` | `'transaction_deleted'` |
+| `addAccount` | `'account_created'` |
+| `updateAccount` | `'account_updated'` |
+| `deleteAccount` | `'account_deleted'` |
+| `addCategory` | `'category_created'` |
+| `addTag` | `'tag_created'` |
+
+`trackAction` deve ser chamado **após** a mutação do store, não antes.
+
+### TASK-BR-04: Aprimorar `src/components/ErrorBoundary.tsx`
+
+Adicionar ao `componentDidCatch(error, info)`:
+```typescript
+import { trackError } from '@/lib/telemetry'
+trackError(error)
+```
+
+No fallback UI renderizado por `render()`, adicionar botão:
+```tsx
+<button onClick={() => setShowBugReport(true)}>
+  {t('bugReport.reportFromError')}
+</button>
+```
+
+O `ErrorBoundary` passa o `error.message` como `prefillTitle` para o `BugReportDialog`.
+
+Estado interno: `showBugReport: boolean` para controlar a abertura do dialog.
+
+### TASK-BR-05: `src/components/BugReportDialog.tsx`
+
+Dialog modal (overlay `fixed inset-0 z-50`) seguindo padrão visual do projeto.
+
+**Props:**
+```typescript
+interface BugReportDialogProps {
+  isOpen: boolean
+  onClose: () => void
+  prefillTitle?: string
+  dataShape?: DataShape   // passado pelo AppLayout via store
+}
+```
+
+**Estrutura interna:**
+1. `description: string` — campo `<textarea>` livre para o usuário descrever
+2. `SnapshotOptions` — 5 checkboxes, todos `true` por padrão:
+   - Incluir navegação recente
+   - Incluir ações recentes
+   - Incluir erros capturados
+   - Incluir métricas de performance
+   - Incluir contagem de dados (estrutural)
+3. Seção expansível **"O que será enviado"** — preview `<pre>` do JSON formatado gerado por `buildBugReportSnapshot(options, dataShape)`; atualiza em tempo real ao mudar checkboxes
+4. CTA **"Enviar Relatório"**:
+   - Desabilitado se `description.trim() === ''`
+   - Ao clicar: gera URL GitHub Issues, abre `window.open(url, '_blank')`, chama `onClose()`
+5. Link discreto **"Cancelar"**
+
+**Geração da URL:**
+```typescript
+function buildGitHubIssueUrl(title: string, snapshot: BugSnapshot, description: string): string {
+  const body = `## Descrição\n${description}\n\n## Contexto técnico\n\`\`\`json\n${JSON.stringify(snapshot, null, 2)}\n\`\`\``
+  const params = new URLSearchParams({ title, body, labels: 'bug' })
+  return `https://github.com/dassan/MyFinanceApp/issues/new?${params.toString()}`
+}
+```
+
+### TASK-BR-06: Integração no `AppLayout` e Settings
+
+**`AppLayout.tsx`:**
+- Estado `bugReportOpen: boolean`
+- Renderizar `<BugReportDialog>` condicionalmente
+- Passar `dataShape` derivado de `useDataStore` via `useMemo`
+- Expor `openBugReport()` via context ou prop ao `ErrorBoundary`
+
+**`pages/Settings/index.tsx`:**
+- Na seção "Preferências" ou nova seção "Suporte", adicionar botão "Reportar um problema"
+- Abre o `BugReportDialog` via estado local ou callback do `AppLayout`
+
+### TASK-BR-07: i18n — chaves `bugReport.*`
+
+Adicionar em `locales/pt-BR.json` e `locales/en-US.json`:
+
+```json
+{
+  "bugReport": {
+    "title": "Reportar um problema",
+    "descriptionLabel": "Descreva o que aconteceu",
+    "descriptionPlaceholder": "Ex: ao clicar em Salvar, o app congela e não mostra o lançamento...",
+    "snapshotTitle": "O que será enviado",
+    "snapshotExpand": "Ver detalhes técnicos",
+    "snapshotCollapse": "Ocultar detalhes",
+    "includeNavigation": "Incluir navegação recente",
+    "includeActions": "Incluir ações recentes",
+    "includeErrors": "Incluir erros capturados",
+    "includePerformance": "Incluir métricas de performance",
+    "includeDataShape": "Incluir contagem de dados (sem valores)",
+    "submit": "Enviar Relatório",
+    "cancel": "Cancelar",
+    "privacyNote": "Nenhum dado financeiro é incluído. Você revisará o conteúdo antes de enviar.",
+    "reportFromError": "Reportar este problema",
+    "openSuccess": "Relatório aberto no GitHub"
+  }
+}
+```
+
+### TASK-BR-08: Testes
+
+**`src/test/lib/telemetry.test.ts`:**
+- Ring buffer: respeita `MAX_EVENTS`, descarta o mais antigo quando cheio
+- `trackNavigation`: adiciona evento e atualiza `getCurrentRoute()`
+- `trackAction`: adiciona evento ao buffer
+- `trackError`: adiciona evento com `message` e `stack`
+- `getSnapshot`: retorna cópia (não referência) do buffer
+- `buildBugReportSnapshot`: cada opção `false` exclui a categoria correspondente; com opção `true`, inclui; `dataShape: null` quando `includeDataShape: false`; snapshot nunca contém campos financeiros
+- `clearBuffer`: reseta o buffer para array vazio
+
+**`src/test/components/BugReportDialog.test.tsx`:**
+- Renderiza corretamente quando `isOpen: true`
+- CTA desabilitado com `description` vazia; habilitado após preenchimento
+- Preview atualiza ao desmarcar checkbox
+- `window.open` é chamado com URL contendo `github.com/dassan/MyFinanceApp/issues/new`
+- `onClose` é chamado após clique no CTA
+- Botão "Cancelar" chama `onClose` sem abrir URL
+
+---
+
 ## Fora do Escopo (alinhado ao PRD)
 
 - `X-1` Criptografia do `data.json`

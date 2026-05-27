@@ -343,5 +343,25 @@
   },
   "demo": {
     "banner": "Demo mode — changes are not saved"
+  },
+  "bugReport": {
+    "title": "Report a problem",
+    "settingsHint": "Send safe technical context to help us fix issues faster",
+    "openButton": "Open",
+    "descriptionLabel": "What happened?",
+    "descriptionPlaceholder": "e.g. When I click Save, the app freezes and the transaction doesn't appear...",
+    "snapshotTitle": "Technical context that will be sent",
+    "snapshotExpand": "View details",
+    "snapshotCollapse": "Hide details",
+    "includeNavigation": "Recent navigation (visited routes)",
+    "includeActions": "Recent actions (operation types)",
+    "includeErrors": "Captured errors (stack traces)",
+    "includePerformance": "Performance metrics",
+    "includeDataShape": "Data counts (no financial values)",
+    "submit": "Send to GitHub",
+    "cancel": "Cancel",
+    "privacyNote": "No financial data is included. You review before sending.",
+    "privacyBadge": "Safe metadata only — no values, names or financial data are transmitted",
+    "reportFromError": "Report this problem"
   }
 }

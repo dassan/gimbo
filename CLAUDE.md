@@ -19,10 +19,11 @@ Workflow de desenvolvimento IA + humano definido em `plan/RULES.md`.
 | Documento | Caminho | Conteúdo |
 |-----------|---------|---------|
 | Arquitetura | `plan/ARCHITECTURE.md` | Stack, estrutura de diretórios, modelo de dados, APIs, fluxos de persistência, testes |
-| Requisitos de produto | `plan/PRD.md` | Features F-1 a F-23, critérios de aceite |
+| Requisitos de produto | `plan/PRD.md` | Features F-1 a F-26, critérios de aceite |
 | Backlog | `plan/BACKLOG.md` | Bugs (B-XX), melhorias (M-XX), relatórios (R-XX) com status |
 | Cartão de crédito | `plan/CREDIT_CARD.md` | Decisões de produto e desafios técnicos do módulo CC |
 | Cenários de sync | `plan/SYNC_SCENARIOS.md` | 14 cenários de sincronização e recuperação |
+| Telemetria e bug report | `plan/METRICS.md` | Decisões de privacidade, arquitetura do F-26 (Bug Report System), tasks TASK-BR-01 a BR-08 |
 | Relatórios avançados | `plan/REPORTS.md` | Épico do módulo analítico (4 views) |
 | Sistema de design | `design/design_system.md` | Cores, tipografia, componentes |
 | Workflow | `plan/RULES.md` | SDLC, cerimônias, divisão de responsabilidades |
@@ -148,10 +149,13 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 
 ---
 
-## Estado Atual (2026-04-20)
+## Estado Atual (2026-05-27)
 
-**473 testes unitários + 19 E2E** | Cobertura: ~97% statements | Schema v2
+**474 testes unitários + 19 E2E** | Cobertura: ~97% statements | Schema v2
 
 Todas as features do PRD (F-1 a F-23) implementadas. Módulo de Cartão de Crédito completo (CC-01 a CC-30).
 Melhorias M-01 a M-33 resolvidas. Relatórios avançados: Todas as fases concluídas (R-01 a R-16 resolvidos).
-Único bug/melhoria em aberto fora de relatórios: M-22 (estornos, baixa prioridade).
+
+Features planejadas: F-24 (Patrimônio Líquido), F-25 (Demo Mode), F-26 (Bug Report System).
+F-26 especificado em `plan/METRICS.md` e `plan/SPEC.md` (Fase 15, TASK-BR-01 a BR-08) — não iniciado.
+Único bug em aberto: M-22 (estornos, baixa prioridade).

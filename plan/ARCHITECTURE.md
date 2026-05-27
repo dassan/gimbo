@@ -3,6 +3,7 @@
 > Documento de referência técnica completa. Para regras de desenvolvimento, veja `../CLAUDE.md`.
 > Para decisões de cartão de crédito, veja `CREDIT_CARD.md`. Para cenários de sync, veja `SYNC_SCENARIOS.md`.
 > Para o módulo de relatórios, veja `REPORTS.md`.
+> Para telemetria local e sistema de reporte de bugs, veja `METRICS.md`.
 
 ---
 
@@ -58,6 +59,7 @@ MyFinanceApp/
 │   │   ├── types/index.ts       # Todas as entidades TypeScript
 │   │   ├── lib/
 │   │   │   ├── utils.ts         # cn(), uuid(), formatCurrency(), parseDateLocal(), motor de fatura virtual
+│   │   │   ├── telemetry.ts     # Ring buffer de eventos seguros + buildBugReportSnapshot() (F-26)
 │   │   │   ├── tabGuard.ts      # BroadcastChannel: múltiplas abas
 │   │   │   ├── i18n/            # Config i18next + locales (pt-BR, en-US)
 │   │   │   └── storage/
@@ -69,6 +71,8 @@ MyFinanceApp/
 │   │   ├── store/
 │   │   │   ├── useDataStore.ts  # Dados financeiros + persistência + sync
 │   │   │   └── useWorkspaceStore.ts # Preferências UI (tema, locale, shadows)
+│   │   ├── hooks/
+│   │   │   └── useTrackNavigation.ts  # Registra rotas no ring buffer de telemetria (F-26)
 │   │   ├── components/
 │   │   │   ├── AppLayout.tsx    # Shell: Navbar + Outlet + FAB + modais + banners
 │   │   │   ├── Navbar.tsx       # Nav + badge de sync + FSA guard
@@ -76,8 +80,9 @@ MyFinanceApp/
 │   │   │   ├── TransactionDrawer.tsx # Formulário de transação (drawer lateral)
 │   │   │   ├── PeriodSelector.tsx    # Seletor de período compartilhado
 │   │   │   ├── ConflictModal.tsx     # Resolução de conflito de arquivo
+│   │   │   ├── BugReportDialog.tsx   # Reporte opt-in com snapshot seguro + link GitHub Issues (F-26)
 │   │   │   ├── Toast.tsx        # Toast de erro
-│   │   │   └── ErrorBoundary.tsx
+│   │   │   └── ErrorBoundary.tsx     # Captura exceções → trackError() + botão "Reportar" (F-26)
 │   │   ├── pages/
 │   │   │   ├── Onboarding/      # Criar perfil ou importar data.json
 │   │   │   ├── Dashboard/       # Cards mensais + Minhas Contas + Meus Cartões + donut
@@ -366,6 +371,56 @@ Shell com 4 abas: Categorias | Cash Flow | Contas | Tags (R-01)
 Abas: Contas e Cartões | Categorias | Tags | Perfil | Preferências | Dados | Histórico
 - Contas e Cartões: seções separadas (M-24), saldo inicial editável (M-33)
 - Preferências: toggle Ambient Shadows (R-06)
+
+---
+
+## Bug Report System (F-26)
+
+> Documentação completa em `METRICS.md`. Resumo arquitetural abaixo.
+
+### Princípio
+Telemetria **zero transmissão automática**. Dados ficam em memória. Usuário aciona e confirma o envio.
+
+### `lib/telemetry.ts`
+
+Ring buffer em memória (`MAX_EVENTS = 100`). Tipos de evento:
+
+```typescript
+type SafeEvent =
+  | { type: 'navigation'; route: string; ts: number }
+  | { type: 'action'; name: string; ts: number }
+  | { type: 'error'; message: string; stack: string; route: string; ts: number }
+  | { type: 'performance'; metric: string; ms: number; ts: number }
+```
+
+API pública: `track()`, `trackNavigation()`, `trackAction()`, `trackError()`, `getSnapshot()`, `buildBugReportSnapshot(options)`.
+
+**Regra de privacidade:** `buildBugReportSnapshot` nunca inclui valores financeiros, nomes, IDs de entidades ou parâmetros de rota — apenas contadores estruturais e metadados do ambiente.
+
+### Fluxo de integração
+
+```
+AppLayout (mount)
+  → useTrackNavigation()      — registra rotas automaticamente
+
+useDataStore.mutate()
+  → trackAction(name)         — registra tipo da ação (não o valor)
+
+ErrorBoundary.componentDidCatch()
+  → trackError(error)         — registra stack trace
+
+[Usuário clica "Reportar problema"]
+  → BugReportDialog abre
+  → buildBugReportSnapshot(options)
+  → URL GitHub Issues gerada e aberta em nova aba
+```
+
+### Destino do reporte
+
+GitHub Issues via link pré-preenchido — zero backend, zero token:
+```
+https://github.com/dassan/MyFinanceApp/issues/new?title=...&body=...&labels=bug
+```
 
 ---
 

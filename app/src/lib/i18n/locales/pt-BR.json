@@ -343,5 +343,25 @@
   },
   "demo": {
     "banner": "Modo demonstração — alterações não são salvas"
+  },
+  "bugReport": {
+    "title": "Reportar um problema",
+    "settingsHint": "Envie contexto técnico seguro para nos ajudar a corrigir mais rápido",
+    "openButton": "Abrir",
+    "descriptionLabel": "O que aconteceu?",
+    "descriptionPlaceholder": "Ex: ao clicar em Salvar, o app congela e não mostra o lançamento...",
+    "snapshotTitle": "Contexto técnico que será enviado",
+    "snapshotExpand": "Ver detalhes",
+    "snapshotCollapse": "Ocultar detalhes",
+    "includeNavigation": "Navegação recente (rotas visitadas)",
+    "includeActions": "Ações recentes (tipos de operação)",
+    "includeErrors": "Erros capturados (stack traces)",
+    "includePerformance": "Métricas de performance",
+    "includeDataShape": "Contagem de dados (sem valores financeiros)",
+    "submit": "Enviar no GitHub",
+    "cancel": "Cancelar",
+    "privacyNote": "Nenhum dado financeiro é incluído. Você revisa antes de enviar.",
+    "privacyBadge": "Somente metadados seguros — nenhum valor, nome ou dado financeiro é transmitido",
+    "reportFromError": "Reportar este problema"
   }
 }

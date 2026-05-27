@@ -13,6 +13,7 @@ import { applyRetention } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
 import { uuid, now } from '@/lib/utils'
 import { isDemoMode } from '@/lib/demo'
+import { trackAction } from '@/lib/telemetry'
 
 // ─── Debounce helper ──────────────────────────────────────────────────────────
 
@@ -98,63 +99,79 @@ export const useDataStore = create<DataStore>((set) => ({
 
   addAccount: (account) =>
     set((s) =>
-      mutate(s, (d) => {
-        d.accounts.push(sanitizeAccount(account))
-        addAudit(
-          d,
-          makeEntry(
-            'CREATE',
-            'account',
-            account.id,
-            buildSummary('CREATE', 'account', account.name)
+      mutate(
+        s,
+        (d) => {
+          d.accounts.push(sanitizeAccount(account))
+          addAudit(
+            d,
+            makeEntry(
+              'CREATE',
+              'account',
+              account.id,
+              buildSummary('CREATE', 'account', account.name)
+            )
           )
-        )
-      })
+        },
+        'account_created'
+      )
     ),
 
   updateAccount: (account) =>
     set((s) =>
-      mutate(s, (d) => {
-        const i = d.accounts.findIndex((a) => a.id === account.id)
-        if (i !== -1) d.accounts[i] = sanitizeAccount(account)
-        addAudit(
-          d,
-          makeEntry(
-            'UPDATE',
-            'account',
-            account.id,
-            buildSummary('UPDATE', 'account', account.name)
+      mutate(
+        s,
+        (d) => {
+          const i = d.accounts.findIndex((a) => a.id === account.id)
+          if (i !== -1) d.accounts[i] = sanitizeAccount(account)
+          addAudit(
+            d,
+            makeEntry(
+              'UPDATE',
+              'account',
+              account.id,
+              buildSummary('UPDATE', 'account', account.name)
+            )
           )
-        )
-      })
+        },
+        'account_updated'
+      )
     ),
 
   deleteAccount: (id) =>
     set((s) =>
-      mutate(s, (d) => {
-        const name = d.accounts.find((a) => a.id === id)?.name ?? id
-        d.accounts = d.accounts.filter((a) => a.id !== id)
-        d.deletedIds = [...new Set([...d.deletedIds, id])]
-        addAudit(d, makeEntry('DELETE', 'account', id, buildSummary('DELETE', 'account', name)))
-      })
+      mutate(
+        s,
+        (d) => {
+          const name = d.accounts.find((a) => a.id === id)?.name ?? id
+          d.accounts = d.accounts.filter((a) => a.id !== id)
+          d.deletedIds = [...new Set([...d.deletedIds, id])]
+          addAudit(d, makeEntry('DELETE', 'account', id, buildSummary('DELETE', 'account', name)))
+        },
+        'account_deleted'
+      )
     ),
 
   // ── Categories ────────────────────────────────────────────────────────────
 
   addCategory: (category) =>
     set((s) =>
-      mutate(s, (d) => {
-        d.categories.push(category)
-        addAudit(
-          d,
-          makeEntry(
-            'CREATE',
-            'category',
-            category.id,
-            buildSummary('CREATE', 'category', category.name)
+      mutate(
+        s,
+        (d) => {
+          d.categories.push(category)
+          addAudit(
+            d,
+            makeEntry(
+              'CREATE',
+              'category',
+              category.id,
+              buildSummary('CREATE', 'category', category.name)
+            )
           )
-        )
-      })
+        },
+        'category_created'
+      )
     ),
 
   updateCategory: (category) =>
@@ -188,13 +205,17 @@ export const useDataStore = create<DataStore>((set) => ({
 
   addTag: (tag) =>
     set((s) =>
-      mutate(s, (d) => {
-        d.tags.push(tag)
-        addAudit(
-          d,
-          makeEntry('CREATE', 'tag', tag.id, buildSummary('CREATE', 'tag', `#${tag.name}`))
-        )
-      })
+      mutate(
+        s,
+        (d) => {
+          d.tags.push(tag)
+          addAudit(
+            d,
+            makeEntry('CREATE', 'tag', tag.id, buildSummary('CREATE', 'tag', `#${tag.name}`))
+          )
+        },
+        'tag_created'
+      )
     ),
 
   updateTag: (tag) =>
@@ -223,86 +244,99 @@ export const useDataStore = create<DataStore>((set) => ({
 
   addTransaction: (tx) =>
     set((s) =>
-      mutate(s, (d) => {
-        // ── CC-24/CC-25: Installment group creation ──────────────────────
-        if (tx.installment && tx.installment.total > 1) {
-          const N = tx.installment.total
-          const parentId = tx.installment.parentId
-          const accName = d.accounts.find((a) => a.id === tx.accountId)?.name ?? tx.accountId
+      mutate(
+        s,
+        (d) => {
+          // ── CC-24/CC-25: Installment group creation ──────────────────────
+          if (tx.installment && tx.installment.total > 1) {
+            const N = tx.installment.total
+            const parentId = tx.installment.parentId
+            const accName = d.accounts.find((a) => a.id === tx.accountId)?.name ?? tx.accountId
 
-          const perInstallment = Math.round((tx.amount / N) * 100) / 100
-          const remainder = Math.round((tx.amount - perInstallment * N) * 100) / 100
+            const perInstallment = Math.round((tx.amount / N) * 100) / 100
+            const remainder = Math.round((tx.amount - perInstallment * N) * 100) / 100
 
-          for (let i = 1; i <= N; i++) {
-            const installmentAmount = i === 1 ? perInstallment + remainder : perInstallment
-            const installmentTx: Transaction = {
-              ...tx,
-              id: i === 1 ? tx.id : uuid(),
-              amount: installmentAmount,
-              date: advanceMonths(tx.date, i - 1),
-              description: (tx.description + ` (${i}/${N})`).trim(),
-              isPaid: false,
-              installment: { parentId, currentIndex: i, total: N },
+            for (let i = 1; i <= N; i++) {
+              const installmentAmount = i === 1 ? perInstallment + remainder : perInstallment
+              const installmentTx: Transaction = {
+                ...tx,
+                id: i === 1 ? tx.id : uuid(),
+                amount: installmentAmount,
+                date: advanceMonths(tx.date, i - 1),
+                description: (tx.description + ` (${i}/${N})`).trim(),
+                isPaid: false,
+                installment: { parentId, currentIndex: i, total: N },
+              }
+              d.transactions.push(installmentTx)
             }
-            d.transactions.push(installmentTx)
+
+            const totalStr = `R$ ${tx.amount.toFixed(2).replace('.', ',')}`
+            const groupSummary = `Compra parcelada em ${N}x: ${tx.description || accName} — ${totalStr} em ${accName}`
+            addAudit(d, makeEntry('CREATE', 'transaction', parentId, groupSummary))
+            return
           }
 
-          const totalStr = `R$ ${tx.amount.toFixed(2).replace('.', ',')}`
-          const groupSummary = `Compra parcelada em ${N}x: ${tx.description || accName} — ${totalStr} em ${accName}`
-          addAudit(d, makeEntry('CREATE', 'transaction', parentId, groupSummary))
-          return
-        }
-
-        // ── Standard single transaction ──────────────────────────────────
-        d.transactions.push(tx)
-        let summary: string
-        if (tx.type === 'CREDIT_PAYMENT') {
-          const creditAccName = d.accounts.find((a) => a.id === tx.accountId)?.name ?? tx.accountId
-          const debitAccName =
-            d.accounts.find((a) => a.id === tx.transferAccountId)?.name ??
-            tx.transferAccountId ??
-            ''
-          summary = `Pagamento de fatura: ${creditAccName} ← ${debitAccName} R$ ${tx.amount.toFixed(2).replace('.', ',')}`
-        } else {
-          const catName = d.categories.find((c) => c.id === tx.categoryId)?.name ?? ''
-          const extra = `R$ ${tx.amount.toFixed(2).replace('.', ',')}${catName ? ` — ${catName}` : ''}`
-          summary = buildSummary('CREATE', 'transaction', tx.description || catName, extra)
-        }
-        addAudit(d, makeEntry('CREATE', 'transaction', tx.id, summary))
-      })
+          // ── Standard single transaction ──────────────────────────────────
+          d.transactions.push(tx)
+          let summary: string
+          if (tx.type === 'CREDIT_PAYMENT') {
+            const creditAccName =
+              d.accounts.find((a) => a.id === tx.accountId)?.name ?? tx.accountId
+            const debitAccName =
+              d.accounts.find((a) => a.id === tx.transferAccountId)?.name ??
+              tx.transferAccountId ??
+              ''
+            summary = `Pagamento de fatura: ${creditAccName} ← ${debitAccName} R$ ${tx.amount.toFixed(2).replace('.', ',')}`
+          } else {
+            const catName = d.categories.find((c) => c.id === tx.categoryId)?.name ?? ''
+            const extra = `R$ ${tx.amount.toFixed(2).replace('.', ',')}${catName ? ` — ${catName}` : ''}`
+            summary = buildSummary('CREATE', 'transaction', tx.description || catName, extra)
+          }
+          addAudit(d, makeEntry('CREATE', 'transaction', tx.id, summary))
+        },
+        'transaction_created'
+      )
     ),
 
   updateTransaction: (tx) =>
     set((s) =>
-      mutate(s, (d) => {
-        const i = d.transactions.findIndex((t) => t.id === tx.id)
-        if (i !== -1) d.transactions[i] = tx
-        const catName = d.categories.find((c) => c.id === tx.categoryId)?.name ?? ''
-        addAudit(
-          d,
-          makeEntry(
-            'UPDATE',
-            'transaction',
-            tx.id,
-            buildSummary('UPDATE', 'transaction', tx.description || catName)
+      mutate(
+        s,
+        (d) => {
+          const i = d.transactions.findIndex((t) => t.id === tx.id)
+          if (i !== -1) d.transactions[i] = tx
+          const catName = d.categories.find((c) => c.id === tx.categoryId)?.name ?? ''
+          addAudit(
+            d,
+            makeEntry(
+              'UPDATE',
+              'transaction',
+              tx.id,
+              buildSummary('UPDATE', 'transaction', tx.description || catName)
+            )
           )
-        )
-      })
+        },
+        'transaction_updated'
+      )
     ),
 
   deleteTransaction: (id) =>
     set((s) =>
-      mutate(s, (d) => {
-        const tx = d.transactions.find((t) => t.id === id)
-        const name =
-          tx?.description ?? d.categories.find((c) => c.id === tx?.categoryId)?.name ?? id
-        d.transactions = d.transactions.filter((t) => t.id !== id)
-        d.deletedIds = [...new Set([...d.deletedIds, id])]
-        addAudit(
-          d,
-          makeEntry('DELETE', 'transaction', id, buildSummary('DELETE', 'transaction', name))
-        )
-      })
+      mutate(
+        s,
+        (d) => {
+          const tx = d.transactions.find((t) => t.id === id)
+          const name =
+            tx?.description ?? d.categories.find((c) => c.id === tx?.categoryId)?.name ?? id
+          d.transactions = d.transactions.filter((t) => t.id !== id)
+          d.deletedIds = [...new Set([...d.deletedIds, id])]
+          addAudit(
+            d,
+            makeEntry('DELETE', 'transaction', id, buildSummary('DELETE', 'transaction', name))
+          )
+        },
+        'transaction_deleted'
+      )
     ),
 
   // ── CC-27: Delete all installments sharing a parentId ─────────────────────
@@ -356,11 +390,16 @@ function addAudit(data: DataFile, entry: AuditEntry) {
   data.auditLog = applyRetention(data.auditLog, data.settings.auditLogRetentionLimit)
 }
 
-function mutate(state: DataStore, fn: (data: DataFile) => void): Partial<DataStore> {
+function mutate(
+  state: DataStore,
+  fn: (data: DataFile) => void,
+  actionName?: string
+): Partial<DataStore> {
   if (!state.data) return {}
   const data = structuredClone(state.data)
   fn(data)
   debouncedReplaceAll(data)
+  if (actionName) trackAction(actionName)
   return { data }
 }
 

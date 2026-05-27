@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { FlaskConical } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { isDemoMode } from '@/lib/demo'
+import { useTrackNavigation } from '@/hooks/useTrackNavigation'
 import Navbar from '@/components/Navbar'
 import FAB from '@/components/FAB'
 import TransactionDrawer from '@/components/TransactionDrawer'
@@ -21,6 +22,8 @@ export default function AppLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | undefined>(undefined)
   const location = useLocation()
+
+  useTrackNavigation()
 
   const data = useDataStore((s) => s.data)
 

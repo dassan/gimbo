@@ -16,6 +16,7 @@ O Gimbo é um aplicativo web (PWA Client-side) de gestão de finanças pessoais 
 * **Tempo de Inserção de Despesa:** Lançamentos em < 6 segundos e no máximo 2 cliques da tela principal.
 * **Performance e Latência de Renderização:** Troca instantânea entre telas e abas do aplicativo (< 100ms) visto que não há chamadas a backends.
 * **Latência de Salvamento:** O motor de armazenamento vai gravar as mutações no arquivo em disco (em background) em < 300ms, sem congelamentos na UI.
+* **Qualidade de bugs reportados:** Com o Bug Report System (F-26), cada reporte inclui snapshot de contexto seguro — objetivo é reduzir ciclos de ida-e-volta para reprodução de bugs.
 
 ## 4. Histórias de Usuário
 * **US-1:** "Como usuário zeloso com dados, quero guardar meu histórico em um arquivo JSON puramente local para que bancos ou empresas terceiras não acessem ou comercializem meu padrão de vida."
@@ -52,12 +53,15 @@ O Gimbo é um aplicativo web (PWA Client-side) de gestão de finanças pessoais 
 * **F-24:** Patrimônio Líquido (Net Worth) — página dedicada na navbar com snapshot e evolução histórica mensal. Todas as contas participam: não-CREDIT somam como ativos, CREDIT contribui como passivo. Ver épico `plan/BACKLOG.md` (NW-01 a NW-07).
 * **F-25:** Demo Mode — versão pública do app com dados sintéticos pré-carregados e persistência desabilitada (`persist()` no-op). Ativado via `VITE_DEMO_MODE=true`. Inclui banner de aviso e deploy no Vercel. Ver épico `plan/BACKLOG.md` (DM-01 a DM-05).
 
+* **F-26:** Bug Report System — coleta local de eventos em ring buffer (sem transmissão automática), formulário de reporte opt-in com preview do snapshot seguro, envio via link GitHub Issues pré-preenchido. Ver épico completo em `plan/METRICS.md`.
+
 ### Fora do Escopo (Futuro)
 * **X-1:** Criptografia do arquivo JSON.
 * **X-2:** Sincronização via Open-Banking.
 * **X-3:** App mobile nativo.
 * **X-4:** Login de servidor / modo partilhado.
 * **X-5:** Audit Log em arquivo separado.
+* **X-6:** Telemetria de uso automática (analytics de features) — incompatível com a proposta local-first enquanto não houver consentimento explícito e infraestrutura zero-servidor; decisão registrada em `plan/METRICS.md`.
 
 ## 6. Modelo de Dados e Arquitetura
 
@@ -152,3 +156,4 @@ Todas as 33 melhorias planejadas foram implementadas, incluindo:
 | M-22 | Estornos e chargebacks em contas CREDIT | baixa |
 | F-24 | Patrimônio Líquido — página dedicada (NW-01 a NW-07) | média |
 | F-25 | Demo Mode — dados sintéticos + persist no-op + deploy Vercel (DM-01 a DM-05) | alta |
+| F-26 | Bug Report System — telemetria local + reporte opt-in via GitHub Issues (TASK-BR-01 a TASK-BR-08) | média |

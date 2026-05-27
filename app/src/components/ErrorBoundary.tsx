@@ -1,4 +1,6 @@
 import { Component, type ReactNode } from 'react'
+import { trackError } from '@/lib/telemetry'
+import BugReportDialog from '@/components/BugReportDialog'
 
 interface Props {
   children: ReactNode
@@ -7,54 +9,94 @@ interface Props {
 
 interface State {
   error: Error | null
+  bugReportOpen: boolean
 }
 
 export class ErrorBoundary extends Component<Props, State> {
-  state: State = { error: null }
+  state: State = { error: null, bugReportOpen: false }
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { error }
   }
 
   componentDidCatch(error: Error, info: { componentStack: string }) {
     // eslint-disable-next-line no-console
     console.error('[ErrorBoundary]', error, info.componentStack)
+    trackError(error)
   }
 
   reset = () => {
-    this.setState({ error: null })
+    this.setState({ error: null, bugReportOpen: false })
+  }
+
+  openBugReport = () => {
+    this.setState({ bugReportOpen: true })
+  }
+
+  closeBugReport = () => {
+    this.setState({ bugReportOpen: false })
   }
 
   render() {
-    const { error } = this.state
+    const { error, bugReportOpen } = this.state
     if (!error) return this.props.children
 
     if (this.props.fallback === 'full-page') {
       return (
-        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface p-8 text-center">
-          <p className="text-sm font-semibold text-on-surface">Algo deu errado</p>
-          <p className="max-w-sm text-xs text-on-surface/50">{error.message}</p>
-          <button
-            onClick={this.reset}
-            className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
-          >
-            Recarregar
-          </button>
-        </div>
+        <>
+          <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface p-8 text-center">
+            <p className="text-sm font-semibold text-on-surface">Algo deu errado</p>
+            <p className="max-w-sm text-xs text-on-surface/50">{error.message}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={this.reset}
+                className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:brightness-110"
+              >
+                Recarregar
+              </button>
+              <button
+                onClick={this.openBugReport}
+                className="rounded-xl border border-outline-variant px-4 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container-low"
+              >
+                Reportar problema
+              </button>
+            </div>
+          </div>
+          <BugReportDialog
+            isOpen={bugReportOpen}
+            onClose={this.closeBugReport}
+            prefillTitle={error.message}
+          />
+        </>
       )
     }
 
     return (
-      <div className="flex flex-col items-center gap-3 rounded-2xl bg-surface-container-low p-8 text-center">
-        <p className="text-sm font-semibold text-on-surface">Esta seção não pôde ser carregada</p>
-        <p className="text-xs text-on-surface/50">{error.message}</p>
-        <button
-          onClick={this.reset}
-          className="rounded-xl bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
-        >
-          Tentar novamente
-        </button>
-      </div>
+      <>
+        <div className="flex flex-col items-center gap-3 rounded-2xl bg-surface-container-low p-8 text-center">
+          <p className="text-sm font-semibold text-on-surface">Esta seção não pôde ser carregada</p>
+          <p className="text-xs text-on-surface/50">{error.message}</p>
+          <div className="flex gap-2">
+            <button
+              onClick={this.reset}
+              className="rounded-xl bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
+            >
+              Tentar novamente
+            </button>
+            <button
+              onClick={this.openBugReport}
+              className="rounded-xl border border-outline-variant px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container-high"
+            >
+              Reportar
+            </button>
+          </div>
+        </div>
+        <BugReportDialog
+          isOpen={bugReportOpen}
+          onClose={this.closeBugReport}
+          prefillTitle={error.message}
+        />
+      </>
     )
   }
 }

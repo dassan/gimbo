@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import BugReportDialog from '@/components/BugReportDialog'
 import {
   Landmark,
   Tag as TagIcon,
@@ -201,6 +202,7 @@ export default function Settings() {
   const { workspace, setTheme, setLocale, setAmbientShadows } = useWorkspaceStore()
 
   const [activeSection, setActiveSection] = useState<Section>('accounts')
+  const [bugReportOpen, setBugReportOpen] = useState(false)
   const [profileName, setProfileName] = useState(data?.user.name ?? '')
   const [profileEmail, setProfileEmail] = useState(data?.user.email ?? '')
   const [modal, setModal] = useState<ModalState>({ open: false })
@@ -748,6 +750,24 @@ export default function Settings() {
                       </div>
                     )}
                   </div>
+
+                  {/* Bug report */}
+                  <div className="rounded-2xl border border-outline-variant bg-surface-container px-5 py-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-on-surface">{t('bugReport.title')}</p>
+                        <p className="mt-0.5 text-xs text-on-surface/40">
+                          {t('bugReport.settingsHint')}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setBugReportOpen(true)}
+                        className="rounded-xl border border-outline-variant px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container-high"
+                      >
+                        {t('bugReport.openButton')}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </Section>
             )}
@@ -915,6 +935,9 @@ export default function Settings() {
           onClose={() => setTagModal({ open: false })}
         />
       )}
+
+      {/* ── Bug Report Dialog ────────────────────────────────────────────────── */}
+      <BugReportDialog isOpen={bugReportOpen} onClose={() => setBugReportOpen(false)} />
     </>
   )
 }
