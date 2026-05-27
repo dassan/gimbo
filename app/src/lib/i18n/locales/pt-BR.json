@@ -340,5 +340,8 @@
     "noData": "Nenhum dado encontrado",
     "viewAll": "Ver Tudo",
     "total": "Total"
+  },
+  "demo": {
+    "banner": "Modo demonstração — alterações não são salvas"
   }
 }

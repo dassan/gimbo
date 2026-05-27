@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { FlaskConical } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
+import { isDemoMode } from '@/lib/demo'
 import Navbar from '@/components/Navbar'
 import FAB from '@/components/FAB'
 import TransactionDrawer from '@/components/TransactionDrawer'
@@ -14,6 +17,7 @@ export interface AppLayoutContext {
 const NO_FAB_ROUTES = ['/settings']
 
 export default function AppLayout() {
+  const { t } = useTranslation()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | undefined>(undefined)
   const location = useLocation()
@@ -45,7 +49,14 @@ export default function AppLayout() {
     <div className="flex min-h-screen flex-col bg-surface">
       <Navbar initials={initials} />
 
-      <main className="flex-1 pt-14">
+      {isDemoMode() && (
+        <div className="fixed top-14 left-0 right-0 z-40 flex items-center justify-center gap-2 bg-amber-400 px-6 py-2.5 text-xs font-medium text-amber-950">
+          <FlaskConical size={14} strokeWidth={2} className="shrink-0" />
+          <span>{t('demo.banner')}</span>
+        </div>
+      )}
+
+      <main className={`flex-1 ${isDemoMode() ? 'pt-24' : 'pt-14'}`}>
         <ErrorBoundary fallback="card">
           <Outlet context={{ openTransactionDrawer } satisfies AppLayoutContext} />
         </ErrorBoundary>

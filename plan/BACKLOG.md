@@ -220,6 +220,20 @@ Substituição completa da camada de persistência baseada em File System Access
 
 ---
 
+## Demo Mode & Deploy Público — F-25
+
+Versão pública do Gimbo acessível via URL sem necessidade de download. Dados sintéticos pré-carregados no bundle; toda mutação do store é descartada ao recarregar (persist no-op). Ativado pela env var `VITE_DEMO_MODE=true` no build de deploy. As fases são dependentes entre si — não iniciar uma fase sem a anterior concluída.
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| DM-01 | **`src/lib/demo.ts` — Criar utilitário `isDemoMode()` e asset de dados sintéticos.** | crítica | resolvido |
+| DM-02 | **`store/useDataStore.ts` — No-op de persistência em modo demo.** | crítica | resolvido |
+| DM-03 | **`store/useDataStore.ts` — Boot com dados sintéticos em modo demo.** | crítica | resolvido |
+| DM-04 | **`components/AppLayout.tsx` — Banner de modo demo.** | alta | resolvido |
+| DM-05 | **Vercel — Configurar deploy público.** | alta | resolvido |
+
+---
+
 ## Patrimônio Líquido (Net Worth) — F-24
 
 Página dedicada na navbar que mostra o patrimônio líquido do usuário: todas as contas não-CREDIT somam como ativos; contas CREDIT contribuem como passivos (fatura em aberto deduzida). Além do snapshot atual, exibe gráfico de evolução histórica mensal. As fases são dependentes entre si — não iniciar uma fase sem a anterior estar completa e com testes passando.

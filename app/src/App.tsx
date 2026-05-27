@@ -4,6 +4,7 @@ import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { useDataStore } from '@/store/useDataStore'
 import { storage } from '@/services/storage'
 import { validateDataFile } from '@/lib/storage/schema'
+import { isDemoMode, loadDemoData } from '@/lib/demo'
 import AppLayout from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import Onboarding from '@/pages/Onboarding'
@@ -47,6 +48,11 @@ export default function App() {
       try {
         initWorkspace()
 
+        if (isDemoMode()) {
+          loadData(await loadDemoData())
+          return
+        }
+
         if (import.meta.env.DEV) {
           const params = new URLSearchParams(window.location.search)
           if (params.has('devSeed')) {
@@ -85,7 +91,7 @@ export default function App() {
         <p className="text-sm font-semibold text-on-surface">
           Não foi possível carregar seus dados
         </p>
-        <p className="max-w-sm text-xs text-on-surface/50">{initError}</p>
+        <p className="max-w-xs text-xs text-on-surface/50">{initError}</p>
       </div>
     )
   }

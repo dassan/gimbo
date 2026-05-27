@@ -12,12 +12,14 @@ import type {
 import { applyRetention } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
 import { uuid, now } from '@/lib/utils'
+import { isDemoMode } from '@/lib/demo'
 
 // ─── Debounce helper ──────────────────────────────────────────────────────────
 
 let _sqliteTimer: ReturnType<typeof setTimeout> | null = null
 
 function debouncedReplaceAll(data: DataFile) {
+  if (isDemoMode()) return
   if (_sqliteTimer) clearTimeout(_sqliteTimer)
   _sqliteTimer = setTimeout(() => {
     void storage.replaceAll(data)
@@ -100,7 +102,12 @@ export const useDataStore = create<DataStore>((set) => ({
         d.accounts.push(sanitizeAccount(account))
         addAudit(
           d,
-          makeEntry('CREATE', 'account', account.id, buildSummary('CREATE', 'account', account.name))
+          makeEntry(
+            'CREATE',
+            'account',
+            account.id,
+            buildSummary('CREATE', 'account', account.name)
+          )
         )
       })
     ),
@@ -112,7 +119,12 @@ export const useDataStore = create<DataStore>((set) => ({
         if (i !== -1) d.accounts[i] = sanitizeAccount(account)
         addAudit(
           d,
-          makeEntry('UPDATE', 'account', account.id, buildSummary('UPDATE', 'account', account.name))
+          makeEntry(
+            'UPDATE',
+            'account',
+            account.id,
+            buildSummary('UPDATE', 'account', account.name)
+          )
         )
       })
     ),
