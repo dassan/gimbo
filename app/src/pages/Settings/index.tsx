@@ -35,11 +35,10 @@ import {
   Wrench,
   Gift,
 } from 'lucide-react'
-import { ZodError } from 'zod'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { formatCurrency, cn, uuid, now, getCurrentInvoiceBalance } from '@/lib/utils'
-import { AUDIT_RETENTION_DEFAULT, SchemaVersionError, validateDataFile } from '@/lib/storage/schema'
+import { AUDIT_RETENTION_DEFAULT } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
 import Toast from '@/components/Toast'
 import type {
@@ -137,9 +136,6 @@ type ImportResult =
   | null
 
 const IMPORT_ERROR_CODES = {
-  GENERIC: 'ERR_RESTORE_001',
-  SCHEMA_VERSION: 'ERR_RESTORE_002',
-  VALIDATION: 'ERR_RESTORE_003',
   CORRUPT: 'ERR_RESTORE_004',
 } as const
 
@@ -212,7 +208,6 @@ export default function Settings() {
   const [tagModal, setTagModal] = useState<TagModalState>({ open: false })
   const [importResult, setImportResult] = useState<ImportResult>(null)
   const importDbInputRef = useRef<HTMLInputElement>(null)
-  const importJsonInputRef = useRef<HTMLInputElement>(null)
 
   function handleSaveProfile() {
     if (!data) return
@@ -247,37 +242,6 @@ export default function Settings() {
         message: t('settings.importErrorCorrupt'),
         code: IMPORT_ERROR_CODES.CORRUPT,
       })
-    }
-  }
-
-  async function handleImportJson(file: File) {
-    setImportResult(null)
-    try {
-      const text = await file.text()
-      const imported = validateDataFile(JSON.parse(text) as unknown)
-      await storage.replaceAll(imported)
-      loadData(imported)
-      setImportResult({ status: 'success' })
-    } catch (err) {
-      if (err instanceof SchemaVersionError) {
-        setImportResult({
-          status: 'error',
-          message: t('settings.importErrorSchema'),
-          code: IMPORT_ERROR_CODES.SCHEMA_VERSION,
-        })
-      } else if (err instanceof ZodError) {
-        setImportResult({
-          status: 'error',
-          message: t('settings.importErrorValidation'),
-          code: IMPORT_ERROR_CODES.VALIDATION,
-        })
-      } else {
-        setImportResult({
-          status: 'error',
-          message: t('settings.importErrorGeneric'),
-          code: IMPORT_ERROR_CODES.GENERIC,
-        })
-      }
     }
   }
 
@@ -838,30 +802,6 @@ export default function Settings() {
                       }}
                     />
                   </div>
-                </div>
-
-                {/* Migração de arquivo JSON legado */}
-                <div>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-on-surface/40">
-                    {t('settings.legacyImport')}
-                  </p>
-                  <button
-                    onClick={() => importJsonInputRef.current?.click()}
-                    className="flex w-full items-center gap-3 rounded-2xl bg-surface-container border border-outline-variant px-5 py-4 hover:bg-surface-container-high transition-colors"
-                  >
-                    <Upload size={18} className="text-on-surface/40" strokeWidth={1.5} />
-                    <span className="text-sm text-on-surface/60">{t('settings.importJson')}</span>
-                  </button>
-                  <input
-                    ref={importJsonInputRef}
-                    type="file"
-                    accept=".json"
-                    className="hidden"
-                    onChange={(e) => {
-                      if (e.target.files?.[0]) void handleImportJson(e.target.files[0])
-                      e.target.value = ''
-                    }}
-                  />
                 </div>
 
                 {importResult?.status === 'error' && (
