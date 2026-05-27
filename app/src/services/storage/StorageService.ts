@@ -542,6 +542,11 @@ export class StorageService {
     return this.call<void>('replaceAll', [data])
   }
 
+  /** Delete all rows from every table, leaving the schema intact. */
+  clearAll(): Promise<void> {
+    return this.call<void>('clearAll', [])
+  }
+
   // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
   terminate(): void {

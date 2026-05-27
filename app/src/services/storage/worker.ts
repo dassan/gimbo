@@ -303,6 +303,31 @@ async function replaceAll(raw: unknown): Promise<void> {
   }
 }
 
+// ─── clearAll ─────────────────────────────────────────────────────────────────
+
+async function clearAll(): Promise<void> {
+  await sqlite3.run(db, 'BEGIN')
+  try {
+    await sqlite3.run(db, 'DELETE FROM transaction_tags')
+    await sqlite3.run(db, 'DELETE FROM audit_log')
+    await sqlite3.run(db, 'DELETE FROM deleted_ids')
+    await sqlite3.run(db, 'DELETE FROM transactions')
+    await sqlite3.run(db, 'DELETE FROM categories')
+    await sqlite3.run(db, 'DELETE FROM tags')
+    await sqlite3.run(db, 'DELETE FROM accounts')
+    await sqlite3.run(db, 'DELETE FROM settings')
+    await sqlite3.run(db, 'DELETE FROM users')
+    await sqlite3.run(db, 'COMMIT')
+  } catch (err) {
+    try {
+      await sqlite3.run(db, 'ROLLBACK')
+    } catch {
+      // Ignore rollback errors
+    }
+    throw err
+  }
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 async function dispatch(method: string, args: unknown[]): Promise<unknown> {
@@ -321,6 +346,8 @@ async function dispatch(method: string, args: unknown[]): Promise<unknown> {
       return importDb(args[0] as ArrayBuffer)
     case 'replaceAll':
       return replaceAll(args[0])
+    case 'clearAll':
+      return clearAll()
     default:
       throw new Error(`[storage-worker] Unknown method: ${method}`)
   }

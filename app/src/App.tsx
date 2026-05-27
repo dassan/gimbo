@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { useDataStore } from '@/store/useDataStore'
 import { storage } from '@/services/storage'
+import { validateDataFile } from '@/lib/storage/schema'
 import AppLayout from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import Onboarding from '@/pages/Onboarding'
@@ -45,6 +46,25 @@ export default function App() {
     async function init() {
       try {
         initWorkspace()
+
+        if (import.meta.env.DEV) {
+          const params = new URLSearchParams(window.location.search)
+          if (params.has('devSeed')) {
+            const res = await fetch('/dev/seed.json')
+            const data = validateDataFile((await res.json()) as unknown)
+            await storage.replaceAll(data)
+            window.history.replaceState(null, '', window.location.pathname)
+            loadData(data)
+            setHydrated(true)
+            return
+          }
+          if (params.has('devReset')) {
+            await storage.clearAll()
+            window.history.replaceState(null, '', window.location.pathname)
+            setHydrated(true)
+            return
+          }
+        }
 
         const saved = await storage.loadDataFile()
         if (saved) loadData(saved)
