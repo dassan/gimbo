@@ -1,7 +1,7 @@
 /**
  * E2E tests for credit card flows (CC-30).
  *
- * All scenarios use a shared IDB-seeded fixture that contains:
+ * All scenarios use a shared SQLite-seeded fixture that contains:
  *   - acc-e2e-1    : RETAIL account (Conta E2E)
  *   - acc-e2e-credit: CREDIT account (Cartão E2E, limit 5 000, closingDay 20, dueDay 10)
  *   - cat-e2e-2    : EXPENSE category (Alimentação)
@@ -23,24 +23,11 @@ const baseFixture = JSON.parse(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Seeds IndexedDB with the provided data before the page loads.
- * No file handle is injected — tests operate entirely in memory.
- */
-async function seedIdb(page: import('@playwright/test').Page, data: Record<string, unknown>) {
-  await page.addInitScript((d) => {
-    indexedDB.deleteDatabase('nexus-db')
-    const req = indexedDB.open('nexus-db', 2)
-    req.onupgradeneeded = (e) => {
-      const db = (e.target as IDBOpenDBRequest).result
-      if (!db.objectStoreNames.contains('ledger')) db.createObjectStore('ledger')
-      if (!db.objectStoreNames.contains('handles')) db.createObjectStore('handles')
-    }
-    req.onsuccess = (e) => {
-      const db = (e.target as IDBOpenDBRequest).result
-      const tx = db.transaction('ledger', 'readwrite')
-      tx.objectStore('ledger').put(d, 'current')
-    }
+async function seedSqlite(page: import('@playwright/test').Page, data: Record<string, unknown>) {
+  await page.goto('/onboarding')
+  await page.waitForFunction(() => !!(window as Record<string, unknown>).__storage)
+  await page.evaluate((d) => {
+    return (window as Record<string, unknown>).__storage.replaceAll(d)
   }, data)
 }
 
@@ -49,7 +36,7 @@ async function seedIdb(page: import('@playwright/test').Page, data: Record<strin
 test('credit dashboard: CREDIT account shows "Limite disponível" in Meus Cartões', async ({
   page,
 }) => {
-  await seedIdb(page, baseFixture)
+  await seedSqlite(page, baseFixture)
   await page.goto('/dashboard')
   await expect(page).toHaveURL(/\/dashboard/)
 
@@ -66,7 +53,7 @@ test('credit dashboard: CREDIT account shows "Limite disponível" in Meus Cartõ
   // With no expenses, available limit = full limit = R$ 5.000,00
   // Use nth(0) to avoid strict-mode violation — the value appears in the
   // credit card row AND in the Minhas Contas row (Conta E2E balance from fixture).
-  await expect(page.getByText('R$\u00a05.000,00').first()).toBeVisible()
+  await expect(page.getByText('R$ 5.000,00').first()).toBeVisible()
 })
 
 // ─── (b) Analytics: EXPENSE on CREDIT projected to due-date month ─────────────
@@ -117,7 +104,7 @@ test('analytics: EXPENSE on CREDIT account appears in due-date month, not purcha
     ],
   }
 
-  await seedIdb(page, dataWithCreditExpense)
+  await seedSqlite(page, dataWithCreditExpense)
   await page.goto('/transactions')
   await expect(page).toHaveURL(/\/transactions/)
 
@@ -203,7 +190,7 @@ test('installments: creating 3x installment generates 3 ledger rows with correct
     ],
   }
 
-  await seedIdb(page, installmentFixture)
+  await seedSqlite(page, installmentFixture)
   await page.goto('/transactions')
   await expect(page).toHaveURL(/\/transactions/)
 
@@ -286,7 +273,7 @@ test('installments: "Excluir todas" removes all installment rows from the ledger
     ],
   }
 
-  await seedIdb(page, installmentFixture)
+  await seedSqlite(page, installmentFixture)
   // M-26: CREDIT account transactions live in /credit-card/:id, not /transactions
   await page.goto('/credit-card/acc-e2e-credit')
   await expect(page).toHaveURL(/\/credit-card\/acc-e2e-credit/)
@@ -376,7 +363,7 @@ test('credit payment: CREDIT_PAYMENT does not appear as income or expense in Das
     ],
   }
 
-  await seedIdb(page, paymentFixture)
+  await seedSqlite(page, paymentFixture)
   await page.goto('/dashboard')
   await expect(page).toHaveURL(/\/dashboard/)
 

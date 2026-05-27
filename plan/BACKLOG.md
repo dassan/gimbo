@@ -216,7 +216,7 @@ Substituição completa da camada de persistência baseada em File System Access
 | ID | Descrição | Prioridade | Status |
 |----|-----------|------------|--------|
 | ST-06 | **Remover bloco de migração IDB→SQLite do `App.tsx`.** Removido antecipadamente em ST-03 (IDB já deletado junto com indexedDb.ts — não havia razão para manter o bloco). | média | resolvido |
-| ST-07 | **Atualizar fixtures E2E para semear SQLite diretamente.** Substituir `seedIdb()` nos specs E2E por `seedSqlite()` que chama `storage.replaceAll()` via `page.evaluate()`. | média | aberto |
+| ST-07 | **Atualizar fixtures E2E para semear SQLite diretamente.** Substituir `seedIdb()` nos specs E2E por `seedSqlite()` que chama `storage.replaceAll()` via `page.evaluate()`. | média | resolvido |
 
 ---
 
