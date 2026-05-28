@@ -111,6 +111,8 @@
   },
   "analytics": {
     "title": "Reports",
+    "comingSoonTitle": "Coming soon on mobile",
+    "comingSoonDesc": "Full reports are available on the desktop version. We're crafting an amazing experience for smaller screens!",
     "cashFlowTitle": "Cash Flow Projection",
     "cashFlowSub": "Historical performance & future forecast",
     "incomeByCategory": "Income by Category",

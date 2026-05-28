@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Settings, Bell, Home, Receipt, Plus } from 'lucide-react'
+import { Settings, Bell, Home, Receipt, Plus, BarChart2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const NAV_ITEMS = [
@@ -10,10 +10,11 @@ const NAV_ITEMS = [
 ]
 
 // Bottom navigation items for mobile (MB-02)
-// Analytics is hidden on mobile until the page is made responsive (MB-08).
+// Analytics shows a "coming soon" placeholder on mobile (MB-08).
 const BOTTOM_NAV_ITEMS = [
   { to: '/dashboard', key: 'nav.dashboard', icon: Home },
   { to: '/transactions', key: 'nav.transactions', icon: Receipt },
+  { to: '/analytics', key: 'nav.analytics', icon: BarChart2 },
 ]
 
 interface NavbarProps {

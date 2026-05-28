@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Download } from 'lucide-react'
+import { Download, BarChart2 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { cn, parseDateLocal } from '@/lib/utils'
@@ -29,6 +29,17 @@ export default function Analytics() {
 
   const now = useMemo(() => new Date(), [])
 
+  // ── Mobile detection (SSR-safe) ────────────────────────────────────────
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? !window.matchMedia('(min-width: 640px)').matches : false
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 640px)')
+    const handler = (e: MediaQueryListEvent) => setIsMobile(!e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+
   // ── Compute date range from PeriodSelector state ────────────────────────
   const { startDate, endDate } = useMemo(() => {
     if (period.mode === 'month') {
@@ -49,6 +60,19 @@ export default function Analytics() {
   }, [period, now])
 
   if (!data) return null
+
+  // ── Mobile placeholder ─────────────────────────────────────────────────
+  if (isMobile) {
+    return (
+      <div className="flex flex-col items-center justify-center px-8 py-24 text-center">
+        <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-primary/10 mb-6">
+          <BarChart2 size={36} strokeWidth={1.5} className="text-primary" />
+        </div>
+        <h2 className="text-xl font-bold text-on-surface mb-2">{t('analytics.comingSoonTitle')}</h2>
+        <p className="text-sm text-on-surface/50 max-w-xs">{t('analytics.comingSoonDesc')}</p>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 space-y-6">
