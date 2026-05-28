@@ -90,78 +90,82 @@ export default function Navbar({ initials = 'U', onNewTransaction }: NavbarProps
 
       {/* ── Mobile bottom navigation bar (MB-02) ───────────────────────────── */}
       {/* hidden on sm+ — shown only on mobile viewports */}
+      {/* flex-col: icon row (h-16) sits above the safe-area padding so icons
+          are never compressed by env(safe-area-inset-bottom) */}
       <nav
         aria-label="Navegação principal"
-        className="sm:hidden fixed bottom-0 left-0 right-0 z-50 flex h-16 items-stretch bg-surface-container-low/95 backdrop-blur-[24px] border-t border-outline-variant/50"
+        className="sm:hidden fixed bottom-0 left-0 right-0 z-50 flex flex-col bg-surface-container-low/95 backdrop-blur-[24px] border-t border-outline-variant/50"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        {/* Left items: Dashboard + Transactions */}
-        {BOTTOM_NAV_ITEMS.slice(0, 2).map(({ to, key, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              cn(
-                'flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
-                isActive ? 'text-primary' : 'text-on-surface/40'
-              )
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <Icon size={22} strokeWidth={isActive ? 2 : 1.5} />
-                <span>{t(key)}</span>
-              </>
-            )}
-          </NavLink>
-        ))}
+        <div className="flex h-16 items-stretch">
+          {/* Left items: Dashboard + Transactions */}
+          {BOTTOM_NAV_ITEMS.slice(0, 2).map(({ to, key, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                cn(
+                  'flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
+                  isActive ? 'text-primary' : 'text-on-surface/40'
+                )
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <Icon size={22} strokeWidth={isActive ? 2 : 1.5} />
+                  <span>{t(key)}</span>
+                </>
+              )}
+            </NavLink>
+          ))}
 
-        {/* Center: + button (replaces FAB on mobile) */}
-        <div className="flex flex-1 items-center justify-center">
+          {/* Center: + button (replaces FAB on mobile) */}
+          <div className="flex flex-1 items-center justify-center">
+            <button
+              onClick={onNewTransaction}
+              aria-label={t('transactions.new')}
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white shadow-ambient transition-transform active:scale-95 hover:brightness-110"
+            >
+              <Plus size={22} strokeWidth={2.5} />
+            </button>
+          </div>
+
+          {/* Right items: Analytics */}
+          {BOTTOM_NAV_ITEMS.slice(2).map(({ to, key, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                cn(
+                  'flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
+                  isActive ? 'text-primary' : 'text-on-surface/40'
+                )
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <Icon size={22} strokeWidth={isActive ? 2 : 1.5} />
+                  <span>{t(key)}</span>
+                </>
+              )}
+            </NavLink>
+          ))}
+
+          {/* Settings */}
           <button
-            onClick={onNewTransaction}
-            aria-label={t('transactions.new')}
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white shadow-ambient transition-transform active:scale-95 hover:brightness-110"
+            onClick={() => {
+              void navigate('/settings')
+            }}
+            aria-label={t('nav.settings')}
+            className={cn(
+              'flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
+              'text-on-surface/40'
+            )}
           >
-            <Plus size={22} strokeWidth={2.5} />
+            <Settings size={22} strokeWidth={1.5} />
+            <span>{t('nav.settings')}</span>
           </button>
         </div>
-
-        {/* Right items: Analytics + Settings */}
-        {BOTTOM_NAV_ITEMS.slice(2).map(({ to, key, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              cn(
-                'flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
-                isActive ? 'text-primary' : 'text-on-surface/40'
-              )
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <Icon size={22} strokeWidth={isActive ? 2 : 1.5} />
-                <span>{t(key)}</span>
-              </>
-            )}
-          </NavLink>
-        ))}
-
-        {/* Settings */}
-        <button
-          onClick={() => {
-            void navigate('/settings')
-          }}
-          aria-label={t('nav.settings')}
-          className={cn(
-            'flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
-            'text-on-surface/40'
-          )}
-        >
-          <Settings size={22} strokeWidth={1.5} />
-          <span>{t('nav.settings')}</span>
-        </button>
       </nav>
     </>
   )

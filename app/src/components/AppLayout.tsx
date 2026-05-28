@@ -61,8 +61,11 @@ export default function AppLayout() {
         </div>
       )}
 
-      {/* pb-16: room for the mobile bottom nav (h-16). Cleared on sm+. */}
-      <main className={`flex-1 pb-16 sm:pb-0 ${isDemoMode() ? 'pt-24' : 'pt-14'}`}>
+      {/* max-sm: compensate for the full nav height (h-16 = 4rem + device safe area).
+          On desktop (sm+) the bottom nav is hidden, so no padding needed. */}
+      <main
+        className={`flex-1 max-sm:pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0 ${isDemoMode() ? 'pt-24' : 'pt-14'}`}
+      >
         <ErrorBoundary fallback="card">
           <Outlet context={{ openTransactionDrawer } satisfies AppLayoutContext} />
         </ErrorBoundary>
