@@ -50,7 +50,9 @@ export default function AppLayout() {
 
   return (
     <div className="flex min-h-screen flex-col bg-surface">
-      <Navbar initials={initials} />
+      {/* Navbar: desktop top bar + mobile bottom nav.
+          onNewTransaction wires the bottom nav + button to the same drawer. */}
+      <Navbar initials={initials} onNewTransaction={() => openTransactionDrawer()} />
 
       {isDemoMode() && (
         <div className="fixed top-14 left-0 right-0 z-40 flex items-center justify-center gap-2 bg-amber-400 px-6 py-2.5 text-xs font-medium text-amber-950">
@@ -59,13 +61,19 @@ export default function AppLayout() {
         </div>
       )}
 
-      <main className={`flex-1 ${isDemoMode() ? 'pt-24' : 'pt-14'}`}>
+      {/* pb-16: room for the mobile bottom nav (h-16). Cleared on sm+. */}
+      <main className={`flex-1 pb-16 sm:pb-0 ${isDemoMode() ? 'pt-24' : 'pt-14'}`}>
         <ErrorBoundary fallback="card">
           <Outlet context={{ openTransactionDrawer } satisfies AppLayoutContext} />
         </ErrorBoundary>
       </main>
 
-      {showFAB && <FAB onClick={() => openTransactionDrawer()} />}
+      {/* FAB: desktop only — mobile uses the + button in the bottom nav (MB-02) */}
+      {showFAB && (
+        <div className="hidden sm:block">
+          <FAB onClick={() => openTransactionDrawer()} />
+        </div>
+      )}
 
       <TransactionDrawer open={drawerOpen} onClose={handleDrawerClose} transaction={editingTx} />
     </div>

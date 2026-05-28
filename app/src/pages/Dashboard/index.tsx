@@ -192,9 +192,10 @@ export default function Dashboard() {
   })()
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8 space-y-6">
-      {/* ── Stat cards ───────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-4">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
+      {/* ── Stat cards ─────────────────────────────────────────────────── */}
+      {/* Mobile: single column. Desktop: 3-column. */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         <StatCard
           label={t('dashboard.income')}
           value={formatCurrency(income)}
@@ -217,12 +218,13 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* ── Minhas Contas + Meus Cartões row — always grid-cols-2 ──────────── */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* ── Minhas Contas + Meus Cartões ────────────────────────────────── */}
+      {/* Mobile: Minhas Contas full-width only. Desktop: side-by-side. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
         {/* My Accounts — standard accounts with includeInBalance */}
         <div
           className={cn(
-            'rounded-2xl bg-surface-container border border-outline-variant p-6',
+            'rounded-2xl bg-surface-container border border-outline-variant p-5 sm:p-6',
             shadowClass
           )}
         >
@@ -247,10 +249,10 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* My Cards — always rendered; empty state when no CREDIT accounts */}
+        {/* My Cards — desktop only (MB-03: on mobile accessed via /credit-card) */}
         <div
           className={cn(
-            'rounded-2xl bg-surface-container border border-outline-variant p-6',
+            'hidden sm:block rounded-2xl bg-surface-container border border-outline-variant p-6',
             shadowClass
           )}
         >
@@ -296,8 +298,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Bottom row: Recent transactions + Donut — always grid-cols-2 ──── */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* ── Bottom row: Recent transactions + Donut — desktop only (MB-03) ── */}
+      <div className="hidden sm:grid grid-cols-2 gap-4">
         {/* Recent transactions — 1/2 */}
         <div
           className={cn(

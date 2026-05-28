@@ -149,15 +149,15 @@ export default function Transactions() {
 
   return (
     <>
-      <div className="mx-auto max-w-5xl px-6 pt-8 pb-24">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 pt-6 sm:pt-8 pb-24">
         {/* ── Period selector + Search ─────────────────────────────────────── */}
-        <div className="grid grid-cols-3 gap-6 mb-6 items-center">
-          <div className="col-span-2">
+        {/* Mobile: stacked. Desktop: 3-col grid (period 2/3, search 1/3). */}
+        <div className="flex flex-col sm:grid sm:grid-cols-3 gap-3 sm:gap-6 mb-4 sm:mb-6">
+          <div className="sm:col-span-2">
             <PeriodSelector value={period} onChange={setPeriod} />
           </div>
 
-          {/* Search — aligned with the Resumo de Gastos column */}
-          <div className="col-span-1">
+          <div className="sm:col-span-1">
             <div className="relative">
               <Search
                 size={15}
@@ -174,10 +174,10 @@ export default function Transactions() {
           </div>
         </div>
 
-        {/* ── Filter bar ──────────────────────────────────────────────────── */}
-        <div className="flex items-center gap-3 mb-5">
+        {/* ── Filter bar — wraps on mobile ─────────────────────────────────── */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5">
           <FilterDropdown
-            className="flex-1"
+            className="flex-1 min-w-[140px]"
             label={t('transactions.filterAccounts')}
             value={filterAccountId}
             onChange={setFilterAccountId}
@@ -190,7 +190,7 @@ export default function Transactions() {
             ]}
           />
           <FilterDropdown
-            className="flex-1"
+            className="flex-1 min-w-[140px]"
             label={t('transactions.filterStatus')}
             value={filterStatus}
             onChange={(v) => setFilterStatus(v as typeof filterStatus)}
@@ -201,7 +201,7 @@ export default function Transactions() {
             ]}
           />
           <FilterDropdown
-            className="flex-1"
+            className="flex-1 min-w-[140px]"
             label={t('transactions.filterTags')}
             value="all"
             onChange={() => {}}
@@ -211,7 +211,7 @@ export default function Transactions() {
             ]}
           />
           <FilterDropdown
-            className="flex-1"
+            className="flex-1 min-w-[140px]"
             label={t('transactions.filterType')}
             value={filterType}
             onChange={(v) => setFilterType(v as typeof filterType)}
@@ -225,9 +225,10 @@ export default function Transactions() {
         </div>
 
         {/* ── M-32: Two-column layout: transaction list | spending summary ──── */}
-        <div className="grid grid-cols-3 gap-6 items-start">
+        {/* Mobile: single column (sidebar hidden). Desktop: 3-col grid. */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 items-start">
           {/* Left column: transaction list */}
-          <div className="col-span-2 space-y-6">
+          <div className="sm:col-span-2 space-y-4 sm:space-y-6">
             {grouped.length === 0 ? (
               <div
                 className={cn(
@@ -251,10 +252,10 @@ export default function Transactions() {
             )}
           </div>
 
-          {/* Right column: spending summary (sticky) */}
+          {/* Right column: spending summary — desktop only (MB-05) */}
           {/* sticky top-14: keeps card below the fixed navbar on scroll */}
           {/* pt-6: offsets card by the date label row height (text-xs 16px + mb-2 8px = 24px) */}
-          <div className="col-span-1 sticky top-14 pt-6">
+          <div className="hidden sm:block sm:col-span-1 sticky top-14 pt-6">
             {categoryTotals.length > 0 && (
               <div
                 className={cn(

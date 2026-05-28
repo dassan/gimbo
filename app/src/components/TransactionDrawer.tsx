@@ -275,16 +275,31 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
         onClick={onClose}
       />
 
-      {/* Sheet */}
+      {/* Sheet
+          MB-04: Mobile = bottom sheet (slides up from bottom, 85dvh, rounded top corners).
+                 Desktop = right-side panel (slides in from right, full height, max 480px).
+          translate-y / translate-x toggled by the `open` state — responsive via Tailwind. */}
       <aside
         className={cn(
-          'fixed right-0 top-0 z-50 flex h-full w-full max-w-[480px] flex-col bg-surface-container-low transition-transform duration-300 ease-out',
-          open ? 'translate-x-0' : 'translate-x-full'
+          'fixed z-50 flex flex-col bg-surface-container-low transition-transform duration-300 ease-out',
+          // Mobile layout: bottom sheet
+          'max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:h-[85dvh] max-sm:rounded-t-2xl',
+          // Desktop layout: right-side panel
+          'sm:right-0 sm:top-0 sm:h-full sm:w-full sm:max-w-[480px]',
+          // Animation: slide direction differs per viewport
+          open
+            ? 'max-sm:translate-y-0 sm:translate-x-0'
+            : 'max-sm:translate-y-full sm:translate-x-full'
         )}
-        style={{ boxShadow: '-20px 0 60px rgba(25,28,29,0.08)' }}
+        style={{ boxShadow: 'var(--shadow-ambient, 0 -4px 30px rgba(25,28,29,0.10))' }}
       >
+        {/* Mobile drag handle indicator */}
+        <div className="sm:hidden flex justify-center pt-3 pb-1 shrink-0">
+          <div className="h-1 w-10 rounded-full bg-on-surface/20" />
+        </div>
+
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 sm:py-5">
           <h2 className="text-base font-semibold text-on-surface">
             {isEditMode ? t('transactions.edit') : t('transactions.new')}
           </h2>

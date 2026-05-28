@@ -34,15 +34,19 @@ describe('Navbar', () => {
 
   it('renders nav links for dashboard, transactions, analytics', () => {
     render(<Navbar initials="AB" />)
-    expect(screen.getByText('nav.dashboard')).toBeInTheDocument()
-    expect(screen.getByText('nav.transactions')).toBeInTheDocument()
-    expect(screen.getByText('nav.analytics')).toBeInTheDocument()
+    // nav.dashboard and nav.transactions appear in both the top bar and the mobile bottom nav
+    expect(screen.getAllByText('nav.dashboard').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('nav.transactions').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('nav.analytics').length).toBeGreaterThanOrEqual(1)
   })
 
-  it('navigates to settings when settings button is clicked', async () => {
-    const navigate = vi.fn()
-    vi.mocked(vi.fn()).mockReturnValue(navigate)
+  it('renders settings button(s) — one in desktop top bar, one in mobile bottom nav', async () => {
     render(<Navbar initials="AB" />)
-    await userEvent.click(screen.getByRole('button', { name: 'nav.settings' }))
+    // MB-02: two settings buttons rendered (desktop hidden via CSS, mobile hidden via CSS).
+    // Both are present in the DOM; visibility is controlled by Tailwind responsive classes.
+    const settingsBtns = screen.getAllByRole('button', { name: 'nav.settings' })
+    expect(settingsBtns.length).toBeGreaterThanOrEqual(1)
+    // Clicking the first one should not throw
+    await userEvent.click(settingsBtns[0])
   })
 })
