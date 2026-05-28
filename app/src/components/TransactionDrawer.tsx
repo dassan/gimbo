@@ -744,8 +744,10 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
           )}
         </div>
 
-        {/* Footer CTA */}
-        <div className="px-6 pb-8 pt-4 border-t border-surface-container-low space-y-3">
+        {/* Footer CTA
+            max-sm:pb-20: 80px bottom padding on mobile keeps the delete button above
+            the fixed bottom nav (h-16 = 64px) — the extra 16px adds comfortable clearance. */}
+        <div className="px-6 pb-8 max-sm:pb-20 pt-4 border-t border-surface-container-low space-y-3">
           {!isEditMode && (
             <p className="text-center text-xs text-on-surface/30">
               {t('transactions.shortcutHint')}

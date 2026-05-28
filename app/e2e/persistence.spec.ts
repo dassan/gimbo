@@ -26,11 +26,18 @@ test('data persists after page reload', async ({ page }) => {
   await page.goto('/dashboard')
   await expect(page).toHaveURL(/\/dashboard/)
 
-  // Fixture transaction description should appear in recent transactions
-  await expect(page.getByText('Salário Janeiro')).toBeVisible({ timeout: 5000 })
-
   // Reload — should stay on dashboard (not redirect to onboarding)
   await page.reload()
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 5000 })
-  await expect(page.getByText('Salário Janeiro')).toBeVisible()
+
+  // Navigate to /transactions with a wide date range to confirm data survived the reload.
+  // We use /transactions instead of the dashboard "recent transactions" widget because
+  // that widget is hidden on mobile viewports (MB-03 — desktop-only section).
+  await page.goto('/transactions')
+  await page.getByRole('button', { name: 'period-selector' }).click()
+  await page.getByRole('menuitem', { name: 'Escolher período' }).click()
+  await page.getByLabel('custom-start-date').fill('2024-01-01')
+  await page.getByLabel('custom-end-date').fill('2024-12-31')
+  await page.getByRole('button', { name: 'Ok' }).click()
+  await expect(page.getByText('Salário Janeiro')).toBeVisible({ timeout: 5000 })
 })

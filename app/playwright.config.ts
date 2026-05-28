@@ -12,7 +12,18 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   projects: [
+    // Desktop — runs all specs
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+
+    // Mobile Chrome (Pixel 5, 393 × 851 px, isMobile: true).
+    // Uses the same Chromium install — no extra browser download needed.
+    // Tests tagged @desktop-only are excluded: they assert on sections that are
+    // intentionally hidden on mobile (Meus Cartões, Recent Transactions on dashboard).
+    {
+      name: 'mobile-chrome',
+      use: { ...devices['Pixel 5'] },
+      grepInvert: /@desktop-only/,
+    },
   ],
   webServer: {
     command: 'npm run dev',

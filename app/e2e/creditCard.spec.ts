@@ -33,7 +33,8 @@ async function seedSqlite(page: import('@playwright/test').Page, data: Record<st
 
 // ─── (a) Dashboard: CREDIT account shows "Limite disponível" ─────────────────
 
-test('credit dashboard: CREDIT account shows "Limite disponível" in Meus Cartões', async ({
+// @desktop-only — "Meus Cartões" section is hidden on mobile (MB-03)
+test('credit dashboard: CREDIT account shows "Limite disponível" in Meus Cartões @desktop-only', async ({
   page,
 }) => {
   await seedSqlite(page, baseFixture)
@@ -322,7 +323,9 @@ test('installments: "Excluir todas" removes all installment rows from the ledger
 
 // ─── (e) CREDIT_PAYMENT: not counted as income or expense in Dashboard ────────
 
-test('credit payment: CREDIT_PAYMENT does not appear as income or expense in Dashboard totals', async ({
+// @desktop-only — verifies "Pagamento Cartão" in the Recent Transactions widget,
+// which is intentionally hidden on mobile (MB-03, hidden sm:grid)
+test('credit payment: CREDIT_PAYMENT does not appear as income or expense in Dashboard totals @desktop-only', async ({
   page,
 }) => {
   // Seed with an INCOME to establish a baseline, plus a CREDIT_PAYMENT in the same month.
