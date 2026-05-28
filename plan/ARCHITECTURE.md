@@ -177,6 +177,50 @@ Main Thread
 
 ---
 
+## Roadmap de Sync Multi-Dispositivo (F-27 + F-28)
+
+> Planejado. Não implementado. Detalhes em `plan/SYNC_SCENARIOS.md` (S-08 a S-15) e épicos `MB`/`CS` em `plan/BACKLOG.md`.
+
+### Premissa
+
+A estratégia mobile é **PWA responsiva** (F-27) — mesmo codebase, layout adaptativo — sem app nativo separado.
+O sync usa o **Google Drive / Dropbox do próprio usuário** como camada de sincronização.
+Nenhum servidor Gimbo é introduzido; a arquitetura local-first é preservada.
+
+### Arquitetura Planejada
+
+```
+Google Drive do usuário
+  └── Gimbo/
+        └── gimbo.db          ← fonte de verdade compartilhada entre devices
+
+Desktop PWA (SQLite/OPFS)  ──pull/push──►  Drive
+Mobile PWA  (SQLite/OPFS)  ──pull/push──►  Drive
+```
+
+- **OAuth2 PKCE** no browser — sem backend, sem servidor Gimbo.
+- **Pull ao abrir** → comparar `modifiedTime` do Drive com timestamp local → merge se necessário.
+- **Push após mutações** → debounce 5s → upload do estado local.
+- **Merge:** aditivo por UUID. Edições: último `updatedAt` vence. Deleções: `deletedIds` (já no schema). Duplicatas offline: ambas sobrevivem, usuário remove manualmente.
+
+### Módulos Planejados
+
+```
+src/lib/cloudSync/
+  googleAuth.ts    — OAuth2 PKCE (initiateAuth, handleCallback, refreshToken, revoke)
+  googleDrive.ts   — operações de arquivo (upload, download, getMetadata)
+  dropboxAuth.ts   — (fase 2)
+  dropboxDrive.ts  — (fase 2)
+  merge.ts         — mergeForSync(local, remote): DataFile
+  syncService.ts   — pullAndMerge(), pushIfNeeded(), SyncResult
+```
+
+### Dependência de Schema
+
+O merge requer campo `updatedAt: string` em `Transaction`, `Account`, `Category` e `Tag` (CS-04 → schema v3).
+
+---
+
 ## Backup e Restore (aba Dados em Configurações)
 
 | Ação | Mecanismo |

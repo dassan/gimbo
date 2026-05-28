@@ -156,6 +156,17 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 Todas as features do PRD (F-1 a F-23) implementadas. Módulo de Cartão de Crédito completo (CC-01 a CC-30).
 Melhorias M-01 a M-33 resolvidas. Relatórios avançados: Todas as fases concluídas (R-01 a R-16 resolvidos).
 
-Features planejadas: F-24 (Patrimônio Líquido), F-25 (Demo Mode), F-26 (Bug Report System).
-F-26 especificado em `plan/METRICS.md` e `plan/SPEC.md` (Fase 15, TASK-BR-01 a BR-08) — não iniciado.
+Features planejadas (não iniciadas):
+- **F-24** — Patrimônio Líquido (épico NW-01 a NW-07 em `plan/BACKLOG.md`)
+- **F-25** — Demo Mode (épico DM-01 a DM-05)
+- **F-26** — Bug Report System (`plan/METRICS.md`, TASK-BR-01 a BR-08)
+- **F-27** — Mobile PWA responsiva (épico MB-01 a MB-07) — pré-requisito: F-28
+- **F-28** — Cloud Sync via Google Drive/Dropbox (épico CS-01 a CS-12); requer schema v3 (campo `updatedAt`)
+
 Único bug em aberto: M-22 (estornos, baixa prioridade).
+
+Decisões arquiteturais recentes (2026-05-27):
+- Estratégia mobile = PWA responsiva (não app nativo). X-3 do PRD atualizado.
+- Sync multi-dispositivo = Google Drive/Dropbox do usuário como camada de sync (sem servidor Gimbo).
+- Política de conflito = merge aditivo; duplicatas offline sobrevivem, usuário remove manualmente.
+- `SYNC_SCENARIOS.md` reescrito para cobrir SQLite atual (S-01 a S-07) e sync futuro (S-08 a S-15).

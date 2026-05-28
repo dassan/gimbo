@@ -259,3 +259,60 @@ Página dedicada na navbar que mostra o patrimônio líquido do usuário: todas 
 | ID | Descrição | Prioridade | Status |
 |----|-----------|------------|--------|
 | NW-07 | **`src/test/` — Testes unitários e de componente para o módulo Net Worth.** (a) `src/test/lib/utils.test.ts` — ampliar com casos de `getAccountBalanceAtMonth` e `getNetWorthHistory`: valores positivos/negativos, meses sem dados, mix de contas CREDIT e não-CREDIT; (b) `src/test/components/NetWorth.test.tsx` — renderizar página com fixture `makeDataFile()`, verificar que os três stat cards exibem valores corretos, que a seção Ativos lista as contas não-CREDIT e a seção Passivos lista as CREDIT, e que o gráfico renderiza sem erros. | alta | aberto |
+
+---
+
+## Mobile PWA — F-27
+
+Versão do Gimbo otimizada para dispositivos móveis. Não é um app nativo separado — é o mesmo codebase React com layout adaptativo e um subconjunto de funcionalidades. Pré-requisito para uso prático em mobile: F-28 (Cloud Sync) para sincronização de dados com o desktop. As fases são dependentes — não iniciar uma fase sem a anterior concluída.
+
+> **Decisão de produto (2026-05-27):** A estratégia mobile é PWA responsiva, não app nativo iOS/Android. Funcionalidades do MVP mobile: saldos das contas (dashboard simplificado) + CRUD de transações. Funcionalidades desktop-only (em mobile): Analytics, Cartão de Crédito (detalhe de fatura), Configurações avançadas, Net Worth.
+
+### Fase 1 — Layout Responsivo
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| MB-01 | **Auditoria de responsividade.** Mapear todas as telas existentes e identificar quais quebram em viewport mobile (< 430px). Documentar os breakpoints problemáticos e priorizar as telas do MVP: Dashboard, Transactions, TransactionDrawer, Navbar. | alta | aberto |
+| MB-02 | **`components/Navbar.tsx` — Adaptar para mobile.** Substituir a navbar lateral (desktop) por bottom navigation bar em mobile com 4 ícones: Início (Dashboard), Lançamentos, + (FAB), Configurações. Manter sidebar no desktop sem regressão. Adicionar meta tag `<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">` ao `index.html`. | crítica | aberto |
+| MB-03 | **`pages/Dashboard/index.tsx` — Layout responsivo para mobile.** Em mobile: empilhar os cards verticalmente (1 coluna); ocultar a seção "Meus Cartões" e "Últimos Lançamentos" (acessíveis via Transactions); exibir apenas os 3 stat cards e "Minhas Contas". Desktop permanece sem alteração. | alta | aberto |
+| MB-04 | **`components/TransactionDrawer.tsx` — Full-screen em mobile.** Em telas < 640px, o drawer deve ocupar 100% da tela (bottom sheet ou modal full-screen) em vez de painel lateral. Fechar via swipe down ou botão "✕". Desktop permanece sem alteração. | alta | aberto |
+| MB-05 | **`pages/Transactions/index.tsx` — Layout responsivo.** Remover a coluna direita (Resumo de Gastos) em mobile; exibir apenas a lista de lançamentos com PeriodSelector no topo. O Resumo de Gastos pode ser um card colapsável abaixo da lista em mobile. | média | aberto |
+
+### Fase 2 — PWA para Mobile
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| MB-06 | **`vite.config.ts` — Atualizar manifest PWA para mobile.** Adicionar `display: "standalone"`, `orientation: "portrait"`, ícones em 192×192 e 512×512, `theme_color` e `background_color` consistentes com o design system. Verificar `apple-touch-icon` para iOS. | alta | aberto |
+| MB-07 | **Teste de instalação em iOS (Safari) e Android (Chrome).** Verificar: instalar como PWA, abrir como app standalone, navegação funcional, TransactionDrawer full-screen, teclado virtual não quebra layout, dados persistem entre sessões (OPFS em mobile). | alta | aberto |
+
+---
+
+## Cloud Sync — F-28
+
+Sincronização automática do banco de dados via Google Drive (fase 1) e Dropbox (fase 2) do próprio usuário. Arquitetura local-first preservada: nenhum servidor Gimbo envolvido. OAuth2 PKCE no browser. Merge aditivo por UUID. Cenários detalhados em `plan/SYNC_SCENARIOS.md` (S-08 a S-15).
+
+> **Decisão de produto (2026-05-27):** Política de conflito = merge aditivo. Edições no mesmo registro: último `updatedAt` vence. Transações duplicadas (criadas offline em dois devices): ambas sobrevivem — usuário remove manualmente. Deleções protegidas por `deletedIds` (já existente no schema).
+>
+> **Dependência técnica:** o campo `updatedAt` precisa ser adicionado à interface `Transaction` (e demais entidades mutáveis) antes da implementação do merge (CS-04).
+
+### Fase 1 — Google Drive
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| CS-01 | **Registrar app no Google Cloud Console.** Criar projeto GCP, habilitar Drive API, configurar OAuth2 com escopo `https://www.googleapis.com/auth/drive.file` (acesso apenas a arquivos criados pelo app). Definir redirect URI para `localhost` (dev) e domínio de produção. Documentar client_id como variável de ambiente `VITE_GOOGLE_CLIENT_ID`. Sem backend — fluxo PKCE puro. | crítica | aberto |
+| CS-02 | **`src/lib/cloudSync/googleAuth.ts` — Implementar OAuth2 PKCE para Google Drive.** Funções: `initiateGoogleAuth()` (gera code_verifier/challenge, redireciona para Google); `handleGoogleCallback(code)` (troca code por tokens, armazena `access_token` + `refresh_token` + `expires_at` em `localStorage`); `refreshGoogleToken()` (usa refresh_token para renovar access_token quando expirado); `revokeGoogleAuth()` (limpa tokens do localStorage); `isGoogleConnected(): boolean`. Nunca armazenar dados financeiros junto aos tokens. | crítica | aberto |
+| CS-03 | **`src/lib/cloudSync/googleDrive.ts` — Implementar operações de arquivo no Drive.** Funções: `findGimboFile(): string \| null` (busca `gimbo.db` na pasta `Gimbo/`); `createGimboFolder(): string` (cria pasta `Gimbo/` se não existir, retorna folderId); `uploadDb(blob: Blob): void` (create ou update do `gimbo.db`); `downloadDb(): ArrayBuffer` (baixa arquivo por fileId); `getFileMetadata(): { modifiedTime: string }` (para comparação de timestamps). Tratar erros HTTP 401 chamando `refreshGoogleToken()` e retentando uma vez. | crítica | aberto |
+| CS-04 | **`src/types/index.ts` + `schema.ts` — Adicionar `updatedAt` às entidades mutáveis.** Adicionar campo `updatedAt: string` (ISO 8601) às interfaces `Transaction`, `Account`, `Category`, `Tag`. Atualizar schemas Zod correspondentes. Em `useDataStore`, os métodos `update*` devem setar `updatedAt: new Date().toISOString()` na mutação. Incrementar `CURRENT_SCHEMA_VERSION` para `3` e implementar migração v2→v3: preencher `updatedAt` com `new Date(0).toISOString()` em entidades sem o campo (sem falha em arquivos legados). | crítica | aberto |
+| CS-05 | **`src/lib/cloudSync/merge.ts` — Implementar merge aditivo multi-dispositivo.** Função `mergeForSync(local: DataFile, remote: DataFile): DataFile`. Regras: (1) union por `id` para transações, contas, categorias e tags — entidades presentes em apenas um dos lados sobrevivem; (2) para entidades presentes nos dois lados, vence quem tiver `updatedAt` mais recente; (3) `deletedIds` = union dos dois lados (deleção nunca é revertida); (4) `settings.fileUpdatedAt` = max dos dois lados; (5) `user` = versão do `local` (dispositivo ativo). Testes obrigatórios: nova transação em remote sobrevive; edição em local com updatedAt mais recente vence; deleção em qualquer lado é respeitada; transações duplicadas (mesmo conteúdo, ids diferentes) ambas sobrevivem. | crítica | aberto |
+| CS-06 | **`src/lib/cloudSync/syncService.ts` — Orquestrar pull/push.** Funções: `pullAndMerge(): SyncResult` — baixa remote via `downloadDb()`, importa em memória, aplica `mergeForSync(local, remote)`, salva merged no OPFS via `storage.replaceAll()`, faz push do merged para o Drive; `pushIfNeeded(): void` — compara `settings.fileUpdatedAt` local com `getFileMetadata().modifiedTime`; se local é mais recente, faz upload. `SyncResult = { status: 'synced' | 'merged' | 'offline' | 'error'; message?: string }`. | crítica | aberto |
+| CS-07 | **`store/useDataStore.ts` — Integrar sync automático.** No startup (`init()`): após `loadData()`, se `isGoogleConnected()`, chamar `pullAndMerge()` em background (não bloqueia UI). Após mutações (debounce 5s): chamar `pushIfNeeded()`. Estado no store: `syncStatus: 'idle' | 'syncing' | 'error' | 'offline'`; `lastSyncedAt: string \| null`. | alta | aberto |
+| CS-08 | **`pages/Settings/index.tsx` — Nova aba "Backup & Sync".** Seção Google Drive: botão "Conectar Google Drive" (se desconectado) ou chip com email do usuário + "Desconectar" (se conectado); status da última sincronização (`lastSyncedAt`); botão "Sincronizar agora" (dispara `pullAndMerge()` manualmente). Seção Export manual: botão "Exportar backup `.db`" (existente, mantido). Adicionar chaves i18n `settings.sync.*` em ambos os locales. | alta | aberto |
+| CS-09 | **`components/Navbar.tsx` (ou `AppLayout.tsx`) — Indicador de status de sync.** Ícone discreto de nuvem na navbar: cinza (idle/desconectado), animado (syncing), verde (synced), vermelho (error/offline). Tooltip com `lastSyncedAt`. Oculto se sync não estiver configurado. | média | aberto |
+| CS-10 | **Testes unitários para `merge.ts` e `syncService.ts`.** Cobrir todos os casos de `mergeForSync` documentados em CS-05. Mockar `googleDrive.ts` nos testes de `syncService`. Cobrir: pull com remote mais recente, push com local mais recente, offline retorna `status: 'offline'`, erro 401 aciona refresh e retry. | alta | aberto |
+
+### Fase 2 — Dropbox (opcional, pós-Google Drive estável)
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| CS-11 | **Registrar app no Dropbox Developer Console e implementar `dropboxAuth.ts` + `dropboxDrive.ts`.** Mesma estrutura que CS-02/CS-03, adaptada para a API do Dropbox (OAuth2 PKCE, endpoint `/files/upload`, `/files/download`, `/files/get_metadata`). | média | aberto |
+| CS-12 | **Adaptar `syncService.ts` e Settings para suportar múltiplos providers.** Abstrair provider com interface `CloudProvider { upload, download, getMetadata, isConnected }`. `syncService` usa o provider configurado. Settings exibe ambas as opções (Google Drive / Dropbox) com estado de conexão independente. | média | aberto |

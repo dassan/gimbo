@@ -55,11 +55,15 @@ O Gimbo é um aplicativo web (PWA Client-side) de gestão de finanças pessoais 
 
 * **F-26:** Bug Report System — coleta local de eventos em ring buffer (sem transmissão automática), formulário de reporte opt-in com preview do snapshot seguro, envio via link GitHub Issues pré-preenchido. Ver épico completo em `plan/METRICS.md`.
 
-### Fora do Escopo (Futuro)
-* **X-1:** Criptografia do arquivo JSON.
+* **F-27:** Mobile PWA — versão responsiva do Gimbo instalável em dispositivos móveis. Subconjunto de funcionalidades: saldos de contas (dashboard simplificado) + CRUD de transações. Mesma codebase, layout adaptativo; sem app nativo separado. Requer F-28 para sincronização de dados com o desktop. Ver épico `MB` em `plan/BACKLOG.md`.
+
+* **F-28:** Cloud Sync — sincronização automática do banco de dados (`gimbo.db`) via Google Drive ou Dropbox do próprio usuário. Arquitetura local-first preservada: o arquivo fica na conta de nuvem do usuário, sem servidor Gimbo envolvido. OAuth2 PKCE (sem backend). Merge aditivo por UUID; deleções via `deletedIds`. Política de conflito: último `updatedAt` vence em edições; transações duplicadas (criadas offline em dois devices) sobrevivem — usuário remove manualmente. Cenários detalhados em `plan/SYNC_SCENARIOS.md` (S-08 a S-15). Ver épico `CS` em `plan/BACKLOG.md`.
+
+### Fora do Escopo (Permanente)
+* **X-1:** Criptografia do arquivo local.
 * **X-2:** Sincronização via Open-Banking.
-* **X-3:** App mobile nativo.
-* **X-4:** Login de servidor / modo partilhado.
+* **X-3:** App mobile nativo (iOS/Android separado) — a estratégia móvel é PWA responsiva (F-27).
+* **X-4:** Login de servidor / modo multi-usuário partilhado.
 * **X-5:** Audit Log em arquivo separado.
 * **X-6:** Telemetria de uso automática (analytics de features) — incompatível com a proposta local-first enquanto não houver consentimento explícito e infraestrutura zero-servidor; decisão registrada em `plan/METRICS.md`.
 
