@@ -97,7 +97,7 @@ export default function PeriodSelector({ value, onChange }: PeriodSelectorProps)
   return (
     <div className="relative" ref={containerRef}>
       {/* Label row: arrows (month mode only) + clickable period label */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 justify-center sm:justify-start">
         {value.mode === 'month' && (
           <button
             onClick={() => onChange({ ...value, monthOffset: value.monthOffset - 1 })}

@@ -285,6 +285,7 @@ Versão do Gimbo otimizada para dispositivos móveis. Não é um app nativo sepa
 |----|-----------|------------|--------|
 | MB-06 | **`vite.config.ts` — Atualizar manifest PWA para mobile.** Adicionar `display: "standalone"`, `orientation: "portrait"`, ícones em 192×192 e 512×512, `theme_color` e `background_color` consistentes com o design system. Verificar `apple-touch-icon` para iOS. | alta | aberto |
 | MB-07 | **Projeto Playwright `mobile-chrome` (Pixel 5, 393×851 px).** Emula viewport mobile via `@playwright/test` `devices['Pixel 5']`; testes `@desktop-only` excluídos via `grepInvert`. 9 testes E2E mobile implementados em `e2e/mobile.spec.ts`. Testes físicos em iOS/Android ficam para validação manual futura. | alta | resolvido |
+| MB-08 | **Tela de Relatórios (`/analytics`) responsiva para mobile.** A página atual usa gráficos e layouts fixos que quebram em viewports estreitos. Por ora está oculta do bottom nav mobile (link removido de `Navbar.tsx`). Trabalho necessário: auditar todos os gráficos (Recharts), substituir layouts fixos por responsivos, verificar legibilidade de labels e tooltips em telas pequenas. Avaliar se alguma view (ex.: tabela de categorias) deve ser simplificada ou substituída por uma versão alternativa no mobile. | média | aberto |
 
 ---
 

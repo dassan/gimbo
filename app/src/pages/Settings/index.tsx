@@ -395,12 +395,33 @@ export default function Settings() {
 
   return (
     <>
-      <div className="mx-auto max-w-5xl px-6 py-8">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
         <h1 className="text-2xl font-bold text-on-surface mb-1">{t('settings.title')}</h1>
 
-        <div className="mt-6 flex gap-6">
-          {/* ── Sidebar ─────────────────────────────────────────────────────── */}
-          <aside className="w-52 shrink-0">
+        {/* ── Mobile: horizontal scrollable tab bar ──────────────────────────── */}
+        <div className="sm:hidden overflow-x-auto -mx-4 px-4 mt-4 pb-1">
+          <div className="flex gap-2 min-w-max pb-1">
+            {[...DATA_SECTIONS, ...APP_SECTIONS].map((s) => (
+              <button
+                key={s.key}
+                onClick={() => setActiveSection(s.key)}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors',
+                  activeSection === s.key
+                    ? 'bg-primary text-white'
+                    : 'bg-surface-container text-on-surface/60 hover:bg-surface-container-high'
+                )}
+              >
+                {s.icon}
+                {t(s.labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 sm:mt-6 sm:flex sm:gap-6">
+          {/* ── Sidebar — desktop only ───────────────────────────────────────── */}
+          <aside className="hidden sm:block w-52 shrink-0">
             <SidebarGroup label={t('settings.dataManagement')}>
               {DATA_SECTIONS.map((s) => (
                 <SidebarItem
@@ -427,7 +448,7 @@ export default function Settings() {
           </aside>
 
           {/* ── Content ─────────────────────────────────────────────────────── */}
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 mt-4 sm:mt-0">
             {/* Accounts & Cards */}
             {activeSection === 'accounts' &&
               (() => {
