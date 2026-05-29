@@ -7,6 +7,7 @@
     "dashboard": "Visão Geral",
     "transactions": "Lançamentos",
     "analytics": "Relatórios",
+    "netWorth": "Patrimônio",
     "settings": "Configurações"
   },
   "onboarding": {
@@ -342,6 +343,21 @@
     "noData": "Nenhum dado encontrado",
     "viewAll": "Ver Tudo",
     "total": "Total"
+  },
+  "netWorth": {
+    "title": "Patrimônio Líquido",
+    "assets": "Ativos",
+    "liabilities": "Passivos",
+    "netWorth": "Patrimônio Líquido",
+    "noAccounts": "Nenhuma conta cadastrada",
+    "includeHidden": "Incluir contas fora do saldo",
+    "currentInvoice": "Fatura atual",
+    "totalCommitted": "Total comprometido",
+    "totalCommittedHint": "Inclui parcelas futuras",
+    "updateMarketValue": "Atualizar valor de mercado",
+    "assetsSection": "Ativos",
+    "liabilitiesSection": "Passivos",
+    "ofTotal": "do total"
   },
   "demo": {
     "banner": "Modo demonstração — alterações não são salvas"

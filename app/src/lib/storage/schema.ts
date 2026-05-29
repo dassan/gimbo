@@ -186,6 +186,7 @@ export function createDefaultWorkspace(): WorkspaceFile {
     locale: 'pt-BR',
     defaultView: 'dashboard',
     useAmbientShadows: false,
+    netWorthIncludeHidden: true,
   }
 }
 

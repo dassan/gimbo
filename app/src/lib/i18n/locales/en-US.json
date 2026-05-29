@@ -7,6 +7,7 @@
     "dashboard": "Overview",
     "transactions": "Ledger",
     "analytics": "Reports",
+    "netWorth": "Net Worth",
     "settings": "Settings"
   },
   "onboarding": {
@@ -342,6 +343,21 @@
     "noData": "No data found",
     "viewAll": "View All",
     "total": "Total"
+  },
+  "netWorth": {
+    "title": "Net Worth",
+    "assets": "Assets",
+    "liabilities": "Liabilities",
+    "netWorth": "Net Worth",
+    "noAccounts": "No accounts registered",
+    "includeHidden": "Include hidden accounts",
+    "currentInvoice": "Current invoice",
+    "totalCommitted": "Total committed",
+    "totalCommittedHint": "Includes future installments",
+    "updateMarketValue": "Update market value",
+    "assetsSection": "Assets",
+    "liabilitiesSection": "Liabilities",
+    "ofTotal": "of total"
   },
   "demo": {
     "banner": "Demo mode — changes are not saved"

@@ -11,6 +11,7 @@ interface WorkspaceStore {
   setLocale: (locale: Locale) => void
   setDefaultView: (view: string) => void
   setAmbientShadows: (v: boolean) => void
+  setNetWorthIncludeHidden: (v: boolean) => void
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
@@ -41,6 +42,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setAmbientShadows: (useAmbientShadows) => {
     const workspace = { ...get().workspace, useAmbientShadows }
+    set({ workspace })
+    saveWorkspace(workspace)
+  },
+
+  setNetWorthIncludeHidden: (netWorthIncludeHidden) => {
+    const workspace = { ...get().workspace, netWorthIncludeHidden }
     set({ workspace })
     saveWorkspace(workspace)
   },

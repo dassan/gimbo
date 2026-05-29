@@ -122,4 +122,5 @@ export interface WorkspaceFile {
   locale: Locale
   defaultView: string
   useAmbientShadows: boolean
+  netWorthIncludeHidden: boolean // D3: include accounts with includeInBalance=false (default true)
 }

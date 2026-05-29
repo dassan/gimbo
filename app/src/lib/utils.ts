@@ -123,6 +123,35 @@ export function getCurrentInvoiceBalance(transactions: Transaction[], account: A
 }
 
 /**
+ * Sums all EXPENSE transactions for the given CREDIT account whose invoice
+ * period is the *current* period or later (fatura em aberto + parcelas futuras).
+ * Returns 0 if the account has no creditMetadata.
+ *
+ * Decision D2 (NET_WORTH.md §4): passivo = fatura atual + todas as faturas futuras.
+ */
+export function getTotalCreditLiability(transactions: Transaction[], account: Account): number {
+  if (!account.creditMetadata) return 0
+
+  const { closingDay } = account.creditMetadata
+  const today = new Date()
+  const currentPeriod = getInvoicePeriod(
+    `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
+    closingDay
+  )
+
+  return transactions
+    .filter((tx) => {
+      if (tx.accountId !== account.id || tx.type !== 'EXPENSE') return false
+      const p = getInvoicePeriod(tx.date, closingDay)
+      return (
+        p.year > currentPeriod.year ||
+        (p.year === currentPeriod.year && p.month >= currentPeriod.month)
+      )
+    })
+    .reduce((sum, tx) => sum + tx.amount, 0)
+}
+
+/**
  * Returns the date that should be used when plotting a transaction on the
  * cash-flow chart.
  *
