@@ -275,7 +275,7 @@ export default function CreditCardPage() {
             {/* M-30: opens dedicated PayInvoiceModal instead of generic TransactionDrawer */}
             <button
               onClick={() => setShowPayModal(true)}
-              className="rounded-2xl bg-gradient-to-br from-primary to-primary-container px-5 py-2 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
+              className="rounded-2xl bg-primary px-5 py-2 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
             >
               {t('creditCard.payNow')}
             </button>
@@ -602,7 +602,7 @@ function PayInvoiceModal({
           <button
             onClick={() => onConfirm(amount, date, fromAccountId)}
             disabled={amount === 0 || !fromAccountId}
-            className="w-full rounded-2xl bg-gradient-to-br from-primary to-primary-container py-3.5 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40"
+            className="w-full rounded-2xl bg-primary py-3.5 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40"
           >
             {t('creditCard.payInvoice')}
           </button>

@@ -202,7 +202,7 @@ export default function Onboarding() {
                 <button
                   onClick={() => void handleCreate()}
                   disabled={!name.trim()}
-                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-primary to-primary-container py-4 text-sm font-semibold text-white transition hover:brightness-110 active:scale-[0.97] disabled:opacity-40"
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-4 text-sm font-semibold text-white transition hover:brightness-110 active:scale-[0.97] disabled:opacity-40"
                 >
                   {t('onboarding.create')}
                   <ArrowRight size={16} strokeWidth={2.5} />

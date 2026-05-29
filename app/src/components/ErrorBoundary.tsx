@@ -50,7 +50,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="flex gap-3">
               <button
                 onClick={this.reset}
-                className="rounded-xl bg-gradient-to-br from-primary to-primary-container px-4 py-2 text-sm font-semibold text-white hover:brightness-110 active:scale-[0.97]"
+                className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:brightness-110 active:scale-[0.97]"
               >
                 Recarregar
               </button>
@@ -79,7 +79,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <div className="flex gap-2">
             <button
               onClick={this.reset}
-              className="rounded-xl bg-gradient-to-br from-primary to-primary-container px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 active:scale-[0.97]"
+              className="rounded-xl bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110 active:scale-[0.97]"
             >
               Tentar novamente
             </button>

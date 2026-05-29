@@ -193,7 +193,7 @@ function BugReportContent({ onClose, prefillTitle }: ContentProps) {
             <button
               onClick={handleSubmit}
               disabled={description.trim() === ''}
-              className="rounded-xl bg-gradient-to-br from-primary to-primary-container px-4 py-2 text-sm font-semibold text-white hover:brightness-110 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:brightness-110 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {t('bugReport.submit')}
             </button>

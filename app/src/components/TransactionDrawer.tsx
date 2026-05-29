@@ -25,7 +25,7 @@ const TYPE_CONFIG: Record<TxType, { label: string; color: string; bg: string; bt
       label: 'transactions.income',
       color: 'text-primary',
       bg: 'bg-primary/10',
-      btnClass: 'bg-gradient-to-br from-primary to-primary-container hover:brightness-110',
+      btnClass: 'bg-primary hover:brightness-110',
     },
     TRANSFER: {
       label: 'transactions.transfer',

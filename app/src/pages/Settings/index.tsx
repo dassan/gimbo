@@ -492,7 +492,7 @@ export default function Settings() {
                       </div>
                       <button
                         onClick={() => setModal({ open: true, account: null })}
-                        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-primary to-primary-container py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
+                        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
                       >
                         <Plus size={16} strokeWidth={2.5} />
                         {t('settings.newAccount')}
@@ -549,7 +549,7 @@ export default function Settings() {
                         onClick={() =>
                           setModal({ open: true, account: null, defaultType: 'CREDIT' })
                         }
-                        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-primary to-primary-container py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
+                        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
                       >
                         <Plus size={16} strokeWidth={2.5} />
                         {t('settings.newCreditCard')}
@@ -611,7 +611,7 @@ export default function Settings() {
                 </div>
                 <button
                   onClick={() => setCategoryModal({ open: true, category: null })}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-primary to-primary-container py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
                 >
                   <Plus size={16} strokeWidth={2.5} />
                   {t('settings.newCategory')}
@@ -639,7 +639,7 @@ export default function Settings() {
                 </div>
                 <button
                   onClick={() => setTagModal({ open: true, tag: null })}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-primary to-primary-container py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
                 >
                   <Plus size={16} strokeWidth={2.5} />
                   {t('settings.newTag')}
@@ -1260,7 +1260,7 @@ function AddAccountModal({
         <button
           onClick={handleSave}
           disabled={!name.trim()}
-          className="mb-2 flex w-full items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-container py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
+          className="mb-2 flex w-full items-center justify-center rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {t('settings.saveAccount')}
         </button>
@@ -1413,7 +1413,7 @@ function AddTagModal({
             <button
               onClick={handleSave}
               disabled={!name.trim()}
-              className="rounded-2xl bg-gradient-to-br from-primary to-primary-container px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
+              className="rounded-2xl bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {t('common.save')}
             </button>
@@ -1598,7 +1598,7 @@ function AddCategoryModal({
         <button
           onClick={handleSave}
           disabled={!name.trim()}
-          className="mb-2 flex w-full items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-container py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
+          className="mb-2 flex w-full items-center justify-center rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {t('common.save')}
         </button>

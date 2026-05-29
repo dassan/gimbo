@@ -124,7 +124,7 @@ export default function Navbar({ initials = 'U', onNewTransaction }: NavbarProps
             <button
               onClick={onNewTransaction}
               aria-label={t('transactions.new')}
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-container text-white shadow-ambient transition-transform duration-150 active:scale-[0.97] hover:brightness-110"
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white shadow-ambient transition-transform duration-150 active:scale-[0.97] hover:brightness-110"
             >
               <Plus size={22} strokeWidth={2.5} />
             </button>
