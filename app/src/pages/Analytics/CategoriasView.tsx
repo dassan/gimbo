@@ -219,16 +219,13 @@ function CategoryDonut({ title, entries, shadowClass, onEntryClick }: CategoryDo
   const total = entries.reduce((s, e) => s + e.value, 0)
 
   return (
-    <div
-      className={cn(
-        'rounded-2xl bg-surface-container border border-outline-variant p-6',
-        shadowClass
-      )}
-    >
+    <div className={cn('rounded-2xl bg-surface-container p-6', shadowClass)}>
       <div className="flex items-baseline justify-between mb-4">
         <h3 className="text-sm font-semibold text-on-surface">{title}</h3>
         {entries.length > 0 && (
-          <span className="text-sm font-bold text-on-surface">{formatCurrency(total)}</span>
+          <span className="text-sm font-bold tabular-nums text-on-surface">
+            {formatCurrency(total)}
+          </span>
         )}
       </div>
 
@@ -290,7 +287,7 @@ function CategoryDonut({ title, entries, shadowClass, onEntryClick }: CategoryDo
                 </span>
 
                 {/* Amount */}
-                <span className="text-xs font-semibold text-on-surface shrink-0 ml-1">
+                <span className="text-xs font-semibold tabular-nums text-on-surface shrink-0 ml-1">
                   {formatCurrency(entry.value)}
                 </span>
               </button>
@@ -355,8 +352,7 @@ function DrilldownModal({
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
-          className="w-full max-w-lg rounded-2xl bg-surface-container-low border border-outline-variant p-6 space-y-4 flex flex-col max-h-[85vh]"
-          style={{ boxShadow: '0px 20px 60px rgba(0,0,0,0.4)' }}
+          className="w-full max-w-lg rounded-2xl bg-surface-container-low p-6 space-y-4 flex flex-col max-h-[85vh] shadow-card-ambient"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -411,7 +407,7 @@ function DrilldownModal({
                     {/* Amount */}
                     <p
                       className={cn(
-                        'text-xs font-semibold shrink-0',
+                        'text-xs font-semibold tabular-nums shrink-0',
                         transactionType === 'INCOME' ? 'text-primary' : 'text-tertiary'
                       )}
                     >
@@ -429,7 +425,7 @@ function DrilldownModal({
               <p className="text-xs font-semibold text-on-surface/60">{t('common.total')}</p>
               <p
                 className={cn(
-                  'text-sm font-bold',
+                  'text-sm font-bold tabular-nums',
                   transactionType === 'INCOME' ? 'text-primary' : 'text-tertiary'
                 )}
               >

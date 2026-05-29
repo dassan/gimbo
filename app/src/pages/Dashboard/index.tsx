@@ -222,12 +222,7 @@ export default function Dashboard() {
       {/* Mobile: Minhas Contas full-width only. Desktop: side-by-side. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
         {/* My Accounts — standard accounts with includeInBalance */}
-        <div
-          className={cn(
-            'rounded-2xl bg-surface-container border border-outline-variant p-5 sm:p-6',
-            shadowClass
-          )}
-        >
+        <div className={cn('rounded-2xl bg-surface-container p-5 sm:p-6', shadowClass)}>
           <h3 className="text-sm font-semibold text-on-surface mb-4">
             {t('dashboard.myAccounts')}
           </h3>
@@ -250,12 +245,7 @@ export default function Dashboard() {
         </div>
 
         {/* My Cards — desktop only (MB-03: on mobile accessed via /credit-card) */}
-        <div
-          className={cn(
-            'hidden sm:block rounded-2xl bg-surface-container border border-outline-variant p-6',
-            shadowClass
-          )}
-        >
+        <div className={cn('hidden sm:block rounded-2xl bg-surface-container p-6', shadowClass)}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-on-surface">{t('dashboard.myCards')}</h3>
             {creditAccounts.length > 0 && (
@@ -265,7 +255,7 @@ export default function Dashboard() {
                 </p>
                 <p
                   className={cn(
-                    'text-sm font-bold',
+                    'text-sm font-bold tabular-nums',
                     totalInvoiceBalance > 0 ? 'text-tertiary' : 'text-on-surface/40'
                   )}
                 >
@@ -301,23 +291,13 @@ export default function Dashboard() {
       {/* ── Bottom row: Recent transactions + Donut — desktop only (MB-03) ── */}
       <div className="hidden sm:grid grid-cols-2 gap-4">
         {/* Recent transactions — 1/2 */}
-        <div
-          className={cn(
-            'rounded-2xl bg-surface-container border border-outline-variant p-6',
-            shadowClass
-          )}
-        >
+        <div className={cn('rounded-2xl bg-surface-container p-6', shadowClass)}>
           <RecentTransactionsHeader t={t} onViewAll={() => void navigate('/transactions')} />
           <RecentTransactionsList recentTxs={recentTxs} data={data} t={t} />
         </div>
 
         {/* Expenses by category donut — 1/2 */}
-        <div
-          className={cn(
-            'rounded-2xl bg-surface-container border border-outline-variant p-6',
-            shadowClass
-          )}
-        >
+        <div className={cn('rounded-2xl bg-surface-container p-6', shadowClass)}>
           <h3 className="text-sm font-semibold text-on-surface mb-4">
             {t('dashboard.byCategory')}
           </h3>
@@ -356,7 +336,7 @@ function AccountRow({
       </div>
       <span
         className={cn(
-          'text-sm font-semibold shrink-0',
+          'text-sm font-semibold shrink-0 tabular-nums',
           isNegative ? 'text-tertiary' : 'text-on-surface'
         )}
       >
@@ -413,14 +393,19 @@ function CreditCardRow({
           <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
             {invoiceLabel}
           </p>
-          <p className="text-base font-bold text-on-surface">{formatCurrency(invoiceBalance)}</p>
+          <p className="text-base font-bold tabular-nums text-on-surface">
+            {formatCurrency(invoiceBalance)}
+          </p>
         </div>
         <div className="text-right">
           <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
             {availableLimitLabel}
           </p>
           <p
-            className={cn('text-sm font-semibold', isOverLimit ? 'text-tertiary' : 'text-primary')}
+            className={cn(
+              'text-sm font-semibold tabular-nums',
+              isOverLimit ? 'text-tertiary' : 'text-primary'
+            )}
           >
             {formatCurrency(availableLimit)}
           </p>
@@ -465,7 +450,7 @@ function StatCard({
     <div
       className={cn(
         'rounded-2xl p-5',
-        isBalance ? 'bg-primary text-white' : 'bg-surface-container border border-outline-variant',
+        isBalance ? 'bg-primary text-white' : 'bg-surface-container',
         !isBalance && shadowClass
       )}
     >
@@ -490,7 +475,7 @@ function StatCard({
       </div>
       <p
         className={cn(
-          'text-2xl font-bold',
+          'text-2xl font-bold tabular-nums',
           isBalance ? 'text-white' : variant === 'income' ? 'text-primary' : 'text-tertiary'
         )}
       >

@@ -211,12 +211,7 @@ export default function CreditCardPage() {
       </div>
 
       {/* ── Invoice period + summary card (full width) ────────────────────── */}
-      <div
-        className={cn(
-          'rounded-2xl bg-surface-container border border-outline-variant p-6',
-          shadowClass
-        )}
-      >
+      <div className={cn('rounded-2xl bg-surface-container p-6', shadowClass)}>
         <div className="flex items-start justify-between gap-4">
           {/* Left: period info */}
           <div className="flex-1">
@@ -262,7 +257,7 @@ export default function CreditCardPage() {
               </p>
               <p
                 className={cn(
-                  'text-sm font-semibold',
+                  'text-sm font-semibold tabular-nums',
                   availableLimit < 0 ? 'text-tertiary' : 'text-primary'
                 )}
               >
@@ -273,12 +268,14 @@ export default function CreditCardPage() {
               <p className="text-[10px] text-on-surface/40 uppercase tracking-widest">
                 {t('dashboard.invoice')}
               </p>
-              <p className="text-2xl font-bold text-on-surface">{formatCurrency(invoiceTotal)}</p>
+              <p className="text-2xl font-bold tabular-nums text-on-surface">
+                {formatCurrency(invoiceTotal)}
+              </p>
             </div>
             {/* M-30: opens dedicated PayInvoiceModal instead of generic TransactionDrawer */}
             <button
               onClick={() => setShowPayModal(true)}
-              className="rounded-2xl bg-primary px-5 py-2 text-sm font-semibold text-white hover:brightness-110 transition-all"
+              className="rounded-2xl bg-gradient-to-br from-primary to-primary-container px-5 py-2 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
             >
               {t('creditCard.payNow')}
             </button>
@@ -341,12 +338,7 @@ export default function CreditCardPage() {
           )}
 
           {/* Transaction list */}
-          <div
-            className={cn(
-              'rounded-2xl bg-surface-container border border-outline-variant overflow-hidden',
-              shadowClass
-            )}
-          >
+          <div className={cn('rounded-2xl bg-surface-container overflow-hidden', shadowClass)}>
             {filteredTransactions.length === 0 ? (
               <div className="p-12 text-center">
                 <p className="text-sm text-on-surface/40">{t('creditCard.noTransactions')}</p>
@@ -368,12 +360,7 @@ export default function CreditCardPage() {
         {/* Right column: spending summary (sticky) */}
         <div className="col-span-1 sticky top-8">
           {categoryTotals.length > 0 && (
-            <div
-              className={cn(
-                'rounded-2xl bg-surface-container border border-outline-variant p-6',
-                shadowClass
-              )}
-            >
+            <div className={cn('rounded-2xl bg-surface-container p-6', shadowClass)}>
               <h3 className="text-sm font-semibold text-on-surface mb-4">
                 {t('creditCard.spendingSummary')}
               </h3>
@@ -384,7 +371,7 @@ export default function CreditCardPage() {
                     <div key={name}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-xs text-on-surface/70">{name}</span>
-                        <span className="text-xs font-semibold text-on-surface">
+                        <span className="text-xs font-semibold tabular-nums text-on-surface">
                           {formatCurrency(total)}
                         </span>
                       </div>
@@ -400,7 +387,7 @@ export default function CreditCardPage() {
               </div>
               <div className="mt-4 pt-4 border-t border-surface-container-low flex items-center justify-between">
                 <span className="text-xs font-semibold text-on-surface">{t('common.total')}</span>
-                <span className="text-sm font-bold text-tertiary">
+                <span className="text-sm font-bold tabular-nums text-tertiary">
                   {formatCurrency(invoiceTotal)}
                 </span>
               </div>
@@ -473,7 +460,7 @@ function InvoiceTxRow({
 
       {/* Amount */}
       <div className="text-right shrink-0">
-        <p className="text-sm font-bold text-tertiary">{formatCurrency(tx.amount)}</p>
+        <p className="text-sm font-bold tabular-nums text-tertiary">{formatCurrency(tx.amount)}</p>
         <p className="text-[10px] text-on-surface/30 mt-0.5">
           {parseDateLocal(tx.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
         </p>
@@ -529,8 +516,7 @@ function PayInvoiceModal({
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
-          className="w-full max-w-sm rounded-2xl bg-surface-container-low border border-outline-variant p-6 space-y-5"
-          style={{ boxShadow: '0px 20px 60px rgba(0,0,0,0.4)' }}
+          className="w-full max-w-sm rounded-2xl bg-surface-container-low p-6 space-y-5 shadow-card-ambient"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -616,7 +602,7 @@ function PayInvoiceModal({
           <button
             onClick={() => onConfirm(amount, date, fromAccountId)}
             disabled={amount === 0 || !fromAccountId}
-            className="w-full rounded-2xl bg-primary py-3.5 text-sm font-semibold text-white hover:brightness-110 transition-all disabled:opacity-40"
+            className="w-full rounded-2xl bg-gradient-to-br from-primary to-primary-container py-3.5 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40"
           >
             {t('creditCard.payInvoice')}
           </button>

@@ -471,7 +471,7 @@ export default function Settings() {
                           <button
                             key={acc.id}
                             onClick={() => setModal({ open: true, account: acc })}
-                            className="flex w-full items-center gap-4 rounded-2xl bg-surface-container border border-outline-variant px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
+                            className="flex w-full items-center gap-4 rounded-2xl bg-surface-container px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
                           >
                             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
                               <span className="text-primary">{accountTypeIcon(acc.type)}</span>
@@ -483,7 +483,7 @@ export default function Settings() {
                               </p>
                             </div>
                             <div className="text-right">
-                              <span className="text-sm font-bold text-on-surface">
+                              <span className="text-sm font-bold tabular-nums text-on-surface">
                                 {formatCurrency(accountBalances[acc.id] ?? 0)}
                               </span>
                             </div>
@@ -492,7 +492,7 @@ export default function Settings() {
                       </div>
                       <button
                         onClick={() => setModal({ open: true, account: null })}
-                        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all"
+                        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-primary to-primary-container py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
                       >
                         <Plus size={16} strokeWidth={2.5} />
                         {t('settings.newAccount')}
@@ -519,7 +519,7 @@ export default function Settings() {
                             <button
                               key={acc.id}
                               onClick={() => setModal({ open: true, account: acc })}
-                              className="flex w-full items-center gap-4 rounded-2xl bg-surface-container border border-outline-variant px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
+                              className="flex w-full items-center gap-4 rounded-2xl bg-surface-container px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
                             >
                               <div
                                 className="flex h-10 w-10 items-center justify-center rounded-xl text-white"
@@ -549,7 +549,7 @@ export default function Settings() {
                         onClick={() =>
                           setModal({ open: true, account: null, defaultType: 'CREDIT' })
                         }
-                        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all"
+                        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-primary to-primary-container py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
                       >
                         <Plus size={16} strokeWidth={2.5} />
                         {t('settings.newCreditCard')}
@@ -580,7 +580,7 @@ export default function Settings() {
                       <div key={parent.id}>
                         <button
                           onClick={() => setCategoryModal({ open: true, category: parent })}
-                          className="flex w-full items-center gap-3 rounded-2xl bg-surface-container border border-outline-variant px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
+                          className="flex w-full items-center gap-3 rounded-2xl bg-surface-container px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
                         >
                           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
                             <span className="text-primary">{categoryIcon(parent.icon)}</span>
@@ -611,7 +611,7 @@ export default function Settings() {
                 </div>
                 <button
                   onClick={() => setCategoryModal({ open: true, category: null })}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-primary to-primary-container py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
                 >
                   <Plus size={16} strokeWidth={2.5} />
                   {t('settings.newCategory')}
@@ -639,7 +639,7 @@ export default function Settings() {
                 </div>
                 <button
                   onClick={() => setTagModal({ open: true, tag: null })}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all"
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-primary to-primary-container py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
                 >
                   <Plus size={16} strokeWidth={2.5} />
                   {t('settings.newTag')}
@@ -659,7 +659,7 @@ export default function Settings() {
                       type="text"
                       value={profileName}
                       onChange={(e) => setProfileName(e.target.value)}
-                      className="w-full rounded-xl border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>
                   <div>
@@ -670,7 +670,7 @@ export default function Settings() {
                       type="email"
                       value={profileEmail}
                       onChange={(e) => setProfileEmail(e.target.value)}
-                      className="w-full rounded-xl border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>
                   <button
@@ -691,7 +691,7 @@ export default function Settings() {
                     <select
                       value={workspace.locale}
                       onChange={(e) => handleLocaleChange(e.target.value as Locale)}
-                      className="appearance-none rounded-xl border border-outline-variant bg-surface px-4 py-2.5 text-sm text-on-surface outline-none focus:border-primary"
+                      className="appearance-none rounded-xl bg-surface-container-high px-4 py-2.5 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                     >
                       <option value="pt-BR">Português (Brasil)</option>
                       <option value="en-US">English (US)</option>
@@ -702,7 +702,7 @@ export default function Settings() {
                     <select
                       value={workspace.theme}
                       onChange={(e) => setTheme(e.target.value as Theme)}
-                      className="appearance-none rounded-xl border border-outline-variant bg-surface px-4 py-2.5 text-sm text-on-surface outline-none focus:border-primary"
+                      className="appearance-none rounded-xl bg-surface-container-high px-4 py-2.5 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                     >
                       <option value="system">{t('settings.themeSystem')}</option>
                       <option value="light">{t('settings.themeLight')}</option>
@@ -711,7 +711,7 @@ export default function Settings() {
                   </SettingRow>
 
                   {/* Ambient shadows toggle (R-06) */}
-                  <div className="rounded-2xl bg-surface-container border border-outline-variant px-5 py-4">
+                  <div className="rounded-2xl bg-surface-container px-5 py-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-on-surface">{t('settings.ambientShadows')}</p>
@@ -737,7 +737,7 @@ export default function Settings() {
                   </div>
 
                   {/* Audit log retention toggle */}
-                  <div className="rounded-2xl bg-surface-container border border-outline-variant px-5 py-4 space-y-3">
+                  <div className="rounded-2xl bg-surface-container px-5 py-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-on-surface">{t('audit.retentionLabel')}</p>
@@ -773,7 +773,7 @@ export default function Settings() {
                   </div>
 
                   {/* Bug report */}
-                  <div className="rounded-2xl border border-outline-variant bg-surface-container px-5 py-4">
+                  <div className="rounded-2xl bg-surface-container px-5 py-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-on-surface">{t('bugReport.title')}</p>
@@ -783,7 +783,7 @@ export default function Settings() {
                       </div>
                       <button
                         onClick={() => setBugReportOpen(true)}
-                        className="rounded-xl border border-outline-variant px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container-high"
+                        className="rounded-xl px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container-high"
                       >
                         {t('bugReport.openButton')}
                       </button>
@@ -814,7 +814,7 @@ export default function Settings() {
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => void handleExportDb()}
-                      className="flex flex-col items-center gap-2 rounded-2xl bg-surface-container border border-outline-variant py-6 hover:bg-surface-container-high transition-colors"
+                      className="flex flex-col items-center gap-2 rounded-2xl bg-surface-container py-6 hover:bg-surface-container-high transition-colors"
                     >
                       <Download size={22} className="text-on-surface/60" strokeWidth={1.5} />
                       <span className="text-sm font-medium text-on-surface">
@@ -824,7 +824,7 @@ export default function Settings() {
                     </button>
                     <button
                       onClick={() => importDbInputRef.current?.click()}
-                      className="flex flex-col items-center gap-2 rounded-2xl bg-surface-container border border-outline-variant py-6 hover:bg-surface-container-high transition-colors"
+                      className="flex flex-col items-center gap-2 rounded-2xl bg-surface-container py-6 hover:bg-surface-container-high transition-colors"
                     >
                       <Upload size={22} className="text-on-surface/60" strokeWidth={1.5} />
                       <span className="text-sm font-medium text-on-surface">
@@ -858,7 +858,7 @@ export default function Settings() {
                     </p>
                     <button
                       onClick={() => void handleExportDb()}
-                      className="flex items-center gap-1.5 rounded-lg bg-surface-container border border-outline-variant px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors"
+                      className="flex items-center gap-1.5 rounded-lg bg-surface-container px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors"
                     >
                       <Download size={12} strokeWidth={2} />
                       {t('settings.exportLocalData')}
@@ -879,7 +879,7 @@ export default function Settings() {
             {activeSection === 'history' && (
               <Section title={t('audit.title')} subtitle={t('audit.subtitle')}>
                 {auditLog.length === 0 ? (
-                  <div className="rounded-2xl bg-surface-container border border-outline-variant py-12 text-center">
+                  <div className="rounded-2xl bg-surface-container py-12 text-center">
                     <History
                       size={32}
                       className="mx-auto text-on-surface/20 mb-3"
@@ -894,7 +894,7 @@ export default function Settings() {
                         <p className="label text-xs font-semibold text-on-surface/40 uppercase mb-2">
                           {dateGroupLabel(dateKey)}
                         </p>
-                        <div className="rounded-2xl bg-surface-container border border-outline-variant overflow-hidden">
+                        <div className="rounded-2xl bg-surface-container overflow-hidden">
                           {entries.map((entry, i) => (
                             <div
                               key={entry.id}
@@ -1080,7 +1080,7 @@ function AddAccountModal({
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className="w-full max-w-sm rounded-3xl bg-surface-container-low border border-outline-variant p-6 shadow-2xl">
+      <div className="w-full max-w-sm rounded-3xl bg-surface-container-low p-6 shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-semibold text-on-surface">
@@ -1107,7 +1107,7 @@ function AddAccountModal({
               if (e.key === 'Enter') handleSave()
             }}
             placeholder={t('settings.accountNamePlaceholder')}
-            className="w-full rounded-xl border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
             autoFocus
           />
         </div>
@@ -1150,7 +1150,7 @@ function AddAccountModal({
                 value={initialBalance}
                 onChange={(e) => setInitialBalance(e.target.value)}
                 placeholder="0,00"
-                className="w-full rounded-xl border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
           )}
@@ -1169,7 +1169,7 @@ function AddAccountModal({
                   value={creditLimit}
                   onChange={(e) => setCreditLimit(e.target.value)}
                   placeholder="0,00"
-                  className="w-full rounded-xl border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -1185,7 +1185,7 @@ function AddAccountModal({
                     value={closingDay}
                     onChange={(e) => setClosingDay(e.target.value)}
                     placeholder="1–31"
-                    className="w-full rounded-xl border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                   />
                 </div>
                 <div>
@@ -1200,7 +1200,7 @@ function AddAccountModal({
                     value={dueDay}
                     onChange={(e) => setDueDay(e.target.value)}
                     placeholder="1–31"
-                    className="w-full rounded-xl border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                   />
                 </div>
               </div>
@@ -1260,7 +1260,7 @@ function AddAccountModal({
         <button
           onClick={handleSave}
           disabled={!name.trim()}
-          className="mb-2 flex w-full items-center justify-center rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          className="mb-2 flex w-full items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-container py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {t('settings.saveAccount')}
         </button>
@@ -1332,7 +1332,7 @@ function AddTagModal({
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className="w-full max-w-sm rounded-3xl bg-surface-container-low border border-outline-variant p-6 shadow-2xl">
+      <div className="w-full max-w-sm rounded-3xl bg-surface-container-low p-6 shadow-2xl">
         {/* Header */}
         <div className="flex items-start justify-between mb-5">
           <div>
@@ -1364,7 +1364,7 @@ function AddTagModal({
               if (e.key === 'Enter') handleSave()
             }}
             placeholder={t('settings.tagNamePlaceholder')}
-            className="w-full rounded-xl border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
             autoFocus
           />
         </div>
@@ -1413,7 +1413,7 @@ function AddTagModal({
             <button
               onClick={handleSave}
               disabled={!name.trim()}
-              className="rounded-2xl bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              className="rounded-2xl bg-gradient-to-br from-primary to-primary-container px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {t('common.save')}
             </button>
@@ -1485,7 +1485,7 @@ function AddCategoryModal({
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className="w-full max-w-sm rounded-3xl bg-surface-container-low border border-outline-variant p-6 shadow-2xl">
+      <div className="w-full max-w-sm rounded-3xl bg-surface-container-low p-6 shadow-2xl">
         {/* Header */}
         <div className="flex items-start justify-between mb-5">
           <div>
@@ -1515,7 +1515,7 @@ function AddCategoryModal({
               if (e.key === 'Enter') handleSave()
             }}
             placeholder={t('settings.categoryNamePlaceholder')}
-            className="w-full rounded-xl border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
             autoFocus
           />
         </div>
@@ -1551,7 +1551,7 @@ function AddCategoryModal({
           <select
             value={parentId ?? ''}
             onChange={(e) => handleParentChange(e.target.value)}
-            className="w-full appearance-none rounded-xl border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            className="w-full appearance-none rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
           >
             <option value="">{t('settings.noneTopLevel')}</option>
             {topLevelCategories
@@ -1567,7 +1567,7 @@ function AddCategoryModal({
         {/* Type toggle (top-level only) */}
         {parentId === null && (
           <div className="mb-5">
-            <div className="flex overflow-hidden rounded-xl border border-outline-variant">
+            <div className="flex overflow-hidden rounded-xl">
               <button
                 onClick={() => setType('EXPENSE')}
                 className={cn(
@@ -1598,7 +1598,7 @@ function AddCategoryModal({
         <button
           onClick={handleSave}
           disabled={!name.trim()}
-          className="mb-2 flex w-full items-center justify-center rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          className="mb-2 flex w-full items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary-container py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {t('common.save')}
         </button>
@@ -1695,7 +1695,7 @@ function Section({
 
 function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between rounded-2xl bg-surface-container border border-outline-variant px-5 py-4">
+    <div className="flex items-center justify-between rounded-2xl bg-surface-container px-5 py-4">
       <span className="text-sm text-on-surface">{label}</span>
       {children}
     </div>

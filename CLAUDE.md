@@ -25,7 +25,7 @@ Workflow de desenvolvimento IA + humano definido em `plan/RULES.md`.
 | Cenários de sync | `plan/SYNC_SCENARIOS.md` | 14 cenários de sincronização e recuperação |
 | Telemetria e bug report | `plan/METRICS.md` | Decisões de privacidade, arquitetura do F-26 (Bug Report System), tasks TASK-BR-01 a BR-08 |
 | Relatórios avançados | `plan/REPORTS.md` | Épico do módulo analítico (4 views) |
-| Sistema de design | `design/design_system.md` | Cores, tipografia, componentes |
+| Sistema de design | `design/DESIGN.md` | Cores, tipografia, espaçamento, sombras, componentes (fonte única) |
 | Workflow | `plan/RULES.md` | SDLC, cerimônias, divisão de responsabilidades |
 
 ---

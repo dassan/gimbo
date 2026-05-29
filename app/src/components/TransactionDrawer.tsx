@@ -25,7 +25,7 @@ const TYPE_CONFIG: Record<TxType, { label: string; color: string; bg: string; bt
       label: 'transactions.income',
       color: 'text-primary',
       bg: 'bg-primary/10',
-      btnClass: 'bg-primary hover:brightness-110',
+      btnClass: 'bg-gradient-to-br from-primary to-primary-container hover:brightness-110',
     },
     TRANSFER: {
       label: 'transactions.transfer',
@@ -281,7 +281,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
           translate-y / translate-x toggled by the `open` state — responsive via Tailwind. */}
       <aside
         className={cn(
-          'fixed z-50 flex flex-col bg-surface-container-low transition-transform duration-300 ease-out',
+          'fixed z-50 flex flex-col bg-surface-container-low shadow-card-ambient transition-transform duration-300 ease-[var(--ease-fluid)]',
           // Mobile layout: bottom sheet
           'max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:h-[85dvh] max-sm:rounded-t-2xl',
           // Desktop layout: right-side panel
@@ -291,7 +291,6 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
             ? 'max-sm:translate-y-0 sm:translate-x-0'
             : 'max-sm:translate-y-full sm:translate-x-full'
         )}
-        style={{ boxShadow: 'var(--shadow-ambient, 0 -4px 30px rgba(25,28,29,0.10))' }}
       >
         {/* Mobile drag handle indicator */}
         <div className="sm:hidden flex justify-center pt-3 pb-1 shrink-0">
@@ -564,7 +563,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                         const v = Math.max(2, Math.min(36, parseInt(e.target.value, 10) || 2))
                         setInstallmentCount(v)
                       }}
-                      className="w-full rounded-xl bg-surface-container border border-outline-variant py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                      className="w-full rounded-xl bg-surface-container-high py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>
                   {amount > 0 && (

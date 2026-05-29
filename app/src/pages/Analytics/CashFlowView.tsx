@@ -89,12 +89,7 @@ export default function CashFlowView({
   }
 
   return (
-    <div
-      className={cn(
-        'rounded-2xl bg-surface-container border border-outline-variant p-6 space-y-6',
-        shadowClass
-      )}
-    >
+    <div className={cn('rounded-2xl bg-surface-container p-6 space-y-6', shadowClass)}>
       {/* R-07: ComposedChart — bars for income/expenses + line for accumulated balance */}
       <div className="h-56">
         {hasData ? (
@@ -186,15 +181,15 @@ export default function CashFlowView({
                 className="grid grid-cols-5 rounded-xl px-2 py-2 hover:bg-surface-container-low transition-colors"
               >
                 <p className="text-xs font-medium text-on-surface">{row.fullLabel}</p>
-                <p className="text-xs text-right text-primary font-medium">
+                <p className="text-xs text-right text-primary font-medium tabular-nums">
                   {formatCurrency(row.income)}
                 </p>
-                <p className="text-xs text-right text-tertiary font-medium">
+                <p className="text-xs text-right text-tertiary font-medium tabular-nums">
                   {formatCurrency(row.expenses)}
                 </p>
                 <p
                   className={cn(
-                    'text-xs text-right font-medium',
+                    'text-xs text-right font-medium tabular-nums',
                     row.result >= 0 ? 'text-primary' : 'text-tertiary'
                   )}
                 >
@@ -202,7 +197,7 @@ export default function CashFlowView({
                 </p>
                 <p
                   className={cn(
-                    'text-xs text-right font-bold',
+                    'text-xs text-right font-bold tabular-nums',
                     row.balance >= 0 ? 'text-primary' : 'text-tertiary'
                   )}
                 >

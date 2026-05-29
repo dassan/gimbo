@@ -37,6 +37,12 @@
 
   /* ── Shadows ─────────────────────────────────────────────── */
   --shadow-ambient: 0px 20px 40px rgba(10, 31, 22, 0.06);
+
+  /* ── Motion ──────────────────────────────────────────────── */
+  --ease-fluid: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-hover: 150ms;
+  --duration-toggle: 250ms;
+  --duration-drawer: 300ms;
 }
 
 /* ── Dark mode overrides ────────────────────────────────────── */

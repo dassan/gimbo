@@ -151,12 +151,7 @@ export default function ContasView({
     <div className="space-y-6">
       {/* Non-CREDIT accounts grid */}
       {summaries.length === 0 && creditSummaries.length === 0 ? (
-        <div
-          className={cn(
-            'rounded-2xl bg-surface-container border border-outline-variant p-12 text-center',
-            shadowClass
-          )}
-        >
+        <div className={cn('rounded-2xl bg-surface-container p-12 text-center', shadowClass)}>
           <p className="text-sm text-on-surface/30">{t('analytics.contas.selectPrompt')}</p>
         </div>
       ) : (
@@ -234,7 +229,7 @@ function AccountCard({
     <button
       onClick={onClick}
       className={cn(
-        'rounded-2xl bg-surface-container border border-outline-variant p-5 text-left transition-all hover:scale-[1.02] active:scale-[0.99]',
+        'rounded-2xl bg-surface-container p-5 text-left transition-all hover:scale-[1.02] active:scale-[0.97]',
         shadowClass
       )}
     >
@@ -253,17 +248,24 @@ function AccountCard({
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <p className="text-[10px] text-on-surface/40">{incomeLabel}</p>
-          <p className="text-xs font-medium text-primary">{formatCurrency(income)}</p>
+          <p className="text-xs font-medium tabular-nums text-primary">{formatCurrency(income)}</p>
         </div>
         <div className="flex items-center justify-between">
           <p className="text-[10px] text-on-surface/40">{expensesLabel}</p>
-          <p className="text-xs font-medium text-tertiary">{formatCurrency(expenses)}</p>
+          <p className="text-xs font-medium tabular-nums text-tertiary">
+            {formatCurrency(expenses)}
+          </p>
         </div>
         <div className="flex items-center justify-between pt-1 border-t border-surface-container-high">
           <p className="text-[10px] font-semibold text-on-surface/60 uppercase tracking-wide">
             {resultLabel}
           </p>
-          <p className={cn('text-sm font-bold', result >= 0 ? 'text-primary' : 'text-tertiary')}>
+          <p
+            className={cn(
+              'text-sm font-bold tabular-nums',
+              result >= 0 ? 'text-primary' : 'text-tertiary'
+            )}
+          >
             {formatCurrency(result)}
           </p>
         </div>
@@ -295,7 +297,7 @@ function CreditAccountCard({
     <button
       onClick={onClick}
       className={cn(
-        'rounded-2xl bg-surface-container border border-outline-variant p-5 text-left transition-all hover:scale-[1.02] active:scale-[0.99]',
+        'rounded-2xl bg-surface-container p-5 text-left transition-all hover:scale-[1.02] active:scale-[0.97]',
         shadowClass
       )}
     >
@@ -314,7 +316,9 @@ function CreditAccountCard({
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <p className="text-[10px] text-on-surface/40">{t('analytics.cashflowView.expenses')}</p>
-          <p className="text-xs font-medium text-tertiary">{formatCurrency(invoiceTotal)}</p>
+          <p className="text-xs font-medium tabular-nums text-tertiary">
+            {formatCurrency(invoiceTotal)}
+          </p>
         </div>
         {available !== null && (
           <div className="flex items-center justify-between pt-1 border-t border-surface-container-high">
@@ -323,7 +327,7 @@ function CreditAccountCard({
             </p>
             <p
               className={cn(
-                'text-sm font-bold',
+                'text-sm font-bold tabular-nums',
                 available >= 0 ? 'text-on-surface' : 'text-tertiary'
               )}
             >

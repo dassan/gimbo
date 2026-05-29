@@ -74,12 +74,7 @@ interface StatTileProps {
 
 function StatTile({ icon, label, value, sub, shadowClass }: StatTileProps) {
   return (
-    <div
-      className={cn(
-        'rounded-2xl bg-surface-container border border-outline-variant p-5',
-        shadowClass
-      )}
-    >
+    <div className={cn('rounded-2xl bg-surface-container p-5', shadowClass)}>
       <div className="flex items-center gap-2 mb-3">
         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary">
           {icon}
@@ -328,7 +323,7 @@ export default function About() {
         {usage.topCat && (
           <div
             className={cn(
-              'rounded-2xl bg-surface-container border border-outline-variant p-5 flex items-center gap-4',
+              'rounded-2xl bg-surface-container p-5 flex items-center gap-4',
               shadowClass
             )}
           >
@@ -362,12 +357,7 @@ export default function About() {
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {/* Testes */}
-            <div
-              className={cn(
-                'rounded-2xl bg-surface-container border border-outline-variant p-6 space-y-4',
-                shadowClass
-              )}
-            >
+            <div className={cn('rounded-2xl bg-surface-container p-6 space-y-4', shadowClass)}>
               <div className="flex items-center gap-2">
                 <FlaskConical size={16} strokeWidth={1.5} className="text-primary" />
                 <p className="text-sm font-semibold text-on-surface">{t('about.testsTitle')}</p>
@@ -426,12 +416,7 @@ export default function About() {
 
             {/* Coverage */}
             {devStats.coverage && (
-              <div
-                className={cn(
-                  'rounded-2xl bg-surface-container border border-outline-variant p-6 space-y-4',
-                  shadowClass
-                )}
-              >
+              <div className={cn('rounded-2xl bg-surface-container p-6 space-y-4', shadowClass)}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <GitBranch size={16} strokeWidth={1.5} className="text-primary" />

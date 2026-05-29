@@ -193,7 +193,7 @@ export default function PeriodSelector({ value, onChange }: PeriodSelectorProps)
           <button
             onClick={handleApplyCustom}
             disabled={!pendingStart || !pendingEnd}
-            className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-white transition-opacity disabled:opacity-40"
+            className="w-full rounded-xl bg-gradient-to-br from-primary to-primary-container py-3 text-sm font-semibold text-white transition-all active:scale-[0.97] disabled:opacity-40"
           >
             {t('transactions.applyPeriod')}
           </button>

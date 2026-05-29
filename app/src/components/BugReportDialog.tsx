@@ -139,7 +139,7 @@ function BugReportContent({ onClose, prefillTitle }: ContentProps) {
               onChange={(e) => setDescription(e.target.value)}
               placeholder={t('bugReport.descriptionPlaceholder')}
               rows={4}
-              className="w-full resize-none rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2.5 text-sm text-on-surface placeholder-on-surface/30 focus:border-primary focus:outline-none"
+              className="w-full resize-none rounded-xl bg-surface-container-high px-3 py-2.5 text-sm text-on-surface placeholder-on-surface/30 outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
 
@@ -193,7 +193,7 @@ function BugReportContent({ onClose, prefillTitle }: ContentProps) {
             <button
               onClick={handleSubmit}
               disabled={description.trim() === ''}
-              className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-xl bg-gradient-to-br from-primary to-primary-container px-4 py-2 text-sm font-semibold text-white hover:brightness-110 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {t('bugReport.submit')}
             </button>

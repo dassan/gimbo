@@ -171,12 +171,7 @@ export default function TagsView({
 
       {/* ── Content ──────────────────────────────────────────────────────── */}
       {!hasAnyData ? (
-        <div
-          className={cn(
-            'rounded-2xl bg-surface-container border border-outline-variant p-12 text-center',
-            shadowClass
-          )}
-        >
+        <div className={cn('rounded-2xl bg-surface-container p-12 text-center', shadowClass)}>
           <p className="text-sm text-on-surface/30">{t('analytics.tags.noData')}</p>
         </div>
       ) : (
@@ -216,12 +211,7 @@ function TagSection({ title, entries, shadowClass }: TagSectionProps) {
   const maxValue = entries[0]?.value ?? 0
 
   return (
-    <div
-      className={cn(
-        'rounded-2xl bg-surface-container border border-outline-variant p-6 space-y-4',
-        shadowClass
-      )}
-    >
+    <div className={cn('rounded-2xl bg-surface-container p-6 space-y-4', shadowClass)}>
       <h3 className="text-sm font-semibold text-on-surface">{title}</h3>
       <div className="space-y-3">
         {entries.map(({ tag, value, pct }) => {

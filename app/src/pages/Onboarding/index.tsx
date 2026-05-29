@@ -116,7 +116,7 @@ export default function Onboarding() {
         {/* ── Right form panel ── */}
         <div className="flex flex-1 items-center justify-center bg-surface-container-low p-6 lg:p-12">
           <div
-            className="w-full max-w-md rounded-3xl bg-surface-container border border-outline-variant p-8"
+            className="w-full max-w-md rounded-3xl bg-surface-container p-8"
             style={{ boxShadow: '0px 20px 60px rgba(0,0,0,0.3)' }}
           >
             {/* Tabs */}
@@ -154,7 +154,7 @@ export default function Onboarding() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && void handleCreate()}
-                    className="w-full rounded-xl border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none transition focus:ring-2 focus:ring-primary/30"
                   />
                 </div>
 
@@ -168,7 +168,7 @@ export default function Onboarding() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && void handleCreate()}
-                    className="w-full rounded-xl border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none transition focus:ring-2 focus:ring-primary/30"
                   />
                 </div>
 
@@ -187,7 +187,7 @@ export default function Onboarding() {
                         setLocaleState(l)
                         void i18n.changeLanguage(l)
                       }}
-                      className="w-full appearance-none rounded-xl border border-outline-variant bg-surface py-3 pl-10 pr-4 text-sm text-on-surface outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      className="w-full appearance-none rounded-xl bg-surface-container-high py-3 pl-10 pr-4 text-sm text-on-surface outline-none transition focus:ring-2 focus:ring-primary/30"
                     >
                       <option value="pt-BR">Português (Brasil)</option>
                       <option value="en-US">English (US)</option>
@@ -202,7 +202,7 @@ export default function Onboarding() {
                 <button
                   onClick={() => void handleCreate()}
                   disabled={!name.trim()}
-                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-4 text-sm font-semibold text-white transition hover:brightness-110 disabled:opacity-40"
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-primary to-primary-container py-4 text-sm font-semibold text-white transition hover:brightness-110 active:scale-[0.97] disabled:opacity-40"
                 >
                   {t('onboarding.create')}
                   <ArrowRight size={16} strokeWidth={2.5} />

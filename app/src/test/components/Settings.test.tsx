@@ -41,7 +41,9 @@ beforeEach(() => {
 
 async function renderDataSection() {
   render(<Settings />)
-  await userEvent.click(screen.getByRole('button', { name: 'settings.dataFile' }))
+  // Both mobile tab bar and desktop sidebar render in jsdom (CSS breakpoints not applied).
+  // Click the first matching nav button — both call the same setActiveSection handler.
+  await userEvent.click(screen.getAllByRole('button', { name: 'settings.dataFile' })[0])
 }
 
 function getDbInput(): HTMLInputElement {
@@ -172,7 +174,8 @@ function makeTx(overrides: Partial<Transaction> = {}): Transaction {
 describe('Settings — M-24: accounts section split into Contas and Cartões', () => {
   it('shows "settings.accountsAndCards" as the sidebar navigation label', () => {
     render(<Settings />)
-    expect(screen.getByRole('button', { name: 'settings.accountsAndCards' })).toBeInTheDocument()
+    // Both mobile tab bar and desktop sidebar render in jsdom — verify at least one exists.
+    expect(screen.getAllByRole('button', { name: 'settings.accountsAndCards' })[0]).toBeInTheDocument()
   })
 
   it('shows "settings.accounts" sub-section header for non-CREDIT accounts', () => {
