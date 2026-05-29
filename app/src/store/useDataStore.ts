@@ -5,6 +5,7 @@ import type {
   Category,
   Tag,
   Transaction,
+  Valuation,
   AuditEntry,
   AuditAction,
   AuditEntity,
@@ -84,6 +85,10 @@ interface DataStore {
   updateTransaction: (tx: Transaction) => void
   deleteTransaction: (id: string) => void
   deleteInstallmentGroup: (parentId: string) => void
+
+  addValuation: (valuation: Valuation) => void
+  updateValuation: (valuation: Valuation) => void
+  deleteValuation: (id: string) => void
 
   updateUser: (patch: Partial<DataFile['user']>) => void
   setRetentionLimit: (limit: number | null) => void
@@ -356,6 +361,74 @@ export const useDataStore = create<DataStore>((set) => ({
         d.deletedIds = [...new Set([...d.deletedIds, ...groupIds])]
         const summary = `Compra parcelada cancelada: ${rawDesc || accName} — ${N} parcelas removidas`
         addAudit(d, makeEntry('DELETE', 'transaction', parentId, summary))
+      })
+    ),
+
+  // ── Valuations ────────────────────────────────────────────────────────────
+
+  addValuation: (valuation) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          d.valuations.push(valuation)
+          const accName =
+            d.accounts.find((a) => a.id === valuation.accountId)?.name ?? valuation.accountId
+          const valueStr = `R$ ${valuation.marketValue.toFixed(2).replace('.', ',')}`
+          addAudit(
+            d,
+            makeEntry(
+              'CREATE',
+              'account',
+              valuation.accountId,
+              `Valuation criado: ${accName} — ${valueStr} em ${valuation.date}`
+            )
+          )
+        },
+        'valuation_created'
+      )
+    ),
+
+  updateValuation: (valuation) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const i = d.valuations.findIndex((v) => v.id === valuation.id)
+          if (i !== -1) d.valuations[i] = valuation
+          const accName =
+            d.accounts.find((a) => a.id === valuation.accountId)?.name ?? valuation.accountId
+          const valueStr = `R$ ${valuation.marketValue.toFixed(2).replace('.', ',')}`
+          addAudit(
+            d,
+            makeEntry(
+              'UPDATE',
+              'account',
+              valuation.accountId,
+              `Valuation atualizado: ${accName} — ${valueStr} em ${valuation.date}`
+            )
+          )
+        },
+        'valuation_updated'
+      )
+    ),
+
+  deleteValuation: (id) =>
+    set((s) =>
+      mutate(s, (d) => {
+        const v = d.valuations.find((v) => v.id === id)
+        const accName = v ? (d.accounts.find((a) => a.id === v.accountId)?.name ?? v.accountId) : id
+        d.valuations = d.valuations.filter((v) => v.id !== id)
+        d.deletedIds = [...new Set([...d.deletedIds, id])]
+        addAudit(
+          d,
+          makeEntry(
+            'DELETE',
+            'account',
+            v?.accountId ?? id,
+            `Valuation removido: ${accName} em ${v?.date ?? ''}`
+          )
+        )
       })
     ),
 

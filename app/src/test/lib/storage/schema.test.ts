@@ -26,13 +26,14 @@ function makeEntry(daysAgo: number): AuditEntry {
 }
 
 const MINIMAL_VALID: DataFile = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   user: { name: 'x', email: '', createdAt: '', updatedAt: '' },
   settings: { fileCreatedAt: '', fileUpdatedAt: '', auditLogRetentionLimit: 200 },
   accounts: [],
   categories: [],
   tags: [],
   transactions: [],
+  valuations: [],
   auditLog: [],
   deletedIds: [],
 }
@@ -316,13 +317,14 @@ describe('validateDataFile — v1 → v2 migration', () => {
         tags: [],
       },
     ],
+    valuations: [],
     auditLog: [],
     deletedIds: [],
   }
 
-  it('migrates a v1 file to schemaVersion 2', () => {
+  it('migrates a v1 file to schemaVersion 3 (current)', () => {
     const result = validateDataFile(V1_FILE)
-    expect(result.schemaVersion).toBe(2)
+    expect(result.schemaVersion).toBe(3)
   })
 
   it('preserves all existing accounts during v1 → v2 migration', () => {
@@ -339,13 +341,20 @@ describe('validateDataFile — v1 → v2 migration', () => {
     expect(result.transactions[0].installment).toBeUndefined()
   })
 
-  it('accepts a v2 file without running migration (idempotent)', () => {
+  it('accepts a v2 file and migrates it to schemaVersion 3', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 2 })
-    expect(result.schemaVersion).toBe(2)
+    expect(result.schemaVersion).toBe(3)
   })
 
-  it('throws SchemaVersionError for a v3 file', () => {
-    expect(() => validateDataFile({ ...V1_FILE, schemaVersion: 3 })).toThrow(SchemaVersionError)
+  it('accepts a v3 file without running migration (idempotent)', () => {
+    const result = validateDataFile({ ...V1_FILE, schemaVersion: 3, valuations: [] })
+    expect(result.schemaVersion).toBe(3)
+  })
+
+  it('throws SchemaVersionError for a v4 file (future version)', () => {
+    expect(() => validateDataFile({ ...V1_FILE, schemaVersion: 4, valuations: [] })).toThrow(
+      SchemaVersionError
+    )
   })
 })
 
@@ -570,5 +579,112 @@ describe('validateDataFile — deletedIds tombstone (B-11)', () => {
   it('createEmptyDataFile includes deletedIds: []', () => {
     const file = createEmptyDataFile('Test', 'test@example.com')
     expect(file.deletedIds).toEqual([])
+  })
+})
+
+// ─── Migration v2 → v3 (NW-08) ───────────────────────────────────────────────
+
+describe('validateDataFile — v2 → v3 migration (NW-08)', () => {
+  const V2_FILE: DataFile = {
+    schemaVersion: 2,
+    user: { name: 'x', email: '', createdAt: '', updatedAt: '' },
+    settings: { fileCreatedAt: '', fileUpdatedAt: '', auditLogRetentionLimit: 200 },
+    accounts: [{ id: 'a1', name: 'Stocks', type: 'STOCKS', balance: 5000, includeInBalance: true }],
+    categories: [],
+    tags: [],
+    transactions: [],
+    valuations: [],
+    auditLog: [],
+    deletedIds: [],
+  }
+
+  it('migrates a v2 file to schemaVersion 3', () => {
+    const result = validateDataFile(V2_FILE)
+    expect(result.schemaVersion).toBe(3)
+  })
+
+  it('adds valuations: [] when field is absent in a v2 file', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { valuations: _v, ...withoutValuations } = V2_FILE
+    const result = validateDataFile(withoutValuations)
+    expect(result.valuations).toEqual([])
+  })
+
+  it('preserves existing accounts and transactions during v2 → v3 migration', () => {
+    const result = validateDataFile(V2_FILE)
+    expect(result.accounts).toHaveLength(1)
+    expect(result.accounts[0].id).toBe('a1')
+    expect(result.transactions).toHaveLength(0)
+  })
+
+  it('createEmptyDataFile includes valuations: []', () => {
+    const file = createEmptyDataFile('Test', 'test@example.com')
+    expect(file.valuations).toEqual([])
+  })
+
+  it('createEmptyDataFile sets schemaVersion to 3', () => {
+    const file = createEmptyDataFile('Test', 'test@example.com')
+    expect(file.schemaVersion).toBe(3)
+  })
+})
+
+// ─── Schema v3 — Valuation entity (NW-08) ────────────────────────────────────
+
+describe('validateDataFile — schema v3 Valuation fields', () => {
+  it('accepts a file with a valid Valuation entry', () => {
+    const data = {
+      ...MINIMAL_VALID,
+      valuations: [{ id: 'v1', accountId: 'a1', date: '2026-01-31', marketValue: 12500 }],
+    }
+    expect(() => validateDataFile(data)).not.toThrow()
+    expect(validateDataFile(data).valuations).toHaveLength(1)
+  })
+
+  it('accepts a file with an empty valuations array', () => {
+    const data = { ...MINIMAL_VALID, valuations: [] }
+    expect(() => validateDataFile(data)).not.toThrow()
+  })
+
+  it('defaults valuations to [] when field is absent (legacy v2 files post-migration)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { valuations: _v, ...withoutValuations } = MINIMAL_VALID
+    const result = validateDataFile(withoutValuations)
+    expect(result.valuations).toEqual([])
+  })
+
+  it('accepts multiple valuations for the same account on different dates', () => {
+    const data = {
+      ...MINIMAL_VALID,
+      valuations: [
+        { id: 'v1', accountId: 'a1', date: '2026-01-31', marketValue: 10000 },
+        { id: 'v2', accountId: 'a1', date: '2026-02-28', marketValue: 11500 },
+      ],
+    }
+    expect(() => validateDataFile(data)).not.toThrow()
+    expect(validateDataFile(data).valuations).toHaveLength(2)
+  })
+
+  it('rejects a Valuation with missing marketValue', () => {
+    const data = {
+      ...MINIMAL_VALID,
+      valuations: [{ id: 'v1', accountId: 'a1', date: '2026-01-31' }],
+    }
+    expect(() => validateDataFile(data)).toThrow()
+  })
+
+  it('rejects a Valuation with non-numeric marketValue', () => {
+    const data = {
+      ...MINIMAL_VALID,
+      valuations: [{ id: 'v1', accountId: 'a1', date: '2026-01-31', marketValue: 'ten thousand' }],
+    }
+    expect(() => validateDataFile(data)).toThrow()
+  })
+
+  it('rejects a Valuation with missing accountId', () => {
+    const data = {
+      ...MINIMAL_VALID,
+      valuations: [{ id: 'v1', date: '2026-01-31', marketValue: 5000 }],
+    }
+    expect(() => validateDataFile(data)).toThrow()
   })
 })

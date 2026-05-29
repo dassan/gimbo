@@ -8,6 +8,7 @@ import * as SQLite from 'wa-sqlite'
 // @ts-expect-error – JavaScript VFS without ambient declarations
 import { OriginPrivateFileSystemVFS } from 'wa-sqlite/src/examples/OriginPrivateFileSystemVFS.js'
 import v1Schema from './migrations/v1.sql?raw'
+import v2Schema from './migrations/v2.sql?raw'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
 
@@ -70,6 +71,12 @@ type RawAuditEntry = {
   entityId: string
   summary: string
 }
+type RawValuation = {
+  id: string
+  accountId: string
+  date: string
+  marketValue: number
+}
 type RawDataFile = {
   user: RawUser
   settings: RawSettings
@@ -77,6 +84,7 @@ type RawDataFile = {
   categories: RawCategory[]
   tags: RawTag[]
   transactions: RawTransaction[]
+  valuations: RawValuation[]
   auditLog: RawAuditEntry[]
   deletedIds: string[]
 }
@@ -87,7 +95,6 @@ type RawDataFile = {
 let sqlite3: SQLiteAPI
 let db: number // opaque database pointer returned by open_v2
 
-const CURRENT_SCHEMA_VERSION = 1
 const DB_FILENAME = 'gimbo.db'
 
 // ─── Initialization ───────────────────────────────────────────────────────────
@@ -119,8 +126,11 @@ async function runMigrations(): Promise<void> {
   const { rows } = await sqlite3.execWithParams(db, 'PRAGMA user_version')
   const version = (rows[0]?.[0] ?? 0) as number
 
-  if (version < CURRENT_SCHEMA_VERSION) {
+  if (version < 1) {
     await sqlite3.run(db, v1Schema)
+  }
+  if (version < 2) {
+    await sqlite3.run(db, v2Schema)
   }
 }
 
@@ -177,6 +187,7 @@ async function replaceAll(raw: unknown): Promise<void> {
     await sqlite3.run(db, 'DELETE FROM audit_log')
     await sqlite3.run(db, 'DELETE FROM deleted_ids')
     await sqlite3.run(db, 'DELETE FROM transactions')
+    await sqlite3.run(db, 'DELETE FROM valuations')
     await sqlite3.run(db, 'DELETE FROM categories')
     await sqlite3.run(db, 'DELETE FROM tags')
     await sqlite3.run(db, 'DELETE FROM accounts')
@@ -278,6 +289,15 @@ async function replaceAll(raw: unknown): Promise<void> {
       }
     }
 
+    // valuations
+    for (const v of d.valuations ?? []) {
+      await sqlite3.run(
+        db,
+        'INSERT INTO valuations (id, account_id, date, market_value) VALUES (?, ?, ?, ?)',
+        [v.id, v.accountId, v.date, v.marketValue]
+      )
+    }
+
     // audit log
     for (const entry of d.auditLog) {
       await sqlite3.run(
@@ -312,6 +332,7 @@ async function clearAll(): Promise<void> {
     await sqlite3.run(db, 'DELETE FROM audit_log')
     await sqlite3.run(db, 'DELETE FROM deleted_ids')
     await sqlite3.run(db, 'DELETE FROM transactions')
+    await sqlite3.run(db, 'DELETE FROM valuations')
     await sqlite3.run(db, 'DELETE FROM categories')
     await sqlite3.run(db, 'DELETE FROM tags')
     await sqlite3.run(db, 'DELETE FROM accounts')

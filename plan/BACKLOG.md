@@ -204,7 +204,14 @@ Tarefas de adequação do código ao design system consolidado em `design/DESIGN
 | R-13 | **`pages/Analytics/TagsView.tsx` — Criar view com ranked horizontal bar chart.** Seção "Despesas" e seção "Receitas" separadas (estado vazio individual se não houver dados). Em cada seção: lista de tags com chip colorido (cor da tag), valor R$ total, `%` do total e barra horizontal proporcional ao valor máximo da lista (tag de maior valor ocupa 100% da largura; demais são proporcionais). Ordenado decrescente por valor. Cor da barra = `tag.color`. Transações sem tag ignoradas. Pré-requisito: R-01. | alta | resolvido |
 | R-14 | **`pages/Analytics/TagsView.tsx` — Multi-tag filter com toggle OR/AND.** Clicar em chip de tag seleciona/deseleciona para filtragem; a view recalcula exibindo apenas transações com as tags selecionadas. Toggle visível quando ≥ 2 tags selecionadas: **"OU"** (OR, default — `tx.tags.some(...)`) vs **"E"** (AND — `tx.tags.every(...)`). Botão "Limpar filtro" visível quando alguma tag está selecionada. | média | resolvido |
 
-### Fase 7 — Testes
+### Fase 7 — View: Faturas de Cartão de Crédito
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| R-17 | **`pages/Analytics/index.tsx` + `pages/Analytics/FaturasView.tsx` — Adicionar aba "Faturas" e criar view de evolução mensal das faturas de crédito.** (a) Em `pages/Analytics/index.tsx`, adicionar a 5ª aba `'faturas'` ao estado `activeTab` e renderizar `<FaturasView>` quando ativa; adicionar chaves i18n `analytics.tabs.faturas` (`pt-BR`: "Faturas", `en-US`: "Credit Cards") em ambos os locales; (b) Criar `pages/Analytics/FaturasView.tsx` recebendo props `transactions`, `accounts`, `startDate`, `endDate`. **Gráfico (`BarChart` do Recharts):** uma barra por mês no intervalo, valor = soma das despesas (`EXPENSE`) em contas do tipo `CREDIT` cujo `getEffectiveCashFlowDate` (data de vencimento da fatura) caia no mês; cor das barras `#FF8A83` (tertiary-container); tooltip com `formatCurrency`; eixo X com label do mês; legenda "Total de Faturas". Se houver múltiplos cartões, empilhar barras por conta (`StackedBar`) com cor derivada de `ACCOUNT_TYPE_COLORS` ou cor neutra por índice. Excluir `CREDIT_PAYMENT` dos cálculos. Estado vazio: mensagem centralizada "Nenhuma despesa em cartões no período". (c) Abaixo do gráfico: data grid com colunas **Período \| Cartão \| Total** — uma linha por cartão por mês, ordenada cronologicamente; linha de rodapé "Total" por mês em negrito. Pré-requisito: R-01. | alta | aberto |
+| R-18 | **`src/test/` — Testes unitários e de componente para `FaturasView`.** (a) Agregação mensal correta por data de vencimento (não por data da compra); (b) múltiplos cartões somados corretamente por mês; (c) `CREDIT_PAYMENT` excluído; (d) estado vazio quando não há contas CREDIT ou não há despesas no período; (e) data grid exibe linha de total por mês. Pré-requisito: R-17. | alta | aberto |
+
+### Fase 8 — Testes
 
 | ID | Descrição | Prioridade | Status |
 |----|-----------|------------|--------|

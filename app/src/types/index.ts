@@ -81,6 +81,13 @@ export interface Transaction {
   transferAccountId?: string // only for CREDIT_PAYMENT: the account that funds the payment
 }
 
+export interface Valuation {
+  id: string // UUID
+  accountId: string // must be STOCKS | CRYPTO | FOREX | ASSET
+  date: string // ISO 8601 — date of the market-value snapshot
+  marketValue: number // market value on that date
+}
+
 export interface AuditEntry {
   id: string // UUID
   timestamp: string // ISO 8601
@@ -100,6 +107,7 @@ export interface DataFile {
   categories: Category[]
   tags: Tag[]
   transactions: Transaction[]
+  valuations: Valuation[]
   auditLog: AuditEntry[]
   deletedIds: string[] // tombstone: IDs explicitly deleted on this device (B-11)
 }

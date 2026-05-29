@@ -1,9 +1,9 @@
-import type { Account, DataFile, Transaction } from '@/types'
+import type { Account, DataFile, Transaction, Valuation } from '@/types'
 import { uuid } from '@/lib/utils'
 
 export function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     user: {
       name: 'Test User',
       email: 'test@example.com',
@@ -19,6 +19,7 @@ export function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
     categories: [],
     tags: [],
     transactions: [],
+    valuations: [],
     auditLog: [],
     deletedIds: [],
     ...overrides,
@@ -41,6 +42,20 @@ export function makeCreditAccount(overrides: Partial<Account> = {}): Account {
       closingDay: 20,
       dueDay: 10,
     },
+    ...overrides,
+  }
+}
+
+/**
+ * Returns a Valuation snapshot for an investment account.
+ * Eligible account types: STOCKS | CRYPTO | FOREX | ASSET.
+ */
+export function makeValuation(overrides: Partial<Valuation> = {}): Valuation {
+  return {
+    id: uuid(),
+    accountId: 'acc-invest',
+    date: '2026-01-31',
+    marketValue: 10000,
     ...overrides,
   }
 }

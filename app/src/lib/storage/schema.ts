@@ -4,7 +4,7 @@ import { uuid, now } from '@/lib/utils'
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 2
+export const CURRENT_SCHEMA_VERSION = 3
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -88,6 +88,13 @@ const TransactionSchema = z.object({
   transferAccountId: z.string().optional(), // only for CREDIT_PAYMENT
 })
 
+const ValuationSchema = z.object({
+  id: z.string(),
+  accountId: z.string(),
+  date: z.string(),
+  marketValue: z.number(),
+})
+
 const AuditEntrySchema = z.object({
   id: z.string(),
   timestamp: z.string(),
@@ -105,6 +112,7 @@ export const DataFileSchema = z.object({
   categories: z.array(CategorySchema),
   tags: z.array(TagSchema),
   transactions: z.array(TransactionSchema),
+  valuations: z.array(ValuationSchema).default([]), // NW-08; absent in v1/v2 files defaults to []
   auditLog: z.array(AuditEntrySchema),
   deletedIds: z.array(z.string()).default([]), // tombstone — B-11; absent in v1/v2 files defaults to []
 })
@@ -141,6 +149,12 @@ function migrateDataFile(data: DataFile): DataFile {
     migrated = { ...migrated, schemaVersion: 2 }
   }
 
+  // v2 → v3: adds valuations array (NW-08). Absent in v1/v2 files; Zod default already
+  // fills it via DataFileSchema.parse, so we only need to bump the version here.
+  if (migrated.schemaVersion === 2) {
+    migrated = { ...migrated, schemaVersion: 3, valuations: migrated.valuations ?? [] }
+  }
+
   return migrated
 }
 
@@ -160,6 +174,7 @@ export function createEmptyDataFile(name: string, email: string): DataFile {
     categories: getDefaultCategories(),
     tags: [],
     transactions: [],
+    valuations: [],
     auditLog: [],
     deletedIds: [],
   }

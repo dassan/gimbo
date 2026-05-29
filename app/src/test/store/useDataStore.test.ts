@@ -1,7 +1,7 @@
 ﻿import { describe, it, expect, beforeEach } from 'vitest'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '../fixtures/dataFile'
-import type { Account, Category, Tag, Transaction, CreditMetadata } from '@/types'
+import type { Account, Category, Tag, Transaction, CreditMetadata, Valuation } from '@/types'
 
 function makeAccount(overrides: Partial<Account> = {}): Account {
   return {
@@ -656,7 +656,6 @@ describe('deleteInstallmentGroup (CC-27)', () => {
     expect(entry?.summary).toContain('3')
     expect(entry?.summary).toContain('Viagem')
   })
-
 })
 
 // ─── deletedIds tombstone (B-11) ──────────────────────────────────────────────
@@ -719,5 +718,108 @@ describe('deletedIds tombstone (B-11)', () => {
     const deletedIds = useDataStore.getState().data?.deletedIds ?? []
     expect(deletedIds).toContain('acc-a')
     expect(deletedIds).toContain('acc-b')
+  })
+})
+
+// ─── Valuations (NW-08) ───────────────────────────────────────────────────────
+
+function makeValuation(overrides: Partial<Valuation> = {}): Valuation {
+  return {
+    id: 'val-1',
+    accountId: 'acc-invest',
+    date: '2026-01-31',
+    marketValue: 10000,
+    ...overrides,
+  }
+}
+
+describe('addValuation', () => {
+  it('appends valuation and creates audit entry referencing the account', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [
+          { id: 'acc-invest', name: 'Ações', type: 'STOCKS', balance: 0, includeInBalance: true },
+        ],
+      }),
+    })
+    useDataStore.getState().addValuation(makeValuation())
+    const { valuations, auditLog } = useDataStore.getState().data!
+    expect(valuations).toHaveLength(1)
+    expect(valuations[0].id).toBe('val-1')
+    expect(valuations[0].marketValue).toBe(10000)
+    const entry = auditLog.at(-1)!
+    expect(entry.action).toBe('CREATE')
+    expect(entry.entity).toBe('account')
+    expect(entry.entityId).toBe('acc-invest')
+    expect(entry.summary).toContain('Ações')
+  })
+
+  it('does nothing when data is null', () => {
+    useDataStore.setState({ data: null })
+    useDataStore.getState().addValuation(makeValuation())
+    expect(useDataStore.getState().data).toBeNull()
+  })
+})
+
+describe('updateValuation', () => {
+  it('updates an existing valuation in place', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [
+          { id: 'acc-invest', name: 'Cripto', type: 'CRYPTO', balance: 0, includeInBalance: true },
+        ],
+        valuations: [makeValuation()],
+      }),
+    })
+    useDataStore
+      .getState()
+      .updateValuation(makeValuation({ marketValue: 15000, date: '2026-02-28' }))
+    const { valuations, auditLog } = useDataStore.getState().data!
+    expect(valuations).toHaveLength(1)
+    expect(valuations[0].marketValue).toBe(15000)
+    expect(valuations[0].date).toBe('2026-02-28')
+    const entry = auditLog.at(-1)!
+    expect(entry.action).toBe('UPDATE')
+    expect(entry.entity).toBe('account')
+    expect(entry.summary).toContain('15000')
+  })
+
+  it('does not add a new entry if id is not found', () => {
+    useDataStore.setState({ data: makeDataFile({ valuations: [makeValuation()] }) })
+    useDataStore.getState().updateValuation(makeValuation({ id: 'nonexistent' }))
+    expect(useDataStore.getState().data!.valuations).toHaveLength(1)
+    expect(useDataStore.getState().data!.valuations[0].id).toBe('val-1')
+  })
+})
+
+describe('deleteValuation', () => {
+  it('removes valuation and records id in deletedIds', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [
+          { id: 'acc-invest', name: 'Forex', type: 'FOREX', balance: 0, includeInBalance: true },
+        ],
+        valuations: [makeValuation()],
+      }),
+    })
+    useDataStore.getState().deleteValuation('val-1')
+    const { valuations, deletedIds, auditLog } = useDataStore.getState().data!
+    expect(valuations).toHaveLength(0)
+    expect(deletedIds).toContain('val-1')
+    const entry = auditLog.at(-1)!
+    expect(entry.action).toBe('DELETE')
+    expect(entry.entity).toBe('account')
+  })
+
+  it('does nothing when data is null', () => {
+    useDataStore.setState({ data: null })
+    useDataStore.getState().deleteValuation('val-1')
+    expect(useDataStore.getState().data).toBeNull()
+  })
+
+  it('is idempotent: deleting a non-existent id does not crash', () => {
+    useDataStore.setState({ data: makeDataFile({ valuations: [] }) })
+    expect(() => useDataStore.getState().deleteValuation('ghost-id')).not.toThrow()
+    expect(useDataStore.getState().data!.deletedIds).toContain('ghost-id')
   })
 })

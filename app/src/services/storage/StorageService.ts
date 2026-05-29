@@ -14,6 +14,7 @@ import type {
   Transaction,
   TransactionType,
   User,
+  Valuation,
 } from '@/types'
 
 // ─── DTOs ─────────────────────────────────────────────────────────────────────
@@ -488,6 +489,18 @@ export class StorageService {
     await this.run('INSERT OR IGNORE INTO deleted_ids (id) VALUES (?)', [id])
   }
 
+  // ─── Valuations ──────────────────────────────────────────────────────────────
+
+  async getValuations(): Promise<Valuation[]> {
+    const rows = await this.query('SELECT id, account_id, date, market_value FROM valuations')
+    return rows.map((r) => ({
+      id: r.id as string,
+      accountId: r.account_id as string,
+      date: r.date as string,
+      marketValue: r.market_value as number,
+    }))
+  }
+
   // ─── Export / Import ─────────────────────────────────────────────────────────
 
   async exportBlob(): Promise<Blob> {
@@ -515,23 +528,26 @@ export class StorageService {
     const settings = await this.getSettings()
     if (!settings) return null
 
-    const [accounts, categories, tags, transactions, auditLog, deletedIds] = await Promise.all([
-      this.getAccounts(),
-      this.getCategories(),
-      this.getTags(),
-      this.getTransactions(),
-      this.getAuditLog(),
-      this.getDeletedIds(),
-    ])
+    const [accounts, categories, tags, transactions, valuations, auditLog, deletedIds] =
+      await Promise.all([
+        this.getAccounts(),
+        this.getCategories(),
+        this.getTags(),
+        this.getTransactions(),
+        this.getValuations(),
+        this.getAuditLog(),
+        this.getDeletedIds(),
+      ])
 
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       user,
       settings,
       accounts,
       categories,
       tags,
       transactions,
+      valuations,
       auditLog,
       deletedIds,
     }

@@ -73,7 +73,22 @@ Como parte da expansão corporativa e analítica do **Gimbo**, o antigo fluxo po
 
 ---
 
-### 7. Testes ✅ (R-15, R-16 — resolvido)
+### 7. View: Faturas de Cartão de Crédito (R-17, R-18)
+
+**User Story:** Como usuário com um ou mais cartões de crédito, quero visualizar a evolução das minhas faturas mês a mês em um gráfico de barras, para entender como o gasto em crédito cresce ou diminui ao longo do tempo e comparar o peso de cada cartão no total mensal.
+
+- **Acceptance Criteria:**
+  - Uma nova aba **"Faturas"** aparece na sub-navigation bar de Relatórios ao lado de Categorias, Entradas x Saídas, Contas e Tags.
+  - **Gráfico de Barras (`BarChart`):** uma barra por mês no período global selecionado; valor = soma de todas as despesas (`EXPENSE`) em contas do tipo `CREDIT` cuja data efetiva de caixa (`getEffectiveCashFlowDate`) caia no mês — ou seja, o total da fatura com vencimento naquele mês.
+  - Quando há múltiplos cartões, as barras são **empilhadas** (`StackedBar`) com uma cor distinta por cartão, permitindo identificar a contribuição de cada um.
+  - `CREDIT_PAYMENT` é **excluído** dos cálculos (não é gasto, é liquidação de passivo).
+  - Tooltip exibe o total formatado via `formatCurrency` e, no modo empilhado, o valor individual de cada cartão.
+  - **Data grid** abaixo do gráfico: colunas **Período | Cartão | Total**; uma linha por cartão por mês; linha de rodapé "Total" por mês em negrito.
+  - Estado vazio (sem contas CREDIT ou sem despesas no período): mensagem centralizada.
+
+---
+
+### 8. Testes ✅ (R-15, R-16 — resolvido)
 
 **Cobertura implementada:**
 - `CashFlowView.test.tsx` — 13 testes: agregação mensal, saldo acumulado, CREDIT_PAYMENT, includeUnpaid, filtro por accountId, getEffectiveCashFlowDate
