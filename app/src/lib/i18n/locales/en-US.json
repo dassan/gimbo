@@ -362,6 +362,43 @@
   "demo": {
     "banner": "Demo mode — changes are not saved"
   },
+  "docs": {
+    "back": "← Back",
+    "whyBrowserStorage": {
+      "title": "Why is browser storage fragile?",
+      "subtitle": "Understand the risks of IndexedDB and how to protect your data",
+      "section1Title": "How Gimbo stores your data",
+      "section1Body": "By default, Gimbo saves your data in the browser's IndexedDB — a local database built into Chrome, Firefox, Safari, and Edge. This ensures speed and full privacy: no server has access to your finances.",
+      "section2Title": "When data can be lost",
+      "section2Body": "The browser can erase IndexedDB data in several situations: when clearing browsing history and data, when using private/incognito mode, when uninstalling or reinstalling the browser, when switching browsers, or when the operating system reclaims disk space.",
+      "section3Title": "The solution: local folder backup",
+      "section3Body": "By setting up a backup folder, Gimbo saves a copy of your vault on every auto-save. If you choose a folder inside Google Drive, Dropbox, or OneDrive, your data is automatically protected in the cloud — with no extra configuration.",
+      "cta": "Set up backup folder"
+    },
+    "backupLocal": {
+      "title": "Local folder backup",
+      "subtitle": "How it works, permissions, and tips for using with Google Drive or Dropbox",
+      "section1Title": "How it works",
+      "section1Body": "When you set up a backup folder, Gimbo uses the browser's File System Access API to write a copy of your vault (gimbo-backup.json) to that folder on every auto-save. The file is identical to a manual export.",
+      "section2Title": "Per-session permissions",
+      "section2Body": "For security reasons, the browser requires you to authorize folder access once per session. When you open Gimbo, if the authorization has expired, a notice will appear asking you to reconnect the folder. This is normal and takes just one click.",
+      "section3Title": "Using with Google Drive, Dropbox, or OneDrive",
+      "section3Body": "If you choose a folder synced by Google Drive, Dropbox, or OneDrive, the service's desktop app detects the new file and uploads it to the cloud automatically. This keeps your data protected with no API configuration or additional account in Gimbo.",
+      "section4Title": "Limitations",
+      "section4Body": "Local folder backup only works on the computer where Gimbo is open. On mobile devices, the browser does not expose the file system in the same way. For multi-device sync, see the Cloud Sync options (coming soon)."
+    },
+    "cloudSync": {
+      "title": "Cloud Sync",
+      "subtitle": "Native sync with Google Drive and Dropbox — coming soon",
+      "section1Title": "What is Cloud Sync",
+      "section1Body": "Cloud Sync will allow you to connect Gimbo directly to your Google Drive or Dropbox account via OAuth2. Your vault will sync automatically without needing a desktop client installed — ideal for use across multiple devices, including mobile.",
+      "section2Title": "Difference from local folder backup",
+      "section2Body": "Local folder backup relies on the Drive/Dropbox desktop client to upload the file to the cloud. Cloud Sync communicates directly with the service's API, working even without the app installed and enabling bidirectional sync across devices.",
+      "section3Title": "Availability",
+      "section3Body": "Cloud Sync is planned and will be implemented as demand grows. For now, set up a local folder backup to protect your data.",
+      "cta": "Set up backup folder"
+    }
+  },
   "bugReport": {
     "title": "Report a problem",
     "settingsHint": "Send safe technical context to help us fix issues faster",

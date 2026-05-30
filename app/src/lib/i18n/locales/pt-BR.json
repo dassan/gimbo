@@ -362,6 +362,43 @@
   "demo": {
     "banner": "Modo demonstração — alterações não são salvas"
   },
+  "docs": {
+    "back": "← Voltar",
+    "whyBrowserStorage": {
+      "title": "Por que o armazenamento do navegador é frágil?",
+      "subtitle": "Entenda os riscos do IndexedDB e como proteger seus dados",
+      "section1Title": "Como o Gimbo armazena seus dados",
+      "section1Body": "Por padrão, o Gimbo salva seus dados no IndexedDB do navegador — um banco de dados local integrado ao Chrome, Firefox, Safari e Edge. Isso garante velocidade e privacidade total: nenhum servidor tem acesso às suas finanças.",
+      "section2Title": "Quando os dados podem ser perdidos",
+      "section2Body": "O navegador pode apagar os dados do IndexedDB em diversas situações: ao limpar o histórico e dados de navegação, ao usar modo anônimo/privado, ao desinstalar ou reinstalar o navegador, ao trocar de navegador, ou quando o sistema operacional reclama espaço em disco.",
+      "section3Title": "A solução: backup em pasta local",
+      "section3Body": "Configurando uma pasta de backup, o Gimbo grava uma cópia do seu cofre a cada salvamento. Se você escolher uma pasta dentro do Google Drive, Dropbox ou OneDrive, seus dados ficam protegidos na nuvem automaticamente — sem nenhuma configuração extra.",
+      "cta": "Configurar pasta de backup"
+    },
+    "backupLocal": {
+      "title": "Backup em pasta local",
+      "subtitle": "Como funciona, permissões e dicas para usar com Google Drive ou Dropbox",
+      "section1Title": "Como funciona",
+      "section1Body": "Ao configurar uma pasta de backup, o Gimbo usa a File System Access API do navegador para gravar uma cópia do seu cofre (gimbo-backup.json) nessa pasta a cada salvamento automático. O arquivo é idêntico ao exportado manualmente.",
+      "section2Title": "Permissões por sessão",
+      "section2Body": "Por razões de segurança, o navegador exige que você autorize o acesso à pasta uma vez por sessão. Ao abrir o Gimbo, se a autorização tiver expirado, um aviso aparecerá pedindo para reconectar a pasta. Isso é normal e leva apenas um clique.",
+      "section3Title": "Usando com Google Drive, Dropbox ou OneDrive",
+      "section3Body": "Se você escolher uma pasta sincronizada pelo Google Drive, Dropbox ou OneDrive, o app do serviço no seu computador detecta o novo arquivo e o envia para a nuvem automaticamente. Assim, seus dados ficam protegidos sem nenhuma configuração de API ou conta adicional no Gimbo.",
+      "section4Title": "Limitações",
+      "section4Body": "O backup em pasta local funciona apenas no computador onde o Gimbo está aberto. Em dispositivos móveis, o navegador não expõe o sistema de arquivos da mesma forma. Para sincronização entre múltiplos dispositivos, consulte as opções de Cloud Sync (em breve)."
+    },
+    "cloudSync": {
+      "title": "Cloud Sync",
+      "subtitle": "Sincronização nativa com Google Drive e Dropbox — em breve",
+      "section1Title": "O que é o Cloud Sync",
+      "section1Body": "O Cloud Sync permitirá conectar o Gimbo diretamente à sua conta do Google Drive ou Dropbox via OAuth2. Seu cofre será sincronizado automaticamente sem precisar de um cliente desktop instalado — ideal para uso em múltiplos dispositivos, incluindo mobile.",
+      "section2Title": "Diferença para o backup em pasta local",
+      "section2Body": "O backup em pasta local depende do cliente desktop do Drive/Dropbox para enviar o arquivo à nuvem. O Cloud Sync comunica diretamente com a API do serviço, funcionando mesmo sem o app instalado e permitindo sync bidirecional entre dispositivos.",
+      "section3Title": "Disponibilidade",
+      "section3Body": "O Cloud Sync está planejado e será implementado conforme a demanda crescer. Por enquanto, configure um backup em pasta local para proteger seus dados.",
+      "cta": "Configurar pasta de backup"
+    }
+  },
   "bugReport": {
     "title": "Reportar um problema",
     "settingsHint": "Envie contexto técnico seguro para nos ajudar a corrigir mais rápido",

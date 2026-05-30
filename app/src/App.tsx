@@ -15,6 +15,9 @@ import Settings from '@/pages/Settings'
 import CreditCardPage from '@/pages/CreditCard'
 import About from '@/pages/About'
 import NetWorth from '@/pages/NetWorth'
+import WhyBrowserStorage from '@/pages/Docs/WhyBrowserStorage'
+import BackupLocal from '@/pages/Docs/BackupLocal'
+import CloudSync from '@/pages/Docs/CloudSync'
 
 export default function App() {
   const initWorkspace = useWorkspaceStore((s) => s.init)
@@ -114,6 +117,9 @@ export default function App() {
               <Route path="/net-worth" element={<NetWorth />} />
               <Route path="/credit-card/:accountId" element={<CreditCardPage />} />
               <Route path="/gimbo" element={<About />} />
+              <Route path="/docs/why-browser-storage" element={<WhyBrowserStorage />} />
+              <Route path="/docs/backup-local" element={<BackupLocal />} />
+              <Route path="/docs/cloud-sync" element={<CloudSync />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
           ) : (
