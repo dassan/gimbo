@@ -235,7 +235,11 @@
     "backupLastSaved": "Last backup:",
     "backupLearnMore": "Learn more",
     "backupCloudSection": "Cloud",
-    "backupCloudComingSoon": "Direct sync with Google Drive and Dropbox — coming soon."
+    "backupCloudComingSoon": "Direct sync with Google Drive and Dropbox — coming soon.",
+    "backupReconnectBanner": "The backup folder needs authorization to keep working.",
+    "backupReconnect": "Reconnect",
+    "backupDeniedBanner": "Access to the backup folder was denied by the browser.",
+    "backupClearFolder": "Remove folder"
   },
   "creditCard": {
     "invoicePeriod": "Invoice Period",

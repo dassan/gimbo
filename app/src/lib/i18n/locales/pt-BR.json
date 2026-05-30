@@ -235,7 +235,11 @@
     "backupLastSaved": "Último backup:",
     "backupLearnMore": "Saiba mais",
     "backupCloudSection": "Nuvem",
-    "backupCloudComingSoon": "Sincronização direta com Google Drive e Dropbox — em breve."
+    "backupCloudComingSoon": "Sincronização direta com Google Drive e Dropbox — em breve.",
+    "backupReconnectBanner": "A pasta de backup precisa de autorização para continuar funcionando.",
+    "backupReconnect": "Reconectar",
+    "backupDeniedBanner": "Acesso à pasta de backup foi negado pelo navegador.",
+    "backupClearFolder": "Remover pasta"
   },
   "creditCard": {
     "invoicePeriod": "Período da Fatura",
