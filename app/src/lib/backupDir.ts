@@ -1,11 +1,24 @@
 import { openDB } from 'idb'
 
-// queryPermission/requestPermission are part of the File System Access API
-// but not yet included in TypeScript's DOM lib typings.
+// File System Access API methods not yet included in TypeScript's DOM lib typings.
 declare global {
   interface FileSystemHandle {
     queryPermission(descriptor: { mode: 'read' | 'readwrite' }): Promise<PermissionState>
     requestPermission(descriptor: { mode: 'read' | 'readwrite' }): Promise<PermissionState>
+  }
+  interface Window {
+    showDirectoryPicker(options?: {
+      id?: string
+      mode?: 'read' | 'readwrite'
+      startIn?:
+        | FileSystemHandle
+        | 'desktop'
+        | 'documents'
+        | 'downloads'
+        | 'music'
+        | 'pictures'
+        | 'videos'
+    }): Promise<FileSystemDirectoryHandle>
   }
 }
 

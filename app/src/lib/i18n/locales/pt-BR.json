@@ -226,7 +226,16 @@
     "importDb": "Restaurar Backup",
     "importSuccess": "Backup restaurado com sucesso.",
     "importErrorCorrupt": "Arquivo corrompido ou ilegível.",
-    "importErrorCode": "Código: {{code}}"
+    "importErrorCode": "Código: {{code}}",
+    "backupSync": "Backup & Sync",
+    "backupLocalSection": "Pasta Local",
+    "backupLocalDesc": "Salva uma cópia do seu cofre automaticamente a cada gravação. Se a pasta estiver dentro do Google Drive, Dropbox ou OneDrive, seus dados ficam protegidos na nuvem sem configuração adicional.",
+    "backupConfigure": "Configurar pasta",
+    "backupRemove": "Remover",
+    "backupLastSaved": "Último backup:",
+    "backupLearnMore": "Saiba mais",
+    "backupCloudSection": "Nuvem",
+    "backupCloudComingSoon": "Sincronização direta com Google Drive e Dropbox — em breve."
   },
   "creditCard": {
     "invoicePeriod": "Período da Fatura",

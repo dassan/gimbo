@@ -13,6 +13,17 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { changeLanguage: vi.fn() } }),
 }))
 
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+}))
+
+vi.mock('@/lib/backupDir', () => ({
+  loadBackupDirHandle: vi.fn().mockResolvedValue(null),
+  saveBackupDirHandle: vi.fn().mockResolvedValue(undefined),
+  clearBackupDirHandle: vi.fn().mockResolvedValue(undefined),
+  ensureBackupDirPermission: vi.fn().mockResolvedValue(true),
+}))
+
 vi.mock('@/services/storage', () => ({
   storage: {
     replaceAll: vi.fn().mockResolvedValue(undefined),

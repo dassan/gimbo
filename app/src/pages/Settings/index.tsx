@@ -1,5 +1,6 @@
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import BugReportDialog from '@/components/BugReportDialog'
 import {
   Landmark,
@@ -35,7 +36,12 @@ import {
   Tv,
   Wrench,
   Gift,
+  HardDrive,
+  FolderOpen,
+  Cloud,
+  ExternalLink,
 } from 'lucide-react'
+import { loadBackupDirHandle, saveBackupDirHandle, clearBackupDirHandle } from '@/lib/backupDir'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { formatCurrency, cn, uuid, now, getCurrentInvoiceBalance } from '@/lib/utils'
@@ -54,7 +60,15 @@ import type {
   AuditAction,
 } from '@/types'
 
-type Section = 'accounts' | 'categories' | 'tags' | 'profile' | 'preferences' | 'data' | 'history'
+type Section =
+  | 'accounts'
+  | 'categories'
+  | 'tags'
+  | 'profile'
+  | 'preferences'
+  | 'data'
+  | 'backup'
+  | 'history'
 
 // ─── Credit issuer config ─────────────────────────────────────────────────────
 
@@ -173,6 +187,11 @@ const APP_SECTIONS: { key: Section; icon: React.ReactNode; labelKey: string }[] 
     labelKey: 'settings.preferences',
   },
   { key: 'data', icon: <Database size={16} strokeWidth={1.5} />, labelKey: 'settings.dataFile' },
+  {
+    key: 'backup',
+    icon: <HardDrive size={16} strokeWidth={1.5} />,
+    labelKey: 'settings.backupSync',
+  },
   { key: 'history', icon: <History size={16} strokeWidth={1.5} />, labelKey: 'audit.title' },
 ]
 
@@ -201,8 +220,12 @@ export default function Settings() {
   const loadData = useDataStore((s) => s.loadData)
   const { workspace, setTheme, setLocale, setAmbientShadows } = useWorkspaceStore()
 
+  const navigate = useNavigate()
+
   const [activeSection, setActiveSection] = useState<Section>('accounts')
   const [bugReportOpen, setBugReportOpen] = useState(false)
+  const [backupDir, setBackupDir] = useState<FileSystemDirectoryHandle | null>(null)
+  const [backupLastSaved, setBackupLastSaved] = useState<string | null>(null)
   const [profileName, setProfileName] = useState(data?.user.name ?? '')
   const [profileEmail, setProfileEmail] = useState(data?.user.email ?? '')
   const [modal, setModal] = useState<ModalState>({ open: false })
@@ -210,6 +233,28 @@ export default function Settings() {
   const [tagModal, setTagModal] = useState<TagModalState>({ open: false })
   const [importResult, setImportResult] = useState<ImportResult>(null)
   const importDbInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    void loadBackupDirHandle().then((handle) => setBackupDir(handle))
+    setBackupLastSaved(localStorage.getItem('gimbo_backup_last_saved'))
+  }, [])
+
+  async function handleConfigureBackupDir() {
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' })
+      await saveBackupDirHandle(handle)
+      setBackupDir(handle)
+    } catch {
+      // user cancelled the picker — no-op
+    }
+  }
+
+  async function handleRemoveBackupDir() {
+    await clearBackupDirHandle()
+    localStorage.removeItem('gimbo_backup_last_saved')
+    setBackupDir(null)
+    setBackupLastSaved(null)
+  }
 
   function handleSaveProfile() {
     if (!data) return
@@ -872,6 +917,92 @@ export default function Settings() {
                     onDismiss={() => setImportResult(null)}
                   />
                 )}
+              </Section>
+            )}
+
+            {/* Backup & Sync */}
+            {activeSection === 'backup' && (
+              <Section title={t('settings.backupSync')}>
+                <div className="space-y-4">
+                  {/* ── Nível 1 — Pasta Local ─────────────────────────────── */}
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-on-surface/40">
+                      {t('settings.backupLocalSection')}
+                    </p>
+                    <div className="rounded-2xl bg-surface-container p-5 space-y-4">
+                      <p className="text-sm text-on-surface/60">{t('settings.backupLocalDesc')}</p>
+
+                      {backupDir ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-3 rounded-xl bg-surface-container-low px-4 py-3">
+                            <FolderOpen
+                              size={16}
+                              strokeWidth={1.5}
+                              className="text-primary shrink-0"
+                            />
+                            <span className="flex-1 text-sm font-medium text-on-surface truncate">
+                              {backupDir.name}
+                            </span>
+                            <button
+                              onClick={() => void handleRemoveBackupDir()}
+                              className="text-xs text-tertiary hover:underline shrink-0"
+                            >
+                              {t('settings.backupRemove')}
+                            </button>
+                          </div>
+                          {backupLastSaved && (
+                            <p className="text-xs text-on-surface/40">
+                              {t('settings.backupLastSaved')}{' '}
+                              {new Date(backupLastSaved).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => void handleConfigureBackupDir()}
+                          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-on-primary hover:opacity-90 transition-opacity"
+                        >
+                          <FolderOpen size={15} strokeWidth={2} />
+                          {t('settings.backupConfigure')}
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => navigate('/docs/backup-local')}
+                        className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+                      >
+                        <ExternalLink size={12} strokeWidth={2} />
+                        {t('settings.backupLearnMore')}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ── Nível 2 — Nuvem (em breve) ────────────────────────── */}
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-on-surface/40">
+                      {t('settings.backupCloudSection')}
+                    </p>
+                    <div className="rounded-2xl bg-surface-container p-5 space-y-4">
+                      <div className="flex items-center gap-3">
+                        <Cloud
+                          size={16}
+                          strokeWidth={1.5}
+                          className="text-on-surface/30 shrink-0"
+                        />
+                        <p className="text-sm text-on-surface/40">
+                          {t('settings.backupCloudComingSoon')}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => navigate('/docs/cloud-sync')}
+                        className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+                      >
+                        <ExternalLink size={12} strokeWidth={2} />
+                        {t('settings.backupLearnMore')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </Section>
             )}
 

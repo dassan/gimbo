@@ -226,7 +226,16 @@
     "importDb": "Restore Backup",
     "importSuccess": "Backup restored successfully.",
     "importErrorCorrupt": "File is corrupted or unreadable.",
-    "importErrorCode": "Code: {{code}}"
+    "importErrorCode": "Code: {{code}}",
+    "backupSync": "Backup & Sync",
+    "backupLocalSection": "Local Folder",
+    "backupLocalDesc": "Automatically saves a copy of your vault on every write. If the folder is inside Google Drive, Dropbox, or OneDrive, your data is protected in the cloud with no extra setup.",
+    "backupConfigure": "Set up folder",
+    "backupRemove": "Remove",
+    "backupLastSaved": "Last backup:",
+    "backupLearnMore": "Learn more",
+    "backupCloudSection": "Cloud",
+    "backupCloudComingSoon": "Direct sync with Google Drive and Dropbox — coming soon."
   },
   "creditCard": {
     "invoicePeriod": "Invoice Period",
