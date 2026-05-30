@@ -37,7 +37,7 @@ O Gimbo é um aplicativo web (PWA Client-side) de gestão de finanças pessoais 
 * **F-8:** Painel Analítico: Gráfico de pizza de Despesas por Categoria.
 * **F-9:** Motor de Arquivo Client-Side PWA (Exportar/Importar `data.json` local).
 * **F-10:** Seletor de idioma (pt-BR / en-US).
-* **F-11:** Onboarding: "Criar Novo Arquivo" ou "Importar data.json Existente".
+* **F-11:** Onboarding: "Criar Novo Arquivo" ou "Importar data.json Existente". Após a criação do cofre, exibir modal de boas-vindas (uma vez, com checkbox "não mostrar novamente" persistido em `localStorage`) explicando o app, sua proposta de privacidade local-first e alertando sobre o risco do armazenamento padrão no navegador — com link interno para `/docs/why-browser-storage`. Ver tarefa BK-06 em `plan/BACKLOG.md`.
 * **F-12:** Auto-save via IndexedDB (debounce ~300ms).
 * **F-13:** Audit Log com retenção configurável (200 entradas ou 90 dias, opt-in ilimitado).
 * **F-14:** Badge de sync na Navbar com contagem de mutações pendentes.
@@ -57,7 +57,21 @@ O Gimbo é um aplicativo web (PWA Client-side) de gestão de finanças pessoais 
 
 * **F-27:** Mobile PWA — versão responsiva do Gimbo instalável em dispositivos móveis. Subconjunto de funcionalidades: saldos de contas (dashboard simplificado) + CRUD de transações. Mesma codebase, layout adaptativo; sem app nativo separado. Requer F-28 para sincronização de dados com o desktop. Ver épico `MB` em `plan/BACKLOG.md`.
 
-* **F-28:** Cloud Sync — sincronização automática do banco de dados (`gimbo.db`) via Google Drive ou Dropbox do próprio usuário. Arquitetura local-first preservada: o arquivo fica na conta de nuvem do usuário, sem servidor Gimbo envolvido. OAuth2 PKCE (sem backend). Merge aditivo por UUID; deleções via `deletedIds`. Política de conflito: último `updatedAt` vence em edições; transações duplicadas (criadas offline em dois devices) sobrevivem — usuário remove manualmente. Cenários detalhados em `plan/SYNC_SCENARIOS.md` (S-08 a S-15). Ver épico `CS` em `plan/BACKLOG.md`.
+* **F-28:** Backup & Sync — modelo em três níveis, cada um independente e opcional. O usuário escolhe o nível adequado ao seu perfil; níveis mais avançados só são implementados se houver demanda comprovada.
+
+  | Nível | Mecanismo | Risco principal | Status |
+  |-------|-----------|-----------------|--------|
+  | 0 — Somente navegador | IndexedDB (padrão atual) | Browser limpa dados (`Clear site data`, troca de browser) | Implementado |
+  | 1 — Pasta local | FSA `FileSystemDirectoryHandle` persistido no IDB; escrita automática a cada `persist()` | Requer re-permissão por sessão; sem sync mobile | Ver épico `BK` em `plan/BACKLOG.md` |
+  | 2 — Cloud Sync | Google Drive ou Dropbox via OAuth2 PKCE; merge aditivo por UUID | OAuth, conflitos multi-device, dependência de rede | Ver épico `CS` em `plan/BACKLOG.md` — demand-driven |
+
+  **Nível 1 — nota de produto:** se a pasta configurada estiver dentro do Google Drive, Dropbox ou OneDrive, o sync para a nuvem ocorre automaticamente pelo cliente desktop — sem OAuth, sem código adicional. Cobre a maioria dos usuários desktop sem implementar o Nível 2.
+
+  **Nível 2 — nota de produto:** necessário para sync mobile real (onde não há cliente desktop instalado) e para usuários que não usam um cliente de nuvem. Requer `updatedAt` nas entidades mutáveis (schema v3). Política de conflito: último `updatedAt` vence em edições; transações duplicadas sobrevivem — usuário remove manualmente. Cenários em `plan/SYNC_SCENARIOS.md` (S-08 a S-15).
+
+  **UX de configuração:** Settings → aba "Backup & Sync" exibe as opções dos Níveis 1 e 2 com texto explicativo, timestamp do último backup e link para a doc page interna correspondente. As opções são apresentadas como backup (não sync) enquanto o Nível 2 não estiver implementado. Ver tarefas BK-02, BK-06, BK-07 em `plan/BACKLOG.md`.
+
+  **Doc pages:** rotas React estáticas dentro do app (funcionam offline), acessíveis a partir do modal de boas-vindas e da aba de Settings. Ver tarefa BK-07 em `plan/BACKLOG.md`.
 
 ### Fora do Escopo (Permanente)
 * **X-1:** Criptografia do arquivo local.

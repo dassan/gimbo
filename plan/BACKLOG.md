@@ -311,7 +311,27 @@ Versão do Gimbo otimizada para dispositivos móveis. Não é um app nativo sepa
 
 ---
 
-## Cloud Sync — F-28
+## Backup Local — F-28 Nível 1
+
+Backup automático do `data.json` em uma pasta escolhida pelo usuário, usando a File System Access API. Se a pasta estiver dentro do Google Drive, Dropbox ou OneDrive, o sync para a nuvem ocorre pelo cliente desktop — sem OAuth, sem código adicional. Cobre a maioria dos usuários desktop sem implementar o Nível 2.
+
+> **Decisão de produto (2026-05-30):** Implementar antes do Nível 2. Requer apenas re-permissão por sessão (limitação do modelo de segurança do browser). Não resolve sync mobile — para isso, ver épico CS abaixo.
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| BK-01 | **`src/lib/backupDir.ts` — Persistir `backupDirHandle` no IDB.** Funções: `saveBackupDirHandle(handle: FileSystemDirectoryHandle): void` (persiste no IDB via `idbKeyval`); `loadBackupDirHandle(): FileSystemDirectoryHandle \| null`; `clearBackupDirHandle(): void`; `ensureBackupDirPermission(handle): boolean` (chama `queryPermission` e, se necessário, `requestPermission`; retorna `true` se permissão concedida). | alta | aberto |
+| BK-02 | **`pages/Settings/index.tsx` — Nova aba "Backup & Sync".** Duas seções independentes: (a) "Pasta Local" — botão "Configurar pasta" (abre `showDirectoryPicker()`); chip com caminho configurado + botão "Remover"; timestamp "Último backup: <data/hora>"; parágrafo explicativo curto (texto i18n) deixando claro que é backup, não sync; link "Saiba mais" para `/docs/backup-local` (abre dentro do app). (b) "Nuvem" — placeholder "Em breve" enquanto o Nível 2 não estiver implementado, com link "Saiba mais" para `/docs/cloud-sync`. Seção "Export manual": botão "Exportar `data.json`" (existente, mantido). Adicionar chaves i18n `settings.backup.*` em `pt-BR` e `en-US`. | alta | aberto |
+| BK-03 | **`store/useDataStore.ts` — Escrever cópia na pasta de backup a cada `persist()`.** Após `syncToFile()` bem-sucedido, verificar se `backupDirHandle` está configurado e com permissão; se sim, escrever `gimbo-backup.json` na pasta via `handle.getFileHandle('gimbo-backup.json', { create: true })`. Falha silenciosa (não bloqueia o fluxo principal); logar no Audit Log como `"Backup local: sucesso"` ou `"Backup local: falhou"`. | alta | aberto |
+| BK-04 | **`App.tsx` (ou `useDataStore.ts` no startup) — Re-permissão: banner se permissão expirou.** No `init()`, após carregar o handle do IDB, chamar `queryPermission`. Se resultado for `'prompt'`, exibir banner não-bloqueante "Reconectar pasta de backup" com botão que chama `requestPermission()` (requer gesto do usuário). Se `'denied'`, exibir aviso e limpar o handle do IDB. | média | aberto |
+| BK-05 | **`pages/Settings/index.tsx` — Importar/restaurar a partir da pasta de backup.** Botão "Restaurar do backup" na aba "Backup & Sync": busca `gimbo-backup.json` na pasta configurada via `handle.getFileHandle('gimbo-backup.json')`; lê o arquivo; passa para `importFileToIdb()`. Exibir modal de confirmação antes de sobrescrever os dados atuais. | média | aberto |
+| BK-06 | **`pages/Onboarding/WelcomeModal.tsx` — Modal de boas-vindas pós-criação do cofre.** Exibido uma única vez após a conclusão do onboarding ("Criar Novo Arquivo"). Conteúdo: apresentação do Gimbo (privacidade, local-first, sem servidor), alerta sobre o risco do armazenamento padrão no navegador, botão "Configurar backup agora" (navega para Settings → aba "Backup & Sync") e link "Por que o armazenamento do navegador é frágil?" (navega para `/docs/why-browser-storage` dentro do app). Checkbox "Não mostrar novamente" persistido em `localStorage` (chave `gimbo_welcome_dismissed`). | alta | aberto |
+| BK-07 | **`pages/Docs/` — Doc pages estáticas como rotas React.** Três rotas: `/docs/why-browser-storage` (explica por que o IDB pode ser limpo pelo browser e quando isso acontece), `/docs/backup-local` (explica o mecanismo de pasta local, re-permissão e dica de usar pasta do Drive/Dropbox), `/docs/cloud-sync` (explica o que será o Nível 2, OAuth, multi-device — conteúdo informativo, não funcional ainda). Conteúdo escrito diretamente nos componentes React (sem CMS). Layout simples: título, parágrafos, link "← Voltar" para a tela de origem. Adicionar chaves i18n `docs.*` em `pt-BR` e `en-US`. | média | aberto |
+
+---
+
+## Cloud Sync — F-28 Nível 2
+
+> **Demand-driven — não iniciar sem sinal claro de demanda.** O Nível 1 (pasta local) atende a maioria dos usuários desktop. O Nível 2 é necessário para: (a) sync mobile real (sem cliente desktop instalado); (b) usuários sem conta Google Drive / Dropbox configurada localmente; (c) uso em múltiplos dispositivos simultaneamente.
 
 Sincronização automática do banco de dados via Google Drive (fase 1) e Dropbox (fase 2) do próprio usuário. Arquitetura local-first preservada: nenhum servidor Gimbo envolvido. OAuth2 PKCE no browser. Merge aditivo por UUID. Cenários detalhados em `plan/SYNC_SCENARIOS.md` (S-08 a S-15).
 
