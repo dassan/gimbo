@@ -347,21 +347,60 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
             </div>
           )}
 
-          {/* Date */}
+          {/* Description */}
           <div>
-            <label className="label text-on-surface/40 block mb-2">{t('transactions.date')}</label>
-            <div className="relative">
-              <Calendar
-                size={16}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
-              />
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full rounded-xl bg-surface-container-low py-3 pl-9 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-              />
+            <label className="label text-on-surface/40 block mb-2">
+              {t('transactions.description')}
+            </label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={t('transactions.descriptionPlaceholder')}
+              className="w-full rounded-xl bg-surface-container-low px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+
+          {/* Date + isPaid (isPaid shown inline for INCOME/EXPENSE only) */}
+          <div className="flex items-end gap-3">
+            <div className="flex-1">
+              <label className="label text-on-surface/40 block mb-2">
+                {t('transactions.date')}
+              </label>
+              <div className="relative">
+                <Calendar
+                  size={16}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
+                />
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full rounded-xl bg-surface-container-low py-3 pl-9 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
             </div>
+            {(type === 'INCOME' || (type === 'EXPENSE' && selectedAccount?.type !== 'CREDIT')) && (
+              <div className="flex flex-col items-center gap-1.5 shrink-0">
+                <span className="label text-on-surface/40">{t('transactions.isPaid')}</span>
+                <button
+                  role="switch"
+                  aria-checked={isPaid}
+                  onClick={() => setIsPaid((v) => !v)}
+                  className={cn(
+                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+                    isPaid ? 'bg-primary' : 'bg-on-surface/20'
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                      isPaid ? 'translate-x-6' : 'translate-x-1'
+                    )}
+                  />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* ── CREDIT_PAYMENT: two-account layout ─────────────────────────── */}
@@ -688,45 +727,6 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                   })}
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Description */}
-          <div>
-            <label className="label text-on-surface/40 block mb-2">
-              {t('transactions.description')}
-            </label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={t('transactions.descriptionPlaceholder')}
-              className="w-full rounded-xl bg-surface-container-low px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
-
-          {/* ── B-10: isPaid toggle (INCOME and EXPENSE only; hidden for CREDIT accounts) ── */}
-          {(type === 'INCOME' || (type === 'EXPENSE' && selectedAccount?.type !== 'CREDIT')) && (
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-on-surface">
-                {t('transactions.isPaid')}
-              </label>
-              <button
-                role="switch"
-                aria-checked={isPaid}
-                onClick={() => setIsPaid((v) => !v)}
-                className={cn(
-                  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-                  isPaid ? 'bg-primary' : 'bg-on-surface/20'
-                )}
-              >
-                <span
-                  className={cn(
-                    'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                    isPaid ? 'translate-x-6' : 'translate-x-1'
-                  )}
-                />
-              </button>
             </div>
           )}
 
