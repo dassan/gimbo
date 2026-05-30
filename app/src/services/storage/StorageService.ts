@@ -1,3 +1,4 @@
+import { uuid } from '@/lib/utils'
 import type {
   Account,
   AccountType,
@@ -93,7 +94,7 @@ export class StorageService {
     // No-op in environments where the Worker could not be created (e.g. tests).
     if (!this.worker) return Promise.resolve(undefined as unknown as T)
     return new Promise((resolve, reject) => {
-      const id = crypto.randomUUID()
+      const id = uuid()
       this.pending.set(id, {
         resolve: resolve as (v: unknown) => void,
         reject,
@@ -166,7 +167,7 @@ export class StorageService {
   }
 
   async createAccount(data: CreateAccountData): Promise<Account> {
-    const id = crypto.randomUUID()
+    const id = uuid()
     const now = new Date().toISOString()
     await this.run(
       `INSERT INTO accounts
@@ -231,7 +232,7 @@ export class StorageService {
   }
 
   async createCategory(data: CreateCategoryData): Promise<Category> {
-    const id = crypto.randomUUID()
+    const id = uuid()
     const now = new Date().toISOString()
     await this.run(
       `INSERT INTO categories (id, parent_id, name, icon, color, type, created_at, updated_at)
@@ -276,7 +277,7 @@ export class StorageService {
   }
 
   async createTag(data: CreateTagData): Promise<Tag> {
-    const id = crypto.randomUUID()
+    const id = uuid()
     const now = new Date().toISOString()
     await this.run(
       'INSERT INTO tags (id, name, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
@@ -350,7 +351,7 @@ export class StorageService {
   }
 
   async createTransaction(data: CreateTransactionData): Promise<Transaction> {
-    const id = crypto.randomUUID()
+    const id = uuid()
     const now = new Date().toISOString()
     await this.run(
       `INSERT INTO transactions
@@ -461,7 +462,7 @@ export class StorageService {
   }
 
   async addAuditEntry(entry: Omit<AuditEntry, 'id'>): Promise<AuditEntry> {
-    const id = crypto.randomUUID()
+    const id = uuid()
     await this.run(
       'INSERT INTO audit_log (id, timestamp, action, entity, entity_id, summary) VALUES (?, ?, ?, ?, ?, ?)',
       [id, entry.timestamp, entry.action, entry.entity, entry.entityId, entry.summary]
