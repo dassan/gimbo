@@ -87,6 +87,9 @@ export default function Dashboard() {
     // not income or expense (same rule applied in Analytics CC-17).
     const monthly = data.transactions.filter((tx) => {
       if (tx.type === 'CREDIT_PAYMENT') return false
+      const account = data.accounts.find((a) => a.id === tx.accountId)
+      if (!account) return false
+      if (account.type !== 'CREDIT' && !account.includeInBalance) return false
       const effectiveDate = parseDateLocal(getEffectiveCashFlowDate(tx, data.accounts))
       return effectiveDate.getMonth() === m && effectiveDate.getFullYear() === y
     })
@@ -594,7 +597,10 @@ function TransactionRow({
   const acc = data.accounts.find((a) => a.id === tx.accountId)
   const isIncome = tx.type === 'INCOME'
   const isCreditPayment = tx.type === 'CREDIT_PAYMENT'
-  const dateStr = new Date(tx.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+  const dateStr = parseDateLocal(tx.date).toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+  })
 
   return (
     <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-surface-container-low transition-colors">
