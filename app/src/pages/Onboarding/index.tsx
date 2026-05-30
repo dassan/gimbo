@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { ShieldCheck, Lock, ArrowRight, FileJson } from 'lucide-react'
+import { Lock, ArrowRight, FileJson } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { createEmptyDataFile } from '@/lib/storage/schema'
@@ -63,13 +63,8 @@ export default function Onboarding() {
         {/* ── Left editorial panel ── */}
         <div className="hidden lg:flex lg:w-[45%] flex-col justify-between bg-surface p-12 xl:p-16">
           <div>
-            {/* Security badge */}
-            <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1.5">
-              <ShieldCheck size={13} className="text-primary" strokeWidth={2} />
-              <span className="text-xs font-semibold uppercase tracking-widest text-primary">
-                {t('onboarding.securityBadge')}
-              </span>
-            </div>
+            {/* Logo */}
+            <GimboLogo />
 
             {/* Headline */}
             <h1 className="mt-8 text-5xl xl:text-6xl font-bold leading-[1.1] tracking-tight text-on-surface whitespace-pre-line">
@@ -115,7 +110,11 @@ export default function Onboarding() {
         </div>
 
         {/* ── Right form panel ── */}
-        <div className="flex flex-1 items-center justify-center bg-surface-container-low p-6 lg:p-12">
+        <div className="flex flex-1 flex-col items-center justify-center bg-surface-container-low p-6 lg:p-12">
+          {/* Mobile logo */}
+          <div className="lg:hidden mb-8">
+            <GimboLogo />
+          </div>
           <div
             className="w-full max-w-md rounded-3xl bg-surface-container p-8"
             style={{ boxShadow: '0px 20px 60px rgba(0,0,0,0.3)' }}
@@ -256,6 +255,34 @@ export default function Onboarding() {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function GimboLogo() {
+  return (
+    <div className="flex items-center gap-3">
+      <svg
+        width="40"
+        height="40"
+        viewBox="0 0 48 48"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <rect width="48" height="48" rx="10" fill="#2D6A4F" />
+        <text
+          x="24"
+          y="34"
+          fontFamily="Inter, system-ui, sans-serif"
+          fontSize="28"
+          fontWeight="600"
+          fill="#FFFFFF"
+          textAnchor="middle"
+        >
+          G
+        </text>
+      </svg>
+      <span className="text-2xl font-bold tracking-tight text-on-surface">Gimbo</span>
     </div>
   )
 }

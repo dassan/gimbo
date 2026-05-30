@@ -64,6 +64,17 @@ function getIssuerColor(issuerIcon?: string): string {
 
 const VALUATION_ELIGIBLE: AccountType[] = ['STOCKS', 'CRYPTO', 'FOREX', 'ASSET']
 
+function applyTx(sum: number, tx: Transaction, accountId: string): number {
+  if (tx.accountId === accountId) {
+    if (tx.type === 'INCOME') return sum + tx.amount
+    if (tx.type === 'EXPENSE') return sum - tx.amount
+    if (tx.type === 'TRANSFER') return sum - tx.amount // outgoing
+  } else if (tx.type === 'TRANSFER' && tx.transferAccountId === accountId) {
+    return sum + tx.amount // incoming transfer
+  }
+  return sum
+}
+
 function getAssetBalance(
   account: Account,
   transactions: Transaction[],
@@ -81,16 +92,14 @@ function getAssetBalance(
       const baseDate = parseDateLocal(latest.date)
       const delta = transactions
         .filter((tx) => {
-          if (tx.accountId !== account.id) return false
           const d = parseDateLocal(tx.date)
-          return d > baseDate && d <= today
+          if (d <= baseDate || d > today) return false
+          return (
+            tx.accountId === account.id ||
+            (tx.type === 'TRANSFER' && tx.transferAccountId === account.id)
+          )
         })
-        .reduce((sum, tx) => {
-          if (tx.type === 'INCOME') return sum + tx.amount
-          if (tx.type === 'EXPENSE') return sum - tx.amount
-          if (tx.type === 'TRANSFER') return sum - tx.amount
-          return sum
-        }, 0)
+        .reduce((sum, tx) => applyTx(sum, tx, account.id), 0)
       return latest.marketValue + delta
     }
   }
@@ -98,16 +107,14 @@ function getAssetBalance(
   // No valuation (or non-eligible account): full replay from initial balance
   const delta = transactions
     .filter((tx) => {
-      if (tx.accountId !== account.id) return false
       const d = parseDateLocal(tx.date)
-      return d <= today
+      if (d > today) return false
+      return (
+        tx.accountId === account.id ||
+        (tx.type === 'TRANSFER' && tx.transferAccountId === account.id)
+      )
     })
-    .reduce((sum, tx) => {
-      if (tx.type === 'INCOME') return sum + tx.amount
-      if (tx.type === 'EXPENSE') return sum - tx.amount
-      if (tx.type === 'TRANSFER') return sum - tx.amount
-      return sum
-    }, 0)
+    .reduce((sum, tx) => applyTx(sum, tx, account.id), 0)
 
   return account.balance + delta
 }

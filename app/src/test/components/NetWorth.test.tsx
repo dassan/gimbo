@@ -6,7 +6,7 @@ import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { makeDataFile, makeCreditAccount, makeValuation } from '@/test/fixtures/dataFile'
 import { createDefaultWorkspace } from '@/lib/storage/schema'
 import type { Account, Transaction } from '@/types'
-import { uuid } from '@/lib/utils'
+import { uuid, formatCurrency } from '@/lib/utils'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -159,6 +159,44 @@ describe('NetWorth page', () => {
     })
     render(<NetWorth />)
     expect(screen.getByText('Carteira Ações')).toBeInTheDocument()
+  })
+
+  describe('TRANSFER balance handling', () => {
+    function setupTransfer() {
+      const source = makeRetailAccount({ id: 'acc-source', name: 'Conta Origem', balance: 1000 })
+      const dest = makeRetailAccount({ id: 'acc-dest', name: 'Conta Destino', balance: 500 })
+      const transfer = makeTx({
+        accountId: 'acc-source',
+        type: 'TRANSFER',
+        amount: 300,
+        date: '2024-01-10',
+        transferAccountId: 'acc-dest',
+      })
+      useDataStore.setState({
+        data: makeDataFile({ accounts: [source, dest], transactions: [transfer] }),
+      })
+    }
+
+    it('decrements source account balance on outgoing transfer', () => {
+      setupTransfer()
+      render(<NetWorth />)
+      // Source: 1000 - 300 = 700
+      expect(document.body.textContent).toContain(formatCurrency(700))
+    })
+
+    it('increments destination account balance on incoming transfer', () => {
+      setupTransfer()
+      render(<NetWorth />)
+      // Destination: 500 + 300 = 800
+      expect(document.body.textContent).toContain(formatCurrency(800))
+    })
+
+    it('total assets unchanged after a transfer (net-zero operation)', () => {
+      setupTransfer()
+      render(<NetWorth />)
+      // Total: 1000 + 500 = 1500, transfer doesn't change net worth
+      expect(document.body.textContent).toContain(formatCurrency(1500))
+    })
   })
 
   it('getTotalCreditLiability sums current + future EXPENSE for liabilities total', () => {
