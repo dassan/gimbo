@@ -14,7 +14,7 @@ export interface BugReportDialogProps {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const GITHUB_ISSUES_URL = 'https://github.com/dassan/MyFinanceApp/issues/new'
+const GITHUB_ISSUES_URL = 'https://github.com/dassan/gimbo-app/issues/new'
 
 const DEFAULT_OPTIONS: SnapshotOptions = {
   includeNavigation: true,
