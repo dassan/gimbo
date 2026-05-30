@@ -70,6 +70,7 @@ export default function App() {
           }
           if (params.has('devReset')) {
             await storage.clearAll()
+            localStorage.clear()
             window.history.replaceState(null, '', window.location.pathname)
             setHydrated(true)
             return
