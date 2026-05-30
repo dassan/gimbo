@@ -608,12 +608,6 @@ export default function Settings() {
             {/* Categories */}
             {activeSection === 'categories' && (
               <Section title={t('settings.categories')}>
-                <div className="mb-4 rounded-2xl bg-primary px-5 py-4 text-white">
-                  <p className="text-xs font-bold uppercase tracking-widest opacity-70">
-                    {t('settings.subcategoriesTip')}
-                  </p>
-                  <p className="mt-1 text-sm">{t('settings.subcategoriesTipDesc')}</p>
-                </div>
                 <div className="space-y-2 mb-4">
                   {data.categories.length === 0 && (
                     <p className="py-4 text-center text-sm text-on-surface/40">
