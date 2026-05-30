@@ -5,6 +5,7 @@ import { useDataStore } from '@/store/useDataStore'
 import { storage } from '@/services/storage'
 import { validateDataFile } from '@/lib/storage/schema'
 import { isDemoMode, loadDemoData } from '@/lib/demo'
+import { clearBackupDirHandle } from '@/lib/backupDir'
 import AppLayout from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import Onboarding from '@/pages/Onboarding'
@@ -70,6 +71,7 @@ export default function App() {
           }
           if (params.has('devReset')) {
             await storage.clearAll()
+            await clearBackupDirHandle()
             localStorage.clear()
             window.history.replaceState(null, '', window.location.pathname)
             setHydrated(true)
