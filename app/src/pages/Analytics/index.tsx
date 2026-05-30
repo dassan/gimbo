@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Download, BarChart2 } from 'lucide-react'
+import { BarChart2 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { cn, parseDateLocal } from '@/lib/utils'
@@ -93,14 +93,6 @@ export default function Analytics() {
         >
           {t('analytics.includeUnpaid')}
         </button>
-
-        {/* Actions */}
-        <div className="ml-auto flex gap-2">
-          <button className="flex items-center gap-1.5 rounded-xl bg-surface-container-low px-4 py-2 text-xs font-medium text-on-surface/70 hover:bg-surface-container-high transition-colors">
-            <Download size={14} strokeWidth={1.5} />
-            {t('analytics.exportPdf')}
-          </button>
-        </div>
       </div>
 
       {/* ── Sub-navigation tabs ──────────────────────────────────────────── */}
