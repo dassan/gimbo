@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import BugReportDialog from '@/components/BugReportDialog'
@@ -8,11 +8,8 @@ import {
   FolderTree,
   User,
   Sliders,
-  Database,
   Plus,
   Upload,
-  Download,
-  ShieldCheck,
   History,
   PlusCircle,
   Pencil,
@@ -65,15 +62,7 @@ import type {
   AuditAction,
 } from '@/types'
 
-type Section =
-  | 'accounts'
-  | 'categories'
-  | 'tags'
-  | 'profile'
-  | 'preferences'
-  | 'data'
-  | 'backup'
-  | 'history'
+type Section = 'accounts' | 'categories' | 'tags' | 'profile' | 'preferences' | 'backup' | 'history'
 
 // ─── Credit issuer config ─────────────────────────────────────────────────────
 
@@ -191,7 +180,6 @@ const APP_SECTIONS: { key: Section; icon: React.ReactNode; labelKey: string }[] 
     icon: <Sliders size={16} strokeWidth={1.5} />,
     labelKey: 'settings.preferences',
   },
-  { key: 'data', icon: <Database size={16} strokeWidth={1.5} />, labelKey: 'settings.dataFile' },
   {
     key: 'backup',
     icon: <HardDrive size={16} strokeWidth={1.5} />,
@@ -238,8 +226,6 @@ export default function Settings() {
   const [categoryModal, setCategoryModal] = useState<CategoryModalState>({ open: false })
   const [tagModal, setTagModal] = useState<TagModalState>({ open: false })
   const [importResult, setImportResult] = useState<ImportResult>(null)
-  const importDbInputRef = useRef<HTMLInputElement>(null)
-
   useEffect(() => {
     void loadBackupDirHandle().then((handle) => setBackupDir(handle))
     setBackupLastSaved(localStorage.getItem('gimbo_backup_last_saved'))
@@ -289,16 +275,6 @@ export default function Settings() {
   function handleLocaleChange(locale: Locale) {
     setLocale(locale)
     void i18n.changeLanguage(locale)
-  }
-
-  async function handleExportDb() {
-    const blob = await storage.exportBlob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'gimbo-backup.db'
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
   async function handleImportDb(file: File) {
@@ -860,88 +836,6 @@ export default function Settings() {
                     </div>
                   </div>
                 </div>
-              </Section>
-            )}
-
-            {/* Data file */}
-            {activeSection === 'data' && (
-              <Section title={t('settings.dataFile')}>
-                <div className="mb-6 rounded-2xl bg-surface-container-low p-5">
-                  <p className="text-sm text-on-surface/60">{t('settings.localFirst')}</p>
-                  <div className="mt-3 flex items-center gap-2">
-                    <ShieldCheck size={14} className="text-primary" strokeWidth={2} />
-                    <span className="text-xs font-semibold text-primary">
-                      {t('settings.privacyGuarantee')}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Backup SQLite */}
-                <div className="mb-4">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-on-surface/40">
-                    {t('settings.backupRestore')}
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => void handleExportDb()}
-                      className="flex flex-col items-center gap-2 rounded-2xl bg-surface-container py-6 hover:bg-surface-container-high transition-colors"
-                    >
-                      <Download size={22} className="text-on-surface/60" strokeWidth={1.5} />
-                      <span className="text-sm font-medium text-on-surface">
-                        {t('settings.exportDb')}
-                      </span>
-                      <span className="text-xs text-on-surface/40">.db</span>
-                    </button>
-                    <button
-                      onClick={() => importDbInputRef.current?.click()}
-                      className="flex flex-col items-center gap-2 rounded-2xl bg-surface-container py-6 hover:bg-surface-container-high transition-colors"
-                    >
-                      <Upload size={22} className="text-on-surface/60" strokeWidth={1.5} />
-                      <span className="text-sm font-medium text-on-surface">
-                        {t('settings.importDb')}
-                      </span>
-                      <span className="text-xs text-on-surface/40">.db</span>
-                    </button>
-                    <input
-                      ref={importDbInputRef}
-                      type="file"
-                      accept=".db"
-                      className="hidden"
-                      onChange={(e) => {
-                        if (e.target.files?.[0]) void handleImportDb(e.target.files[0])
-                        e.target.value = ''
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {importResult?.status === 'error' && (
-                  <div className="mt-3 rounded-xl border border-tertiary/20 bg-tertiary/5 p-3 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-xs text-tertiary">{importResult.message}</p>
-                      <span className="shrink-0 font-mono text-[10px] text-tertiary/70 bg-tertiary/10 rounded px-1.5 py-0.5">
-                        {importResult.code}
-                      </span>
-                    </div>
-                    <p className="text-xs text-on-surface/40">
-                      {t('settings.exportLocalDataHint')}
-                    </p>
-                    <button
-                      onClick={() => void handleExportDb()}
-                      className="flex items-center gap-1.5 rounded-lg bg-surface-container px-3 py-1.5 text-xs font-medium text-on-surface hover:bg-surface-container-high transition-colors"
-                    >
-                      <Download size={12} strokeWidth={2} />
-                      {t('settings.exportLocalData')}
-                    </button>
-                  </div>
-                )}
-
-                {importResult?.status === 'success' && (
-                  <Toast
-                    message={t('settings.importSuccess')}
-                    onDismiss={() => setImportResult(null)}
-                  />
-                )}
               </Section>
             )}
 
