@@ -244,8 +244,8 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* My Cards — desktop only (MB-03: on mobile accessed via /credit-card) */}
-        <div className={cn('hidden sm:block rounded-2xl bg-surface-container p-6', shadowClass)}>
+        {/* My Cards */}
+        <div className={cn('rounded-2xl bg-surface-container p-5 sm:p-6', shadowClass)}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-on-surface">{t('dashboard.myCards')}</h3>
             {creditAccounts.length > 0 && (
