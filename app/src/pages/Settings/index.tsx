@@ -41,7 +41,12 @@ import {
   Cloud,
   ExternalLink,
 } from 'lucide-react'
-import { loadBackupDirHandle, saveBackupDirHandle, clearBackupDirHandle } from '@/lib/backupDir'
+import {
+  loadBackupDirHandle,
+  saveBackupDirHandle,
+  clearBackupDirHandle,
+  readBackupFromDir,
+} from '@/lib/backupDir'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { formatCurrency, cn, uuid, now, getCurrentInvoiceBalance } from '@/lib/utils'
@@ -226,6 +231,7 @@ export default function Settings() {
   const [bugReportOpen, setBugReportOpen] = useState(false)
   const [backupDir, setBackupDir] = useState<FileSystemDirectoryHandle | null>(null)
   const [backupLastSaved, setBackupLastSaved] = useState<string | null>(null)
+  const [confirmFolderRestore, setConfirmFolderRestore] = useState(false)
   const [profileName, setProfileName] = useState(data?.user.name ?? '')
   const [profileEmail, setProfileEmail] = useState(data?.user.email ?? '')
   const [modal, setModal] = useState<ModalState>({ open: false })
@@ -254,6 +260,25 @@ export default function Settings() {
     localStorage.removeItem('gimbo_backup_last_saved')
     setBackupDir(null)
     setBackupLastSaved(null)
+  }
+
+  async function handleRestoreFromBackupDir() {
+    if (!backupDir) return
+    if (!confirmFolderRestore) {
+      setConfirmFolderRestore(true)
+      return
+    }
+    setConfirmFolderRestore(false)
+    const file = await readBackupFromDir(backupDir)
+    if (!file) {
+      setImportResult({
+        status: 'error',
+        message: t('settings.backupRestoreNotFound'),
+        code: IMPORT_ERROR_CODES.CORRUPT,
+      })
+      return
+    }
+    await handleImportDb(file)
   }
 
   function handleSaveProfile() {
@@ -955,6 +980,29 @@ export default function Settings() {
                               {t('settings.backupLastSaved')}{' '}
                               {new Date(backupLastSaved).toLocaleString()}
                             </p>
+                          )}
+                          <button
+                            onClick={() => void handleRestoreFromBackupDir()}
+                            className={cn(
+                              'flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold transition-colors',
+                              confirmFolderRestore
+                                ? 'bg-tertiary/10 text-tertiary hover:bg-tertiary/20'
+                                : 'bg-surface-container-low text-on-surface/60 hover:bg-surface-container-high'
+                            )}
+                          >
+                            <Upload size={14} strokeWidth={2} />
+                            {confirmFolderRestore
+                              ? t('settings.backupRestoreConfirm')
+                              : t('settings.backupRestoreFolder')}
+                          </button>
+                          {importResult?.status === 'error' && (
+                            <p className="text-xs text-tertiary">{importResult.message}</p>
+                          )}
+                          {importResult?.status === 'success' && (
+                            <Toast
+                              message={t('settings.importSuccess')}
+                              onDismiss={() => setImportResult(null)}
+                            />
                           )}
                         </div>
                       ) : (

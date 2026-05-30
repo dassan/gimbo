@@ -22,6 +22,7 @@ vi.mock('@/lib/backupDir', () => ({
   saveBackupDirHandle: vi.fn().mockResolvedValue(undefined),
   clearBackupDirHandle: vi.fn().mockResolvedValue(undefined),
   ensureBackupDirPermission: vi.fn().mockResolvedValue(true),
+  readBackupFromDir: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock('@/services/storage', () => ({

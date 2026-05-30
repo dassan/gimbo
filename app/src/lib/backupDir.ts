@@ -68,3 +68,12 @@ export async function writeBackupToDir(
   await writable.write(blob)
   await writable.close()
 }
+
+export async function readBackupFromDir(handle: FileSystemDirectoryHandle): Promise<File | null> {
+  try {
+    const fileHandle = await handle.getFileHandle('gimbo-backup.db')
+    return await fileHandle.getFile()
+  } catch {
+    return null
+  }
+}
