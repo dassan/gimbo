@@ -421,11 +421,6 @@ function TxRow({
   const isIncome = tx.type === 'INCOME'
   const isTransfer = tx.type === 'TRANSFER'
 
-  const timeStr = new Date(tx.date).toLocaleTimeString('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-
   // Type label shown above the description (CREDIT and CREDIT_PAYMENT filtered upstream — M-26)
   const typeLabel = isIncome ? 'Receita' : isTransfer ? 'Transf.' : 'Despesa'
 
@@ -482,7 +477,6 @@ function TxRow({
           ) : (
             acc && <span className="text-xs text-on-surface/30">{acc.name}</span>
           )}
-          <span className="text-xs text-on-surface/30">{timeStr}</span>
         </div>
       </div>
 

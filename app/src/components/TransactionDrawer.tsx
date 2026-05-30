@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, ChevronDown, Calendar, Tag, Trash2, CreditCard } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
-import { cn, uuid, formatCurrency, getCurrentInvoiceBalance } from '@/lib/utils'
+import { cn, uuid, formatCurrency, getCurrentInvoiceBalance, todayStr } from '@/lib/utils'
 import type { Transaction, TransactionType } from '@/types'
 
 export interface TransactionDrawerProps {
@@ -59,7 +59,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   const [type, setType] = useState<TxType>('EXPENSE')
   const [amount, setAmount] = useState(0)
   const [amountStr, setAmountStr] = useState('0,00')
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(todayStr())
   const [accountId, setAccountId] = useState('')
   // transferAccountId: destination for TRANSFER, or "pay from" account for CREDIT_PAYMENT
   const [transferAccountId, setTransferAccountId] = useState('')
@@ -119,7 +119,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
         setType('EXPENSE')
         setAmount(0)
         setAmountStr('0,00')
-        setDate(new Date().toISOString().slice(0, 10))
+        setDate(todayStr())
         setAccountId(data?.accounts[0]?.id ?? '')
         setTransferAccountId(nonCreditAccounts[0]?.id ?? '')
         setCategoryId('')
