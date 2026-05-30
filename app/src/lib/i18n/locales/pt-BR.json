@@ -179,6 +179,8 @@
     "newAccount": "Nova Conta",
     "addAccount": "Adicionar Conta",
     "editAccount": "Editar Conta",
+    "addCard": "Adicionar Cartão",
+    "editCard": "Editar Cartão",
     "accountName": "Nome da Conta",
     "accountNamePlaceholder": "Ex: Conta Corrente Principal",
     "bankInstitution": "Banco / Instituição",

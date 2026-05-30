@@ -179,6 +179,8 @@
     "newAccount": "New Account",
     "addAccount": "Add Account",
     "editAccount": "Edit Account",
+    "addCard": "Add Card",
+    "editCard": "Edit Card",
     "accountName": "Account Name",
     "accountNamePlaceholder": "e.g. Premium Savings",
     "bankInstitution": "Bank / Institution",

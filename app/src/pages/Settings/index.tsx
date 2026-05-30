@@ -1125,7 +1125,13 @@ function AddAccountModal({
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-semibold text-on-surface">
-            {isEdit ? t('settings.editAccount') : t('settings.addAccount')}
+            {isEdit
+              ? type === 'CREDIT'
+                ? t('settings.editCard')
+                : t('settings.editAccount')
+              : type === 'CREDIT'
+                ? t('settings.addCard')
+                : t('settings.addAccount')}
           </h2>
           <button
             onClick={onClose}
@@ -1276,26 +1282,28 @@ function AddAccountModal({
           )}
         </div>
 
-        {/* Include in balance toggle */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-on-surface/70">{t('settings.includeInBalance')}</span>
-          </div>
-          <button
-            onClick={() => setIncludeInBalance((v) => !v)}
-            className={cn(
-              'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200',
-              includeInBalance ? 'bg-primary' : 'bg-surface-container-high'
-            )}
-          >
-            <span
+        {/* Include in balance toggle — hidden for CREDIT accounts */}
+        {type !== 'CREDIT' && (
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-on-surface/70">{t('settings.includeInBalance')}</span>
+            </div>
+            <button
+              onClick={() => setIncludeInBalance((v) => !v)}
               className={cn(
-                'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 mt-0.5',
-                includeInBalance ? 'translate-x-5' : 'translate-x-0.5'
+                'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200',
+                includeInBalance ? 'bg-primary' : 'bg-surface-container-high'
               )}
-            />
-          </button>
-        </div>
+            >
+              <span
+                className={cn(
+                  'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 mt-0.5',
+                  includeInBalance ? 'translate-x-5' : 'translate-x-0.5'
+                )}
+              />
+            </button>
+          </div>
+        )}
 
         {/* Actions */}
         <button
