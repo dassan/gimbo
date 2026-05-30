@@ -362,12 +362,20 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
           </div>
 
           {/* Date + isPaid (isPaid shown inline for INCOME/EXPENSE only) */}
-          <div className="flex items-end gap-3">
-            <div className="flex-1">
+          <div>
+            {(type === 'INCOME' || (type === 'EXPENSE' && selectedAccount?.type !== 'CREDIT')) && (
+              <div className="flex items-center justify-between mb-2">
+                <span className="label text-on-surface/40">{t('transactions.date')}</span>
+                <span className="label text-on-surface/40">{t('transactions.isPaid')}</span>
+              </div>
+            )}
+            {!(type === 'INCOME' || (type === 'EXPENSE' && selectedAccount?.type !== 'CREDIT')) && (
               <label className="label text-on-surface/40 block mb-2">
                 {t('transactions.date')}
               </label>
-              <div className="relative">
+            )}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 relative">
                 <Calendar
                   size={16}
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
@@ -379,16 +387,14 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                   className="w-full rounded-xl bg-surface-container-low py-3 pl-9 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
-            </div>
-            {(type === 'INCOME' || (type === 'EXPENSE' && selectedAccount?.type !== 'CREDIT')) && (
-              <div className="flex flex-col items-center gap-1.5 shrink-0">
-                <span className="label text-on-surface/40">{t('transactions.isPaid')}</span>
+              {(type === 'INCOME' ||
+                (type === 'EXPENSE' && selectedAccount?.type !== 'CREDIT')) && (
                 <button
                   role="switch"
                   aria-checked={isPaid}
                   onClick={() => setIsPaid((v) => !v)}
                   className={cn(
-                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+                    'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
                     isPaid ? 'bg-primary' : 'bg-on-surface/20'
                   )}
                 >
@@ -399,8 +405,8 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                     )}
                   />
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           {/* ── CREDIT_PAYMENT: two-account layout ─────────────────────────── */}
