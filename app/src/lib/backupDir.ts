@@ -58,3 +58,13 @@ export async function ensureBackupDirPermission(
   const requested = await handle.requestPermission({ mode: 'readwrite' })
   return requested === 'granted'
 }
+
+export async function writeBackupToDir(
+  handle: FileSystemDirectoryHandle,
+  blob: Blob
+): Promise<void> {
+  const fileHandle = await handle.getFileHandle('gimbo-backup.db', { create: true })
+  const writable = await fileHandle.createWritable()
+  await writable.write(blob)
+  await writable.close()
+}

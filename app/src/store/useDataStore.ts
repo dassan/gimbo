@@ -12,6 +12,7 @@ import type {
 } from '@/types'
 import { applyRetention } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
+import { loadBackupDirHandle, ensureBackupDirPermission, writeBackupToDir } from '@/lib/backupDir'
 import { uuid, now } from '@/lib/utils'
 import { isDemoMode } from '@/lib/demo'
 import { trackAction } from '@/lib/telemetry'
@@ -20,11 +21,25 @@ import { trackAction } from '@/lib/telemetry'
 
 let _sqliteTimer: ReturnType<typeof setTimeout> | null = null
 
+async function _triggerLocalBackup() {
+  try {
+    const handle = await loadBackupDirHandle()
+    if (!handle) return
+    const granted = await ensureBackupDirPermission(handle)
+    if (!granted) return
+    const blob = await storage.exportBlob()
+    await writeBackupToDir(handle, blob)
+    localStorage.setItem('gimbo_backup_last_saved', new Date().toISOString())
+  } catch {
+    // backup failure must never interrupt the main flow
+  }
+}
+
 function debouncedReplaceAll(data: DataFile) {
   if (isDemoMode()) return
   if (_sqliteTimer) clearTimeout(_sqliteTimer)
   _sqliteTimer = setTimeout(() => {
-    void storage.replaceAll(data)
+    void storage.replaceAll(data).then(() => void _triggerLocalBackup())
   }, 300)
 }
 
