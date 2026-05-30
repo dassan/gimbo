@@ -388,7 +388,7 @@
       "title": "Local folder backup",
       "subtitle": "How it works, permissions, and tips for using with Google Drive or Dropbox",
       "section1Title": "How it works",
-      "section1Body": "When you set up a backup folder, Gimbo uses the browser's File System Access API to write a copy of your vault (gimbo-backup.json) to that folder on every auto-save. The file is identical to a manual export.",
+      "section1Body": "When you set up a backup folder, Gimbo uses the browser's File System Access API to write a copy of your database (gimbo-backup.db) to that folder on every auto-save. The file is identical to a manual export.",
       "section2Title": "Per-session permissions",
       "section2Body": "For security reasons, the browser requires you to authorize folder access once per session. When you open Gimbo, if the authorization has expired, a notice will appear asking you to reconnect the folder. This is normal and takes just one click.",
       "section3Title": "Using with Google Drive, Dropbox, or OneDrive",

@@ -388,7 +388,7 @@
       "title": "Backup em pasta local",
       "subtitle": "Como funciona, permissões e dicas para usar com Google Drive ou Dropbox",
       "section1Title": "Como funciona",
-      "section1Body": "Ao configurar uma pasta de backup, o Gimbo usa a File System Access API do navegador para gravar uma cópia do seu cofre (gimbo-backup.json) nessa pasta a cada salvamento automático. O arquivo é idêntico ao exportado manualmente.",
+      "section1Body": "Ao configurar uma pasta de backup, o Gimbo usa a File System Access API do navegador para gravar uma cópia do seu banco de dados (gimbo-backup.db) nessa pasta a cada salvamento automático. O arquivo é idêntico ao exportado manualmente.",
       "section2Title": "Permissões por sessão",
       "section2Body": "Por razões de segurança, o navegador exige que você autorize o acesso à pasta uma vez por sessão. Ao abrir o Gimbo, se a autorização tiver expirado, um aviso aparecerá pedindo para reconectar a pasta. Isso é normal e leva apenas um clique.",
       "section3Title": "Usando com Google Drive, Dropbox ou OneDrive",
