@@ -10,6 +10,7 @@ import Navbar from '@/components/Navbar'
 import FAB from '@/components/FAB'
 import TransactionDrawer from '@/components/TransactionDrawer'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import WelcomeModal from '@/components/WelcomeModal'
 import type { Transaction } from '@/types'
 
 export interface AppLayoutContext {
@@ -25,6 +26,11 @@ export default function AppLayout() {
   const [editingTx, setEditingTx] = useState<Transaction | undefined>(undefined)
   const [backupPermState, setBackupPermState] = useState<'prompt' | 'denied' | null>(null)
   const [backupHandle, setBackupHandle] = useState<FileSystemDirectoryHandle | null>(null)
+  const [showWelcome, setShowWelcome] = useState(
+    () =>
+      localStorage.getItem('gimbo_welcome_pending') === 'true' &&
+      localStorage.getItem('gimbo_welcome_dismissed') !== 'true'
+  )
   const location = useLocation()
 
   useTrackNavigation()
@@ -141,6 +147,8 @@ export default function AppLayout() {
       )}
 
       <TransactionDrawer open={drawerOpen} onClose={handleDrawerClose} transaction={editingTx} />
+
+      {showWelcome && <WelcomeModal onClose={() => setShowWelcome(false)} />}
     </div>
   )
 }

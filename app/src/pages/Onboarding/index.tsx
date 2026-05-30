@@ -33,6 +33,7 @@ export default function Onboarding() {
     loadData(data)
     setLocale(locale)
     void i18n.changeLanguage(locale)
+    localStorage.setItem('gimbo_welcome_pending', 'true')
     void navigate('/dashboard')
   }
 

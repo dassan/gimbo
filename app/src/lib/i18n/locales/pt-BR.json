@@ -372,6 +372,18 @@
     "liabilitiesSection": "Passivos",
     "ofTotal": "do total"
   },
+  "welcome": {
+    "title": "Bem-vindo ao Gimbo",
+    "subtitle": "Antes de começar, entenda como seus dados são protegidos",
+    "privacyTitle": "Seus dados são 100% seus",
+    "privacyBody": "O Gimbo não tem servidores. Tudo fica armazenado no seu dispositivo, no IndexedDB do navegador. Nenhum dado financeiro trafega pela internet.",
+    "riskTitle": "Atenção: o armazenamento do navegador pode ser apagado",
+    "riskBody": "Limpar histórico, trocar de navegador ou reinstalar o sistema pode apagar seus dados sem aviso. Recomendamos configurar um backup em pasta local para maior segurança.",
+    "riskLink": "Por que o armazenamento do navegador é frágil?",
+    "dontShow": "Não mostrar novamente",
+    "cta": "Configurar backup agora",
+    "skip": "Entendido, seguir sem backup"
+  },
   "demo": {
     "banner": "Modo demonstração — alterações não são salvas"
   },

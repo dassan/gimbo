@@ -372,6 +372,18 @@
     "liabilitiesSection": "Liabilities",
     "ofTotal": "of total"
   },
+  "welcome": {
+    "title": "Welcome to Gimbo",
+    "subtitle": "Before you start, understand how your data is protected",
+    "privacyTitle": "Your data is 100% yours",
+    "privacyBody": "Gimbo has no servers. Everything is stored on your device, in the browser's IndexedDB. No financial data travels over the internet.",
+    "riskTitle": "Warning: browser storage can be erased",
+    "riskBody": "Clearing history, switching browsers, or reinstalling your OS can silently erase your data. We recommend setting up a local folder backup for extra safety.",
+    "riskLink": "Why is browser storage fragile?",
+    "dontShow": "Don't show again",
+    "cta": "Set up backup now",
+    "skip": "Got it, continue without backup"
+  },
   "demo": {
     "banner": "Demo mode — changes are not saved"
   },
