@@ -10,10 +10,11 @@ import CashFlowView from './CashFlowView'
 import CategoriasView from './CategoriasView'
 import ContasView from './ContasView'
 import TagsView from './TagsView'
+import FaturasView from './FaturasView'
 
-type ActiveTab = 'categorias' | 'cashflow' | 'contas' | 'tags'
+type ActiveTab = 'categorias' | 'cashflow' | 'contas' | 'tags' | 'faturas'
 
-const TABS: ActiveTab[] = ['categorias', 'cashflow', 'contas', 'tags']
+const TABS: ActiveTab[] = ['categorias', 'cashflow', 'contas', 'tags', 'faturas']
 
 export default function Analytics() {
   const { t } = useTranslation()
@@ -155,6 +156,16 @@ export default function Analytics() {
           startDate={startDate}
           endDate={endDate}
           includeUnpaid={includeUnpaid}
+          shadowClass={shadowClass}
+        />
+      )}
+
+      {activeTab === 'faturas' && (
+        <FaturasView
+          transactions={data.transactions}
+          accounts={data.accounts}
+          startDate={startDate}
+          endDate={endDate}
           shadowClass={shadowClass}
         />
       )}

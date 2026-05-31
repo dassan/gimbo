@@ -126,7 +126,16 @@
       "categorias": "Categories",
       "cashflow": "Income vs Expenses",
       "contas": "Accounts",
-      "tags": "Tags"
+      "tags": "Tags",
+      "faturas": "Credit Cards"
+    },
+    "faturasView": {
+      "legend": "Total Invoices",
+      "tableTitle": "Breakdown by Period",
+      "period": "Period",
+      "card": "Card",
+      "total": "Total",
+      "noData": "No credit card expenses in this period"
     },
     "cashflowView": {
       "period": "Period",

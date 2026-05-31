@@ -126,7 +126,16 @@
       "categorias": "Categorias",
       "cashflow": "Entradas x Saídas",
       "contas": "Contas",
-      "tags": "Tags"
+      "tags": "Tags",
+      "faturas": "Faturas"
+    },
+    "faturasView": {
+      "legend": "Total de Faturas",
+      "tableTitle": "Detalhamento por Período",
+      "period": "Período",
+      "card": "Cartão",
+      "total": "Total",
+      "noData": "Nenhuma despesa em cartões no período"
     },
     "cashflowView": {
       "period": "Período",

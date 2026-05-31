@@ -149,24 +149,28 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 
 ---
 
-## Estado Atual (2026-05-27)
+## Estado Atual (2026-05-31)
 
-**474 testes unitários + 19 E2E** | Cobertura: ~97% statements | Schema v2
+**Schema v2** | Cobertura: ~97% statements
 
-Todas as features do PRD (F-1 a F-23) implementadas. Módulo de Cartão de Crédito completo (CC-01 a CC-30).
-Melhorias M-01 a M-33 resolvidas. Relatórios avançados: Todas as fases concluídas (R-01 a R-16 resolvidos).
+Todas as features do PRD (F-1 a F-28 Nível 1) implementadas. Módulo de Cartão de Crédito completo (CC-01 a CC-30). Melhorias M-01 a M-33 resolvidas. Relatórios avançados R-01 a R-18 resolvidos.
 
-Features planejadas (não iniciadas):
-- **F-24** — Patrimônio Líquido (épico NW-01 a NW-07 em `plan/BACKLOG.md`)
-- **F-25** — Demo Mode (épico DM-01 a DM-05)
-- **F-26** — Bug Report System (`plan/METRICS.md`, TASK-BR-01 a BR-08)
-- **F-27** — Mobile PWA responsiva (épico MB-01 a MB-07) — pré-requisito: F-28
-- **F-28** — Cloud Sync via Google Drive/Dropbox (épico CS-01 a CS-12); requer schema v3 (campo `updatedAt`)
+Features concluídas desde 2026-05-27:
+- **F-24** — Patrimônio Líquido: `/net-worth`, stat cards, breakdown por conta, gráfico AreaChart (NW-01 a NW-07)
+- **F-25** — Demo Mode: `lib/demo.ts`, dados sintéticos, banner, deploy Vercel (DM-01 a DM-05)
+- **F-26** — Bug Report System: `lib/telemetry.ts`, `BugReportDialog`, ErrorBoundary, Settings (TASK-BR-01 a BR-08)
+- **F-27** — Mobile PWA: bottom nav, layouts responsivos, bottom sheet, manifest standalone, E2E mobile (MB-01 a MB-07)
+- **F-28 Nível 1** — Backup Local: `lib/backupDir.ts`, aba "Backup & Sync", auto-backup, `WelcomeModal`, doc pages (BK-01 a BK-03, BK-05 a BK-07)
+- **R-17/R-18** — View "Faturas" em Analytics: `FaturasView.tsx`, aba 5 na sub-nav, 14 testes unitários
 
-Único bug em aberto: M-22 (estornos, baixa prioridade).
+Itens em aberto:
+- **M-22** — Estornos em contas CREDIT (baixa prioridade)
+- **MB-08** — Analytics responsivo para mobile (média prioridade)
+- **BK-04** — Banner de re-permissão da pasta de backup no startup (média prioridade)
+- **F-28 Nível 2** — Cloud Sync Google Drive/Dropbox (CS-01 a CS-12) — demand-driven
 
-Decisões arquiteturais recentes (2026-05-27):
+Decisões arquiteturais (2026-05-27, mantidas):
 - Estratégia mobile = PWA responsiva (não app nativo). X-3 do PRD atualizado.
 - Sync multi-dispositivo = Google Drive/Dropbox do usuário como camada de sync (sem servidor Gimbo).
 - Política de conflito = merge aditivo; duplicatas offline sobrevivem, usuário remove manualmente.
-- `SYNC_SCENARIOS.md` reescrito para cobrir SQLite atual (S-01 a S-07) e sync futuro (S-08 a S-15).
+- `SYNC_SCENARIOS.md` cobre SQLite atual (S-01 a S-07) e sync futuro (S-08 a S-15).
