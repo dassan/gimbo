@@ -491,6 +491,8 @@ export default function Settings() {
                 />
               ))}
             </SidebarGroup>
+
+            <p className="mt-6 px-3 text-[11px] text-on-surface/25">v{__APP_VERSION__}</p>
           </aside>
 
           {/* ── Content ─────────────────────────────────────────────────────── */}

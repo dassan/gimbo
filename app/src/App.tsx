@@ -19,6 +19,8 @@ import NetWorth from '@/pages/NetWorth'
 import WhyBrowserStorage from '@/pages/Docs/WhyBrowserStorage'
 import BackupLocal from '@/pages/Docs/BackupLocal'
 import CloudSync from '@/pages/Docs/CloudSync'
+import PrivacyPolicy from '@/pages/Legal/PrivacyPolicy'
+import TermsOfService from '@/pages/Legal/TermsOfService'
 
 export default function App() {
   const initWorkspace = useWorkspaceStore((s) => s.init)
@@ -110,6 +112,8 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/terms" element={<TermsOfService />} />
 
           {isLoaded ? (
             <Route element={<AppLayout />}>

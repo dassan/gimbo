@@ -12,10 +12,7 @@
   },
   "onboarding": {
     "headline": "Seu Ledger,\nSua Liberdade.",
-    "subtitle": "Privacidade em primeiro lugar. Gimbo transforma sua gestão financeira em uma experiência editorial silenciosa e segura.",
-    "securityBadge": "Segurança Ativa",
-    "privacyFeature": "Criptografia Ponta-a-Ponta",
-    "privacyFeatureDesc": "Seus dados nunca deixam seu dispositivo sem sua chave mestra.",
+    "subtitle": "Privacidade em primeiro lugar. Gimbo transforma sua gestão financeira em uma experiência silenciosa e segura.",
     "tabNew": "Novo Perfil",
     "tabImport": "Importar Dados",
     "name": "Nome Completo",
@@ -30,9 +27,8 @@
     "createHint": "Seus dados serão armazenados com segurança no seu dispositivo.",
     "importFileError": "Arquivo inválido ou corrompido. Verifique se é um arquivo exportado pelo Gimbo.",
     "footer": "The Fluid Ledger",
-    "privacyPolicy": "Privacy Policy",
-    "securityWhitepaper": "Security Whitepaper",
-    "termsOfService": "Terms of Service"
+    "privacyPolicy": "Política de Privacidade",
+    "termsOfService": "Termos de Serviço"
   },
   "dashboard": {
     "income": "Receitas",
@@ -427,6 +423,43 @@
       "section3Title": "Disponibilidade",
       "section3Body": "O Cloud Sync está planejado e será implementado conforme a demanda crescer. Por enquanto, configure um backup em pasta local para proteger seus dados.",
       "cta": "Configurar pasta de backup"
+    }
+  },
+  "legal": {
+    "back": "← Voltar",
+    "privacy": {
+      "title": "Política de Privacidade",
+      "lastUpdated": "Atualizado em maio de 2026",
+      "intro": "O Gimbo é um aplicativo de finanças pessoais local-first. Todos os seus dados financeiros são armazenados exclusivamente no seu dispositivo. Não operamos servidores próprios e não coletamos nenhum dado pessoal.",
+      "s1Title": "O que coletamos",
+      "s1Body": "Nenhum dado é transmitido a servidores do Gimbo. As informações que você insere — nome, e-mail e transações financeiras — são salvas localmente no IndexedDB do seu navegador e nunca saem do seu dispositivo sem sua ação explícita.",
+      "s2Title": "Armazenamento local",
+      "s2Body": "O Gimbo usa IndexedDB para persistir seus dados financeiros e o cache do Service Worker para armazenar os arquivos do aplicativo. Esses dados residem integralmente no seu dispositivo e estão sujeitos às políticas de privacidade do seu navegador.",
+      "s3Title": "Serviços de terceiros",
+      "s3Body": "O Gimbo não integra redes de anúncios, ferramentas de análise comportamental nem serviços de rastreamento. A versão publicada é hospedada no Vercel, que pode registrar metadados de acesso (endereço IP, timestamp) conforme sua própria política de privacidade.",
+      "s4Title": "Seus direitos",
+      "s4Body": "Você detém controle total sobre seus dados. Pode exportá-los a qualquer momento pela tela de Configurações e excluí-los permanentemente pelo seu navegador. O Gimbo não tem acesso remoto aos seus dados.",
+      "s5Title": "Contato",
+      "s5Body": "Dúvidas sobre esta política podem ser enviadas para fabiodassan@gmail.com."
+    },
+    "terms": {
+      "title": "Termos de Serviço",
+      "lastUpdated": "Atualizado em maio de 2026",
+      "intro": "Ao usar o Gimbo, você concorda com os termos a seguir. Leia-os com atenção.",
+      "s1Title": "Descrição do serviço",
+      "s1Body": "O Gimbo é um aplicativo web de finanças pessoais disponível gratuitamente como PWA. Não requer criação de conta e não depende de servidores próprios para funcionar.",
+      "s2Title": "Suas responsabilidades",
+      "s2Body": "Você é o único responsável pela guarda e backup dos seus dados financeiros. O Gimbo oferece ferramentas de exportação, mas não realiza backups automáticos em nuvem. Dados perdidos por limpeza de cache do navegador não podem ser recuperados pelo Gimbo.",
+      "s3Title": "Propriedade dos dados",
+      "s3Body": "Todos os dados que você insere no Gimbo pertencem a você. O Gimbo não reivindica qualquer direito sobre seus dados e não pode acessá-los remotamente.",
+      "s4Title": "Isenção de garantias",
+      "s4Body": "O Gimbo é fornecido \"como está\", sem garantias expressas ou implícitas de adequação a qualquer finalidade, disponibilidade contínua ou ausência de erros.",
+      "s5Title": "Limitação de responsabilidade",
+      "s5Body": "O desenvolvedor do Gimbo não se responsabiliza por perdas financeiras, perda de dados ou danos resultantes do uso do aplicativo. O uso é por conta e risco do usuário.",
+      "s6Title": "Alterações",
+      "s6Body": "Estes termos podem ser atualizados sem aviso prévio. A versão vigente estará sempre disponível em /terms.",
+      "s7Title": "Contato",
+      "s7Body": "Dúvidas podem ser enviadas para fabiodassan@gmail.com."
     }
   },
   "bugReport": {

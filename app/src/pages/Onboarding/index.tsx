@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
-import { Lock, ArrowRight, FileJson } from 'lucide-react'
+import { useNavigate, Link } from 'react-router-dom'
+import { ArrowRight, FileJson } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { createEmptyDataFile } from '@/lib/storage/schema'
@@ -75,36 +75,18 @@ export default function Onboarding() {
             <p className="mt-6 text-base leading-relaxed text-on-surface/50 max-w-sm">
               {t('onboarding.subtitle')}
             </p>
-
-            {/* Feature bullet */}
-            <div className="mt-10 flex items-start gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                <Lock size={14} className="text-primary" strokeWidth={2} />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-on-surface">
-                  {t('onboarding.privacyFeature')}
-                </p>
-                <p className="mt-0.5 text-sm text-on-surface/50">
-                  {t('onboarding.privacyFeatureDesc')}
-                </p>
-              </div>
-            </div>
           </div>
 
           {/* Footer */}
           <div className="flex items-center justify-between text-xs text-on-surface/30">
             <span className="font-semibold">{t('onboarding.footer')}</span>
             <div className="flex gap-4">
-              <span className="cursor-default hover:text-on-surface/50 transition-colors">
+              <Link to="/privacy" className="hover:text-on-surface/50 transition-colors">
                 {t('onboarding.privacyPolicy')}
-              </span>
-              <span className="cursor-default hover:text-on-surface/50 transition-colors">
-                {t('onboarding.securityWhitepaper')}
-              </span>
-              <span className="cursor-default hover:text-on-surface/50 transition-colors">
+              </Link>
+              <Link to="/terms" className="hover:text-on-surface/50 transition-colors">
                 {t('onboarding.termsOfService')}
-              </span>
+              </Link>
             </div>
           </div>
         </div>

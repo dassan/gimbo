@@ -13,9 +13,6 @@
   "onboarding": {
     "headline": "Your Ledger,\nYour Freedom.",
     "subtitle": "Privacy first. Gimbo transforms your financial management into a silent, secure editorial experience.",
-    "securityBadge": "Security Active",
-    "privacyFeature": "End-to-End Encryption",
-    "privacyFeatureDesc": "Your data never leaves your device without your master key.",
     "tabNew": "New Profile",
     "tabImport": "Import Data",
     "name": "Full Name",
@@ -31,7 +28,6 @@
     "importFileError": "Invalid or corrupted file. Make sure it was exported from Gimbo.",
     "footer": "The Fluid Ledger",
     "privacyPolicy": "Privacy Policy",
-    "securityWhitepaper": "Security Whitepaper",
     "termsOfService": "Terms of Service"
   },
   "dashboard": {
@@ -427,6 +423,43 @@
       "section3Title": "Availability",
       "section3Body": "Cloud Sync is planned and will be implemented as demand grows. For now, set up a local folder backup to protect your data.",
       "cta": "Set up backup folder"
+    }
+  },
+  "legal": {
+    "back": "← Back",
+    "privacy": {
+      "title": "Privacy Policy",
+      "lastUpdated": "Updated May 2026",
+      "intro": "Gimbo is a local-first personal finance app. All your financial data is stored exclusively on your device. We do not operate our own servers and do not collect any personal data.",
+      "s1Title": "What we collect",
+      "s1Body": "No data is transmitted to Gimbo servers. The information you enter — name, email, and financial transactions — is saved locally in your browser's IndexedDB and never leaves your device without your explicit action.",
+      "s2Title": "Local storage",
+      "s2Body": "Gimbo uses IndexedDB to persist your financial data and the Service Worker cache to store app files. This data resides entirely on your device and is subject to your browser's privacy policies.",
+      "s3Title": "Third-party services",
+      "s3Body": "Gimbo does not integrate ad networks, behavioral analytics, or tracking services. The published version is hosted on Vercel, which may log access metadata (IP address, timestamp) per its own privacy policy.",
+      "s4Title": "Your rights",
+      "s4Body": "You have full control over your data. You can export it at any time from the Settings screen and delete it permanently through your browser. Gimbo has no remote access to your data.",
+      "s5Title": "Contact",
+      "s5Body": "Questions about this policy can be sent to fabiodassan@gmail.com."
+    },
+    "terms": {
+      "title": "Terms of Service",
+      "lastUpdated": "Updated May 2026",
+      "intro": "By using Gimbo, you agree to the following terms. Please read them carefully.",
+      "s1Title": "Description of service",
+      "s1Body": "Gimbo is a free personal finance web app available as a PWA. It requires no account creation and does not depend on proprietary servers to function.",
+      "s2Title": "Your responsibilities",
+      "s2Body": "You are solely responsible for the custody and backup of your financial data. Gimbo provides export tools but does not perform automatic cloud backups. Data lost due to browser cache clearing cannot be recovered by Gimbo.",
+      "s3Title": "Data ownership",
+      "s3Body": "All data you enter in Gimbo belongs to you. Gimbo claims no rights over your data and cannot access it remotely.",
+      "s4Title": "Disclaimer of warranties",
+      "s4Body": "Gimbo is provided \"as is,\" without express or implied warranties of fitness for any purpose, continuous availability, or freedom from errors.",
+      "s5Title": "Limitation of liability",
+      "s5Body": "The Gimbo developer is not liable for financial losses, data loss, or damages resulting from use of the app. Use is at the user's own risk.",
+      "s6Title": "Changes",
+      "s6Body": "These terms may be updated without prior notice. The current version will always be available at /terms.",
+      "s7Title": "Contact",
+      "s7Body": "Questions can be sent to fabiodassan@gmail.com."
     }
   },
   "bugReport": {
