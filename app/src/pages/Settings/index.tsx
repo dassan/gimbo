@@ -342,12 +342,13 @@ export default function Settings() {
     name: string,
     icon: string,
     parentId: string | null,
-    type: CategoryType
+    type: CategoryType,
+    color: string
   ) {
     if (categoryModal.open && categoryModal.category) {
-      updateCategory({ ...categoryModal.category, name, icon, parentId, type })
+      updateCategory({ ...categoryModal.category, name, icon, parentId, type, color })
     } else {
-      addCategory({ id: uuid(), name, icon, parentId, type, color: '#22c55e' })
+      addCategory({ id: uuid(), name, icon, parentId, type, color })
     }
     setCategoryModal({ open: false })
   }
@@ -994,6 +995,7 @@ export default function Settings() {
         <AddCategoryModal
           category={categoryModal.category}
           topLevelCategories={data.categories.filter((c) => !c.parentId)}
+          defaultColor={TAG_COLORS[data.categories.length % TAG_COLORS.length]}
           onSave={handleSaveCategory}
           onDelete={handleDeleteCategory}
           onClose={() => setCategoryModal({ open: false })}
@@ -1496,13 +1498,21 @@ function AddTagModal({
 function AddCategoryModal({
   category,
   topLevelCategories,
+  defaultColor,
   onSave,
   onDelete,
   onClose,
 }: {
   category: Category | null
   topLevelCategories: Category[]
-  onSave: (name: string, icon: string, parentId: string | null, type: CategoryType) => void
+  defaultColor: string
+  onSave: (
+    name: string,
+    icon: string,
+    parentId: string | null,
+    type: CategoryType,
+    color: string
+  ) => void
   onDelete: (id: string) => void
   onClose: () => void
 }) {
@@ -1513,6 +1523,7 @@ function AddCategoryModal({
   const [icon, setIcon] = useState(category?.icon ?? 'tag')
   const [parentId, setParentId] = useState<string | null>(category?.parentId ?? null)
   const [type, setType] = useState<CategoryType>(category?.type ?? 'EXPENSE')
+  const [color, setColor] = useState(category?.color ?? defaultColor)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   function handleParentChange(value: string) {
@@ -1527,7 +1538,7 @@ function AddCategoryModal({
   function handleSave() {
     const trimmed = name.trim()
     if (!trimmed) return
-    onSave(trimmed, icon, parentId, type)
+    onSave(trimmed, icon, parentId, type, color)
   }
 
   function handleDelete() {
@@ -1600,6 +1611,27 @@ function AddCategoryModal({
               >
                 {iconEl}
               </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Color Picker (M-37) */}
+        <div className="mb-5">
+          <label className="block text-[11px] font-semibold uppercase tracking-widest text-on-surface/40 mb-3">
+            {t('settings.accentColor')}
+          </label>
+          <div className="flex gap-3">
+            {TAG_COLORS.map((c) => (
+              <button
+                key={c}
+                onClick={() => setColor(c)}
+                className="h-8 w-8 rounded-full transition-transform hover:scale-110"
+                style={{
+                  backgroundColor: c,
+                  outline: color === c ? `2px solid ${c}` : 'none',
+                  outlineOffset: '3px',
+                }}
+              />
             ))}
           </div>
         </div>

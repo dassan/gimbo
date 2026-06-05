@@ -457,3 +457,40 @@ describe('CategoriasView — R-16: drill-down modal', () => {
     expect(screen.getAllByText('analytics.categorias.noData').length).toBeGreaterThanOrEqual(1)
   })
 })
+
+// ─── M-37: distinct colors per category ───────────────────────────────────────
+
+describe('CategoriasView — M-37: distinct colors', () => {
+  it('assigns distinct legend colors when categories share the same stored color', () => {
+    const categories = [
+      makeCategory({ id: 'cat-a', name: 'Cat A', color: '#22c55e' }),
+      makeCategory({ id: 'cat-b', name: 'Cat B', color: '#22c55e' }),
+    ]
+    const transactions = [
+      makeTx({ id: 'tx-a', categoryId: 'cat-a', amount: 300 }),
+      makeTx({ id: 'tx-b', categoryId: 'cat-b', amount: 100 }),
+    ]
+    render(
+      <CategoriasView
+        transactions={transactions}
+        accounts={[makeAccount()]}
+        categories={categories}
+        startDate={APR_START}
+        endDate={APR_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+      />
+    )
+
+    const swatchA = screen
+      .getByText('Cat A')
+      .closest('button')!
+      .querySelector('span') as HTMLElement
+    const swatchB = screen
+      .getByText('Cat B')
+      .closest('button')!
+      .querySelector('span') as HTMLElement
+    expect(swatchA.style.backgroundColor).not.toBe('')
+    expect(swatchA.style.backgroundColor).not.toBe(swatchB.style.backgroundColor)
+  })
+})

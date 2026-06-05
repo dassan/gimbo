@@ -27,6 +27,19 @@ import { PieChart, Pie, Cell } from 'recharts'
 import { cn, formatCurrency, parseDateLocal } from '@/lib/utils'
 import type { Transaction, Account, Category } from '@/types'
 
+// M-37: fallback palette to keep donut slices distinct when categories share a stored
+// color (legacy categories were all created with the same default green).
+const CHART_FALLBACK_COLORS = [
+  '#22c55e',
+  '#3b82f6',
+  '#f97316',
+  '#a855f7',
+  '#ef4444',
+  '#06b6d4',
+  '#eab308',
+  '#ec4899',
+]
+
 export interface CategoriasViewProps {
   transactions: Transaction[]
   accounts: Account[]
@@ -146,7 +159,17 @@ export default function CategoriasView({
       }))
       const total = entries.reduce((s, e) => s + e.value, 0)
       if (total > 0) entries.forEach((e) => (e.pct = (e.value / total) * 100))
-      return entries.sort((a, b) => b.value - a.value)
+      entries.sort((a, b) => b.value - a.value)
+      // M-37: reassign duplicate colors so each slice is visually distinct. The category's
+      // own color wins when unique; collisions fall back to the palette by index.
+      const usedColors = new Set<string>()
+      entries.forEach((e, i) => {
+        if (usedColors.has(e.color)) {
+          e.color = CHART_FALLBACK_COLORS[i % CHART_FALLBACK_COLORS.length]
+        }
+        usedColors.add(e.color)
+      })
+      return entries
     }
 
     return {
