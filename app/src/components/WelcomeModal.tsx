@@ -26,14 +26,14 @@ export default function WelcomeModal({ onClose }: Props) {
     if (dontShow) localStorage.setItem(DISMISSED_KEY, 'true')
     localStorage.removeItem(PENDING_KEY)
     onClose()
-    navigate('/settings', { state: { section: 'backup' } })
+    void navigate('/settings', { state: { section: 'backup' } })
   }
 
   function handleDocLink() {
     if (dontShow) localStorage.setItem(DISMISSED_KEY, 'true')
     localStorage.removeItem(PENDING_KEY)
     onClose()
-    navigate('/docs/why-browser-storage')
+    void navigate('/docs/why-browser-storage')
   }
 
   return (

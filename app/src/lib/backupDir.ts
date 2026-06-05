@@ -41,7 +41,7 @@ export async function saveBackupDirHandle(handle: FileSystemDirectoryHandle): Pr
 
 export async function loadBackupDirHandle(): Promise<FileSystemDirectoryHandle | null> {
   const db = await getDb()
-  const handle = await db.get(STORE_NAME, BACKUP_DIR_KEY)
+  const handle: unknown = await db.get(STORE_NAME, BACKUP_DIR_KEY)
   return (handle as FileSystemDirectoryHandle | undefined) ?? null
 }
 

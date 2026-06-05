@@ -32,7 +32,7 @@ export default function WhyBrowserStorage() {
   return (
     <div className="mx-auto max-w-2xl px-6 py-8 space-y-6">
       <button
-        onClick={() => navigate(-1)}
+        onClick={() => void navigate(-1)}
         className="text-sm text-on-surface/50 hover:text-on-surface transition-colors"
       >
         {t('docs.back')}
@@ -59,7 +59,7 @@ export default function WhyBrowserStorage() {
       </div>
 
       <button
-        onClick={() => navigate('/settings')}
+        onClick={() => void navigate('/settings')}
         className="w-full rounded-2xl bg-primary py-3 text-sm font-semibold text-on-primary transition-opacity hover:opacity-90"
       >
         {t('docs.whyBrowserStorage.cta')}

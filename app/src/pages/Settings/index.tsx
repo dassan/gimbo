@@ -225,7 +225,9 @@ export default function Settings() {
   const [activeSection, setActiveSection] = useState<Section>('accounts')
   const [bugReportOpen, setBugReportOpen] = useState(false)
   const [backupDir, setBackupDir] = useState<FileSystemDirectoryHandle | null>(null)
-  const [backupLastSaved, setBackupLastSaved] = useState<string | null>(null)
+  const [backupLastSaved, setBackupLastSaved] = useState<string | null>(() =>
+    localStorage.getItem('gimbo_backup_last_saved')
+  )
   const [confirmFolderRestore, setConfirmFolderRestore] = useState(false)
   const [profileName, setProfileName] = useState(data?.user.name ?? '')
   const [profileEmail, setProfileEmail] = useState(data?.user.email ?? '')
@@ -235,7 +237,6 @@ export default function Settings() {
   const [importResult, setImportResult] = useState<ImportResult>(null)
   useEffect(() => {
     void loadBackupDirHandle().then((handle) => setBackupDir(handle))
-    setBackupLastSaved(localStorage.getItem('gimbo_backup_last_saved'))
   }, [])
 
   async function handleConfigureBackupDir() {
@@ -889,7 +890,7 @@ export default function Settings() {
                       )}
 
                       <button
-                        onClick={() => navigate('/docs/backup-local')}
+                        onClick={() => void navigate('/docs/backup-local')}
                         className="flex items-center gap-1.5 text-xs text-primary hover:underline"
                       >
                         <ExternalLink size={12} strokeWidth={2} />
@@ -915,7 +916,7 @@ export default function Settings() {
                         </p>
                       </div>
                       <button
-                        onClick={() => navigate('/docs/cloud-sync')}
+                        onClick={() => void navigate('/docs/cloud-sync')}
                         className="flex items-center gap-1.5 text-xs text-primary hover:underline"
                       >
                         <ExternalLink size={12} strokeWidth={2} />

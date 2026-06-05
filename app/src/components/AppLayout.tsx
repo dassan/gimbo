@@ -117,7 +117,7 @@ export default function AppLayout() {
           <button
             onClick={() => {
               void handleClearBackup()
-              navigate('/settings')
+              void navigate('/settings')
             }}
             className="rounded-md bg-white/15 px-2.5 py-1 font-semibold hover:bg-white/25 transition-colors shrink-0"
           >
