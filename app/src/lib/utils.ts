@@ -28,6 +28,16 @@ export function now(): string {
   return new Date().toISOString()
 }
 
+/**
+ * B-15: whether a transaction represents cash that has actually moved ("realized").
+ * The `isPaid` toggle exists only for INCOME/EXPENSE; TRANSFER and CREDIT_PAYMENT
+ * have no toggle and are always treated as realized (the cash movement is implicit).
+ * Use this to keep realized balances/flows consistent — never gate TRANSFER on `isPaid`.
+ */
+export function isCashRealized(tx: Transaction): boolean {
+  return tx.type === 'TRANSFER' || tx.type === 'CREDIT_PAYMENT' || tx.isPaid
+}
+
 /** Format a number as currency. */
 export function formatCurrency(value: number, locale: string = 'pt-BR'): string {
   return new Intl.NumberFormat(locale, {

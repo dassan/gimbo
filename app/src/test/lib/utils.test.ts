@@ -6,6 +6,7 @@ import {
   getInvoiceDueDate,
   getInvoicePeriod,
   getTotalCreditLiability,
+  isCashRealized,
   now,
   parseDateLocal,
 } from '@/lib/utils'
@@ -150,6 +151,27 @@ function makeTx(overrides: Partial<Transaction> = {}): Transaction {
     ...overrides,
   }
 }
+
+describe('isCashRealized', () => {
+  it('treats a paid INCOME/EXPENSE as realized', () => {
+    expect(isCashRealized(makeTx({ type: 'EXPENSE', isPaid: true }))).toBe(true)
+    expect(isCashRealized(makeTx({ type: 'INCOME', isPaid: true }))).toBe(true)
+  })
+
+  it('treats an unpaid INCOME/EXPENSE as not realized', () => {
+    expect(isCashRealized(makeTx({ type: 'EXPENSE', isPaid: false }))).toBe(false)
+    expect(isCashRealized(makeTx({ type: 'INCOME', isPaid: false }))).toBe(false)
+  })
+
+  it('always treats TRANSFER as realized regardless of isPaid', () => {
+    expect(isCashRealized(makeTx({ type: 'TRANSFER', isPaid: false }))).toBe(true)
+    expect(isCashRealized(makeTx({ type: 'TRANSFER', isPaid: true }))).toBe(true)
+  })
+
+  it('always treats CREDIT_PAYMENT as realized regardless of isPaid', () => {
+    expect(isCashRealized(makeTx({ type: 'CREDIT_PAYMENT', isPaid: false }))).toBe(true)
+  })
+})
 
 describe('getCurrentInvoiceBalance', () => {
   it('returns 0 when account has no creditMetadata', () => {

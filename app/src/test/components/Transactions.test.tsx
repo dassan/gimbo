@@ -586,4 +586,69 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
     const footerSection = screen.getByText('transactions.positiveFlow').closest('div')
     expect(footerSection?.textContent).toContain('2.500,00')
   })
+
+  // ── B-15: unpaid entries excluded from the footer flow unless projecting ──────
+  it('excludes unpaid INCOME from the consolidated flow by default', () => {
+    const retailAccount = makeRetailAccount()
+    const paidIncome = makeTransaction({
+      id: 'tx-paid',
+      type: 'INCOME',
+      amount: 3000,
+      description: 'Salário',
+      isPaid: true,
+    })
+    const unpaidIncome = makeTransaction({
+      id: 'tx-unpaid',
+      type: 'INCOME',
+      amount: 1000,
+      description: 'Freela pendente',
+      isPaid: false,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [retailAccount],
+        transactions: [paidIncome, unpaidIncome],
+      }),
+    })
+
+    render(<Transactions />)
+
+    // Realized only: 3000 (the unpaid 1000 is not counted)
+    const footerSection = screen.getByText('transactions.positiveFlow').closest('div')
+    expect(footerSection?.textContent).toContain('3.000,00')
+  })
+
+  it('includes unpaid INCOME in the consolidated flow when "Incluir Não-Pagos" is on', async () => {
+    const retailAccount = makeRetailAccount()
+    const paidIncome = makeTransaction({
+      id: 'tx-paid',
+      type: 'INCOME',
+      amount: 3000,
+      description: 'Salário',
+      isPaid: true,
+    })
+    const unpaidIncome = makeTransaction({
+      id: 'tx-unpaid',
+      type: 'INCOME',
+      amount: 1000,
+      description: 'Freela pendente',
+      isPaid: false,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [retailAccount],
+        transactions: [paidIncome, unpaidIncome],
+      }),
+    })
+
+    render(<Transactions />)
+
+    await userEvent.click(screen.getByText('analytics.includeUnpaid'))
+
+    // Projected: 3000 + 1000 = 4000
+    const footerSection = screen.getByText('transactions.positiveFlow').closest('div')
+    expect(footerSection?.textContent).toContain('4.000,00')
+  })
 })

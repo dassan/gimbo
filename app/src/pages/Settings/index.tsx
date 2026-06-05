@@ -46,7 +46,14 @@ import {
 } from '@/lib/backupDir'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
-import { formatCurrency, cn, uuid, now, getCurrentInvoiceBalance } from '@/lib/utils'
+import {
+  formatCurrency,
+  cn,
+  uuid,
+  now,
+  getCurrentInvoiceBalance,
+  isCashRealized,
+} from '@/lib/utils'
 import { AUDIT_RETENTION_DEFAULT } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
 import Toast from '@/components/Toast'
@@ -382,6 +389,8 @@ export default function Settings() {
     data.transactions.forEach((tx) => {
       const account = data.accounts.find((a) => a.id === tx.accountId)
       if (!account || account.type === 'CREDIT') return
+      // B-15: account balances reflect realized cash; TRANSFER is always realized.
+      if (!isCashRealized(tx)) return
       if (tx.type === 'INCOME') map[tx.accountId] = (map[tx.accountId] ?? 0) + tx.amount
       if (tx.type === 'EXPENSE') map[tx.accountId] = (map[tx.accountId] ?? 0) - tx.amount
       if (tx.type === 'TRANSFER') {

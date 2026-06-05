@@ -19,6 +19,7 @@ import {
   parseDateLocal,
   getCurrentInvoiceBalance,
   getTotalCreditLiability,
+  isCashRealized,
 } from '@/lib/utils'
 import type { Account, AccountType, Transaction, Valuation } from '@/types'
 
@@ -66,8 +67,9 @@ const VALUATION_ELIGIBLE: AccountType[] = ['STOCKS', 'CRYPTO', 'FOREX', 'ASSET']
 
 function applyTx(sum: number, tx: Transaction, accountId: string): number {
   if (tx.accountId === accountId) {
-    if (tx.type === 'INCOME') return sum + tx.amount
-    if (tx.type === 'EXPENSE') return sum - tx.amount
+    // B-15: unpaid INCOME/EXPENSE are not realized; TRANSFER always counts (no isPaid toggle).
+    if (tx.type === 'INCOME') return isCashRealized(tx) ? sum + tx.amount : sum
+    if (tx.type === 'EXPENSE') return isCashRealized(tx) ? sum - tx.amount : sum
     if (tx.type === 'TRANSFER') return sum - tx.amount // outgoing
   } else if (tx.type === 'TRANSFER' && tx.transferAccountId === accountId) {
     return sum + tx.amount // incoming transfer

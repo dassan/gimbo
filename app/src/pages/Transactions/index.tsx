@@ -4,7 +4,7 @@ import { useOutletContext } from 'react-router-dom'
 import { Search, CheckCircle2, Clock, ChevronDown, ArrowRightLeft } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
-import { formatCurrency, cn, parseDateLocal } from '@/lib/utils'
+import { formatCurrency, cn, parseDateLocal, isCashRealized } from '@/lib/utils'
 import PeriodSelector from '@/components/PeriodSelector'
 import type { PeriodValue } from '@/components/PeriodSelector'
 import type { AppLayoutContext } from '@/components/AppLayout'
@@ -26,6 +26,8 @@ export default function Transactions() {
   const [filterAccountId, setFilterAccountId] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<'all' | 'paid' | 'pending'>('all')
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense' | 'transfer'>('all')
+  // B-15: footer totals reflect realized cash by default; toggle on to project unpaid entries.
+  const [includeUnpaid, setIncludeUnpaid] = useState(false)
 
   const now = useMemo(() => new Date(), [])
 
@@ -109,9 +111,11 @@ export default function Transactions() {
     return Array.from(map.entries())
   }, [filtered])
 
-  // Summary — CREDIT account txs and CREDIT_PAYMENT already excluded by M-26 filter above
-  const income = filtered.filter((tx) => tx.type === 'INCOME').reduce((s, tx) => s + tx.amount, 0)
-  const expenses = filtered
+  // Summary — CREDIT account txs and CREDIT_PAYMENT already excluded by M-26 filter above.
+  // B-15: unless "Incluir Não-Pagos" is on, unpaid INCOME/EXPENSE are excluded from totals.
+  const realized = filtered.filter((tx) => includeUnpaid || isCashRealized(tx))
+  const income = realized.filter((tx) => tx.type === 'INCOME').reduce((s, tx) => s + tx.amount, 0)
+  const expenses = realized
     .filter((tx) => tx.type === 'EXPENSE')
     .reduce((s, tx) => s + tx.amount, 0)
   const consolidated = income - expenses
@@ -124,12 +128,14 @@ export default function Transactions() {
       .reduce((s, a) => s + a.balance, 0)
     return data.transactions.reduce((s, tx) => {
       if (creditAccountIds.has(tx.accountId) || tx.type === 'CREDIT_PAYMENT') return s
+      // B-15: skip unpaid entries unless projecting; TRANSFER is always realized.
+      if (!includeUnpaid && !isCashRealized(tx)) return s
       if (tx.type === 'INCOME') return s + tx.amount
       if (tx.type === 'EXPENSE') return s - tx.amount
       if (tx.type === 'TRANSFER') return s
       return s
     }, total)
-  }, [data, creditAccountIds])
+  }, [data, creditAccountIds, includeUnpaid])
 
   // M-32: category breakdown for the spending summary panel
   const categoryTotals = useMemo(() => {
@@ -222,6 +228,18 @@ export default function Transactions() {
               { value: 'transfer', label: t('transactions.transfer') },
             ]}
           />
+          {/* B-15: include unpaid entries in the footer totals (off = realized cash only) */}
+          <button
+            onClick={() => setIncludeUnpaid((v) => !v)}
+            className={cn(
+              'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-all',
+              includeUnpaid
+                ? 'bg-on-surface text-white'
+                : 'bg-surface-container-low text-on-surface/50 hover:text-on-surface/70'
+            )}
+          >
+            {t('analytics.includeUnpaid')}
+          </button>
         </div>
 
         {/* ── M-32: Two-column layout: transaction list | spending summary ──── */}
