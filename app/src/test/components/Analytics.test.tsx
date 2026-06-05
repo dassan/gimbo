@@ -162,9 +162,12 @@ describe('Analytics — CC-16: getEffectiveCashFlowDate in cash flow chart', () 
     })
     render(<Analytics />)
     switchToCashFlowTab()
-    // April bucket (index 0 — month mode shows only April): expenses = 200, result = −200
-    expect(capturedChartProps.data[0]?.expenses).toBe(200)
-    expect(capturedChartProps.data[0]?.result).toBe(-200)
+    // M-38: month mode splits April into weekly buckets; the retail expense (Apr 15) lands in
+    // its own week. Summing across buckets, the month total stays expenses = 200, result = −200.
+    const totalExpenses = capturedChartProps.data.reduce((s, r) => s + r.expenses, 0)
+    const totalResult = capturedChartProps.data.reduce((s, r) => s + r.result, 0)
+    expect(totalExpenses).toBe(200)
+    expect(totalResult).toBe(-200)
   })
 
   it('projects credit card EXPENSE to the invoice due-date month, not the purchase month', () => {

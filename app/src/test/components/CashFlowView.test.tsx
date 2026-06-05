@@ -125,10 +125,12 @@ describe('CashFlowView — R-15: monthly aggregation', () => {
         shadowClass={SHADOW}
       />
     )
-    const row = capturedRows.data[0]
-    expect(row?.income).toBe(500)
-    expect(row?.expenses).toBe(200)
-    expect(row?.result).toBe(300)
+    // M-38: a single full month is split into weekly buckets, so the income (Apr 1) and
+    // expense (Apr 15) land in different buckets — the month total is the sum across buckets.
+    const totalIncome = capturedRows.data.reduce((s, r) => s + r.income, 0)
+    const totalExpenses = capturedRows.data.reduce((s, r) => s + r.expenses, 0)
+    expect(totalIncome).toBe(500)
+    expect(totalExpenses).toBe(200)
   })
 
   it('separates transactions into the correct month bucket', () => {
@@ -416,5 +418,53 @@ describe('CashFlowView — R-15: accountId filter', () => {
     // April: retail income 500; credit expense displaced to June → expenses = 0
     expect(capturedRows.data[0]?.income).toBe(500)
     expect(capturedRows.data[0]?.expenses).toBe(0)
+  })
+})
+
+// ─── M-38: weekly granularity for a single month ──────────────────────────────
+
+describe('CashFlowView — M-38: weekly granularity', () => {
+  it('splits a single full month into weekly buckets and places txs in the right week', () => {
+    const accounts = [makeRetailAccount()]
+    const transactions = [
+      makeTx({ id: 'tx-wk1', type: 'INCOME', amount: 100, date: '2026-04-03' }), // 1–7
+      makeTx({ id: 'tx-wk3', type: 'INCOME', amount: 200, date: '2026-04-17' }), // 15–21
+    ]
+    render(
+      <CashFlowView
+        transactions={transactions}
+        accounts={accounts}
+        startDate={APR_START}
+        endDate={APR_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+      />
+    )
+    // April (30 days) → 5 weekly buckets: 1–7, 8–14, 15–21, 22–28, 29–30
+    expect(capturedRows.data).toHaveLength(5)
+    expect(capturedRows.data[0]?.label).toBe('1–7')
+    expect(capturedRows.data[0]?.income).toBe(100)
+    expect(capturedRows.data[2]?.income).toBe(200)
+    // Accumulated balance carries across weeks: 100 then 100 + 200 = 300
+    expect(capturedRows.data[2]?.balance).toBe(300)
+  })
+
+  it('keeps one bucket per month when the period spans more than one month', () => {
+    const accounts = [makeRetailAccount()]
+    const transactions = [
+      makeTx({ id: 'tx-apr', type: 'INCOME', amount: 400, date: '2026-04-10' }),
+      makeTx({ id: 'tx-may', type: 'INCOME', amount: 600, date: '2026-05-10' }),
+    ]
+    render(
+      <CashFlowView
+        transactions={transactions}
+        accounts={accounts}
+        startDate={APR_MAY_START}
+        endDate={APR_MAY_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+      />
+    )
+    expect(capturedRows.data).toHaveLength(2)
   })
 })

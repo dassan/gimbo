@@ -45,32 +45,60 @@ export default function CashFlowView({
   const { t } = useTranslation()
 
   const rows = useMemo((): PeriodRow[] => {
-    const months: { label: string; fullLabel: string; m: number; y: number }[] = []
-    const cur = new Date(startDate)
-    while (cur <= endDate) {
-      const fullLabel = cur
-        .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
-        .replace(/^(.)/, (c) => c.toUpperCase())
-      months.push({
-        label: cur.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase(),
-        fullLabel,
-        m: cur.getMonth(),
-        y: cur.getFullYear(),
-      })
-      cur.setMonth(cur.getMonth() + 1)
+    // M-38: when the selected period is exactly one full calendar month, break the axis into
+    // weekly buckets (1–7, 8–14, …) for a richer view; otherwise keep one bucket per month.
+    const lastOfMonth = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0).getDate()
+    const isFullMonth =
+      startDate.getDate() === 1 &&
+      startDate.getFullYear() === endDate.getFullYear() &&
+      startDate.getMonth() === endDate.getMonth() &&
+      endDate.getDate() === lastOfMonth
+
+    type Bucket = { label: string; fullLabel: string; match: (d: Date) => boolean }
+    const buckets: Bucket[] = []
+
+    if (isFullMonth) {
+      const y = startDate.getFullYear()
+      const m = startDate.getMonth()
+      const monthShort = new Date(y, m, 1)
+        .toLocaleDateString('pt-BR', { month: 'short' })
+        .replace('.', '')
+      for (let lo = 1; lo <= lastOfMonth; lo += 7) {
+        const hi = Math.min(lo + 6, lastOfMonth)
+        buckets.push({
+          label: `${lo}–${hi}`,
+          fullLabel: `${lo}–${hi} ${monthShort}`,
+          match: (d) =>
+            d.getFullYear() === y && d.getMonth() === m && d.getDate() >= lo && d.getDate() <= hi,
+        })
+      }
+    } else {
+      const cur = new Date(startDate)
+      while (cur <= endDate) {
+        const y = cur.getFullYear()
+        const m = cur.getMonth()
+        const fullLabel = cur
+          .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+          .replace(/^(.)/, (c) => c.toUpperCase())
+        buckets.push({
+          label: cur.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase(),
+          fullLabel,
+          match: (d) => d.getMonth() === m && d.getFullYear() === y,
+        })
+        cur.setMonth(cur.getMonth() + 1)
+      }
     }
 
     let cumulative = 0
-    return months.map(({ label, fullLabel, m, y }) => {
+    return buckets.map(({ label, fullLabel, match }) => {
       const txs = transactions.filter((tx) => {
         // CC-17: CREDIT_PAYMENT is liability liquidation, not income/expense
         if (tx.type === 'CREDIT_PAYMENT') return false
         if (accountId !== undefined && tx.accountId !== accountId) return false
         // CC-16: project credit card expenses to invoice due date
         const d = parseDateLocal(getEffectiveCashFlowDate(tx, accounts))
-        const inPeriod = d.getMonth() === m && d.getFullYear() === y
         const isPaidOk = includeUnpaid || tx.isPaid
-        return inPeriod && isPaidOk
+        return match(d) && isPaidOk
       })
       const income = txs.filter((t) => t.type === 'INCOME').reduce((s, t) => s + t.amount, 0)
       const expenses = txs.filter((t) => t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0)
