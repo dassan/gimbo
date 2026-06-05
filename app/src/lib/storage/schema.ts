@@ -50,7 +50,7 @@ const AccountSchema = z.object({
   balance: z.number(),
   includeInBalance: z.boolean(),
   creditMetadata: CreditMetadataSchema.optional(),
-  issuerIcon: z.string().optional(), // only for CREDIT accounts — key like 'nubank', 'itau', 'generic'
+  issuerIcon: z.string().optional(), // institution key for any account type — e.g. 'nubank', 'itau', 'generic' (M-34)
 })
 
 const CategorySchema = z.object({

@@ -266,6 +266,7 @@ export default function Dashboard() {
                   type={acc.type}
                   balance={accountBalances[acc.id] ?? 0}
                   typeLabel={t(`accounts.${acc.type.toLowerCase()}`)}
+                  issuerIcon={acc.issuerIcon}
                 />
               ))}
             </div>
@@ -343,18 +344,24 @@ function AccountRow({
   type,
   balance,
   typeLabel,
+  issuerIcon,
 }: {
   name: string
   type: AccountType
   balance: number
   typeLabel: string
+  issuerIcon?: string
 }) {
   const isNegative = balance < 0
+  // M-34: use the institution brand color when an issuer is set; otherwise the account-type color.
+  const issuerColor =
+    issuerIcon && issuerIcon !== 'generic' ? CREDIT_ISSUER_COLORS[issuerIcon] : undefined
+  const badgeColor = issuerColor ?? ACCOUNT_TYPE_COLORS[type]
   return (
     <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-surface-container-low transition-colors">
       <div
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white"
-        style={{ backgroundColor: ACCOUNT_TYPE_COLORS[type] }}
+        style={{ backgroundColor: badgeColor }}
       >
         {ACCOUNT_TYPE_ICONS[type]}
       </div>

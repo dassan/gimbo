@@ -263,6 +263,30 @@ describe('creditMetadata handling (CC-12)', () => {
     expect(saved?.type).toBe('SAVINGS')
     expect(saved?.creditMetadata).toBeUndefined()
   })
+
+  // M-34: issuerIcon (institution) is allowed on any account type
+  it('addAccount with non-CREDIT type preserves issuerIcon', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    useDataStore
+      .getState()
+      .addAccount(makeAccount({ id: 'acc-retail', type: 'RETAIL', issuerIcon: 'nubank' }))
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.issuerIcon).toBe('nubank')
+  })
+
+  it('strips creditMetadata from a non-CREDIT account while keeping its issuerIcon', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    const staleAccount = makeAccount({
+      id: 'acc-retail',
+      type: 'RETAIL',
+      issuerIcon: 'itau',
+      creditMetadata: creditMeta,
+    })
+    useDataStore.getState().addAccount(staleAccount)
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.issuerIcon).toBe('itau')
+    expect(saved?.creditMetadata).toBeUndefined()
+  })
 })
 
 describe('CREDIT_PAYMENT handling (CC-21)', () => {

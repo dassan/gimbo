@@ -280,7 +280,8 @@
     "dueDay": "Dia de Vencimento",
     "availableLimit": "Limite disponível",
     "issuer": "Emissor",
-    "issuerGeneric": "Genérico"
+    "issuerGeneric": "Genérico",
+    "institution": "Instituição"
   },
   "sync": {
     "syncNow": "Sincronizar agora",

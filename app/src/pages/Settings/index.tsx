@@ -526,28 +526,43 @@ export default function Settings() {
                             {t('common.noData')}
                           </p>
                         )}
-                        {nonCreditAccounts.map((acc) => (
-                          <button
-                            key={acc.id}
-                            onClick={() => setModal({ open: true, account: acc })}
-                            className="flex w-full items-center gap-4 rounded-2xl bg-surface-container px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
-                          >
-                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-                              <span className="text-primary">{accountTypeIcon(acc.type)}</span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-on-surface">{acc.name}</p>
-                              <p className="text-xs text-on-surface/40">
-                                {t(`accounts.${acc.type.toLowerCase()}`)}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-sm font-bold tabular-nums text-on-surface">
-                                {formatCurrency(accountBalances[acc.id] ?? 0)}
-                              </span>
-                            </div>
-                          </button>
-                        ))}
+                        {nonCreditAccounts.map((acc) => {
+                          // M-34: institution branding — colored badge when an issuer is chosen.
+                          const issuerColor =
+                            acc.issuerIcon && acc.issuerIcon !== 'generic'
+                              ? CREDIT_ISSUERS.find((i) => i.key === acc.issuerIcon)?.color
+                              : undefined
+                          return (
+                            <button
+                              key={acc.id}
+                              onClick={() => setModal({ open: true, account: acc })}
+                              className="flex w-full items-center gap-4 rounded-2xl bg-surface-container px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
+                            >
+                              <div
+                                className={cn(
+                                  'flex h-10 w-10 items-center justify-center rounded-xl',
+                                  !issuerColor && 'bg-primary/10'
+                                )}
+                                style={issuerColor ? { backgroundColor: issuerColor } : undefined}
+                              >
+                                <span className={issuerColor ? 'text-white' : 'text-primary'}>
+                                  {accountTypeIcon(acc.type)}
+                                </span>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-on-surface">{acc.name}</p>
+                                <p className="text-xs text-on-surface/40">
+                                  {t(`accounts.${acc.type.toLowerCase()}`)}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-sm font-bold tabular-nums text-on-surface">
+                                  {formatCurrency(accountBalances[acc.id] ?? 0)}
+                                </span>
+                              </div>
+                            </button>
+                          )
+                        })}
                       </div>
                       <button
                         onClick={() => setModal({ open: true, account: null })}
@@ -1078,8 +1093,7 @@ function AddAccountModal({
     } else {
       // Restore default for non-CREDIT types when switching (only on create)
       if (!isEdit) setIncludeInBalance(true)
-      // Reset issuer icon when switching away from CREDIT
-      setIssuerIcon('generic')
+      // M-34: issuerIcon (institution) applies to all types, so it is kept across type changes.
     }
   }
 
@@ -1093,7 +1107,6 @@ function AddAccountModal({
       type !== 'CREDIT' ? parseFloat(initialBalance.replace(',', '.')) || 0 : 0
 
     let creditMetadata: CreditMetadata | undefined
-    let resolvedIssuerIcon: string | undefined
     if (type === 'CREDIT') {
       const limit = parseFloat(creditLimit.replace(',', '.')) || 0 // B-12: accept comma decimal
       const closing = parseInt(closingDay, 10)
@@ -1108,8 +1121,9 @@ function AddAccountModal({
       ) {
         creditMetadata = { limit, closingDay: closing, dueDay: due }
       }
-      resolvedIssuerIcon = issuerIcon
     }
+    // M-34: institution branding applies to every account type; 'generic' means "no institution".
+    const resolvedIssuerIcon = issuerIcon !== 'generic' ? issuerIcon : undefined
 
     onSave(
       trimmed,
@@ -1214,6 +1228,35 @@ function AddAccountModal({
                 placeholder="R$ 0,00"
                 className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
               />
+            </div>
+          )}
+
+          {/* M-34: Institution picker — shown for non-CREDIT accounts */}
+          {type !== 'CREDIT' && (
+            <div className="mt-4">
+              <label className="block text-[11px] font-semibold uppercase tracking-widest text-on-surface/40 mb-3">
+                {t('accounts.institution')}
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {CREDIT_ISSUERS.map(({ key, label, color }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setIssuerIcon(key)}
+                    className={cn(
+                      'flex flex-col items-center gap-1.5 rounded-2xl border-2 py-2.5 px-1 transition-all',
+                      issuerIcon === key
+                        ? 'border-primary bg-primary/5'
+                        : 'border-transparent bg-surface-container-low hover:border-outline-variant'
+                    )}
+                  >
+                    <div className="h-5 w-5 rounded-full" style={{ backgroundColor: color }} />
+                    <span className="text-[9px] font-semibold uppercase tracking-wide leading-none text-on-surface/60 text-center">
+                      {key === 'generic' ? t('accounts.issuerGeneric') : label}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

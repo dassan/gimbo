@@ -280,7 +280,8 @@
     "dueDay": "Due Day",
     "availableLimit": "Available limit",
     "issuer": "Issuer",
-    "issuerGeneric": "Generic"
+    "issuerGeneric": "Generic",
+    "institution": "Institution"
   },
   "sync": {
     "syncNow": "Sync now",

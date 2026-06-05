@@ -508,8 +508,9 @@ function advanceMonths(dateStr: string, months: number): string {
   return `${newYear}-${String(newMonth).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`
 }
 
-// Strips CREDIT-only fields (creditMetadata, issuerIcon) from non-CREDIT accounts.
-// CC-12: non-CREDIT accounts must never carry creditMetadata or issuerIcon in the saved object.
+// Strips CREDIT-only fields (creditMetadata) from non-CREDIT accounts.
+// CC-12: non-CREDIT accounts must never carry creditMetadata in the saved object.
+// M-34: issuerIcon (institution branding) is allowed on any account type and is preserved.
 function sanitizeAccount(account: Account): Account {
   if (account.type === 'CREDIT') return account
   return {
@@ -518,5 +519,6 @@ function sanitizeAccount(account: Account): Account {
     type: account.type,
     balance: account.balance,
     includeInBalance: account.includeInBalance,
+    ...(account.issuerIcon ? { issuerIcon: account.issuerIcon } : {}),
   }
 }

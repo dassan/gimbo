@@ -319,12 +319,18 @@ function AssetRow({
   const pct = totalAssets > 0 ? Math.round((Math.max(balance, 0) / totalAssets) * 100) : 0
   const isEligible = VALUATION_ELIGIBLE.includes(account.type)
   const isNegative = balance < 0
+  // M-34: institution brand color when an issuer is set; otherwise the account-type color.
+  const issuerColor =
+    account.issuerIcon && account.issuerIcon !== 'generic'
+      ? CREDIT_ISSUER_COLORS[account.issuerIcon]
+      : undefined
+  const badgeColor = issuerColor ?? ACCOUNT_TYPE_COLORS[account.type]
 
   return (
     <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-surface-container-low transition-colors group">
       <div
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white"
-        style={{ backgroundColor: ACCOUNT_TYPE_COLORS[account.type] }}
+        style={{ backgroundColor: badgeColor }}
       >
         {ACCOUNT_TYPE_ICONS[account.type]}
       </div>
