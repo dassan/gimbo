@@ -1088,12 +1088,14 @@ function AddAccountModal({
     if (!trimmed) return
 
     // M-33: parse initial balance; CREDIT accounts always use 0 (limit is tracked separately)
-    const resolvedInitialBalance = type !== 'CREDIT' ? parseFloat(initialBalance) || 0 : 0
+    // B-12: the field is now free text (inputMode=decimal), so accept a comma decimal separator.
+    const resolvedInitialBalance =
+      type !== 'CREDIT' ? parseFloat(initialBalance.replace(',', '.')) || 0 : 0
 
     let creditMetadata: CreditMetadata | undefined
     let resolvedIssuerIcon: string | undefined
     if (type === 'CREDIT') {
-      const limit = parseFloat(creditLimit) || 0
+      const limit = parseFloat(creditLimit.replace(',', '.')) || 0 // B-12: accept comma decimal
       const closing = parseInt(closingDay, 10)
       const due = parseInt(dueDay, 10)
       if (
@@ -1205,12 +1207,11 @@ function AddAccountModal({
                 {t('accounts.initialBalance')}
               </label>
               <input
-                type="number"
-                min={0}
-                step={0.01}
+                type="text"
+                inputMode="decimal"
                 value={initialBalance}
                 onChange={(e) => setInitialBalance(e.target.value)}
-                placeholder="0,00"
+                placeholder="R$ 0,00"
                 className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
@@ -1224,12 +1225,11 @@ function AddAccountModal({
                   {t('accounts.creditLimit')}
                 </label>
                 <input
-                  type="number"
-                  min={0}
-                  step={0.01}
+                  type="text"
+                  inputMode="decimal"
                   value={creditLimit}
                   onChange={(e) => setCreditLimit(e.target.value)}
-                  placeholder="0,00"
+                  placeholder="R$ 0,00"
                   className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
@@ -1325,7 +1325,7 @@ function AddAccountModal({
           disabled={!name.trim()}
           className="mb-2 flex w-full items-center justify-center rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          {t('settings.saveAccount')}
+          {type === 'CREDIT' ? t('settings.saveCard') : t('settings.saveAccount')}
         </button>
         <button
           onClick={onClose}

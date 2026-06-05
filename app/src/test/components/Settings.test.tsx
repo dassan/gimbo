@@ -145,9 +145,10 @@ describe('Settings — M-24: accounts section split into Contas and Cartões', (
     render(<Settings />)
     await userEvent.click(screen.getByRole('button', { name: /settings\.newCreditCard/i }))
 
-    // Modal should open — the CREDIT type button should be visually selected (has border-primary class)
-    // We verify the modal opened by checking for the save button
-    expect(screen.getByRole('button', { name: /settings\.saveAccount/i })).toBeInTheDocument()
+    // Modal should open with CREDIT pre-selected — B-13: the save button reads "Salvar Cartão"
+    // (settings.saveCard), not "Salvar Conta".
+    expect(screen.getByRole('button', { name: /settings\.saveCard/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /settings\.saveAccount/i })).not.toBeInTheDocument()
   })
 
   it('shows "accounts.availableLimit" label only in the Cartões sub-section', () => {
