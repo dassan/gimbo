@@ -4,7 +4,7 @@ import { uuid, now } from '@/lib/utils'
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 3
+export const CURRENT_SCHEMA_VERSION = 4
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -74,6 +74,13 @@ const InstallmentSchema = z.object({
   total: z.number().int().min(2),
 })
 
+// M-35: recurring INCOME/EXPENSE series
+const RecurrenceSchema = z.object({
+  frequency: z.enum(['weekly', 'biweekly', 'monthly']),
+  parentId: z.string(),
+  endDate: z.string().optional(),
+})
+
 const TransactionSchema = z.object({
   id: z.string(),
   accountId: z.string(),
@@ -85,6 +92,7 @@ const TransactionSchema = z.object({
   isPaid: z.boolean(),
   tags: z.array(z.string()),
   installment: InstallmentSchema.optional(),
+  recurrence: RecurrenceSchema.optional(),
   transferAccountId: z.string().optional(), // only for CREDIT_PAYMENT
 })
 
@@ -153,6 +161,12 @@ function migrateDataFile(data: DataFile): DataFile {
   // fills it via DataFileSchema.parse, so we only need to bump the version here.
   if (migrated.schemaVersion === 2) {
     migrated = { ...migrated, schemaVersion: 3, valuations: migrated.valuations ?? [] }
+  }
+
+  // v3 → v4: adds optional recurrence (Transaction) for recurring INCOME/EXPENSE series (M-35).
+  // The field is optional — existing records need no changes beyond bumping the version.
+  if (migrated.schemaVersion === 3) {
+    migrated = { ...migrated, schemaVersion: 4 }
   }
 
   return migrated

@@ -3,7 +3,7 @@ import { uuid } from '@/lib/utils'
 
 export function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     user: {
       name: 'Test User',
       email: 'test@example.com',

@@ -590,6 +590,128 @@ describe('addTransaction — installment group (CC-24/CC-25)', () => {
   })
 })
 
+// ─── M-35: recurring series generation ────────────────────────────────────────
+
+describe('M-35: addTransaction with recurrence', () => {
+  const account = makeAccount({ id: 'acc-r' })
+  const category = makeCategory({ id: 'cat-r', type: 'INCOME' })
+
+  function makeRecurring(
+    recurrence: Transaction['recurrence'],
+    overrides: Partial<Transaction> = {}
+  ): Transaction {
+    return makeTransaction({
+      id: 'rec-parent',
+      accountId: 'acc-r',
+      categoryId: 'cat-r',
+      type: 'INCOME',
+      amount: 1000,
+      date: '2026-01-10',
+      description: 'Salário',
+      isPaid: true,
+      recurrence,
+      ...overrides,
+    })
+  }
+
+  beforeEach(() => {
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account], categories: [category] }),
+    })
+  })
+
+  it('generates 13 monthly occurrences over the default 12-month horizon', () => {
+    useDataStore
+      .getState()
+      .addTransaction(makeRecurring({ frequency: 'monthly', parentId: 'rec-parent' }))
+    const txs = useDataStore.getState().data?.transactions ?? []
+    expect(txs).toHaveLength(13) // months 0..12 inclusive
+  })
+
+  it('all occurrences share the parentId and frequency', () => {
+    useDataStore
+      .getState()
+      .addTransaction(makeRecurring({ frequency: 'monthly', parentId: 'rec-parent' }))
+    const txs = useDataStore.getState().data?.transactions ?? []
+    expect(new Set(txs.map((t) => t.recurrence?.parentId)).size).toBe(1)
+    expect(txs[0].recurrence?.parentId).toBe('rec-parent')
+    expect(txs.every((t) => t.recurrence?.frequency === 'monthly')).toBe(true)
+  })
+
+  it('only the first occurrence keeps the paid status; later ones are unpaid', () => {
+    useDataStore
+      .getState()
+      .addTransaction(makeRecurring({ frequency: 'monthly', parentId: 'rec-parent' }))
+    const txs = [...(useDataStore.getState().data?.transactions ?? [])].sort((a, b) =>
+      a.date.localeCompare(b.date)
+    )
+    expect(txs[0].isPaid).toBe(true)
+    expect(txs.slice(1).every((t) => t.isPaid === false)).toBe(true)
+  })
+
+  it('respects an explicit endDate (weekly): Jan 1,8,15,22,29 → 5 occurrences', () => {
+    useDataStore
+      .getState()
+      .addTransaction(
+        makeRecurring(
+          { frequency: 'weekly', parentId: 'rec-parent', endDate: '2026-01-29' },
+          { date: '2026-01-01' }
+        )
+      )
+    const txs = useDataStore.getState().data?.transactions ?? []
+    expect(txs).toHaveLength(5)
+    expect(txs.every((t) => t.date <= '2026-01-29')).toBe(true)
+  })
+
+  it('generates a single audit entry for the series', () => {
+    useDataStore
+      .getState()
+      .addTransaction(makeRecurring({ frequency: 'monthly', parentId: 'rec-parent' }))
+    const log = useDataStore.getState().data?.auditLog ?? []
+    expect(log).toHaveLength(1)
+    expect(log[0].entityId).toBe('rec-parent')
+  })
+})
+
+// ─── M-35: deleteRecurrenceFrom ───────────────────────────────────────────────
+
+describe('M-35: deleteRecurrenceFrom', () => {
+  const account = makeAccount({ id: 'acc-r' })
+  const category = makeCategory({ id: 'cat-r', type: 'INCOME' })
+
+  beforeEach(() => {
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account], categories: [category] }),
+    })
+    useDataStore.getState().addTransaction(
+      makeTransaction({
+        id: 'rec-parent',
+        accountId: 'acc-r',
+        categoryId: 'cat-r',
+        type: 'INCOME',
+        amount: 1000,
+        date: '2026-01-10',
+        description: 'Salário',
+        isPaid: true,
+        recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+      })
+    )
+  })
+
+  it('removes the chosen occurrence and all later ones, keeping earlier ones', () => {
+    expect(useDataStore.getState().data?.transactions).toHaveLength(13)
+    useDataStore.getState().deleteRecurrenceFrom('rec-parent', '2026-04-10')
+    const after = useDataStore.getState().data?.transactions ?? []
+    expect(after).toHaveLength(3) // Jan, Feb, Mar remain
+    expect(after.every((t) => t.date < '2026-04-10')).toBe(true)
+  })
+
+  it('records the removed occurrence ids as tombstones in deletedIds', () => {
+    useDataStore.getState().deleteRecurrenceFrom('rec-parent', '2026-04-10')
+    expect(useDataStore.getState().data?.deletedIds).toHaveLength(10) // 13 - 3
+  })
+})
+
 // ─── CC-27: deleteInstallmentGroup ────────────────────────────────────────────
 
 describe('deleteInstallmentGroup (CC-27)', () => {

@@ -67,6 +67,14 @@ export interface Installment {
   total: number // minimum 2
 }
 
+export type RecurrenceFrequency = 'weekly' | 'biweekly' | 'monthly'
+
+export interface Recurrence {
+  frequency: RecurrenceFrequency
+  parentId: string // UUID of the first occurrence in the series
+  endDate?: string // ISO date (YYYY-MM-DD); absent → generated up to a 12-month horizon (M-35)
+}
+
 export interface Transaction {
   id: string // UUID
   accountId: string
@@ -78,6 +86,7 @@ export interface Transaction {
   isPaid: boolean
   tags: string[] // UUID[]
   installment?: Installment // only for installment purchases
+  recurrence?: Recurrence // only for recurring INCOME/EXPENSE series (M-35)
   transferAccountId?: string // only for CREDIT_PAYMENT: the account that funds the payment
 }
 

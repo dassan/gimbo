@@ -9,6 +9,7 @@ import type {
   AuditEntry,
   AuditAction,
   AuditEntity,
+  RecurrenceFrequency,
 } from '@/types'
 import { applyRetention } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
@@ -100,6 +101,8 @@ interface DataStore {
   updateTransaction: (tx: Transaction) => void
   deleteTransaction: (id: string) => void
   deleteInstallmentGroup: (parentId: string) => void
+  // M-35: delete a recurring occurrence and all later ones in the same series
+  deleteRecurrenceFrom: (parentId: string, fromDate: string) => void
 
   addValuation: (valuation: Valuation) => void
   updateValuation: (valuation: Valuation) => void
@@ -296,6 +299,39 @@ export const useDataStore = create<DataStore>((set) => ({
             return
           }
 
+          // ── M-35: Recurring series creation (eager generation) ────────────
+          if (tx.recurrence) {
+            const { frequency, endDate } = tx.recurrence
+            const parentId = tx.id
+            const startDate = tx.date.slice(0, 10)
+            // No end date → generate up to a 12-month horizon from the first occurrence.
+            const horizonEnd = (endDate ?? advanceMonths(startDate, 12)).slice(0, 10)
+            const MAX_OCCURRENCES = 600 // safety cap (≈11 years of weekly)
+
+            for (let i = 0; i < MAX_OCCURRENCES; i++) {
+              const occDate = advanceByFrequency(startDate, frequency, i)
+              if (occDate > horizonEnd) break
+              const occurrence: Transaction = {
+                ...tx,
+                id: i === 0 ? parentId : uuid(),
+                date: occDate,
+                // Only the first occurrence keeps the form's paid status; future ones are unpaid.
+                isPaid: i === 0 ? tx.isPaid : false,
+                recurrence: { frequency, parentId, ...(endDate ? { endDate } : {}) },
+              }
+              d.transactions.push(occurrence)
+            }
+
+            const freqLabel = { weekly: 'semanal', biweekly: 'quinzenal', monthly: 'mensal' }[
+              frequency
+            ]
+            const catName = d.categories.find((c) => c.id === tx.categoryId)?.name ?? ''
+            const amountStr = `R$ ${tx.amount.toFixed(2).replace('.', ',')}`
+            const summary = `Lançamento recorrente ${freqLabel}: ${tx.description || catName} — ${amountStr}`
+            addAudit(d, makeEntry('CREATE', 'transaction', parentId, summary))
+            return
+          }
+
           // ── Standard single transaction ──────────────────────────────────
           d.transactions.push(tx)
           let summary: string
@@ -375,6 +411,25 @@ export const useDataStore = create<DataStore>((set) => ({
         d.transactions = d.transactions.filter((t) => t.installment?.parentId !== parentId)
         d.deletedIds = [...new Set([...d.deletedIds, ...groupIds])]
         const summary = `Compra parcelada cancelada: ${rawDesc || accName} — ${N} parcelas removidas`
+        addAudit(d, makeEntry('DELETE', 'transaction', parentId, summary))
+      })
+    ),
+
+  // ── M-35: Delete a recurring occurrence and all later ones in the series ───
+  deleteRecurrenceFrom: (parentId, fromDate) =>
+    set((s) =>
+      mutate(s, (d) => {
+        const from = fromDate.slice(0, 10)
+        const inScope = (t: Transaction) =>
+          t.recurrence?.parentId === parentId && t.date.slice(0, 10) >= from
+        const sample = d.transactions.find((t) => t.recurrence?.parentId === parentId)
+        const rawDesc = sample?.description ?? ''
+        const removedIds = d.transactions.filter(inScope).map((t) => t.id)
+        d.transactions = d.transactions.filter((t) => !inScope(t))
+        d.deletedIds = [...new Set([...d.deletedIds, ...removedIds])]
+        const summary = `Série recorrente: ${removedIds.length} ocorrência(s) removida(s) a partir de ${from}${
+          rawDesc ? ` — ${rawDesc}` : ''
+        }`
         addAudit(d, makeEntry('DELETE', 'transaction', parentId, summary))
       })
     ),
@@ -506,6 +561,21 @@ function advanceMonths(dateStr: string, months: number): string {
   const lastDay = new Date(newYear, newMonth, 0).getDate()
   const clampedDay = Math.min(d, lastDay)
   return `${newYear}-${String(newMonth).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`
+}
+
+// Advances a "YYYY-MM-DD" date string by the given number of days (local arithmetic).
+function addDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number)
+  const dt = new Date(y, m - 1, d + days)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+}
+
+// M-35: advances a date by `n` recurrence periods according to the frequency.
+function advanceByFrequency(dateStr: string, frequency: RecurrenceFrequency, n: number): string {
+  if (n === 0) return dateStr.slice(0, 10)
+  if (frequency === 'weekly') return addDays(dateStr, 7 * n)
+  if (frequency === 'biweekly') return addDays(dateStr, 14 * n)
+  return advanceMonths(dateStr.slice(0, 10), n) // monthly
 }
 
 // Strips CREDIT-only fields (creditMetadata) from non-CREDIT accounts.

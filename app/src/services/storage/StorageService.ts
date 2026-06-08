@@ -1,4 +1,5 @@
 import { uuid } from '@/lib/utils'
+import { CURRENT_SCHEMA_VERSION } from '@/lib/storage/schema'
 import type {
   Account,
   AccountType,
@@ -10,6 +11,7 @@ import type {
   CreditMetadata,
   DataFile,
   Installment,
+  Recurrence,
   Settings,
   Tag,
   Transaction,
@@ -541,7 +543,7 @@ export class StorageService {
       ])
 
     return {
-      schemaVersion: 3,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       user,
       settings,
       accounts,
@@ -652,6 +654,16 @@ function rowToTransaction(row: Row): Transaction {
       currentIndex: row.installment_index as number,
       total: row.installment_total as number,
     } satisfies Installment
+  }
+  if (row.recurrence_parent_id !== null && row.recurrence_parent_id !== undefined) {
+    const recurrence: Recurrence = {
+      frequency: row.recurrence_frequency as Recurrence['frequency'],
+      parentId: row.recurrence_parent_id as string,
+    }
+    if (row.recurrence_end_date !== null && row.recurrence_end_date !== undefined) {
+      recurrence.endDate = row.recurrence_end_date as string
+    }
+    tx.recurrence = recurrence
   }
   return tx
 }

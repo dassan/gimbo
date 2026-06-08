@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { X, ChevronDown, Calendar, Tag, Trash2, CreditCard } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { cn, uuid, formatCurrency, getCurrentInvoiceBalance, todayStr } from '@/lib/utils'
-import type { Transaction, TransactionType } from '@/types'
+import type { Transaction, TransactionType, RecurrenceFrequency } from '@/types'
 
 export interface TransactionDrawerProps {
   open: boolean
@@ -48,6 +48,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   const updateTransaction = useDataStore((s) => s.updateTransaction)
   const deleteTransaction = useDataStore((s) => s.deleteTransaction)
   const deleteInstallmentGroup = useDataStore((s) => s.deleteInstallmentGroup)
+  const deleteRecurrenceFrom = useDataStore((s) => s.deleteRecurrenceFrom)
 
   const isEditMode = transaction !== undefined
 
@@ -77,6 +78,12 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   // ── CC-26: Installment deletion modal state ───────────────────────────────────
   const [showInstallmentDeleteModal, setShowInstallmentDeleteModal] = useState(false)
 
+  // ── M-35: Recurrence state ────────────────────────────────────────────────────
+  const [recurrenceEnabled, setRecurrenceEnabled] = useState(false)
+  const [recurrenceFrequency, setRecurrenceFrequency] = useState<RecurrenceFrequency>('monthly')
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState('')
+  const [showRecurrenceDeleteModal, setShowRecurrenceDeleteModal] = useState(false)
+
   // Derived account lists for CREDIT_PAYMENT selectors
   const creditAccounts = useMemo(
     () => (data?.accounts ?? []).filter((a) => a.type === 'CREDIT'),
@@ -96,9 +103,14 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
     [type, accountId, data]
   )
 
-  // CC-23: Show installment section only when creating an EXPENSE on a CREDIT account
+  // CC-23: Show installment section only when creating an EXPENSE on a CREDIT account.
+  // M-35: installments and recurrence are mutually exclusive.
   const showInstallmentSection =
-    !isEditMode && type === 'EXPENSE' && selectedAccount?.type === 'CREDIT'
+    !isEditMode && type === 'EXPENSE' && selectedAccount?.type === 'CREDIT' && !recurrenceEnabled
+
+  // M-35: recurrence applies to INCOME/EXPENSE on create; hidden while installments are on.
+  const showRecurrenceSection =
+    !isEditMode && (type === 'INCOME' || type === 'EXPENSE') && !installmentsEnabled
 
   // Reset or pre-fill on open — intentional setState-in-effect to initialise form fields
   useEffect(() => {
@@ -130,6 +142,10 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
       setInstallmentsEnabled(false)
       setInstallmentCount(2)
       setShowInstallmentDeleteModal(false)
+      setRecurrenceEnabled(false)
+      setRecurrenceFrequency('monthly')
+      setRecurrenceEndDate('')
+      setShowRecurrenceDeleteModal(false)
       setShowTagMenu(false)
     }
   }, [open, transaction, data, nonCreditAccounts])
@@ -170,9 +186,10 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
     } else {
       setAccountId(data?.accounts[0]?.id ?? '')
     }
-    // Reset installment state when type changes
+    // Reset installment + recurrence state when type changes
     setInstallmentsEnabled(false)
     setInstallmentCount(2)
+    setRecurrenceEnabled(false)
   }
 
   function handleAmountInput(e: React.ChangeEvent<HTMLInputElement>) {
@@ -198,8 +215,14 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
       type === 'EXPENSE' &&
       selectedAccount?.type === 'CREDIT'
 
+    // M-35: build recurrence metadata when enabled (create mode, INCOME/EXPENSE)
+    const hasRecurrence =
+      !isEditMode && recurrenceEnabled && (type === 'INCOME' || type === 'EXPENSE')
+
+    const txId = hasInstallments ? parentId : isEditMode ? transaction.id : uuid()
+
     const payload: Transaction = {
-      id: hasInstallments ? parentId : isEditMode ? transaction.id : uuid(),
+      id: txId,
       accountId: accountId || data.accounts[0]?.id || '',
       categoryId: type === 'CREDIT_PAYMENT' ? '' : categoryId,
       amount,
@@ -215,6 +238,17 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
       ...(hasInstallments
         ? { installment: { parentId, currentIndex: 1, total: installmentCount } }
         : {}),
+      // M-35: preserve recurrence when editing an occurrence; set it when creating a series.
+      ...(isEditMode && transaction.recurrence ? { recurrence: transaction.recurrence } : {}),
+      ...(hasRecurrence
+        ? {
+            recurrence: {
+              frequency: recurrenceFrequency,
+              parentId: txId,
+              ...(recurrenceEndDate ? { endDate: recurrenceEndDate } : {}),
+            },
+          }
+        : {}),
     }
     if (isEditMode) {
       updateTransaction(payload)
@@ -224,11 +258,13 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
     onClose()
   }
 
-  // CC-26: Intercept delete for installment transactions
+  // CC-26 / M-35: Intercept delete for installment and recurring transactions
   function handleDelete() {
     if (!transaction) return
     if (transaction.installment) {
       setShowInstallmentDeleteModal(true)
+    } else if (transaction.recurrence) {
+      setShowRecurrenceDeleteModal(true)
     } else {
       deleteTransaction(transaction.id)
       onClose()
@@ -239,6 +275,15 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
     if (!transaction) return
     deleteTransaction(transaction.id)
     setShowInstallmentDeleteModal(false)
+    setShowRecurrenceDeleteModal(false)
+    onClose()
+  }
+
+  // M-35: delete this occurrence and all later ones in the series
+  function handleDeleteThisAndFuture() {
+    if (!transaction?.recurrence) return
+    deleteRecurrenceFrom(transaction.recurrence.parentId, transaction.date)
+    setShowRecurrenceDeleteModal(false)
     onClose()
   }
 
@@ -624,6 +669,83 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
             </div>
           )}
 
+          {/* ── M-35: Recurrence section (INCOME/EXPENSE, create only) ──────────── */}
+          {showRecurrenceSection && (
+            <div className="rounded-xl bg-surface-container-low px-4 py-3 space-y-3">
+              {/* Toggle row */}
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-on-surface">
+                  {t('transactions.recurrence')}
+                </label>
+                <button
+                  role="switch"
+                  aria-label={t('transactions.recurrence')}
+                  aria-checked={recurrenceEnabled}
+                  onClick={() => setRecurrenceEnabled((v) => !v)}
+                  className={cn(
+                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+                    recurrenceEnabled ? 'bg-primary' : 'bg-on-surface/20'
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                      recurrenceEnabled ? 'translate-x-6' : 'translate-x-1'
+                    )}
+                  />
+                </button>
+              </div>
+
+              {recurrenceEnabled && (
+                <>
+                  {/* Frequency selector */}
+                  <div>
+                    <label className="label text-on-surface/40 block mb-2">
+                      {t('transactions.recurrenceFrequency')}
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['weekly', 'biweekly', 'monthly'] as const).map((freq) => (
+                        <button
+                          key={freq}
+                          type="button"
+                          onClick={() => setRecurrenceFrequency(freq)}
+                          className={cn(
+                            'rounded-xl py-2.5 text-sm font-medium transition-colors',
+                            recurrenceFrequency === freq
+                              ? 'bg-primary text-white'
+                              : 'bg-surface-container-high text-on-surface/60 hover:text-on-surface'
+                          )}
+                        >
+                          {t(`transactions.recurrence_${freq}`)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Optional end date */}
+                  <div>
+                    <label className="label text-on-surface/40 block mb-2">
+                      {t('transactions.recurrenceEndDate')}
+                    </label>
+                    <input
+                      type="date"
+                      value={recurrenceEndDate}
+                      min={date}
+                      onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                      className="w-full rounded-xl bg-surface-container-high py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+
+                  <p className="text-xs text-on-surface/50">
+                    {recurrenceEndDate
+                      ? t('transactions.recurrenceHintEnd')
+                      : t('transactions.recurrenceHintHorizon')}
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Category — hidden for TRANSFER and CREDIT_PAYMENT */}
           {type !== 'TRANSFER' && type !== 'CREDIT_PAYMENT' && (
             <div>
@@ -807,6 +929,35 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
               </button>
               <button
                 onClick={() => setShowInstallmentDeleteModal(false)}
+                className="w-full rounded-2xl py-3 text-sm font-medium text-on-surface/50 hover:bg-surface-container-low transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── M-35: Recurrence deletion modal ──────────────────────────────── */}
+        {showRecurrenceDeleteModal && transaction?.recurrence && (
+          <div className="absolute inset-0 z-10 flex items-end bg-on-surface/30 backdrop-blur-sm">
+            <div className="w-full rounded-t-2xl bg-surface-container-low border-t border-outline-variant px-6 pb-8 pt-6 space-y-3">
+              <h3 className="text-base font-semibold text-on-surface">
+                {t('transactions.deleteRecurrenceTitle')}
+              </h3>
+              <button
+                onClick={handleDeleteOnlyThis}
+                className="w-full rounded-2xl border border-tertiary/30 py-3 text-sm font-medium text-tertiary hover:bg-tertiary/5 transition-colors"
+              >
+                {t('transactions.deleteRecurrenceOnlyThis')}
+              </button>
+              <button
+                onClick={handleDeleteThisAndFuture}
+                className="w-full rounded-2xl bg-tertiary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all"
+              >
+                {t('transactions.deleteRecurrenceThisAndFuture')}
+              </button>
+              <button
+                onClick={() => setShowRecurrenceDeleteModal(false)}
                 className="w-full rounded-2xl py-3 text-sm font-medium text-on-surface/50 hover:bg-surface-container-low transition-colors"
               >
                 {t('common.cancel')}

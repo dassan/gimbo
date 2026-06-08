@@ -26,7 +26,7 @@ function makeEntry(daysAgo: number): AuditEntry {
 }
 
 const MINIMAL_VALID: DataFile = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   user: { name: 'x', email: '', createdAt: '', updatedAt: '' },
   settings: { fileCreatedAt: '', fileUpdatedAt: '', auditLogRetentionLimit: 200 },
   accounts: [],
@@ -322,9 +322,9 @@ describe('validateDataFile — v1 → v2 migration', () => {
     deletedIds: [],
   }
 
-  it('migrates a v1 file to schemaVersion 3 (current)', () => {
+  it('migrates a v1 file to schemaVersion 4 (current)', () => {
     const result = validateDataFile(V1_FILE)
-    expect(result.schemaVersion).toBe(3)
+    expect(result.schemaVersion).toBe(4)
   })
 
   it('preserves all existing accounts during v1 → v2 migration', () => {
@@ -341,18 +341,23 @@ describe('validateDataFile — v1 → v2 migration', () => {
     expect(result.transactions[0].installment).toBeUndefined()
   })
 
-  it('accepts a v2 file and migrates it to schemaVersion 3', () => {
+  it('accepts a v2 file and migrates it to schemaVersion 4', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 2 })
-    expect(result.schemaVersion).toBe(3)
+    expect(result.schemaVersion).toBe(4)
   })
 
-  it('accepts a v3 file without running migration (idempotent)', () => {
+  it('migrates a v3 file to schemaVersion 4', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 3, valuations: [] })
-    expect(result.schemaVersion).toBe(3)
+    expect(result.schemaVersion).toBe(4)
   })
 
-  it('throws SchemaVersionError for a v4 file (future version)', () => {
-    expect(() => validateDataFile({ ...V1_FILE, schemaVersion: 4, valuations: [] })).toThrow(
+  it('accepts a v4 file without running migration (idempotent)', () => {
+    const result = validateDataFile({ ...V1_FILE, schemaVersion: 4, valuations: [] })
+    expect(result.schemaVersion).toBe(4)
+  })
+
+  it('throws SchemaVersionError for a v5 file (future version)', () => {
+    expect(() => validateDataFile({ ...V1_FILE, schemaVersion: 5, valuations: [] })).toThrow(
       SchemaVersionError
     )
   })
@@ -598,9 +603,9 @@ describe('validateDataFile — v2 → v3 migration (NW-08)', () => {
     deletedIds: [],
   }
 
-  it('migrates a v2 file to schemaVersion 3', () => {
+  it('migrates a v2 file to schemaVersion 4 (current)', () => {
     const result = validateDataFile(V2_FILE)
-    expect(result.schemaVersion).toBe(3)
+    expect(result.schemaVersion).toBe(4)
   })
 
   it('adds valuations: [] when field is absent in a v2 file', () => {
@@ -622,9 +627,66 @@ describe('validateDataFile — v2 → v3 migration (NW-08)', () => {
     expect(file.valuations).toEqual([])
   })
 
-  it('createEmptyDataFile sets schemaVersion to 3', () => {
+  it('createEmptyDataFile sets schemaVersion to 4', () => {
     const file = createEmptyDataFile('Test', 'test@example.com')
-    expect(file.schemaVersion).toBe(3)
+    expect(file.schemaVersion).toBe(4)
+  })
+})
+
+// ─── Schema v4 — recurrence (M-35) ────────────────────────────────────────────
+
+describe('validateDataFile — recurrence field (M-35)', () => {
+  function withTransaction(tx: Record<string, unknown>) {
+    return {
+      schemaVersion: 4,
+      user: { name: 'x', email: '', createdAt: '', updatedAt: '' },
+      settings: { fileCreatedAt: '', fileUpdatedAt: '', auditLogRetentionLimit: 200 },
+      accounts: [
+        { id: 'a1', name: 'Checking', type: 'RETAIL', balance: 0, includeInBalance: true },
+      ],
+      categories: [],
+      tags: [],
+      transactions: [tx],
+      valuations: [],
+      auditLog: [],
+      deletedIds: [],
+    }
+  }
+
+  const baseTx = {
+    id: 'tx1',
+    accountId: 'a1',
+    categoryId: '',
+    amount: 1000,
+    type: 'INCOME',
+    date: '2026-01-10',
+    description: 'Salário',
+    isPaid: true,
+    tags: [],
+  }
+
+  it('accepts a transaction with a valid recurrence', () => {
+    const result = validateDataFile(
+      withTransaction({
+        ...baseTx,
+        recurrence: { frequency: 'monthly', parentId: 'tx1', endDate: '2026-12-10' },
+      })
+    )
+    expect(result.transactions[0].recurrence?.frequency).toBe('monthly')
+    expect(result.transactions[0].recurrence?.parentId).toBe('tx1')
+  })
+
+  it('accepts a transaction without recurrence (optional field)', () => {
+    const result = validateDataFile(withTransaction(baseTx))
+    expect(result.transactions[0].recurrence).toBeUndefined()
+  })
+
+  it('rejects an invalid recurrence frequency', () => {
+    expect(() =>
+      validateDataFile(
+        withTransaction({ ...baseTx, recurrence: { frequency: 'daily', parentId: 'tx1' } })
+      )
+    ).toThrow()
   })
 })
 
