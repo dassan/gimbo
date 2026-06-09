@@ -22,7 +22,7 @@ import {
   cn,
   parseDateLocal,
   getCurrentInvoiceBalance,
-  getCreditOutstanding,
+  getOpenCreditBalance,
   getEffectiveCashFlowDate,
   isCashRealized,
   isCardCredit,
@@ -176,9 +176,10 @@ export default function Dashboard() {
           map[account.id] = 0
           return
         }
-        // Available limit = limit − outstanding debt (charges − credits − payments).
-        const outstanding = getCreditOutstanding(data.transactions, account)
-        map[account.id] = account.creditMetadata.limit - outstanding
+        // Available limit = limit − open balance (current invoice + future, net of
+        // credits and payments). Past invoices are treated as settled.
+        const openBalance = getOpenCreditBalance(data.transactions, account)
+        map[account.id] = account.creditMetadata.limit - openBalance
       })
 
     return map

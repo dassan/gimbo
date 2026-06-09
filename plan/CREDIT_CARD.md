@@ -195,10 +195,17 @@ os números batam com o extrato físico do banco (onde o usuário confere suas a
   (Σ `CREDIT_PAYMENT` com `referenceMonth` == período), `restante = total − pago`,
   `status = getInvoiceStatus` (aberta / parcial / paga). A UI mostra selo de status + Pago/Restante;
   o valor sugerido no modal é o **restante**.
-- **Caixa:** o `CREDIT_PAYMENT` debita a conta pagadora (corrigido em Dashboard/Settings — antes
-  era um no-op). O **limite disponível** = `limit − getCreditOutstanding` (devedor global =
-  Σ charges − Σ credits − Σ payments). `CREDIT_PAYMENT` continua excluído dos gráficos de
-  Receitas × Despesas (liquidação de passivo).
+- **Caixa:** o `CREDIT_PAYMENT` debita a conta pagadora (corrigido em Dashboard, Settings,
+  Lançamentos e NetWorth/`applyTx` — antes era um no-op). O **limite disponível** e o **passivo
+  no Patrimônio** = `limit − getOpenCreditBalance`, onde `getOpenCreditBalance` é a **fatura atual
+  em aberto** (total do período corrente − pagamentos do período). `CREDIT_PAYMENT` continua excluído
+  dos gráficos de Receitas × Despesas (liquidação de passivo).
+- **Escopo do passivo = fatura atual** (não all-time, não atual+futuras). Decisão tomada após o
+  re-sync de 11 anos + 18 meses de lançamentos futuros: somar todo o histórico acumulava o descasamento
+  entre cobranças e pagamentos capturados (outstanding > limite), e somar as futuras contava meses de
+  gastos de rotina como dívida comprometida (também > limite). A fatura atual é a única base que fica
+  dentro do limite e bate com o extrato do banco. Trade-off: parcelas futuras de compras passadas não
+  entram no passivo/limite (refinamento possível se a qualidade do dado de parcelamento melhorar).
 - **Sync:** `sync_gimbo.py` infere `referenceMonth` de pagamentos vindos do Organizze como
   "mês do pagamento − 1" (vencimento cai no mês seguinte ao período).
 

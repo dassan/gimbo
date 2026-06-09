@@ -11,7 +11,7 @@ import {
   parseDateLocal,
   getInvoicePeriod,
   getInvoiceDueDate,
-  getCreditOutstanding,
+  getOpenCreditBalance,
   getInvoiceStatus,
   invoicePeriodKey,
   uuid,
@@ -179,7 +179,7 @@ export default function CreditCardPage() {
   const invoiceStatus = getInvoiceStatus(invoiceTotal, invoicePaid)
   const availableLimit =
     account?.creditMetadata && data
-      ? account.creditMetadata.limit - getCreditOutstanding(data.transactions, account)
+      ? account.creditMetadata.limit - getOpenCreditBalance(data.transactions, account)
       : 0
 
   if (!data) return null

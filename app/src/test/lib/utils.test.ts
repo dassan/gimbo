@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   formatCurrency,
   getCurrentInvoiceBalance,
-  getCreditOutstanding,
+  getOpenCreditBalance,
   getEffectiveCashFlowDate,
   getInvoiceDueDate,
   getInvoicePaid,
@@ -234,24 +234,30 @@ describe('getTotalCreditLiability', () => {
     expect(getTotalCreditLiability([tx], account)).toBe(500)
   })
 
-  it('includes future-period EXPENSE transactions (parcelas futuras)', () => {
+  it('excludes future-period EXPENSE (scoped to the current invoice)', () => {
     const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 20, dueDay: 10 } })
     const tx = makeTx({ amount: 300, date: '2099-12-01' })
-    expect(getTotalCreditLiability([tx], account)).toBe(300)
+    expect(getTotalCreditLiability([tx], account)).toBe(0)
   })
 
-  it('includes past unpaid EXPENSE (still owed as outstanding debt)', () => {
+  it('excludes past-period EXPENSE (past invoices assumed settled)', () => {
     const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 20, dueDay: 10 } })
-    const tx = makeTx({ amount: 400, date: '2020-01-01' })
-    expect(getTotalCreditLiability([tx], account)).toBe(400)
+    const tx = makeTx({ amount: 400, date: '2015-01-01' })
+    expect(getTotalCreditLiability([tx], account)).toBe(0)
   })
 
-  it('subtracts INCOME credits and CREDIT_PAYMENT, ignores TRANSFER', () => {
+  it('subtracts INCOME credits and period-referenced CREDIT_PAYMENT, ignores TRANSFER', () => {
     const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 28, dueDay: 10 } })
     const today = new Date().toISOString().slice(0, 10)
+    const currentKey = invoicePeriodKey(getInvoicePeriod(today, 28))
     const charge = makeTx({ amount: 500, date: today })
     const credit = makeTx({ id: 'tx-2', type: 'INCOME', amount: 200, date: today })
-    const payment = makeTx({ id: 'tx-3', type: 'CREDIT_PAYMENT', amount: 100, date: today })
+    const payment = makeTx({
+      id: 'tx-3',
+      type: 'CREDIT_PAYMENT',
+      amount: 100,
+      referenceMonth: currentKey,
+    })
     const transfer = makeTx({ id: 'tx-4', type: 'TRANSFER', amount: 999, date: today })
     expect(getTotalCreditLiability([charge, credit, payment, transfer], account)).toBe(200)
   })
@@ -263,12 +269,12 @@ describe('getTotalCreditLiability', () => {
     expect(getTotalCreditLiability([tx], account)).toBe(0)
   })
 
-  it('sums current and future period expenses together', () => {
+  it('counts only the current period, not future installments', () => {
     const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 28, dueDay: 10 } })
     const today = new Date().toISOString().slice(0, 10)
     const currentTx = makeTx({ amount: 200, date: today })
     const futureTx = makeTx({ id: 'tx-2', amount: 300, date: '2099-12-01' })
-    expect(getTotalCreditLiability([currentTx, futureTx], account)).toBe(500)
+    expect(getTotalCreditLiability([currentTx, futureTx], account)).toBe(200)
   })
 })
 
@@ -355,26 +361,36 @@ describe('getInvoiceStatus', () => {
   })
 })
 
-describe('getCreditOutstanding', () => {
-  const account = makeAccount({ id: 'cc' })
-  it('is charges minus credits minus payments across all time', () => {
-    const charge1 = makeTx({ accountId: 'cc', amount: 500, date: '2020-01-01' })
-    const charge2 = makeTx({ id: 't2', accountId: 'cc', amount: 300, date: '2099-01-01' })
-    const credit = makeTx({
-      id: 't3',
-      accountId: 'cc',
-      type: 'INCOME',
-      amount: 80,
-      date: '2026-05-01',
-    })
-    const payment = makeTx({
-      id: 't4',
+describe('getOpenCreditBalance', () => {
+  const account = makeAccount({
+    id: 'cc',
+    creditMetadata: { limit: 5000, closingDay: 28, dueDay: 10 },
+  })
+  const today = new Date().toISOString().slice(0, 10)
+  const currentKey = invoicePeriodKey(getInvoicePeriod(today, 28))
+  it('is the current invoice remaining: current charges − credits − current payments', () => {
+    const past = makeTx({ id: 'a', accountId: 'cc', amount: 999, date: '2015-01-01' })
+    const current = makeTx({ id: 'b', accountId: 'cc', amount: 500, date: today })
+    const future = makeTx({ id: 'c', accountId: 'cc', amount: 300, date: '2099-12-01' })
+    const credit = makeTx({ id: 'd', accountId: 'cc', type: 'INCOME', amount: 80, date: today })
+    const payCurrent = makeTx({
+      id: 'e',
       accountId: 'cc',
       type: 'CREDIT_PAYMENT',
-      amount: 200,
-      referenceMonth: '2020-01',
+      amount: 100,
+      referenceMonth: currentKey,
     })
-    expect(getCreditOutstanding([charge1, charge2, credit, payment], account)).toBe(520)
+    const payPast = makeTx({
+      id: 'f',
+      accountId: 'cc',
+      type: 'CREDIT_PAYMENT',
+      amount: 999,
+      referenceMonth: '2015-01',
+    })
+    // 500 current − 80 credit − 100 current payment = 320 (past, future and past-payment ignored)
+    expect(
+      getOpenCreditBalance([past, current, future, credit, payCurrent, payPast], account)
+    ).toBe(320)
   })
 })
 

@@ -71,8 +71,10 @@ function applyTx(sum: number, tx: Transaction, accountId: string): number {
     if (tx.type === 'INCOME') return isCashRealized(tx) ? sum + tx.amount : sum
     if (tx.type === 'EXPENSE') return isCashRealized(tx) ? sum - tx.amount : sum
     if (tx.type === 'TRANSFER') return sum - tx.amount // outgoing
-  } else if (tx.type === 'TRANSFER' && tx.transferAccountId === accountId) {
-    return sum + tx.amount // incoming transfer
+  } else if (tx.transferAccountId === accountId) {
+    // Incoming transfer, or a CREDIT_PAYMENT funded from this account (cash leaves it). B-16.
+    if (tx.type === 'TRANSFER') return sum + tx.amount
+    if (tx.type === 'CREDIT_PAYMENT') return sum - tx.amount
   }
   return sum
 }
@@ -96,10 +98,9 @@ function getAssetBalance(
         .filter((tx) => {
           const d = parseDateLocal(tx.date)
           if (d <= baseDate || d > today) return false
-          return (
-            tx.accountId === account.id ||
-            (tx.type === 'TRANSFER' && tx.transferAccountId === account.id)
-          )
+          // Include txs on this account plus incoming transfers / outgoing card payments
+          // funded from it (applyTx applies the right sign per type).
+          return tx.accountId === account.id || tx.transferAccountId === account.id
         })
         .reduce((sum, tx) => applyTx(sum, tx, account.id), 0)
       return latest.marketValue + delta
@@ -119,6 +120,39 @@ function getAssetBalance(
     .reduce((sum, tx) => applyTx(sum, tx, account.id), 0)
 
   return account.balance + delta
+}
+
+/**
+ * Balances for all asset accounts in a single pass over the transactions, to avoid the
+ * O(accounts × transactions) cost of calling getAssetBalance per account (noticeable with
+ * long histories). Valuation-eligible accounts keep their per-account replay (few of them).
+ */
+function computeAssetBalances(
+  assetAccounts: Account[],
+  transactions: Transaction[],
+  valuations: Valuation[]
+): Record<string, number> {
+  const today = new Date()
+  const result: Record<string, number> = {}
+  const replayed = new Set<string>()
+  for (const a of assetAccounts) {
+    if (VALUATION_ELIGIBLE.includes(a.type)) {
+      result[a.id] = getAssetBalance(a, transactions, valuations)
+      replayed.add(a.id)
+    } else {
+      result[a.id] = a.balance // seed with initial balance
+    }
+  }
+  for (const tx of transactions) {
+    if (parseDateLocal(tx.date) > today) continue
+    const a1 = tx.accountId
+    if (a1 in result && !replayed.has(a1)) result[a1] = applyTx(result[a1], tx, a1)
+    const a2 = tx.transferAccountId
+    if (a2 && a2 !== a1 && a2 in result && !replayed.has(a2)) {
+      result[a2] = applyTx(result[a2], tx, a2)
+    }
+  }
+  return result
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -152,10 +186,7 @@ export default function NetWorth() {
         (a) => a.type === 'CREDIT' && (includeHidden || a.includeInBalance)
       )
 
-      const assetBalances: Record<string, number> = {}
-      for (const acc of assetAccounts) {
-        assetBalances[acc.id] = getAssetBalance(acc, data.transactions, data.valuations)
-      }
+      const assetBalances = computeAssetBalances(assetAccounts, data.transactions, data.valuations)
 
       const totalAssets = Object.values(assetBalances).reduce((s, v) => s + v, 0)
       const totalLiabilities = creditAccounts.reduce(

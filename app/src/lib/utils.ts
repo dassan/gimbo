@@ -203,31 +203,33 @@ export function getCurrentInvoiceBalance(transactions: Transaction[], account: A
 }
 
 /**
- * Outstanding debt on a CREDIT account across all time: all charges minus all
- * credits/refunds minus all payments. This is the true amount owed and the basis
- * for the available limit (limit − outstanding). Future installments count, since
- * they commit the limit at purchase time (CREDIT_CARD.md §2.4).
+ * Open balance owed on a CREDIT account = the *current* invoice still unpaid:
+ * current-period charges − credits − payments that reference the current period.
+ * Basis for the available limit (limit − open balance) and net-worth liability.
  * Returns 0 without creditMetadata.
+ *
+ * Scoped to the current invoice on purpose. Past invoices are treated as settled
+ * (robust against long histories where captured charges/payments don't reconcile),
+ * and *future* periods are excluded (a snapshot synced with a far-future horizon
+ * carries months of scheduled/recurring entries that are not committed debt). This
+ * keeps the figure within the real credit limit and matching the card statement.
+ * Trade-off: future installments of past purchases are not reflected here.
  */
-export function getCreditOutstanding(transactions: Transaction[], account: Account): number {
+export function getOpenCreditBalance(transactions: Transaction[], account: Account): number {
   if (!account.creditMetadata) return 0
-  let outstanding = 0
-  for (const tx of transactions) {
-    if (tx.accountId !== account.id) continue
-    if (tx.type === 'EXPENSE') outstanding += tx.amount
-    else if (tx.type === 'INCOME') outstanding -= tx.amount
-    else if (tx.type === 'CREDIT_PAYMENT') outstanding -= tx.amount
-  }
-  return outstanding
+  const currentPeriod = getInvoicePeriod(todayStr(), account.creditMetadata.closingDay)
+  return (
+    getInvoiceTotal(transactions, account, currentPeriod) -
+    getInvoicePaid(transactions, account, currentPeriod)
+  )
 }
 
 /**
- * Total liability of a CREDIT account for net-worth purposes = outstanding debt.
- * Previously "fatura atual + futuras"; now payments are tracked, so the liability
- * is what is actually still owed (unpaid past/current/future net of payments).
+ * Total liability of a CREDIT account for net-worth purposes = current invoice
+ * still owed (open balance). See getOpenCreditBalance for the scoping rationale.
  */
 export function getTotalCreditLiability(transactions: Transaction[], account: Account): number {
-  return getCreditOutstanding(transactions, account)
+  return getOpenCreditBalance(transactions, account)
 }
 
 /**

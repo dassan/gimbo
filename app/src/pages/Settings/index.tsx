@@ -46,7 +46,7 @@ import {
 } from '@/lib/backupDir'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
-import { formatCurrency, cn, uuid, now, getCreditOutstanding, isCashRealized } from '@/lib/utils'
+import { formatCurrency, cn, uuid, now, getOpenCreditBalance, isCashRealized } from '@/lib/utils'
 import { AUDIT_RETENTION_DEFAULT } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
 import Toast from '@/components/Toast'
@@ -418,8 +418,8 @@ export default function Settings() {
           map[account.id] = 0
           return
         }
-        const outstanding = getCreditOutstanding(data.transactions, account)
-        map[account.id] = account.creditMetadata.limit - outstanding
+        const openBalance = getOpenCreditBalance(data.transactions, account)
+        map[account.id] = account.creditMetadata.limit - openBalance
       })
 
     return map

@@ -39,17 +39,20 @@ Nunca `new Date(tx.date)` para `.getMonth()`/`.getFullYear()` — causa bugs de 
 ### Saldo de conta — derivado de transações
 O campo `Account.balance` representa o **saldo inicial** (editável no modal). O saldo exibido é
 `balance + INCOME − EXPENSE − TRANSFER − CREDIT_PAYMENT` (o pagamento debita a conta pagadora via
-`transferAccountId`). Contas CREDIT exibem **limite disponível** = `creditMetadata.limit −
-getCreditOutstanding()` (devedor = Σ charges − Σ créditos − Σ pagamentos). Nunca exibir `acc.balance` diretamente.
+`transferAccountId` — vale em Dashboard, Settings, Lançamentos **e** NetWorth/`applyTx`). Contas CREDIT
+exibem **limite disponível** = `creditMetadata.limit − getOpenCreditBalance()`. Nunca exibir `acc.balance` diretamente.
 
 ### Motor de fatura virtual (B-16, Opção 2)
 Funções puras em `lib/utils.ts`: `getInvoicePeriod`, `getInvoiceDueDate`, `getEffectiveCashFlowDate`,
 `getInvoiceTotal` (charges − créditos do período), `getInvoicePaid` (Σ `CREDIT_PAYMENT` com
-`referenceMonth` == período), `getInvoiceStatus` (aberta/parcial/paga), `getCreditOutstanding`
-(devedor global), `getCurrentInvoiceBalance` (fatura corrente, líquida), `getTotalCreditLiability`
-(= outstanding), `isCardCredit` (estorno = INCOME em conta CREDIT). Regras: `getEffectiveCashFlowDate`
+`referenceMonth` == período), `getInvoiceStatus` (aberta/parcial/paga), `getOpenCreditBalance`
+(**fatura atual em aberto** = total do período corrente − pagamentos do período; base do limite
+disponível e do passivo), `getCurrentInvoiceBalance` (fatura corrente, líquida), `getTotalCreditLiability`
+(= open balance), `isCardCredit` (estorno = INCOME em conta CREDIT). Regras: `getEffectiveCashFlowDate`
 só no gráfico de fluxo de caixa; categorias usam `tx.date`; `CREDIT_PAYMENT` excluído de Receitas×Despesas;
-estornos abatem despesas (nunca contam como receita de caixa).
+estornos abatem despesas (nunca contam como receita de caixa). **Escopo do passivo/limite = fatura atual**
+(passado tratado como quitado; futuro excluído) — robusto a históricos longos e a snapshots com meses
+de lançamentos futuros, onde "atual+futuras" estourava o limite.
 
 ### Tradução de tipos de conta
 Sempre `t(\`accounts.${type.toLowerCase()}\`)`. Nunca exibir enum bruto.
