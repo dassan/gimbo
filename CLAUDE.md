@@ -174,3 +174,6 @@ Decisões arquiteturais (2026-05-27, mantidas):
 - Sync multi-dispositivo = Google Drive/Dropbox do usuário como camada de sync (sem servidor Gimbo).
 - Política de conflito = merge aditivo; duplicatas offline sobrevivem, usuário remove manualmente.
 - `SYNC_SCENARIOS.md` cobre SQLite atual (S-01 a S-07) e sync futuro (S-08 a S-15).
+
+Ferramentas de desenvolvimento (2026-06-08):
+- **Sync Organizze → Gimbo** (`data/sync_gimbo.py`): script de benchmark que lê a API do Organizze por demanda e gera um `gimbo.db` (schema v3) para importar. IDs determinísticos (`uuid5`), saldos iniciais zerados (preenchidos à mão), modo merge `--base` que preserva saldos, janela `--start`/`--end` (com `--end` futuro para lançamentos não pagos), snapshot completo (sem acumulação). Documentação completa em `ARCHITECTURE.md` → "Ferramenta de Benchmark: Sync Organizze → Gimbo".

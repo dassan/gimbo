@@ -496,3 +496,64 @@ cd app && npx tsc -b --noEmit
 cd app && npx vitest run --coverage
 cd app && npx playwright test  # opcional local, obrigatório no CI
 ```
+
+---
+
+## Ferramenta de Benchmark: Sync Organizze → Gimbo
+
+> Ferramenta de desenvolvimento (não faz parte do app). Mantém o Gimbo pareado com a
+> conta real do Organizze, usada como benchmark de fidelidade. Arquivos em `data/`
+> (diretório no `.gitignore` — dados e token nunca vão ao repositório).
+
+### Arquivos
+
+| Arquivo | Papel |
+|---------|-------|
+| `data/organizze.py` | Camada de leitura da API do Organizze (`/users`, `/categories`, `/accounts`, `/credit_cards`, `/transactions`), com paginação mensal que contorna o teto de 500 lançamentos/chamada |
+| `data/sync_gimbo.py` | Script autossuficiente, executável por demanda: lê a API, converte e escreve um `gimbo.db` (schema SQLite v3) pronto para importar via Configurações → Dados → Importar backup |
+| `data/convert_organizze.py` | Conversor offline legado (lê JSONs estáticos exportados). Superado por `sync_gimbo.py`; mantido por referência |
+
+### Fluxo
+
+```
+sync_gimbo.py --start <data> [--end <data>] [--base gimbo.db] [--out gimbo.db]
+  1. autentica (HTTP Basic; token via env ORGANIZZE_TOKEN, email via ORGANIZZE_EMAIL/--email)
+  2. busca categorias, contas, cartões e lançamentos mês a mês no horizonte [start, end]
+  3. converte em memória → escreve gimbo.db (user_version=3, replace total do arquivo)
+```
+
+### Decisões (acordadas)
+
+- **Saldo inicial = 0.0** em todas as contas. O saldo real é preenchido manualmente no Gimbo (o app deriva o saldo exibido de `balance + transações`). Como o import é por janela de data, os saldos absolutos só batem com o Organizze se a janela cobrir o histórico completo.
+- **IDs determinísticos via `uuid5`** (namespace fixo + chave de origem, ex. `organizze:account:{id}`). Re-execuções com a mesma janela geram o mesmo `gimbo.db` — idempotente.
+- **Modo merge (`--base`)**: lê um `gimbo.db` anterior e preserva, por id, o `balance` e o `include_in_balance` editados à mão. **Não** reaproveita transações — apenas saldos de conta.
+- **Snapshot completo**: cada execução reescreve o arquivo inteiro com exatamente a janela `[start, end]`. Não acumula histórico — para manter histórico, usar sempre a data inicial mais antiga. (Acumulação por id foi considerada e descartada: deixaria "presas" transações apagadas no Organizze fora da janela.)
+- **`--end` futuro** inclui lançamentos agendados/recorrentes e parcelas a vencer (chegam com `paid=false` → `isPaid=false` no Gimbo). Default = hoje.
+- **Recorrência**: cada ocorrência do Organizze entra como transação avulsa (fiel ao extrato); as colunas `recurrence_*` ficam NULL. Não há reconstrução de séries M-35.
+
+### Mapeamento Organizze → Gimbo
+
+| Origem | Destino |
+|--------|---------|
+| `/accounts` (`checking`/`savings`/`other`/null) | `accounts` → `RETAIL`/`SAVINGS`/`OTHER`; `issuerIcon` por `institution_id` (mapa para `nubank`/`itau`/`bradesco`/`inter`/`santander`/`caixa`, senão NULL) |
+| `/credit_cards` | `accounts` `type=CREDIT` + `creditMetadata {limit_cents/100, closing_day, due_day}` |
+| `/categories` (`kind`, `parent_id`) | `categories` (`expenses→EXPENSE`, `earnings/none→INCOME/EXPENSE`, hierarquia, ícone inferido por nome, cor normalizada) + 2 categorias fallback |
+| `paid_credit_card_id` | `CREDIT_PAYMENT` (account=cartão, `transferAccountId`=conta, sem categoria) |
+| `oposite_transaction_id` + valor < 0 | `TRANSFER` (lado positivo espelhado é descartado) |
+| `credit_card_id` | `EXPENSE` na conta do cartão |
+| demais | `INCOME`/`EXPENSE` pelo sinal de `amount_cents` |
+| `total_installments > 1` | `installment {parentId, currentIndex, total}` (parent agrupado por heurística description+source+valor+total) |
+| `tags: [{name}]` | entidades `Tag` (uuid5 por nome + cor determinística) + `transaction_tags` |
+
+### Uso
+
+```bash
+# token e email via ambiente (PowerShell)
+$env:ORGANIZZE_TOKEN="..."; $env:ORGANIZZE_EMAIL="voce@mail.com"
+
+python data/sync_gimbo.py --start 2020-01-01                      # até hoje
+python data/sync_gimbo.py --start 2020-01-01 --end 2026-12-31     # inclui futuros/não pagos
+python data/sync_gimbo.py --start 2015-01-01 --base data/gimbo.db --out data/gimbo.db  # preserva saldos
+```
+
+O resumo final reporta contagens (contas, categorias, tags, transações + não pagas) e itens ignorados (espelhos de transferência, contas não encontradas).
