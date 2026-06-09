@@ -515,119 +515,130 @@ export default function Settings() {
                 const creditAccounts = data.accounts.filter((a) => a.type === 'CREDIT')
                 return (
                   <Section title={t('settings.accountsAndCards')}>
-                    {/* ── Regular accounts (non-CREDIT) ──────────────────── */}
-                    <div className="mb-8">
-                      <p className="text-[11px] font-semibold uppercase tracking-widest text-on-surface/40 mb-3">
-                        {t('settings.accounts')}
-                      </p>
-                      <div className="space-y-2 mb-4">
-                        {nonCreditAccounts.length === 0 && (
-                          <p className="py-4 text-center text-sm text-on-surface/40">
-                            {t('common.noData')}
+                    {/* M-39: accounts | cards side by side on large screens; stacked below lg */}
+                    <div className="grid gap-6 lg:grid-cols-2 items-start">
+                      {/* ── Regular accounts (non-CREDIT) ──────────────────── */}
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-widest text-on-surface/40">
+                            {t('settings.accounts')}
                           </p>
-                        )}
-                        {nonCreditAccounts.map((acc) => {
-                          // M-34: institution branding — colored badge when an issuer is chosen.
-                          const issuerColor =
-                            acc.issuerIcon && acc.issuerIcon !== 'generic'
-                              ? CREDIT_ISSUERS.find((i) => i.key === acc.issuerIcon)?.color
-                              : undefined
-                          return (
-                            <button
-                              key={acc.id}
-                              onClick={() => setModal({ open: true, account: acc })}
-                              className="flex w-full items-center gap-4 rounded-2xl bg-surface-container px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
-                            >
-                              <div
-                                className={cn(
-                                  'flex h-10 w-10 items-center justify-center rounded-xl',
-                                  !issuerColor && 'bg-primary/10'
-                                )}
-                                style={issuerColor ? { backgroundColor: issuerColor } : undefined}
+                          <button
+                            onClick={() => setModal({ open: true, account: null })}
+                            className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-on-surface/50 hover:bg-surface-container-high hover:text-on-surface transition-colors active:scale-[0.97]"
+                          >
+                            <Plus size={13} strokeWidth={2.5} />
+                            {t('settings.newAccount')}
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {nonCreditAccounts.length === 0 && (
+                            <p className="py-4 text-center text-sm text-on-surface/40">
+                              {t('common.noData')}
+                            </p>
+                          )}
+                          {nonCreditAccounts.map((acc) => {
+                            // M-34: institution branding — colored badge when an issuer is chosen.
+                            const issuerColor =
+                              acc.issuerIcon && acc.issuerIcon !== 'generic'
+                                ? CREDIT_ISSUERS.find((i) => i.key === acc.issuerIcon)?.color
+                                : undefined
+                            return (
+                              <button
+                                key={acc.id}
+                                onClick={() => setModal({ open: true, account: acc })}
+                                className="flex w-full items-center gap-4 rounded-2xl bg-surface-container px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
                               >
-                                <span className={issuerColor ? 'text-white' : 'text-primary'}>
-                                  {accountTypeIcon(acc.type)}
-                                </span>
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-on-surface">{acc.name}</p>
-                                <p className="text-xs text-on-surface/40">
-                                  {t(`accounts.${acc.type.toLowerCase()}`)}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <span className="text-sm font-bold tabular-nums text-on-surface">
-                                  {formatCurrency(accountBalances[acc.id] ?? 0)}
-                                </span>
-                              </div>
-                            </button>
-                          )
-                        })}
+                                <div
+                                  className={cn(
+                                    'flex h-10 w-10 items-center justify-center rounded-xl',
+                                    !issuerColor && 'bg-primary/10'
+                                  )}
+                                  style={issuerColor ? { backgroundColor: issuerColor } : undefined}
+                                >
+                                  <span className={issuerColor ? 'text-white' : 'text-primary'}>
+                                    {accountTypeIcon(acc.type)}
+                                  </span>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-on-surface">
+                                    {acc.name}
+                                  </p>
+                                  <p className="text-xs text-on-surface/40">
+                                    {t(`accounts.${acc.type.toLowerCase()}`)}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <span className="text-sm font-bold tabular-nums text-on-surface">
+                                    {formatCurrency(accountBalances[acc.id] ?? 0)}
+                                  </span>
+                                </div>
+                              </button>
+                            )
+                          })}
+                        </div>
                       </div>
-                      <button
-                        onClick={() => setModal({ open: true, account: null })}
-                        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
-                      >
-                        <Plus size={16} strokeWidth={2.5} />
-                        {t('settings.newAccount')}
-                      </button>
-                    </div>
 
-                    {/* ── Credit cards (CREDIT) ────────────────────────────── */}
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-widest text-on-surface/40 mb-3">
-                        {t('settings.creditCards')}
-                      </p>
-                      <div className="space-y-2 mb-4">
-                        {creditAccounts.length === 0 && (
-                          <p className="py-4 text-center text-sm text-on-surface/40">
-                            {t('common.noData')}
+                      {/* ── Credit cards (CREDIT) ────────────────────────────── */}
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-widest text-on-surface/40">
+                            {t('settings.creditCards')}
                           </p>
-                        )}
-                        {creditAccounts.map((acc) => {
-                          const issuerColor =
-                            (acc.issuerIcon && acc.issuerIcon !== 'generic'
-                              ? CREDIT_ISSUERS.find((i) => i.key === acc.issuerIcon)?.color
-                              : undefined) ?? '#1F2937'
-                          return (
-                            <button
-                              key={acc.id}
-                              onClick={() => setModal({ open: true, account: acc })}
-                              className="flex w-full items-center gap-4 rounded-2xl bg-surface-container px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
-                            >
-                              <div
-                                className="flex h-10 w-10 items-center justify-center rounded-xl text-white"
-                                style={{ backgroundColor: issuerColor }}
+                          <button
+                            onClick={() =>
+                              setModal({ open: true, account: null, defaultType: 'CREDIT' })
+                            }
+                            className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-on-surface/50 hover:bg-surface-container-high hover:text-on-surface transition-colors active:scale-[0.97]"
+                          >
+                            <Plus size={13} strokeWidth={2.5} />
+                            {t('settings.newCreditCard')}
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {creditAccounts.length === 0 && (
+                            <p className="py-4 text-center text-sm text-on-surface/40">
+                              {t('common.noData')}
+                            </p>
+                          )}
+                          {creditAccounts.map((acc) => {
+                            const issuerColor =
+                              (acc.issuerIcon && acc.issuerIcon !== 'generic'
+                                ? CREDIT_ISSUERS.find((i) => i.key === acc.issuerIcon)?.color
+                                : undefined) ?? '#1F2937'
+                            return (
+                              <button
+                                key={acc.id}
+                                onClick={() => setModal({ open: true, account: acc })}
+                                className="flex w-full items-center gap-4 rounded-2xl bg-surface-container px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
                               >
-                                <CreditCard size={20} strokeWidth={1.5} />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-on-surface">{acc.name}</p>
-                                <p className="text-xs text-on-surface/40">
-                                  {t(`accounts.${acc.type.toLowerCase()}`)}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-[10px] text-on-surface/40 uppercase tracking-wide">
-                                  {t('accounts.availableLimit')}
-                                </p>
-                                <span className="text-sm font-bold text-on-surface">
-                                  {formatCurrency(accountBalances[acc.id] ?? 0)}
-                                </span>
-                              </div>
-                            </button>
-                          )
-                        })}
+                                <div
+                                  className="flex h-10 w-10 items-center justify-center rounded-xl text-white"
+                                  style={{ backgroundColor: issuerColor }}
+                                >
+                                  <CreditCard size={20} strokeWidth={1.5} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-on-surface">
+                                    {acc.name}
+                                  </p>
+                                  <p className="text-xs text-on-surface/40">
+                                    {t(`accounts.${acc.type.toLowerCase()}`)}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-[10px] text-on-surface/40 uppercase tracking-wide">
+                                    {t('accounts.availableLimit')}
+                                  </p>
+                                  <span className="text-sm font-bold text-on-surface">
+                                    {formatCurrency(accountBalances[acc.id] ?? 0)}
+                                  </span>
+                                </div>
+                              </button>
+                            )
+                          })}
+                        </div>
                       </div>
-                      <button
-                        onClick={() =>
-                          setModal({ open: true, account: null, defaultType: 'CREDIT' })
-                        }
-                        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
-                      >
-                        <Plus size={16} strokeWidth={2.5} />
-                        {t('settings.newCreditCard')}
-                      </button>
                     </div>
                   </Section>
                 )
