@@ -516,18 +516,41 @@ cd app && npx playwright test  # opcional local, obrigatório no CI
 ### Fluxo
 
 ```
-sync_gimbo.py --start <data> [--end <data>] [--base gimbo.db] [--out gimbo.db]
+sync_gimbo.py [--start <data> | --window-months N] [--end <data>] [--base gimbo.db] [--out gimbo.db]
   1. autentica (HTTP Basic; token via env ORGANIZZE_TOKEN, email via ORGANIZZE_EMAIL/--email)
   2. busca categorias, contas, cartões e lançamentos mês a mês no horizonte [start, end]
-  3. converte em memória → escreve gimbo.db (user_version=3, replace total do arquivo)
+  3. converte em memória → (incremental: funde no --base) → escreve gimbo.db (user_version=3)
 ```
+
+### Dois modos de operação
+
+| Modo | Ativação | Horizonte | --base | Uso típico |
+|------|----------|-----------|--------|-----------|
+| **Snapshot** | `--start <data>` (default) | `[start, end]` explícito | preserva só saldos | carga inicial, reconciliação completa |
+| **Incremental** | `--window-months N` | últimos N meses (+ futuros via `--end`) | funde transações por id | run diário (1x/dia) |
+
+**Snapshot** reescreve o arquivo inteiro com exatamente a janela; não acumula histórico.
+
+**Incremental** busca só os últimos N meses e faz **merge por id** sobre o `--base`
+(default = `--out` se existir): substitui as transações **dentro** da janela `[start, end]`
+(a API é autoridade no período → cobre edições *e* exclusões) e **preserva** as transações
+fora dela vindas da base. Cadastros (contas/cartões/categorias/tags) são unidos `base ∪ fresco`
+(fresco vence) para não quebrar referências de transações antigas. Custo por run:
+~3 chamadas de cadastro + (N + meses futuros) de transações — viabiliza o uso diário.
+
+> **Por que não um delta verdadeiro?** A API do Organizze filtra transações por *data do
+> lançamento*, não por `updated_at` — não há como pedir "o que mudou desde ontem". Logo, o
+> modo incremental **não captura** edições/exclusões de lançamentos *mais antigos que a janela*.
+> Mitigação: rodar periodicamente (semanal/mensal) um **snapshot completo** para reconciliar.
 
 ### Decisões (acordadas)
 
 - **Saldo inicial = 0.0** em todas as contas. O saldo real é preenchido manualmente no Gimbo (o app deriva o saldo exibido de `balance + transações`). Como o import é por janela de data, os saldos absolutos só batem com o Organizze se a janela cobrir o histórico completo.
 - **IDs determinísticos via `uuid5`** (namespace fixo + chave de origem, ex. `organizze:account:{id}`). Re-execuções com a mesma janela geram o mesmo `gimbo.db` — idempotente.
-- **Modo merge (`--base`)**: lê um `gimbo.db` anterior e preserva, por id, o `balance` e o `include_in_balance` editados à mão. **Não** reaproveita transações — apenas saldos de conta.
-- **Snapshot completo**: cada execução reescreve o arquivo inteiro com exatamente a janela `[start, end]`. Não acumula histórico — para manter histórico, usar sempre a data inicial mais antiga. (Acumulação por id foi considerada e descartada: deixaria "presas" transações apagadas no Organizze fora da janela.)
+- **Modo merge (`--base`)**: lê um `gimbo.db` anterior e preserva, por id, o `balance` e o `include_in_balance` editados à mão. No **snapshot** preserva só saldos; no **incremental** também funde transações/tags/cadastros (ver "Dois modos de operação").
+- **Snapshot completo**: cada execução reescreve o arquivo inteiro com exatamente a janela `[start, end]`. Não acumula histórico — para manter histórico, usar sempre a data inicial mais antiga.
+- **Acumulação controlada por janela** (incremental): transações apagadas no Organizze *dentro* da janela são removidas (a API é autoridade no período); fora da janela ficam "presas" até a próxima reconciliação por snapshot — trade-off aceito em troca do baixo custo de API no run diário.
+- **`tag_color` determinístico**: cor derivada de `uuid5` do nome (não de `hash()`, que varia por `PYTHONHASHSEED`) — estável entre execuções e re-merges.
 - **`--end` futuro** inclui lançamentos agendados/recorrentes e parcelas a vencer (chegam com `paid=false` → `isPaid=false` no Gimbo). Default = hoje.
 - **Recorrência**: cada ocorrência do Organizze entra como transação avulsa (fiel ao extrato); as colunas `recurrence_*` ficam NULL. Não há reconstrução de séries M-35.
 
@@ -551,9 +574,13 @@ sync_gimbo.py --start <data> [--end <data>] [--base gimbo.db] [--out gimbo.db]
 # token e email via ambiente (PowerShell)
 $env:ORGANIZZE_TOKEN="..."; $env:ORGANIZZE_EMAIL="voce@mail.com"
 
-python data/sync_gimbo.py --start 2020-01-01                      # até hoje
+python data/sync_gimbo.py --start 2020-01-01                      # snapshot até hoje
 python data/sync_gimbo.py --start 2020-01-01 --end 2026-12-31     # inclui futuros/não pagos
 python data/sync_gimbo.py --start 2015-01-01 --base data/gimbo.db --out data/gimbo.db  # preserva saldos
+
+# Incremental (1x/dia): só os últimos 2 meses, funde no gimbo.db existente
+python data/sync_gimbo.py --window-months 2 --base data/gimbo.db
+python data/sync_gimbo.py --window-months 2 --end 2026-12-31 --base data/gimbo.db  # + agendados/futuros
 ```
 
 O resumo final reporta contagens (contas, categorias, tags, transações + não pagas) e itens ignorados (espelhos de transferência, contas não encontradas).
