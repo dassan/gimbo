@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useOutletContext } from 'react-router-dom'
-import { Search, CheckCircle2, Clock, ChevronDown, ArrowRightLeft } from 'lucide-react'
+import { Search, CheckCircle2, Clock, ChevronDown, ArrowRightLeft, CreditCard } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { formatCurrency, cn, parseDateLocal, isCashRealized } from '@/lib/utils'
@@ -59,8 +59,16 @@ export default function Transactions() {
     if (!data) return []
     let txs = [...data.transactions]
 
-    // M-26: exclude CREDIT account transactions and CREDIT_PAYMENT — cash-flow ledger only
-    txs = txs.filter((tx) => !creditAccountIds.has(tx.accountId) && tx.type !== 'CREDIT_PAYMENT')
+    // M-26: this is the cash ledger of non-CREDIT accounts — card purchases live in
+    // /credit-card/:id and are excluded here. B-16: a CREDIT_PAYMENT IS a real cash outflow
+    // on its funding (non-CREDIT) account, so it belongs in this ledger (attributed to
+    // transferAccountId), even though its accountId is the CREDIT card.
+    txs = txs.filter((tx) => {
+      if (tx.type === 'CREDIT_PAYMENT') {
+        return tx.transferAccountId != null && !creditAccountIds.has(tx.transferAccountId)
+      }
+      return !creditAccountIds.has(tx.accountId)
+    })
 
     // Period filter using parseDateLocal (avoids UTC date parsing bug)
     if (startDate && endDate) {
@@ -70,8 +78,12 @@ export default function Transactions() {
       })
     }
 
-    // Account filter
-    if (filterAccountId !== 'all') txs = txs.filter((tx) => tx.accountId === filterAccountId)
+    // Account filter — a CREDIT_PAYMENT belongs to its funding account (transferAccountId)
+    if (filterAccountId !== 'all')
+      txs = txs.filter((tx) => {
+        const ledgerAccountId = tx.type === 'CREDIT_PAYMENT' ? tx.transferAccountId : tx.accountId
+        return ledgerAccountId === filterAccountId
+      })
 
     // Status filter
     if (filterStatus === 'paid') txs = txs.filter((tx) => tx.isPaid)
@@ -111,14 +123,18 @@ export default function Transactions() {
     return Array.from(map.entries())
   }, [filtered])
 
-  // Summary — CREDIT account txs and CREDIT_PAYMENT already excluded by M-26 filter above.
+  // Summary — card purchases are excluded (live in /credit-card); a CREDIT_PAYMENT is a real
+  // cash outflow on its funding account and counts as such (B-16).
   // B-15: unless "Incluir Não-Pagos" is on, unpaid INCOME/EXPENSE are excluded from totals.
   const realized = filtered.filter((tx) => includeUnpaid || isCashRealized(tx))
   const income = realized.filter((tx) => tx.type === 'INCOME').reduce((s, tx) => s + tx.amount, 0)
   const expenses = realized
     .filter((tx) => tx.type === 'EXPENSE')
     .reduce((s, tx) => s + tx.amount, 0)
-  const consolidated = income - expenses
+  const payments = realized
+    .filter((tx) => tx.type === 'CREDIT_PAYMENT')
+    .reduce((s, tx) => s + tx.amount, 0)
+  const consolidated = income - expenses - payments
 
   // Accumulated balance: net position across ALL non-CREDIT accounts, ignoring period filters.
   const accumulatedBalance = useMemo(() => {
@@ -127,7 +143,13 @@ export default function Transactions() {
       .filter((a) => !creditAccountIds.has(a.id))
       .reduce((s, a) => s + a.balance, 0)
     return data.transactions.reduce((s, tx) => {
-      if (creditAccountIds.has(tx.accountId) || tx.type === 'CREDIT_PAYMENT') return s
+      // CREDIT_PAYMENT: real outflow from the funding (non-CREDIT) account (B-16).
+      if (tx.type === 'CREDIT_PAYMENT') {
+        return tx.transferAccountId && !creditAccountIds.has(tx.transferAccountId)
+          ? s - tx.amount
+          : s
+      }
+      if (creditAccountIds.has(tx.accountId)) return s
       // B-15: skip unpaid entries unless projecting; TRANSFER is always realized.
       if (!includeUnpaid && !isCashRealized(tx)) return s
       if (tx.type === 'INCOME') return s + tx.amount
@@ -373,11 +395,23 @@ function TxRow({
   const { t } = useTranslation()
   const cat = data.categories.find((c) => c.id === tx.categoryId)
   const acc = data.accounts.find((a) => a.id === tx.accountId)
-  const destAcc =
-    tx.type === 'TRANSFER' ? data.accounts.find((a) => a.id === tx.transferAccountId) : null
-  const txTags = data.tags.filter((tag) => tx.tags.includes(tag.id))
   const isIncome = tx.type === 'INCOME'
   const isTransfer = tx.type === 'TRANSFER'
+  const isCreditPayment = tx.type === 'CREDIT_PAYMENT'
+  const txTags = data.tags.filter((tag) => tx.tags.includes(tag.id))
+  // TRANSFER: destination account. CREDIT_PAYMENT: the funded card is `acc` and the money
+  // comes from transferAccountId (shown as "<funding account> → <card>").
+  const destAcc =
+    isTransfer || isCreditPayment ? data.accounts.find((a) => a.id === tx.transferAccountId) : null
+
+  const typeTitle = isTransfer
+    ? t('transactions.transferTitle')
+    : isCreditPayment
+      ? t('transactions.creditPayment')
+      : cat?.name
+  // `||` (not `??`) is intentional: an empty-string description must fall through to the fallback.
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+  const title = tx.description || typeTitle || '—'
 
   return (
     <div
@@ -390,10 +424,14 @@ function TxRow({
         !isLast && 'border-b border-surface-container-low'
       )}
     >
-      {/* Category avatar — transfers get a neutral icon instead of category initial */}
-      {isTransfer ? (
+      {/* Avatar — transfers and credit-card payments get a neutral icon */}
+      {isTransfer || isCreditPayment ? (
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-container-high text-on-surface/40">
-          <ArrowRightLeft size={18} strokeWidth={1.5} />
+          {isCreditPayment ? (
+            <CreditCard size={18} strokeWidth={1.5} />
+          ) : (
+            <ArrowRightLeft size={18} strokeWidth={1.5} />
+          )}
         </div>
       ) : (
         <div
@@ -406,10 +444,7 @@ function TxRow({
 
       {/* Info — M-36: type label removed (color conveys it); category shown as a chip */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-on-surface truncate">
-          {/* eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing */}
-          {tx.description || (isTransfer ? t('transactions.transferTitle') : cat?.name) || '—'}
-        </p>
+        <p className="text-sm font-semibold text-on-surface truncate">{title}</p>
         <div className="flex items-center gap-2 mt-0.5">
           {/* M-36: category pill — neutral chip, only when the tx has a category */}
           {cat && (
@@ -430,6 +465,10 @@ function TxRow({
             <span className="text-xs text-on-surface/30">
               {acc?.name ?? '—'} → {destAcc?.name ?? '—'}
             </span>
+          ) : isCreditPayment ? (
+            <span className="text-xs text-on-surface/30">
+              {destAcc?.name ?? '—'} → {acc?.name ?? '—'}
+            </span>
           ) : (
             acc && <span className="text-xs text-on-surface/30">{acc.name}</span>
           )}
@@ -445,6 +484,13 @@ function TxRow({
                 {formatCurrency(tx.amount)}
               </p>
               <p className="text-[10px] text-on-surface/30 mt-0.5">Transf.</p>
+            </>
+          ) : isCreditPayment ? (
+            <>
+              <p className="text-sm font-bold tabular-nums text-tertiary">
+                -{formatCurrency(tx.amount)}
+              </p>
+              <p className="text-[10px] text-on-surface/30 mt-0.5">Pagamento</p>
             </>
           ) : (
             <>

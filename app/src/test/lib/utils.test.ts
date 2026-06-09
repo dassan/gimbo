@@ -2,10 +2,16 @@ import { describe, it, expect } from 'vitest'
 import {
   formatCurrency,
   getCurrentInvoiceBalance,
+  getCreditOutstanding,
   getEffectiveCashFlowDate,
   getInvoiceDueDate,
+  getInvoicePaid,
   getInvoicePeriod,
+  getInvoiceStatus,
+  getInvoiceTotal,
   getTotalCreditLiability,
+  invoicePeriodKey,
+  isCardCredit,
   isCashRealized,
   now,
   parseDateLocal,
@@ -192,13 +198,13 @@ describe('getCurrentInvoiceBalance', () => {
     expect(getCurrentInvoiceBalance([tx1, tx2], account)).toBe(500)
   })
 
-  it('ignores INCOME and TRANSFER transactions', () => {
-    const account = makeAccount()
-    const today = new Date()
-    const todayStr = today.toISOString().slice(0, 10)
-    const income = makeTx({ type: 'INCOME', amount: 999, date: todayStr })
-    const transfer = makeTx({ type: 'TRANSFER', amount: 999, date: todayStr })
-    expect(getCurrentInvoiceBalance([income, transfer], account)).toBe(0)
+  it('subtracts INCOME credits (estornos) from the net total and ignores TRANSFER', () => {
+    const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 28, dueDay: 10 } })
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const charge = makeTx({ amount: 500, date: todayStr })
+    const credit = makeTx({ id: 'tx-2', type: 'INCOME', amount: 200, date: todayStr })
+    const transfer = makeTx({ id: 'tx-3', type: 'TRANSFER', amount: 999, date: todayStr })
+    expect(getCurrentInvoiceBalance([charge, credit, transfer], account)).toBe(300)
   })
 
   it('ignores transactions from a different account', () => {
@@ -234,18 +240,20 @@ describe('getTotalCreditLiability', () => {
     expect(getTotalCreditLiability([tx], account)).toBe(300)
   })
 
-  it('excludes EXPENSE transactions from past invoice periods', () => {
+  it('includes past unpaid EXPENSE (still owed as outstanding debt)', () => {
     const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 20, dueDay: 10 } })
     const tx = makeTx({ amount: 400, date: '2020-01-01' })
-    expect(getTotalCreditLiability([tx], account)).toBe(0)
+    expect(getTotalCreditLiability([tx], account)).toBe(400)
   })
 
-  it('ignores INCOME and TRANSFER transactions', () => {
+  it('subtracts INCOME credits and CREDIT_PAYMENT, ignores TRANSFER', () => {
     const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 28, dueDay: 10 } })
     const today = new Date().toISOString().slice(0, 10)
-    const income = makeTx({ type: 'INCOME', amount: 999, date: today })
-    const transfer = makeTx({ id: 'tx-2', type: 'TRANSFER', amount: 999, date: today })
-    expect(getTotalCreditLiability([income, transfer], account)).toBe(0)
+    const charge = makeTx({ amount: 500, date: today })
+    const credit = makeTx({ id: 'tx-2', type: 'INCOME', amount: 200, date: today })
+    const payment = makeTx({ id: 'tx-3', type: 'CREDIT_PAYMENT', amount: 100, date: today })
+    const transfer = makeTx({ id: 'tx-4', type: 'TRANSFER', amount: 999, date: today })
+    expect(getTotalCreditLiability([charge, credit, payment, transfer], account)).toBe(200)
   })
 
   it('ignores transactions from a different account', () => {
@@ -261,6 +269,112 @@ describe('getTotalCreditLiability', () => {
     const currentTx = makeTx({ amount: 200, date: today })
     const futureTx = makeTx({ id: 'tx-2', amount: 300, date: '2099-12-01' })
     expect(getTotalCreditLiability([currentTx, futureTx], account)).toBe(500)
+  })
+})
+
+// ─── Option 2: invoice period total / paid / status ──────────────────────────
+
+describe('invoicePeriodKey', () => {
+  it('formats a period as zero-padded YYYY-MM', () => {
+    expect(invoicePeriodKey({ year: 2026, month: 5 })).toBe('2026-05')
+    expect(invoicePeriodKey({ year: 2026, month: 12 })).toBe('2026-12')
+  })
+})
+
+describe('isCardCredit', () => {
+  const credit = makeAccount({ id: 'cc', type: 'CREDIT' })
+  const bank = makeAccount({ id: 'bk', type: 'RETAIL', creditMetadata: undefined })
+  it('is true for INCOME on a CREDIT account', () => {
+    expect(isCardCredit(makeTx({ accountId: 'cc', type: 'INCOME' }), [credit, bank])).toBe(true)
+  })
+  it('is false for INCOME on a non-CREDIT account', () => {
+    expect(isCardCredit(makeTx({ accountId: 'bk', type: 'INCOME' }), [credit, bank])).toBe(false)
+  })
+  it('is false for EXPENSE on a CREDIT account', () => {
+    expect(isCardCredit(makeTx({ accountId: 'cc', type: 'EXPENSE' }), [credit, bank])).toBe(false)
+  })
+})
+
+describe('getInvoiceTotal', () => {
+  const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 20, dueDay: 10 } })
+  const period = { year: 2026, month: 5 }
+  it('nets charges minus credits in the period', () => {
+    const charge = makeTx({ amount: 500, date: '2026-05-10' })
+    const credit = makeTx({ id: 'tx-2', type: 'INCOME', amount: 80, date: '2026-05-12' })
+    expect(getInvoiceTotal([charge, credit], account, period)).toBe(420)
+  })
+  it('ignores other periods and CREDIT_PAYMENT', () => {
+    const other = makeTx({ amount: 100, date: '2026-06-10' })
+    const payment = makeTx({ id: 'p', type: 'CREDIT_PAYMENT', amount: 999, date: '2026-05-10' })
+    expect(getInvoiceTotal([other, payment], account, period)).toBe(0)
+  })
+})
+
+describe('getInvoicePaid', () => {
+  const account = makeAccount({ id: 'cc' })
+  const period = { year: 2026, month: 5 }
+  it('sums CREDIT_PAYMENT referencing the period', () => {
+    const p1 = makeTx({
+      id: 'p1',
+      accountId: 'cc',
+      type: 'CREDIT_PAYMENT',
+      amount: 300,
+      referenceMonth: '2026-05',
+    })
+    const p2 = makeTx({
+      id: 'p2',
+      accountId: 'cc',
+      type: 'CREDIT_PAYMENT',
+      amount: 100,
+      referenceMonth: '2026-05',
+    })
+    const other = makeTx({
+      id: 'p3',
+      accountId: 'cc',
+      type: 'CREDIT_PAYMENT',
+      amount: 50,
+      referenceMonth: '2026-04',
+    })
+    expect(getInvoicePaid([p1, p2, other], account, period)).toBe(400)
+  })
+})
+
+describe('getInvoiceStatus', () => {
+  it('open when nothing charged or paid', () => {
+    expect(getInvoiceStatus(0, 0)).toBe('open')
+  })
+  it('open when charged but unpaid', () => {
+    expect(getInvoiceStatus(500, 0)).toBe('open')
+  })
+  it('partial when paid less than total', () => {
+    expect(getInvoiceStatus(500, 200)).toBe('partial')
+  })
+  it('paid when paid covers the total (within epsilon)', () => {
+    expect(getInvoiceStatus(500, 500)).toBe('paid')
+    expect(getInvoiceStatus(500, 500.004)).toBe('paid')
+  })
+})
+
+describe('getCreditOutstanding', () => {
+  const account = makeAccount({ id: 'cc' })
+  it('is charges minus credits minus payments across all time', () => {
+    const charge1 = makeTx({ accountId: 'cc', amount: 500, date: '2020-01-01' })
+    const charge2 = makeTx({ id: 't2', accountId: 'cc', amount: 300, date: '2099-01-01' })
+    const credit = makeTx({
+      id: 't3',
+      accountId: 'cc',
+      type: 'INCOME',
+      amount: 80,
+      date: '2026-05-01',
+    })
+    const payment = makeTx({
+      id: 't4',
+      accountId: 'cc',
+      type: 'CREDIT_PAYMENT',
+      amount: 200,
+      referenceMonth: '2020-01',
+    })
+    expect(getCreditOutstanding([charge1, charge2, credit, payment], account)).toBe(520)
   })
 })
 

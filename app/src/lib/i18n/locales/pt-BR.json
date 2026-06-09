@@ -273,7 +273,12 @@
     "allCategories": "Todas as categorias",
     "noTransactions": "Nenhuma transação nesta fatura",
     "spendingSummary": "Resumo de Gastos",
-    "creditLimit": "Limite de Crédito"
+    "creditLimit": "Limite de Crédito",
+    "paid": "Pago",
+    "remaining": "Restante",
+    "statusOpen": "Aberta",
+    "statusPartial": "Parcial",
+    "statusPaid": "Paga"
   },
   "accounts": {
     "retail": "Corrente",

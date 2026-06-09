@@ -234,6 +234,10 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
       ...((type === 'CREDIT_PAYMENT' || type === 'TRANSFER') && transferAccountId
         ? { transferAccountId }
         : {}),
+      // Preserve the invoice period a CREDIT_PAYMENT settles (Option 2) when editing it.
+      ...(isEditMode && transaction.referenceMonth
+        ? { referenceMonth: transaction.referenceMonth }
+        : {}),
       ...(isEditMode && transaction.installment ? { installment: transaction.installment } : {}),
       ...(hasInstallments
         ? { installment: { parentId, currentIndex: 1, total: installmentCount } }

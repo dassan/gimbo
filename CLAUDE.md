@@ -38,13 +38,18 @@ Nunca `new Date(tx.date)` para `.getMonth()`/`.getFullYear()` — causa bugs de 
 
 ### Saldo de conta — derivado de transações
 O campo `Account.balance` representa o **saldo inicial** (editável no modal). O saldo exibido é
-`balance + INCOME − EXPENSE − TRANSFER` (via `useMemo`). Contas CREDIT usam
-`creditMetadata.limit − getCurrentInvoiceBalance()`. Nunca exibir `acc.balance` diretamente.
+`balance + INCOME − EXPENSE − TRANSFER − CREDIT_PAYMENT` (o pagamento debita a conta pagadora via
+`transferAccountId`). Contas CREDIT exibem **limite disponível** = `creditMetadata.limit −
+getCreditOutstanding()` (devedor = Σ charges − Σ créditos − Σ pagamentos). Nunca exibir `acc.balance` diretamente.
 
-### Motor de fatura virtual
-Quatro funções puras em `lib/utils.ts`: `getInvoicePeriod`, `getInvoiceDueDate`,
-`getCurrentInvoiceBalance`, `getEffectiveCashFlowDate`. Regra: `getEffectiveCashFlowDate`
-apenas no gráfico de fluxo de caixa; categorias usam `tx.date`; `CREDIT_PAYMENT` excluído de totais.
+### Motor de fatura virtual (B-16, Opção 2)
+Funções puras em `lib/utils.ts`: `getInvoicePeriod`, `getInvoiceDueDate`, `getEffectiveCashFlowDate`,
+`getInvoiceTotal` (charges − créditos do período), `getInvoicePaid` (Σ `CREDIT_PAYMENT` com
+`referenceMonth` == período), `getInvoiceStatus` (aberta/parcial/paga), `getCreditOutstanding`
+(devedor global), `getCurrentInvoiceBalance` (fatura corrente, líquida), `getTotalCreditLiability`
+(= outstanding), `isCardCredit` (estorno = INCOME em conta CREDIT). Regras: `getEffectiveCashFlowDate`
+só no gráfico de fluxo de caixa; categorias usam `tx.date`; `CREDIT_PAYMENT` excluído de Receitas×Despesas;
+estornos abatem despesas (nunca contam como receita de caixa).
 
 ### Tradução de tipos de conta
 Sempre `t(\`accounts.${type.toLowerCase()}\`)`. Nunca exibir enum bruto.
@@ -149,9 +154,9 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 
 ---
 
-## Estado Atual (2026-05-31)
+## Estado Atual (2026-06-09)
 
-**Schema v2** | Cobertura: ~97% statements
+**Schema v5** | Cobertura: ~97% statements
 
 Todas as features do PRD (F-1 a F-28 Nível 1) implementadas. Módulo de Cartão de Crédito completo (CC-01 a CC-30). Melhorias M-01 a M-33 resolvidas. Relatórios avançados R-01 a R-18 resolvidos.
 
@@ -162,9 +167,9 @@ Features concluídas desde 2026-05-27:
 - **F-27** — Mobile PWA: bottom nav, layouts responsivos, bottom sheet, manifest standalone, E2E mobile (MB-01 a MB-07)
 - **F-28 Nível 1** — Backup Local: `lib/backupDir.ts`, aba "Backup & Sync", auto-backup, `WelcomeModal`, doc pages (BK-01 a BK-03, BK-05 a BK-07)
 - **R-17/R-18** — View "Faturas" em Analytics: `FaturasView.tsx`, aba 5 na sub-nav, 14 testes unitários
+- **B-16/M-22** — Ciclo de fatura de cartão (Opção 2): pagamento vinculado ao período (`referenceMonth`, schema v4→v5), `CREDIT_PAYMENT` debita a conta pagadora, fatura líquida de créditos + selo de status (aberta/parcial/paga), estornos como `INCOME` na conta CREDIT; sync preserva sinal e infere `referenceMonth`
 
 Itens em aberto:
-- **M-22** — Estornos em contas CREDIT (baixa prioridade)
 - **MB-08** — Analytics responsivo para mobile (média prioridade)
 - **BK-04** — Banner de re-permissão da pasta de backup no startup (média prioridade)
 - **F-28 Nível 2** — Cloud Sync Google Drive/Dropbox (CS-01 a CS-12) — demand-driven

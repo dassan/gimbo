@@ -273,7 +273,12 @@
     "allCategories": "All categories",
     "noTransactions": "No transactions in this invoice",
     "spendingSummary": "Spending Summary",
-    "creditLimit": "Credit Limit"
+    "creditLimit": "Credit Limit",
+    "paid": "Paid",
+    "remaining": "Remaining",
+    "statusOpen": "Open",
+    "statusPartial": "Partial",
+    "statusPaid": "Paid"
   },
   "accounts": {
     "retail": "Checking",

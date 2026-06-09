@@ -371,7 +371,9 @@ describe('Dashboard — CC-22: CREDIT_PAYMENT excluded from totals', () => {
   })
 
   it('does not count CREDIT_PAYMENT amount in monthly expense stat', () => {
-    const retailAccount = makeRetailAccount()
+    // High initial balance so the post-debit balance (5000 − 200 − 800 = 4000) does not
+    // collide with the 1000 proxy below (CREDIT_PAYMENT now legitimately debits the payer).
+    const retailAccount = makeRetailAccount({ balance: 5000 })
     const creditAccount = makeCreditAccount()
 
     const expense = makeTransaction({
@@ -401,8 +403,10 @@ describe('Dashboard — CC-22: CREDIT_PAYMENT excluded from totals', () => {
 
     // Expense stat should show 200, not 1000 (CREDIT_PAYMENT must not add to expenses)
     expect(screen.getAllByText(/200,00/).length).toBeGreaterThanOrEqual(1)
-    // If CREDIT_PAYMENT was wrongly counted as expense we'd see 1000
+    // If CREDIT_PAYMENT were wrongly counted as expense we'd see 1000 in the stats
     expect(screen.queryByText(/1\.000,00/)).not.toBeInTheDocument()
+    // Bug B fix: the payment debits the funding account (5000 − 200 − 800 = 4000)
+    expect(screen.getAllByText(/4\.000,00/).length).toBeGreaterThanOrEqual(1)
   })
 })
 

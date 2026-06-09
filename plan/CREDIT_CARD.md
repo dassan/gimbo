@@ -68,13 +68,21 @@ As perguntas abertas da seção 4 foram endereçadas ao PM e respondidas. Abaixo
 
 ---
 
-### 3.3 Estornos e Chargebacks: Fora do Escopo
+### 3.3 Estornos e Chargebacks: Implementado (M-22 / B-16)
 
-**Decisão:** Out-of-scope para este ciclo.
+**Decisão (revisada):** Um estorno/crédito no cartão é modelado como uma transação `INCOME`
+na própria conta `CREDIT`. Não é um novo tipo — reaproveita `INCOME`, identificado pelo
+helper `isCardCredit(tx, accounts)` (INCOME cujo `accountId` é uma conta CREDIT).
 
-**Fundamento:** Reversões contábeis exigem UX específica e tipagem adicional, inchando o delivery.
+**Comportamento:**
+- O motor de fatura subtrai créditos do total do período: `getInvoiceTotal = Σ EXPENSE − Σ INCOME`
+  (espelha o total fechado do extrato, já líquido de estornos).
+- O saldo devedor (`getCreditOutstanding`) e o limite disponível também descontam os créditos.
+- Em cabeçalhos de caixa (Dashboard, CashFlow), o crédito **abate despesas** em vez de inflar
+  receita — nunca é tratado como receita de caixa.
 
-**Trade-off aceito:** O usuário pode registrar estornos manualmente (ex.: reduzindo o valor de uma despesa ou criando um `CREDIT_PAYMENT` esporádico). Mapeado como melhoria futura **M-22** no Backlog.
+**Fundamento:** preserva a semântica contábil ("reversão de débito, não receita") sem inchar o
+schema com um tipo dedicado.
 
 ---
 
@@ -174,6 +182,25 @@ O `TransactionDrawer` precisará de um caminho de UX específico para `CREDIT_PA
 2. Sistema exibe o saldo da fatura corrente como sugestão de valor (via `getCurrentInvoiceBalance`)
 3. Usuário seleciona a conta debitada (corrente/poupança) e confirma o valor
 4. Uma única transação `CREDIT_PAYMENT` é gerada, vinculando as duas contas
+
+#### 4.6.1 Pagamento vinculado ao período (Opção 2 — B-16)
+
+**Decisão (acordada):** o pagamento é amarrado a um **período de fatura específico**, para que
+os números batam com o extrato físico do banco (onde o usuário confere suas anotações).
+
+- `Transaction.referenceMonth` ("YYYY-MM") registra qual fatura o `CREDIT_PAYMENT` liquida
+  (preenchido pelo modal "Pagar Agora" a partir do período exibido). Requer `schemaVersion` 4→5
+  e coluna SQLite `reference_month` (`v4.sql`).
+- Por período: `total = getInvoiceTotal` (charges − credits), `pago = getInvoicePaid`
+  (Σ `CREDIT_PAYMENT` com `referenceMonth` == período), `restante = total − pago`,
+  `status = getInvoiceStatus` (aberta / parcial / paga). A UI mostra selo de status + Pago/Restante;
+  o valor sugerido no modal é o **restante**.
+- **Caixa:** o `CREDIT_PAYMENT` debita a conta pagadora (corrigido em Dashboard/Settings — antes
+  era um no-op). O **limite disponível** = `limit − getCreditOutstanding` (devedor global =
+  Σ charges − Σ credits − Σ payments). `CREDIT_PAYMENT` continua excluído dos gráficos de
+  Receitas × Despesas (liquidação de passivo).
+- **Sync:** `sync_gimbo.py` infere `referenceMonth` de pagamentos vindos do Organizze como
+  "mês do pagamento − 1" (vencimento cai no mês seguinte ao período).
 
 ---
 

@@ -68,12 +68,13 @@ export default function FaturasView({
       for (const acc of creditAccounts) {
         const total = transactions
           .filter((tx) => {
-            if (tx.type !== 'EXPENSE') return false
+            // Charges (EXPENSE) and credits/refunds (INCOME on the card) net into the invoice.
+            if (tx.type !== 'EXPENSE' && tx.type !== 'INCOME') return false
             if (tx.accountId !== acc.id) return false
             const d = parseDateLocal(getEffectiveCashFlowDate(tx, accounts))
             return d.getMonth() === m && d.getFullYear() === y
           })
-          .reduce((s, tx) => s + tx.amount, 0)
+          .reduce((s, tx) => s + (tx.type === 'EXPENSE' ? tx.amount : -tx.amount), 0)
         bucket[acc.id] = total
       }
       return bucket
@@ -85,12 +86,13 @@ export default function FaturasView({
       for (const acc of creditAccounts) {
         const total = transactions
           .filter((tx) => {
-            if (tx.type !== 'EXPENSE') return false
+            // Charges (EXPENSE) and credits/refunds (INCOME on the card) net into the invoice.
+            if (tx.type !== 'EXPENSE' && tx.type !== 'INCOME') return false
             if (tx.accountId !== acc.id) return false
             const d = parseDateLocal(getEffectiveCashFlowDate(tx, accounts))
             return d.getMonth() === m && d.getFullYear() === y
           })
-          .reduce((s, tx) => s + tx.amount, 0)
+          .reduce((s, tx) => s + (tx.type === 'EXPENSE' ? tx.amount : -tx.amount), 0)
         if (total > 0 || creditAccounts.length === 1) {
           rows.push({ period: fullLabel, cardName: acc.name, total, isTotal: false })
         }

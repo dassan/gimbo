@@ -11,9 +11,12 @@ import {
   parseDateLocal,
   getInvoicePeriod,
   getInvoiceDueDate,
-  getCurrentInvoiceBalance,
+  getCreditOutstanding,
+  getInvoiceStatus,
+  invoicePeriodKey,
   uuid,
 } from '@/lib/utils'
+import type { InvoiceStatus } from '@/lib/utils'
 import type { AppLayoutContext } from '@/components/AppLayout'
 import type { Account, Transaction } from '@/types'
 
@@ -109,25 +112,33 @@ export default function CreditCardPage() {
     return { closingDateStr, dueDateStr }
   }, [account, resolvedPeriod])
 
-  // Transactions belonging to this invoice period
+  // Transactions belonging to this invoice period: charges (EXPENSE) and credits/refunds
+  // (INCOME on the card) by purchase date, plus payments (CREDIT_PAYMENT) that reference
+  // this period (Option 2). Sorted newest-first for a statement-like view.
   const invoiceTransactions = useMemo(() => {
     if (!data || !account?.creditMetadata) return []
     const { closingDay } = account.creditMetadata
-    return data.transactions.filter((tx) => {
-      if (tx.accountId !== account.id) return false
-      if (tx.type !== 'EXPENSE') return false // only expenses belong to the invoice
-      const period = getInvoicePeriod(tx.date, closingDay)
-      return period.year === resolvedPeriod.year && period.month === resolvedPeriod.month
-    })
+    const periodKey = invoicePeriodKey(resolvedPeriod)
+    return data.transactions
+      .filter((tx) => {
+        if (tx.accountId !== account.id) return false
+        if (tx.type === 'CREDIT_PAYMENT') return tx.referenceMonth === periodKey
+        if (tx.type !== 'EXPENSE' && tx.type !== 'INCOME') return false
+        const period = getInvoicePeriod(tx.date, closingDay)
+        return period.year === resolvedPeriod.year && period.month === resolvedPeriod.month
+      })
+      .sort((a, b) => b.date.localeCompare(a.date))
   }, [data, account, resolvedPeriod])
 
-  // Category totals for the spending summary
+  // Category totals for the spending summary — charges only (EXPENSE).
   const categoryTotals = useMemo(() => {
     const map: Record<string, number> = {}
-    invoiceTransactions.forEach((tx) => {
-      const catName = data?.categories.find((c) => c.id === tx.categoryId)?.name ?? 'Outros'
-      map[catName] = (map[catName] ?? 0) + tx.amount
-    })
+    invoiceTransactions
+      .filter((tx) => tx.type === 'EXPENSE')
+      .forEach((tx) => {
+        const catName = data?.categories.find((c) => c.id === tx.categoryId)?.name ?? 'Outros'
+        map[catName] = (map[catName] ?? 0) + tx.amount
+      })
     return Object.entries(map)
       .sort((a, b) => b[1] - a[1])
       .map(([name, total]) => ({ name, total }))
@@ -153,10 +164,22 @@ export default function CreditCardPage() {
     return invoiceTransactions.filter((tx) => tx.categoryId === filterCategory)
   }, [invoiceTransactions, filterCategory])
 
-  const invoiceTotal = invoiceTransactions.reduce((s, tx) => s + tx.amount, 0)
+  // Statement total of the period = charges − credits (estornos); payments are tracked
+  // separately (Pago/Restante), mirroring the bank statement (Option 2).
+  const invoiceTotal = invoiceTransactions.reduce((s, tx) => {
+    if (tx.type === 'EXPENSE') return s + tx.amount
+    if (tx.type === 'INCOME') return s - tx.amount
+    return s
+  }, 0)
+  const invoicePaid = invoiceTransactions.reduce(
+    (s, tx) => (tx.type === 'CREDIT_PAYMENT' ? s + tx.amount : s),
+    0
+  )
+  const invoiceRemaining = invoiceTotal - invoicePaid
+  const invoiceStatus = getInvoiceStatus(invoiceTotal, invoicePaid)
   const availableLimit =
     account?.creditMetadata && data
-      ? account.creditMetadata.limit - getCurrentInvoiceBalance(data.transactions, account)
+      ? account.creditMetadata.limit - getCreditOutstanding(data.transactions, account)
       : 0
 
   if (!data) return null
@@ -171,7 +194,8 @@ export default function CreditCardPage() {
 
   const monthLabel = MONTH_NAMES_PT[(resolvedPeriod.month - 1 + 12) % 12]
 
-  // M-30: handle payment confirmation — creates a CREDIT_PAYMENT transaction
+  // M-30: handle payment confirmation — creates a CREDIT_PAYMENT bound to the displayed
+  // invoice period via referenceMonth (Option 2), so the payment settles that statement.
   function handlePayConfirm(amount: number, date: string, fromAccountId: string) {
     addTransaction({
       id: uuid(),
@@ -184,6 +208,7 @@ export default function CreditCardPage() {
       categoryId: '',
       isPaid: true,
       tags: [],
+      referenceMonth: invoicePeriodKey(resolvedPeriod),
     })
     setShowPayModal(false)
   }
@@ -265,17 +290,32 @@ export default function CreditCardPage() {
               </p>
             </div>
             <div>
-              <p className="text-[10px] text-on-surface/40 uppercase tracking-widest">
-                {t('dashboard.invoice')}
-              </p>
+              <div className="flex items-center justify-end gap-2">
+                <p className="text-[10px] text-on-surface/40 uppercase tracking-widest">
+                  {t('dashboard.invoice')}
+                </p>
+                <InvoiceStatusBadge status={invoiceStatus} />
+              </div>
               <p className="text-2xl font-bold tabular-nums text-on-surface">
                 {formatCurrency(invoiceTotal)}
               </p>
             </div>
+            {/* Option 2: payments are tracked against this period — show Pago/Restante */}
+            {invoicePaid > 0 && (
+              <div className="flex items-center justify-end gap-4 text-[11px] tabular-nums">
+                <span className="text-on-surface/50">
+                  {t('creditCard.paid')} {formatCurrency(invoicePaid)}
+                </span>
+                <span className={cn(invoiceRemaining > 0.005 ? 'text-tertiary' : 'text-primary')}>
+                  {t('creditCard.remaining')} {formatCurrency(Math.max(invoiceRemaining, 0))}
+                </span>
+              </div>
+            )}
             {/* M-30: opens dedicated PayInvoiceModal instead of generic TransactionDrawer */}
             <button
               onClick={() => setShowPayModal(true)}
-              className="rounded-2xl bg-primary px-5 py-2 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
+              disabled={invoiceStatus === 'paid'}
+              className="rounded-2xl bg-primary px-5 py-2 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40 disabled:hover:brightness-100"
             >
               {t('creditCard.payNow')}
             </button>
@@ -402,12 +442,27 @@ export default function CreditCardPage() {
           onClose={() => setShowPayModal(false)}
           resolvedPeriod={resolvedPeriod}
           monthLabel={monthLabel}
-          invoiceTotal={invoiceTotal}
+          defaultAmount={Math.max(invoiceRemaining, 0)}
           nonCreditAccounts={nonCreditAccounts}
           onConfirm={handlePayConfirm}
         />
       )}
     </div>
+  )
+}
+
+// ─── InvoiceStatusBadge ───────────────────────────────────────────────────────
+
+function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
+  const { t } = useTranslation()
+  const cfg: Record<InvoiceStatus, { label: string; cls: string }> = {
+    open: { label: t('creditCard.statusOpen'), cls: 'bg-tertiary/15 text-tertiary' },
+    partial: { label: t('creditCard.statusPartial'), cls: 'bg-amber-500/15 text-amber-600' },
+    paid: { label: t('creditCard.statusPaid'), cls: 'bg-primary/15 text-primary' },
+  }
+  const { label, cls } = cfg[status]
+  return (
+    <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', cls)}>{label}</span>
   )
 }
 
@@ -424,8 +479,20 @@ function InvoiceTxRow({
   isLast: boolean
   onEdit: (tx: Transaction) => void
 }) {
+  const { t } = useTranslation()
   const cat = data.categories.find((c) => c.id === tx.categoryId)
-  const acc = data.accounts.find((a) => a.id === tx.accountId)
+  const isPayment = tx.type === 'CREDIT_PAYMENT'
+  const isCredit = tx.type === 'INCOME'
+  // CREDIT_PAYMENT links to the funding account via transferAccountId; others to the card.
+  const acc = data.accounts.find((a) => a.id === (isPayment ? tx.transferAccountId : tx.accountId))
+
+  const title = isPayment
+    ? t('transactions.creditPayment')
+    : // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+      tx.description || cat?.name || '—'
+  const amountText =
+    isPayment || isCredit ? `- ${formatCurrency(tx.amount)}` : formatCurrency(tx.amount)
+  const amountCls = isPayment ? 'text-on-surface/50' : isCredit ? 'text-primary' : 'text-tertiary'
 
   return (
     <div
@@ -438,29 +505,32 @@ function InvoiceTxRow({
         !isLast && 'border-b border-surface-container-low'
       )}
     >
-      {/* Category icon */}
-      <div
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white text-sm font-semibold"
-        style={{ backgroundColor: cat?.color ?? '#6B7280' }}
-      >
-        {cat?.name?.[0] ?? '?'}
-      </div>
+      {/* Icon: neutral CreditCard for payments, category avatar otherwise */}
+      {isPayment ? (
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-container-high text-on-surface/50">
+          <CreditCard size={16} strokeWidth={1.5} />
+        </div>
+      ) : (
+        <div
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white text-sm font-semibold"
+          style={{ backgroundColor: cat?.color ?? '#6B7280' }}
+        >
+          {cat?.name?.[0] ?? '?'}
+        </div>
+      )}
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-on-surface truncate">
-          {/* eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing */}
-          {tx.description || cat?.name || '—'}
-        </p>
+        <p className="text-sm font-semibold text-on-surface truncate">{title}</p>
         <div className="flex items-center gap-2 mt-0.5">
-          {cat && <span className="text-xs text-on-surface/40">{cat.name}</span>}
+          {!isPayment && cat && <span className="text-xs text-on-surface/40">{cat.name}</span>}
           {acc && <span className="text-xs text-on-surface/30">· {acc.name}</span>}
         </div>
       </div>
 
       {/* Amount */}
       <div className="text-right shrink-0">
-        <p className="text-sm font-bold tabular-nums text-tertiary">{formatCurrency(tx.amount)}</p>
+        <p className={cn('text-sm font-bold tabular-nums', amountCls)}>{amountText}</p>
         <p className="text-[10px] text-on-surface/30 mt-0.5">
           {parseDateLocal(tx.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
         </p>
@@ -475,29 +545,29 @@ function PayInvoiceModal({
   onClose,
   resolvedPeriod,
   monthLabel,
-  invoiceTotal,
+  defaultAmount,
   nonCreditAccounts,
   onConfirm,
 }: {
   onClose: () => void
   resolvedPeriod: { year: number; month: number }
   monthLabel: string
-  invoiceTotal: number
+  defaultAmount: number // suggested value = remaining unpaid balance of the period
   nonCreditAccounts: Account[]
   onConfirm: (amount: number, date: string, fromAccountId: string) => void
 }) {
   const { t } = useTranslation()
 
-  const [amountStr, setAmountStr] = useState(invoiceTotal.toFixed(2).replace('.', ','))
-  const [amount, setAmount] = useState(invoiceTotal)
+  const [amountStr, setAmountStr] = useState(defaultAmount.toFixed(2).replace('.', ','))
+  const [amount, setAmount] = useState(defaultAmount)
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [fromAccountId, setFromAccountId] = useState(nonCreditAccounts[0]?.id ?? '')
 
-  // Re-sync defaults if parent invoiceTotal changes (e.g. period offset navigated while modal open)
+  // Re-sync defaults if the suggested amount changes (e.g. period navigated while modal open)
   useEffect(() => {
-    setAmount(invoiceTotal)
-    setAmountStr(invoiceTotal.toFixed(2).replace('.', ','))
-  }, [invoiceTotal])
+    setAmount(defaultAmount)
+    setAmountStr(defaultAmount.toFixed(2).replace('.', ','))
+  }, [defaultAmount])
 
   function handleAmountInput(e: React.ChangeEvent<HTMLInputElement>) {
     const raw = e.target.value.replace(/\D/g, '')

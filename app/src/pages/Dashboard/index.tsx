@@ -22,8 +22,10 @@ import {
   cn,
   parseDateLocal,
   getCurrentInvoiceBalance,
+  getCreditOutstanding,
   getEffectiveCashFlowDate,
   isCashRealized,
+  isCardCredit,
 } from '@/lib/utils'
 import type { Account, Transaction, AccountType } from '@/types'
 
@@ -99,10 +101,18 @@ export default function Dashboard() {
       const effectiveDate = parseDateLocal(getEffectiveCashFlowDate(tx, data.accounts))
       return effectiveDate.getMonth() === m && effectiveDate.getFullYear() === y
     })
-    const income = monthly.filter((tx) => tx.type === 'INCOME').reduce((s, tx) => s + tx.amount, 0)
-    const expenses = monthly
-      .filter((tx) => tx.type === 'EXPENSE')
-      .reduce((s, tx) => s + tx.amount, 0)
+    // Card credits (estornos) are INCOME on a CREDIT account — they reduce card
+    // spending, not real income, so they net against expenses (never the income bar).
+    let income = 0
+    let expenses = 0
+    for (const tx of monthly) {
+      if (tx.type === 'INCOME') {
+        if (isCardCredit(tx, data.accounts)) expenses -= tx.amount
+        else income += tx.amount
+      } else if (tx.type === 'EXPENSE') {
+        expenses += tx.amount
+      }
+    }
     // M-25: for installment groups, show only the first installment (currentIndex === 1)
     // to prevent a single purchase split into N parts from flooding the list.
     const recentTxs = [...data.transactions]
@@ -129,6 +139,18 @@ export default function Dashboard() {
       })
 
     data.transactions.forEach((tx) => {
+      // CREDIT_PAYMENT funds leave the paying (non-CREDIT) account; the card side is
+      // reflected in its available limit (outstanding). Handle before the CREDIT skip
+      // below, since tx.accountId is the card itself.
+      if (tx.type === 'CREDIT_PAYMENT') {
+        if (tx.transferAccountId) {
+          const payer = data.accounts.find((a) => a.id === tx.transferAccountId)
+          if (payer && payer.type !== 'CREDIT') {
+            map[tx.transferAccountId] = (map[tx.transferAccountId] ?? 0) - tx.amount
+          }
+        }
+        return
+      }
       const account = data.accounts.find((a) => a.id === tx.accountId)
       if (!account || account.type === 'CREDIT') return
       // B-15: skip unpaid INCOME/EXPENSE unless projecting; TRANSFER is always realized.
@@ -154,8 +176,9 @@ export default function Dashboard() {
           map[account.id] = 0
           return
         }
-        const invoiceBalance = getCurrentInvoiceBalance(data.transactions, account)
-        map[account.id] = account.creditMetadata.limit - invoiceBalance
+        // Available limit = limit − outstanding debt (charges − credits − payments).
+        const outstanding = getCreditOutstanding(data.transactions, account)
+        map[account.id] = account.creditMetadata.limit - outstanding
       })
 
     return map

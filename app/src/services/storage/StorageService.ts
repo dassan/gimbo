@@ -648,6 +648,9 @@ function rowToTransaction(row: Row): Transaction {
   if (row.transfer_account_id !== null && row.transfer_account_id !== undefined) {
     tx.transferAccountId = row.transfer_account_id as string
   }
+  if (row.reference_month !== null && row.reference_month !== undefined) {
+    tx.referenceMonth = row.reference_month as string
+  }
   if (row.installment_parent_id !== null && row.installment_parent_id !== undefined) {
     tx.installment = {
       parentId: row.installment_parent_id as string,

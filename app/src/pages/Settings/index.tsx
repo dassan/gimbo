@@ -46,14 +46,7 @@ import {
 } from '@/lib/backupDir'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
-import {
-  formatCurrency,
-  cn,
-  uuid,
-  now,
-  getCurrentInvoiceBalance,
-  isCashRealized,
-} from '@/lib/utils'
+import { formatCurrency, cn, uuid, now, getCreditOutstanding, isCashRealized } from '@/lib/utils'
 import { AUDIT_RETENTION_DEFAULT } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
 import Toast from '@/components/Toast'
@@ -389,6 +382,17 @@ export default function Settings() {
       })
 
     data.transactions.forEach((tx) => {
+      // CREDIT_PAYMENT funds leave the paying (non-CREDIT) account; the card side is
+      // reflected in its available limit (outstanding). Handle before the CREDIT skip.
+      if (tx.type === 'CREDIT_PAYMENT') {
+        if (tx.transferAccountId) {
+          const payer = data.accounts.find((a) => a.id === tx.transferAccountId)
+          if (payer && payer.type !== 'CREDIT') {
+            map[tx.transferAccountId] = (map[tx.transferAccountId] ?? 0) - tx.amount
+          }
+        }
+        return
+      }
       const account = data.accounts.find((a) => a.id === tx.accountId)
       if (!account || account.type === 'CREDIT') return
       // B-15: account balances reflect realized cash; TRANSFER is always realized.
@@ -414,8 +418,8 @@ export default function Settings() {
           map[account.id] = 0
           return
         }
-        const invoiceBalance = getCurrentInvoiceBalance(data.transactions, account)
-        map[account.id] = account.creditMetadata.limit - invoiceBalance
+        const outstanding = getCreditOutstanding(data.transactions, account)
+        map[account.id] = account.creditMetadata.limit - outstanding
       })
 
     return map

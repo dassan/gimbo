@@ -454,7 +454,7 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
     expect(screen.queryByText('Cinema no Cartão')).not.toBeInTheDocument()
   })
 
-  it('does not show CREDIT_PAYMENT transactions', () => {
+  it('shows CREDIT_PAYMENT as an outflow on the funding account (B-16)', () => {
     const retailAccount = makeRetailAccount()
     const creditAccount = makeCreditAccount()
 
@@ -482,7 +482,8 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
     render(<Transactions />)
 
     expect(screen.getByText('Supermercado')).toBeInTheDocument()
-    expect(screen.queryByText('Pagamento fatura')).not.toBeInTheDocument()
+    // The payment is a real débito on the funding (retail) account, so it belongs in the ledger
+    expect(screen.getByText('Pagamento fatura')).toBeInTheDocument()
   })
 
   it('does not include CREDIT account in the filter dropdown', () => {
@@ -500,7 +501,7 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
     expect(screen.queryByText('Nubank Cartão')).not.toBeInTheDocument()
   })
 
-  it('consolidated flow excludes CREDIT account EXPENSE and CREDIT_PAYMENT', () => {
+  it('consolidated flow excludes CREDIT card purchases but counts CREDIT_PAYMENT as outflow', () => {
     const retailAccount = makeRetailAccount()
     const creditAccount = makeCreditAccount()
 
@@ -516,7 +517,7 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
       amount: 500,
       description: 'Aluguel',
     })
-    // These should NOT affect the consolidated total
+    // Card purchase lives in /credit-card — excluded from this cash ledger
     const creditExpense = makeTransaction({
       id: 'tx-credit-exp',
       accountId: 'acc-credit',
@@ -524,6 +525,7 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
       amount: 200,
       description: 'Restaurante Cartão',
     })
+    // B-16: the payment IS a real outflow on the retail account → counts in the flow
     const creditPayment = makeTransaction({
       id: 'tx-cp',
       accountId: 'acc-credit',
@@ -542,9 +544,10 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
 
     render(<Transactions />)
 
-    // Flow = 3000 - 500 = 2500 (credit expense and payment ignored)
+    // Flow = 3000 income − 500 retail expense − 200 card payment = 2300
+    // (the R$200 card purchase is excluded; it lives in /credit-card)
     const footerSection = screen.getByText('transactions.positiveFlow').closest('div')
-    expect(footerSection?.textContent).toContain('2.500,00')
+    expect(footerSection?.textContent).toContain('2.300,00')
   })
 
   // ── B-15: unpaid entries excluded from the footer flow unless projecting ──────

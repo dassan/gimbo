@@ -4,7 +4,7 @@ import { uuid, now } from '@/lib/utils'
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 4
+export const CURRENT_SCHEMA_VERSION = 5
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -94,6 +94,7 @@ const TransactionSchema = z.object({
   installment: InstallmentSchema.optional(),
   recurrence: RecurrenceSchema.optional(),
   transferAccountId: z.string().optional(), // only for CREDIT_PAYMENT
+  referenceMonth: z.string().optional(), // only for CREDIT_PAYMENT: invoice period "YYYY-MM" (Option 2)
 })
 
 const ValuationSchema = z.object({
@@ -167,6 +168,12 @@ function migrateDataFile(data: DataFile): DataFile {
   // The field is optional — existing records need no changes beyond bumping the version.
   if (migrated.schemaVersion === 3) {
     migrated = { ...migrated, schemaVersion: 4 }
+  }
+
+  // v4 → v5: adds optional referenceMonth (Transaction) for CREDIT_PAYMENT → invoice period
+  // binding (Option 2). The field is optional — existing records only need the version bump.
+  if (migrated.schemaVersion === 4) {
+    migrated = { ...migrated, schemaVersion: 5 }
   }
 
   return migrated

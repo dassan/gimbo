@@ -88,6 +88,7 @@ export interface Transaction {
   installment?: Installment // only for installment purchases
   recurrence?: Recurrence // only for recurring INCOME/EXPENSE series (M-35)
   transferAccountId?: string // only for CREDIT_PAYMENT: the account that funds the payment
+  referenceMonth?: string // only for CREDIT_PAYMENT: invoice period being paid, "YYYY-MM" (Option 2)
 }
 
 export interface Valuation {

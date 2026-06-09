@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import CreditCardPage from '@/pages/CreditCard'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile, makeCreditAccount } from '@/test/fixtures/dataFile'
+import { getInvoicePeriod, invoicePeriodKey } from '@/lib/utils'
 import type { Account, Transaction } from '@/types'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -240,5 +241,79 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
     expect(call.accountId).toBe('acc-credit')
     expect(call.transferAccountId).toBe('acc-retail')
     expect(call.isPaid).toBe(true)
+  })
+})
+
+// ─── Option 2: estornos (bug A) and payment-to-period binding (bug B) ──────────
+
+describe('CreditCardPage — Option 2: credits and invoice payment cycle', () => {
+  const periodKey = invoicePeriodKey(
+    getInvoicePeriod(todayStr, makeCreditAccountFixed().creditMetadata!.closingDay)
+  )
+
+  it('shows a credit (estorno) and subtracts it from the invoice total', () => {
+    const account = makeCreditAccountFixed()
+    const charge = makeTransaction({ id: 'c1', amount: 200, description: 'Compra' })
+    const credit = makeTransaction({
+      id: 'r1',
+      type: 'INCOME',
+      amount: 50,
+      description: 'Estorno Loja X',
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account], transactions: [charge, credit] }),
+    })
+
+    render(<CreditCardPage />)
+
+    // Estorno row is listed and the net invoice total (200 − 50) shows up
+    expect(screen.getByText('Estorno Loja X')).toBeInTheDocument()
+    expect(screen.getAllByText(/150,00/).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('binds the payment to the displayed period via referenceMonth', () => {
+    const account = makeCreditAccountFixed()
+    const retail = makeRetailAccount()
+
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [account, retail],
+        transactions: [makeTransaction({ amount: 500 })],
+      }),
+    })
+
+    const addTransactionSpy = vi.spyOn(useDataStore.getState(), 'addTransaction')
+    render(<CreditCardPage />)
+    fireEvent.click(screen.getByText('creditCard.payNow'))
+    const confirmButtons = screen.getAllByText('creditCard.payInvoice')
+    fireEvent.click(confirmButtons[confirmButtons.length - 1])
+
+    expect(addTransactionSpy).toHaveBeenCalledOnce()
+    expect(addTransactionSpy.mock.calls[0][0].referenceMonth).toBe(periodKey)
+  })
+
+  it('marks the invoice as paid once a matching payment covers it', () => {
+    const account = makeCreditAccountFixed()
+    const retail = makeRetailAccount()
+    const charge = makeTransaction({ amount: 500 })
+    const payment = makeTransaction({
+      id: 'pay-1',
+      type: 'CREDIT_PAYMENT',
+      amount: 500,
+      transferAccountId: 'acc-retail',
+      referenceMonth: periodKey,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account, retail], transactions: [charge, payment] }),
+    })
+
+    render(<CreditCardPage />)
+
+    expect(screen.getByText('creditCard.statusPaid')).toBeInTheDocument()
+    expect(screen.getByText(/creditCard\.paid/)).toBeInTheDocument()
+    // Pay button is disabled when the invoice is fully settled
+    expect(screen.getByText('creditCard.payNow').closest('button')).toBeDisabled()
   })
 })

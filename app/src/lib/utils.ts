@@ -123,59 +123,111 @@ export function getInvoiceDueDate(
 }
 
 /**
- * Sums all EXPENSE transactions for the given account that belong to the
- * *current* invoice period.  Returns 0 if the account has no creditMetadata.
+ * True when a transaction is a card credit/refund (estorno): an INCOME posted on a
+ * CREDIT account. Such entries are never real cash income — they reduce card spending
+ * and the invoice of their period. Use this to keep income/expense headlines honest.
  */
-export function getCurrentInvoiceBalance(transactions: Transaction[], account: Account): number {
+export function isCardCredit(tx: Transaction, accounts: Account[]): boolean {
+  if (tx.type !== 'INCOME') return false
+  const acc = accounts.find((a) => a.id === tx.accountId)
+  return acc?.type === 'CREDIT'
+}
+
+/** Invoice period as a "YYYY-MM" key (matches Transaction.referenceMonth for CREDIT_PAYMENT). */
+export function invoicePeriodKey(period: { year: number; month: number }): string {
+  return `${period.year}-${String(period.month).padStart(2, '0')}`
+}
+
+/** Rounding tolerance for currency comparisons (half a cent). */
+const INVOICE_EPSILON = 0.005
+
+export type InvoiceStatus = 'open' | 'partial' | 'paid'
+
+/**
+ * Net statement total for a card's invoice period: charges (EXPENSE) minus
+ * credits/refunds (INCOME on the same CREDIT account, e.g. estornos). This mirrors
+ * the closed amount printed on the bank statement. Returns 0 without creditMetadata.
+ */
+export function getInvoiceTotal(
+  transactions: Transaction[],
+  account: Account,
+  period: { year: number; month: number }
+): number {
   if (!account.creditMetadata) return 0
-
   const { closingDay } = account.creditMetadata
-  const today = new Date()
-  const currentPeriod = getInvoicePeriod(
-    `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
-    closingDay
-  )
+  let total = 0
+  for (const tx of transactions) {
+    if (tx.accountId !== account.id) continue
+    if (tx.type !== 'EXPENSE' && tx.type !== 'INCOME') continue
+    const p = getInvoicePeriod(tx.date, closingDay)
+    if (p.year !== period.year || p.month !== period.month) continue
+    total += tx.type === 'EXPENSE' ? tx.amount : -tx.amount
+  }
+  return total
+}
 
+/**
+ * Sum of payments (CREDIT_PAYMENT) that explicitly reference the given invoice
+ * period of the card (Option 2: payment ↔ period binding via referenceMonth).
+ */
+export function getInvoicePaid(
+  transactions: Transaction[],
+  account: Account,
+  period: { year: number; month: number }
+): number {
+  const key = invoicePeriodKey(period)
   return transactions
     .filter(
       (tx) =>
-        tx.accountId === account.id &&
-        tx.type === 'EXPENSE' &&
-        (() => {
-          const p = getInvoicePeriod(tx.date, closingDay)
-          return p.year === currentPeriod.year && p.month === currentPeriod.month
-        })()
+        tx.type === 'CREDIT_PAYMENT' && tx.accountId === account.id && tx.referenceMonth === key
     )
     .reduce((sum, tx) => sum + tx.amount, 0)
 }
 
+/** Settlement status of an invoice given its net total and the amount already paid. */
+export function getInvoiceStatus(total: number, paid: number): InvoiceStatus {
+  if (total <= INVOICE_EPSILON && paid <= INVOICE_EPSILON) return 'open'
+  if (total - paid <= INVOICE_EPSILON) return 'paid'
+  if (paid > INVOICE_EPSILON) return 'partial'
+  return 'open'
+}
+
 /**
- * Sums all EXPENSE transactions for the given CREDIT account whose invoice
- * period is the *current* period or later (fatura em aberto + parcelas futuras).
- * Returns 0 if the account has no creditMetadata.
- *
- * Decision D2 (NET_WORTH.md §4): passivo = fatura atual + todas as faturas futuras.
+ * Net statement total of the *current* invoice period (charges − credits).
+ * Returns 0 without creditMetadata. Used for the "current invoice" figure.
+ */
+export function getCurrentInvoiceBalance(transactions: Transaction[], account: Account): number {
+  if (!account.creditMetadata) return 0
+  const currentPeriod = getInvoicePeriod(todayStr(), account.creditMetadata.closingDay)
+  return getInvoiceTotal(transactions, account, currentPeriod)
+}
+
+/**
+ * Outstanding debt on a CREDIT account across all time: all charges minus all
+ * credits/refunds minus all payments. This is the true amount owed and the basis
+ * for the available limit (limit − outstanding). Future installments count, since
+ * they commit the limit at purchase time (CREDIT_CARD.md §2.4).
+ * Returns 0 without creditMetadata.
+ */
+export function getCreditOutstanding(transactions: Transaction[], account: Account): number {
+  if (!account.creditMetadata) return 0
+  let outstanding = 0
+  for (const tx of transactions) {
+    if (tx.accountId !== account.id) continue
+    if (tx.type === 'EXPENSE') outstanding += tx.amount
+    else if (tx.type === 'INCOME') outstanding -= tx.amount
+    else if (tx.type === 'CREDIT_PAYMENT') outstanding -= tx.amount
+  }
+  return outstanding
+}
+
+/**
+ * Total liability of a CREDIT account for net-worth purposes = outstanding debt.
+ * Previously "fatura atual + futuras"; now payments are tracked, so the liability
+ * is what is actually still owed (unpaid past/current/future net of payments).
  */
 export function getTotalCreditLiability(transactions: Transaction[], account: Account): number {
-  if (!account.creditMetadata) return 0
-
-  const { closingDay } = account.creditMetadata
-  const today = new Date()
-  const currentPeriod = getInvoicePeriod(
-    `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
-    closingDay
-  )
-
-  return transactions
-    .filter((tx) => {
-      if (tx.accountId !== account.id || tx.type !== 'EXPENSE') return false
-      const p = getInvoicePeriod(tx.date, closingDay)
-      return (
-        p.year > currentPeriod.year ||
-        (p.year === currentPeriod.year && p.month >= currentPeriod.month)
-      )
-    })
-    .reduce((sum, tx) => sum + tx.amount, 0)
+  return getCreditOutstanding(transactions, account)
 }
 
 /**

@@ -11,7 +11,13 @@ import {
   CartesianGrid,
   Legend,
 } from 'recharts'
-import { cn, formatCurrency, parseDateLocal, getEffectiveCashFlowDate } from '@/lib/utils'
+import {
+  cn,
+  formatCurrency,
+  parseDateLocal,
+  getEffectiveCashFlowDate,
+  isCardCredit,
+} from '@/lib/utils'
 import type { Transaction, Account } from '@/types'
 
 export interface CashFlowViewProps {
@@ -100,8 +106,18 @@ export default function CashFlowView({
         const isPaidOk = includeUnpaid || tx.isPaid
         return match(d) && isPaidOk
       })
-      const income = txs.filter((t) => t.type === 'INCOME').reduce((s, t) => s + t.amount, 0)
-      const expenses = txs.filter((t) => t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0)
+      // Card credits (estornos) are INCOME on a CREDIT account — net them against expenses
+      // rather than counting fake income (keeps the income bar honest).
+      let income = 0
+      let expenses = 0
+      for (const t of txs) {
+        if (t.type === 'INCOME') {
+          if (isCardCredit(t, accounts)) expenses -= t.amount
+          else income += t.amount
+        } else if (t.type === 'EXPENSE') {
+          expenses += t.amount
+        }
+      }
       const result = income - expenses
       cumulative += result
       return { label, fullLabel, income, expenses, result, balance: cumulative }

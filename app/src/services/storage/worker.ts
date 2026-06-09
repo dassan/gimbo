@@ -10,6 +10,7 @@ import { OriginPrivateFileSystemVFS } from 'wa-sqlite/src/examples/OriginPrivate
 import v1Schema from './migrations/v1.sql?raw'
 import v2Schema from './migrations/v2.sql?raw'
 import v3Schema from './migrations/v3.sql?raw'
+import v4Schema from './migrations/v4.sql?raw'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
 
@@ -64,6 +65,7 @@ type RawTransaction = {
   installment?: { parentId: string; currentIndex: number; total: number }
   recurrence?: { frequency: string; parentId: string; endDate?: string }
   transferAccountId?: string
+  referenceMonth?: string
 }
 type RawAuditEntry = {
   id: string
@@ -136,6 +138,9 @@ async function runMigrations(): Promise<void> {
   }
   if (version < 3) {
     await sqlite3.run(db, v3Schema)
+  }
+  if (version < 4) {
+    await sqlite3.run(db, v4Schema)
   }
 }
 
@@ -266,9 +271,9 @@ async function replaceAll(raw: unknown): Promise<void> {
         `INSERT INTO transactions
            (id, account_id, category_id, amount, type, description, date, is_paid,
             transfer_account_id, installment_parent_id, installment_index, installment_total,
-            recurrence_parent_id, recurrence_frequency, recurrence_end_date,
+            recurrence_parent_id, recurrence_frequency, recurrence_end_date, reference_month,
             created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           tx.id,
           tx.accountId,
@@ -285,6 +290,7 @@ async function replaceAll(raw: unknown): Promise<void> {
           tx.recurrence?.parentId ?? null,
           tx.recurrence?.frequency ?? null,
           tx.recurrence?.endDate ?? null,
+          tx.referenceMonth ?? null,
           ts,
           ts,
         ]

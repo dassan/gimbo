@@ -237,13 +237,13 @@ O merge requer campo `updatedAt: string` em `Transaction`, `Account`, `Category`
 
 ```typescript
 interface DataFile {
-  schemaVersion: number        // atualmente 2
+  schemaVersion: number        // atualmente 5
   user: User                   // { name, email, createdAt, updatedAt }
   settings: Settings           // { fileCreatedAt, fileUpdatedAt, auditLogRetentionLimit }
   accounts: Account[]          // { id, name, type, balance, includeInBalance, creditMetadata?, issuerIcon? }
   categories: Category[]       // { id, parentId, name, icon, color, type }
   tags: Tag[]                  // { id, name, color }
-  transactions: Transaction[]  // { id, accountId, categoryId, amount, type, date, description, isPaid, tags, installment?, transferAccountId? }
+  transactions: Transaction[]  // { id, accountId, categoryId, amount, type, date, description, isPaid, tags, installment?, recurrence?, transferAccountId?, referenceMonth? }
   auditLog: AuditEntry[]       // { id, timestamp, action, entity, entityId, summary }
   deletedIds: string[]         // tombstones de entidades deletadas
 }
@@ -262,10 +262,13 @@ Tipos completos em `src/types/index.ts`. Enums:
 
 ### Versionamento do Schema
 
-- `CURRENT_SCHEMA_VERSION = 2` (em `schema.ts`)
+- `CURRENT_SCHEMA_VERSION = 5` (em `schema.ts`)
 - Arquivos sem `schemaVersion` tratados como v1, promovidos automaticamente
 - Arquivos com versão futura lançam `SchemaVersionError`
-- Migração v1→v2: promove `schemaVersion`; campos opcionais não exigem backfill
+- Migrações são bumps idempotentes (campos opcionais não exigem backfill): v1→v2 (`creditMetadata`,
+  `installment`), v2→v3 (`valuations`), v3→v4 (`recurrence`), v4→v5 (`referenceMonth` p/ `CREDIT_PAYMENT`)
+- Schema físico SQLite (`PRAGMA user_version`, migrações em `services/storage/migrations/*.sql`):
+  `v3.sql` adiciona `recurrence_*`, `v4.sql` adiciona `reference_month` (user_version=4)
 
 ---
 
@@ -519,7 +522,7 @@ cd app && npx playwright test  # opcional local, obrigatório no CI
 sync_gimbo.py [--start <data> | --window-months N] [--end <data>] [--base gimbo.db] [--out gimbo.db]
   1. autentica (HTTP Basic; token via env ORGANIZZE_TOKEN, email via ORGANIZZE_EMAIL/--email)
   2. busca categorias, contas, cartões e lançamentos mês a mês no horizonte [start, end]
-  3. converte em memória → (incremental: funde no --base) → escreve gimbo.db (user_version=3)
+  3. converte em memória → (incremental: funde no --base) → escreve gimbo.db (user_version=4)
 ```
 
 ### Dois modos de operação
@@ -553,6 +556,8 @@ fora dela vindas da base. Cadastros (contas/cartões/categorias/tags) são unido
 - **`tag_color` determinístico**: cor derivada de `uuid5` do nome (não de `hash()`, que varia por `PYTHONHASHSEED`) — estável entre execuções e re-merges.
 - **`--end` futuro** inclui lançamentos agendados/recorrentes e parcelas a vencer (chegam com `paid=false` → `isPaid=false` no Gimbo). Default = hoje.
 - **Recorrência**: cada ocorrência do Organizze entra como transação avulsa (fiel ao extrato); as colunas `recurrence_*` ficam NULL. Não há reconstrução de séries M-35.
+- **Estornos (B-16)**: valores positivos no cartão (crédito/estorno no Organizze) são gravados como `INCOME` na conta `CREDIT` (preserva o sinal), abatendo a fatura — não como `EXPENSE`.
+- **Pagamento de fatura (B-16)**: `CREDIT_PAYMENT` recebe `reference_month` inferido como o mês do pagamento − 1 (o vencimento cai no mês seguinte ao período da fatura).
 
 ### Mapeamento Organizze → Gimbo
 
