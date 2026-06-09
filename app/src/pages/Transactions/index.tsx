@@ -137,20 +137,6 @@ export default function Transactions() {
     }, total)
   }, [data, creditAccountIds, includeUnpaid])
 
-  // M-32: category breakdown for the spending summary panel
-  const categoryTotals = useMemo(() => {
-    if (!data) return []
-    const map: Record<string, number> = {}
-    filtered.forEach((tx) => {
-      if (tx.type !== 'EXPENSE') return
-      const catName = data.categories.find((c) => c.id === tx.categoryId)?.name ?? 'Outros'
-      map[catName] = (map[catName] ?? 0) + tx.amount
-    })
-    return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, total]) => ({ name, total }))
-  }, [filtered, data])
-
   if (!data) return null
 
   return (
@@ -242,130 +228,84 @@ export default function Transactions() {
           </button>
         </div>
 
-        {/* ── M-32: Two-column layout: transaction list | spending summary ──── */}
-        {/* Mobile: single column (sidebar hidden). Desktop: 3-col grid. */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 items-start">
-          {/* Left column: transaction list */}
-          <div className="sm:col-span-2 space-y-4 sm:space-y-6">
-            {grouped.length === 0 ? (
-              <div className={cn('rounded-2xl bg-surface-container p-12 text-center', shadowClass)}>
-                <p className="text-sm text-on-surface/40">{t('common.noData')}</p>
-              </div>
-            ) : (
-              grouped.map(([dateKey, txs]) => (
-                <DateGroup
-                  key={dateKey}
-                  dateKey={dateKey}
-                  txs={txs}
-                  data={data}
-                  onEditTx={openTransactionDrawer}
-                  shadowClass={shadowClass}
-                />
-              ))
-            )}
-          </div>
-
-          {/* Right column: spending summary — desktop only (MB-05) */}
-          {/* sticky top-14: keeps card below the fixed navbar on scroll */}
-          {/* pt-6: offsets card by the date label row height (text-xs 16px + mb-2 8px = 24px) */}
-          <div className="hidden sm:block sm:col-span-1 sticky top-14 pt-6">
-            {categoryTotals.length > 0 && (
-              <div className={cn('rounded-2xl bg-surface-container p-6', shadowClass)}>
-                <h3 className="text-sm font-semibold text-on-surface mb-4">
-                  {t('creditCard.spendingSummary')}
-                </h3>
-                <div className="space-y-3">
-                  {categoryTotals.map(({ name, total }) => {
-                    const pct = expenses > 0 ? (total / expenses) * 100 : 0
-                    return (
-                      <div key={name}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-on-surface/70">{name}</span>
-                          <span className="text-xs font-semibold tabular-nums text-on-surface">
-                            {formatCurrency(total)}
-                          </span>
-                        </div>
-                        <div className="h-1.5 w-full rounded-full bg-surface-container-low overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-tertiary transition-all"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-                <div className="mt-4 pt-4 border-t border-surface-container-low flex items-center justify-between">
-                  <span className="text-xs font-semibold text-on-surface">{t('common.total')}</span>
-                  <span className="text-sm font-bold tabular-nums text-tertiary">
-                    {formatCurrency(expenses)}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
+        {/* ── M-36: full-width transaction list (spending summary card removed) ── */}
+        <div className="space-y-4 sm:space-y-6">
+          {grouped.length === 0 ? (
+            <div className={cn('rounded-2xl bg-surface-container p-12 text-center', shadowClass)}>
+              <p className="text-sm text-on-surface/40">{t('common.noData')}</p>
+            </div>
+          ) : (
+            grouped.map(([dateKey, txs]) => (
+              <DateGroup
+                key={dateKey}
+                dateKey={dateKey}
+                txs={txs}
+                data={data}
+                onEditTx={openTransactionDrawer}
+                shadowClass={shadowClass}
+              />
+            ))
+          )}
         </div>
       </div>
 
-      {/* ── Fixed footer: mirrors grid layout so width matches the transaction list column ── */}
+      {/* ── Fixed footer: full-width, matches the transaction list (M-36) ── */}
       {filtered.length > 0 && (
         <div className="fixed bottom-6 left-0 right-0 z-30 pointer-events-none">
           <div className="mx-auto max-w-5xl px-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 md:gap-6">
-              <div
-                className={cn(
-                  'md:col-span-2 flex items-center justify-between rounded-2xl bg-surface-container px-6 py-4 pointer-events-auto',
-                  shadowClass
-                )}
-              >
-                {/* Count */}
-                <p className="text-xs text-on-surface/40 shrink-0">
-                  <span className="font-semibold text-on-surface">{filtered.length}</span>{' '}
-                  {t('transactions.listed')}
-                </p>
+            <div
+              className={cn(
+                'flex items-center justify-between rounded-2xl bg-surface-container px-6 py-4 pointer-events-auto',
+                shadowClass
+              )}
+            >
+              {/* Count */}
+              <p className="text-xs text-on-surface/40 shrink-0">
+                <span className="font-semibold text-on-surface">{filtered.length}</span>{' '}
+                {t('transactions.listed')}
+              </p>
 
-                <div className="h-4 w-px bg-surface-container-high mx-4 shrink-0" />
+              <div className="h-4 w-px bg-surface-container-high mx-4 shrink-0" />
 
-                {/* Period flow */}
-                <div className="flex items-center gap-2 shrink-0">
-                  <span
-                    className={cn(
-                      'label text-xs font-bold',
-                      consolidated >= 0 ? 'text-primary' : 'text-tertiary'
-                    )}
-                  >
-                    {consolidated >= 0
-                      ? t('transactions.positiveFlow')
-                      : t('transactions.negativeFlow')}
-                  </span>
-                  <span
-                    className={cn(
-                      'text-sm font-bold tabular-nums',
-                      consolidated >= 0 ? 'text-primary' : 'text-tertiary'
-                    )}
-                  >
-                    {consolidated >= 0 ? '+' : ''}
-                    {formatCurrency(consolidated)}
-                  </span>
-                </div>
+              {/* Period flow */}
+              <div className="flex items-center gap-2 shrink-0">
+                <span
+                  className={cn(
+                    'label text-xs font-bold',
+                    consolidated >= 0 ? 'text-primary' : 'text-tertiary'
+                  )}
+                >
+                  {consolidated >= 0
+                    ? t('transactions.positiveFlow')
+                    : t('transactions.negativeFlow')}
+                </span>
+                <span
+                  className={cn(
+                    'text-sm font-bold tabular-nums',
+                    consolidated >= 0 ? 'text-primary' : 'text-tertiary'
+                  )}
+                >
+                  {consolidated >= 0 ? '+' : ''}
+                  {formatCurrency(consolidated)}
+                </span>
+              </div>
 
-                <div className="h-4 w-px bg-surface-container-high mx-4 shrink-0" />
+              <div className="h-4 w-px bg-surface-container-high mx-4 shrink-0" />
 
-                {/* Accumulated balance — all-time net across non-CREDIT accounts */}
-                <div className="flex items-center gap-2">
-                  <span className="label text-xs font-bold text-on-surface/40">
-                    {t('transactions.accumulatedBalance')}
-                  </span>
-                  <span
-                    className={cn(
-                      'text-sm font-bold tabular-nums',
-                      accumulatedBalance >= 0 ? 'text-on-surface' : 'text-tertiary'
-                    )}
-                  >
-                    {accumulatedBalance >= 0 ? '+' : ''}
-                    {formatCurrency(accumulatedBalance)}
-                  </span>
-                </div>
+              {/* Accumulated balance — all-time net across non-CREDIT accounts */}
+              <div className="flex items-center gap-2">
+                <span className="label text-xs font-bold text-on-surface/40">
+                  {t('transactions.accumulatedBalance')}
+                </span>
+                <span
+                  className={cn(
+                    'text-sm font-bold tabular-nums',
+                    accumulatedBalance >= 0 ? 'text-on-surface' : 'text-tertiary'
+                  )}
+                >
+                  {accumulatedBalance >= 0 ? '+' : ''}
+                  {formatCurrency(accumulatedBalance)}
+                </span>
               </div>
             </div>
           </div>
@@ -439,9 +379,6 @@ function TxRow({
   const isIncome = tx.type === 'INCOME'
   const isTransfer = tx.type === 'TRANSFER'
 
-  // Type label shown above the description (CREDIT and CREDIT_PAYMENT filtered upstream — M-26)
-  const typeLabel = isIncome ? 'Receita' : isTransfer ? 'Transf.' : 'Despesa'
-
   return (
     <div
       role="button"
@@ -467,18 +404,19 @@ function TxRow({
         </div>
       )}
 
-      {/* Info */}
+      {/* Info — M-36: type label removed (color conveys it); category shown as a chip */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-on-surface/40">
-            {typeLabel}
-          </span>
-        </div>
         <p className="text-sm font-semibold text-on-surface truncate">
           {/* eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing */}
           {tx.description || (isTransfer ? t('transactions.transferTitle') : cat?.name) || '—'}
         </p>
         <div className="flex items-center gap-2 mt-0.5">
+          {/* M-36: category pill — neutral chip, only when the tx has a category */}
+          {cat && (
+            <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-[10px] font-medium text-on-surface/50">
+              #{cat.name}
+            </span>
+          )}
           {txTags.map((tag) => (
             <span
               key={tag.id}

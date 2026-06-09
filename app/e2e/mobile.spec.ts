@@ -149,22 +149,6 @@ test('transaction drawer: opens and amount field is focusable', async ({ page })
 
 // ─── Transactions page ────────────────────────────────────────────────────────
 
-test('transactions page mobile: spending summary sidebar is hidden', async ({ page, isMobile }) => {
-  test.skip(!isMobile, 'Spending summary sidebar is desktop-only')
-
-  await seedSqlite(page, dataFile)
-  await page.goto('/transactions')
-
-  await page.getByRole('button', { name: 'period-selector' }).click()
-  await page.getByRole('menuitem', { name: 'Escolher período' }).click()
-  await page.getByLabel('custom-start-date').fill('2024-01-01')
-  await page.getByLabel('custom-end-date').fill('2024-12-31')
-  await page.getByRole('button', { name: 'Ok' }).click()
-
-  // "Resumo de Gastos" heading should be hidden on mobile
-  await expect(page.getByText('Resumo de Gastos')).not.toBeVisible()
-})
-
 test('transactions page: transaction list is always visible', async ({ page }) => {
   await seedSqlite(page, dataFile)
   await page.goto('/transactions')

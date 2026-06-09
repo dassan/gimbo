@@ -344,10 +344,10 @@ describe('Transactions — month navigation', () => {
   })
 })
 
-// ─── M-32: Spending summary right column ─────────────────────────────────────
+// ─── M-36: ledger redesign (spending summary removed, no type label, category chip) ──
 
-describe('Transactions — M-32: spending summary right column', () => {
-  it('renders spending summary when there are EXPENSE transactions', () => {
+describe('Transactions — M-36: ledger redesign', () => {
+  it('no longer renders the spending summary card (reverts M-32)', () => {
     const retailAccount = makeRetailAccount()
     const expense = makeTransaction({ type: 'EXPENSE', amount: 250, description: 'Aluguel' })
 
@@ -357,50 +357,10 @@ describe('Transactions — M-32: spending summary right column', () => {
 
     render(<Transactions />)
 
-    expect(screen.getByText('creditCard.spendingSummary')).toBeInTheDocument()
-    expect(screen.getByText('common.total')).toBeInTheDocument()
-  })
-
-  it('does not render spending summary when there are no EXPENSE transactions', () => {
-    const retailAccount = makeRetailAccount()
-    const income = makeTransaction({
-      id: 'tx-inc',
-      type: 'INCOME',
-      amount: 3000,
-      description: 'Salário',
-    })
-
-    useDataStore.setState({
-      data: makeDataFile({ accounts: [retailAccount], transactions: [income] }),
-    })
-
-    render(<Transactions />)
-
     expect(screen.queryByText('creditCard.spendingSummary')).not.toBeInTheDocument()
   })
 
-  it('shows category name in spending summary breakdown', () => {
-    const retailAccount = makeRetailAccount()
-    const cat = {
-      id: 'cat-food',
-      name: 'Alimentação',
-      icon: 'ShoppingCart',
-      color: '#F00',
-      parentId: null,
-      type: 'EXPENSE' as const,
-    }
-    const expense = makeTransaction({ type: 'EXPENSE', amount: 120, categoryId: 'cat-food' })
-
-    useDataStore.setState({
-      data: makeDataFile({ accounts: [retailAccount], transactions: [expense], categories: [cat] }),
-    })
-
-    render(<Transactions />)
-
-    expect(screen.getAllByText('Alimentação').length).toBeGreaterThan(0)
-  })
-
-  it('spending summary total reflects only EXPENSE transactions', () => {
+  it('does not render the type label (RECEITA/DESPESA) above the description', () => {
     const retailAccount = makeRetailAccount()
     const income = makeTransaction({
       id: 'tx-inc',
@@ -421,43 +381,43 @@ describe('Transactions — M-32: spending summary right column', () => {
 
     render(<Transactions />)
 
-    // The spending summary total row should show expenses only (400, not 3000 or 2600)
-    const totalRow = screen.getByText('common.total').closest('div')
-    expect(totalRow?.textContent).toContain('400,00')
-    expect(totalRow?.textContent).not.toContain('3.000,00')
+    expect(screen.queryByText('Receita')).not.toBeInTheDocument()
+    expect(screen.queryByText('Despesa')).not.toBeInTheDocument()
   })
 
-  it('spending summary does not include CREDIT account transactions', () => {
+  it("shows each transaction's category as a #chip next to the account name", () => {
     const retailAccount = makeRetailAccount()
-    const creditAccount = makeCreditAccount()
-    const retailExpense = makeTransaction({
-      id: 'tx-retail',
-      accountId: 'acc-retail',
-      type: 'EXPENSE',
-      amount: 100,
-      description: 'Conta retail',
-    })
-    const creditExpense = makeTransaction({
-      id: 'tx-credit',
-      accountId: 'acc-credit',
-      type: 'EXPENSE',
-      amount: 999,
-      description: 'Compra no cartão',
-    })
+    const cat = {
+      id: 'cat-food',
+      name: 'Alimentação',
+      icon: 'ShoppingCart',
+      color: '#F00',
+      parentId: null,
+      type: 'EXPENSE' as const,
+    }
+    const expense = makeTransaction({ type: 'EXPENSE', amount: 120, categoryId: 'cat-food' })
 
     useDataStore.setState({
-      data: makeDataFile({
-        accounts: [retailAccount, creditAccount],
-        transactions: [retailExpense, creditExpense],
-      }),
+      data: makeDataFile({ accounts: [retailAccount], transactions: [expense], categories: [cat] }),
     })
 
     render(<Transactions />)
 
-    // Only retail expense (100) goes into the summary; credit (999) is excluded
-    const totalRow = screen.getByText('common.total').closest('div')
-    expect(totalRow?.textContent).toContain('100,00')
-    expect(totalRow?.textContent).not.toContain('999')
+    expect(screen.getByText('#Alimentação')).toBeInTheDocument()
+  })
+
+  it('omits the category chip for transactions without a category', () => {
+    const retailAccount = makeRetailAccount()
+    const expense = makeTransaction({ type: 'EXPENSE', amount: 120, categoryId: '' })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [retailAccount], transactions: [expense] }),
+    })
+
+    const { container } = render(<Transactions />)
+
+    // No category pill (#...) should be present when categoryId is empty
+    expect(container.textContent).not.toContain('#')
   })
 })
 
