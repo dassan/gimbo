@@ -5,6 +5,7 @@ import Settings from '@/pages/Settings'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '@/test/fixtures/dataFile'
 import { storage } from '@/services/storage'
+import { loadBackupDirHandle, writeBackupToDir } from '@/lib/backupDir'
 import type { Account, Transaction } from '@/types'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -23,6 +24,7 @@ vi.mock('@/lib/backupDir', () => ({
   clearBackupDirHandle: vi.fn().mockResolvedValue(undefined),
   ensureBackupDirPermission: vi.fn().mockResolvedValue(true),
   readBackupFromDir: vi.fn().mockResolvedValue(null),
+  writeBackupToDir: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/services/storage', () => ({
@@ -47,6 +49,27 @@ beforeEach(() => {
   vi.mocked(storage).exportBlob.mockResolvedValue(new Blob())
   vi.mocked(storage).importBlob.mockResolvedValue(undefined)
   vi.mocked(storage).loadDataFile.mockResolvedValue(null)
+})
+
+// ─── Settings — BK-08: manual "Sync now" backup ──────────────────────────────
+
+describe('Settings — BK-08: manual sync now', () => {
+  it('forces a backup write to the configured folder on demand', async () => {
+    const fakeHandle = { name: 'MyBackups' } as unknown as FileSystemDirectoryHandle
+    vi.mocked(loadBackupDirHandle).mockResolvedValueOnce(fakeHandle)
+    const user = userEvent.setup()
+
+    render(<Settings />)
+    // Navigate to the Backup & Sync section (first nav occurrence).
+    await user.click((await screen.findAllByText('settings.backupSync'))[0])
+
+    // The "Sync now" button appears once the configured folder loads.
+    await user.click(await screen.findByText('settings.backupSyncNow'))
+
+    // Success toast confirms the write completed; the backup was written to the folder.
+    expect(await screen.findByText('settings.backupSyncDone')).toBeInTheDocument()
+    expect(vi.mocked(writeBackupToDir)).toHaveBeenCalledWith(fakeHandle, expect.any(Blob))
+  })
 })
 
 // ─── Settings — CC-15: accountBalances bifurcation for CREDIT accounts ────────

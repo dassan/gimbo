@@ -37,12 +37,15 @@ import {
   FolderOpen,
   Cloud,
   ExternalLink,
+  RefreshCw,
 } from 'lucide-react'
 import {
   loadBackupDirHandle,
   saveBackupDirHandle,
   clearBackupDirHandle,
   readBackupFromDir,
+  ensureBackupDirPermission,
+  writeBackupToDir,
 } from '@/lib/backupDir'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
@@ -222,6 +225,10 @@ export default function Settings() {
     localStorage.getItem('gimbo_backup_last_saved')
   )
   const [confirmFolderRestore, setConfirmFolderRestore] = useState(false)
+  // BK-08: manual backup ("Sincronizar agora") — needed because the local backup only
+  // auto-writes on mutations, and the initial import (fresh start) happens before a folder
+  // is ever configured, leaving the first backup stale until the user forces one.
+  const [syncState, setSyncState] = useState<'idle' | 'syncing' | 'done' | 'error'>('idle')
   const [profileName, setProfileName] = useState(data?.user.name ?? '')
   const [profileEmail, setProfileEmail] = useState(data?.user.email ?? '')
   const [modal, setModal] = useState<ModalState>({ open: false })
@@ -247,6 +254,27 @@ export default function Settings() {
     localStorage.removeItem('gimbo_backup_last_saved')
     setBackupDir(null)
     setBackupLastSaved(null)
+  }
+
+  // BK-08: force-write the current data to the configured backup folder on demand.
+  async function handleSyncNow() {
+    if (!backupDir) return
+    setSyncState('syncing')
+    try {
+      const granted = await ensureBackupDirPermission(backupDir)
+      if (!granted) {
+        setSyncState('error')
+        return
+      }
+      const blob = await storage.exportBlob()
+      await writeBackupToDir(backupDir, blob)
+      const ts = new Date().toISOString()
+      localStorage.setItem('gimbo_backup_last_saved', ts)
+      setBackupLastSaved(ts)
+      setSyncState('done')
+    } catch {
+      setSyncState('error')
+    }
   }
 
   async function handleRestoreFromBackupDir() {
@@ -880,11 +908,32 @@ export default function Settings() {
                               {t('settings.backupRemove')}
                             </button>
                           </div>
+                          <button
+                            onClick={() => void handleSyncNow()}
+                            disabled={syncState === 'syncing'}
+                            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-on-primary hover:opacity-90 transition-opacity disabled:opacity-60"
+                          >
+                            <RefreshCw
+                              size={14}
+                              strokeWidth={2}
+                              className={cn(syncState === 'syncing' && 'animate-spin')}
+                            />
+                            {t('settings.backupSyncNow')}
+                          </button>
+                          {syncState === 'error' && (
+                            <p className="text-xs text-tertiary">{t('settings.backupSyncError')}</p>
+                          )}
                           {backupLastSaved && (
                             <p className="text-xs text-on-surface/40">
                               {t('settings.backupLastSaved')}{' '}
                               {new Date(backupLastSaved).toLocaleString()}
                             </p>
+                          )}
+                          {syncState === 'done' && (
+                            <Toast
+                              message={t('settings.backupSyncDone')}
+                              onDismiss={() => setSyncState('idle')}
+                            />
                           )}
                           <button
                             onClick={() => void handleRestoreFromBackupDir()}
