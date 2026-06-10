@@ -31,9 +31,9 @@
     "termsOfService": "Terms of Service"
   },
   "dashboard": {
-    "income": "Income",
-    "expenses": "Expenses",
-    "balance": "Balance",
+    "income": "Projected Income",
+    "expenses": "Projected Expenses",
+    "balance": "Projected Balance",
     "cashFlow": "Cash Flow Projection",
     "cashFlowSub": "3-month history + 3-month forecast",
     "weekly": "Weekly",

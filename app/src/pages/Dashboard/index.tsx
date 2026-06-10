@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
@@ -80,10 +80,10 @@ export default function Dashboard() {
 
   const now = useMemo(() => new Date(), [])
 
-  // B-15: stats and balances reflect realized cash by default; toggle on to project unpaid.
-  const [includeUnpaid, setIncludeUnpaid] = useState(false)
-
-  // ── Current month stats ───────────────────────────────────────────────────
+  // ── Current month stats — "Previstas" (B-15) ──────────────────────────────
+  // Stat cards show the month's *projected* flow: paid + unpaid of the current month.
+  // Account balances below stay faithful to the statement (realized cash only), so a
+  // forward-dated unpaid transaction never distorts a cumulative balance.
   const { income, expenses, balance, recentTxs } = useMemo(() => {
     if (!data) return { income: 0, expenses: 0, balance: 0, recentTxs: [] }
     const m = now.getMonth(),
@@ -93,8 +93,6 @@ export default function Dashboard() {
     // not income or expense (same rule applied in Analytics CC-17).
     const monthly = data.transactions.filter((tx) => {
       if (tx.type === 'CREDIT_PAYMENT') return false
-      // B-15: exclude unpaid INCOME/EXPENSE from the month's flow unless projecting.
-      if (!includeUnpaid && !isCashRealized(tx)) return false
       const account = data.accounts.find((a) => a.id === tx.accountId)
       if (!account) return false
       if (account.type !== 'CREDIT' && !account.includeInBalance) return false
@@ -120,7 +118,7 @@ export default function Dashboard() {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 5)
     return { income, expenses, balance: income - expenses, recentTxs }
-  }, [data, now, includeUnpaid])
+  }, [data, now])
 
   // ── Account balances (derived from transactions) ──────────────────────────
   // For CREDIT accounts with creditMetadata: available limit = limit − current invoice balance.
@@ -153,8 +151,9 @@ export default function Dashboard() {
       }
       const account = data.accounts.find((a) => a.id === tx.accountId)
       if (!account || account.type === 'CREDIT') return
-      // B-15: skip unpaid INCOME/EXPENSE unless projecting; TRANSFER is always realized.
-      if (!includeUnpaid && !isCashRealized(tx)) return
+      // B-15: account balances stay faithful to the statement — realized cash only.
+      // TRANSFER/CREDIT_PAYMENT are always realized; INCOME/EXPENSE require isPaid.
+      if (!isCashRealized(tx)) return
       if (tx.type === 'INCOME') map[tx.accountId] = (map[tx.accountId] ?? 0) + tx.amount
       if (tx.type === 'EXPENSE') map[tx.accountId] = (map[tx.accountId] ?? 0) - tx.amount
       if (tx.type === 'TRANSFER') {
@@ -183,7 +182,7 @@ export default function Dashboard() {
       })
 
     return map
-  }, [data, includeUnpaid])
+  }, [data])
 
   // ── Total invoice balance across all CREDIT accounts ─────────────────────
   const totalInvoiceBalance = useMemo(() => {
@@ -199,7 +198,8 @@ export default function Dashboard() {
     const m = now.getMonth(),
       y = now.getFullYear()
     const expTxs = data.transactions.filter((tx) => {
-      if (!includeUnpaid && !isCashRealized(tx)) return false // B-15
+      // Projected expenses (paid + unpaid of the current month) — matches the
+      // "Despesas Previstas" stat card so the donut total agrees with it.
       const d = parseDateLocal(tx.date)
       return tx.type === 'EXPENSE' && d.getMonth() === m && d.getFullYear() === y
     })
@@ -213,7 +213,7 @@ export default function Dashboard() {
     return Object.entries(byCategory)
       .map(([name, value]) => ({ name, value, pct: Math.round((value / total) * 100) }))
       .sort((a, b) => b.value - a.value)
-  }, [data, now, includeUnpaid])
+  }, [data, now])
 
   if (!data) return null
 
@@ -229,23 +229,12 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
-      {/* ── Header: month + include-unpaid toggle (B-15) ─────────────────── */}
+      {/* ── Header: current month ─────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-on-surface">{currentMonthName}</h2>
-        <button
-          onClick={() => setIncludeUnpaid((v) => !v)}
-          className={cn(
-            'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-all',
-            includeUnpaid
-              ? 'bg-on-surface text-white'
-              : 'bg-surface-container-low text-on-surface/50 hover:text-on-surface/70'
-          )}
-        >
-          {t('analytics.includeUnpaid')}
-        </button>
       </div>
 
-      {/* ── Stat cards ─────────────────────────────────────────────────── */}
+      {/* ── Stat cards — "Previstas" (paid + unpaid of the month) ─────────── */}
       {/* Mobile: single column. Desktop: 3-column. */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         <StatCard

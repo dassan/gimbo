@@ -31,9 +31,9 @@
     "termsOfService": "Termos de Serviço"
   },
   "dashboard": {
-    "income": "Receitas",
-    "expenses": "Despesas",
-    "balance": "Saldo",
+    "income": "Receitas Previstas",
+    "expenses": "Despesas Previstas",
+    "balance": "Saldo Previsto",
     "cashFlow": "Projeção de Fluxo de Caixa",
     "cashFlowSub": "Histórico de 3 meses + Previsão de 3 meses",
     "weekly": "Semanal",

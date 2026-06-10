@@ -410,6 +410,44 @@ describe('Dashboard — CC-22: CREDIT_PAYMENT excluded from totals', () => {
   })
 })
 
+// ─── B-15: "Previstas" decoupled from statement-faithful balances ─────────────
+
+describe('Dashboard — B-15: unpaid counts toward "Previstas", never the balance', () => {
+  it('an unpaid current-month expense feeds the stat cards but not the account balance', () => {
+    // Initial balance 1000 + a PAID income of 700 this month → statement balance = 1700.
+    // An UNPAID expense of 250 this month must NOT touch the cumulative balance (it would
+    // wrongly read 1450), yet it MUST appear in "Despesas Previstas".
+    const account = makeRetailAccount({ balance: 1000 })
+    const paidIncome = makeTransaction({
+      id: 'tx-paid-income',
+      type: 'INCOME',
+      amount: 700,
+      date: todayStr,
+      isPaid: true,
+    })
+    const unpaidExpense = makeTransaction({
+      id: 'tx-unpaid-expense',
+      type: 'EXPENSE',
+      amount: 250,
+      date: todayStr,
+      isPaid: false,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account], transactions: [paidIncome, unpaidExpense] }),
+    })
+
+    render(<Dashboard />)
+
+    // Balance stays faithful to the statement: 1000 + 700 = 1700 (unpaid excluded).
+    expect(screen.getByText(/1\.700,00/)).toBeInTheDocument()
+    // If the unpaid expense had wrongly hit the balance it would read 1450 — must not.
+    expect(screen.queryByText(/1\.450,00/)).not.toBeInTheDocument()
+    // The unpaid expense still drives "Despesas Previstas".
+    expect(screen.getAllByText(/250,00/).length).toBeGreaterThanOrEqual(1)
+  })
+})
+
 // ─── M-23: CreditCardRow uses issuerIcon color ────────────────────────────────
 
 describe('Dashboard — M-23: credit card issuer icon color', () => {
