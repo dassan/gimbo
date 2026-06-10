@@ -278,7 +278,9 @@
     "remaining": "Remaining",
     "statusOpen": "Open",
     "statusPartial": "Partial",
-    "statusPaid": "Paid"
+    "statusPaid": "Paid",
+    "moveToPrevInvoice": "Move to previous invoice",
+    "moveToNextInvoice": "Move to next invoice"
   },
   "accounts": {
     "retail": "Checking",

@@ -278,7 +278,9 @@
     "remaining": "Restante",
     "statusOpen": "Aberta",
     "statusPartial": "Parcial",
-    "statusPaid": "Paga"
+    "statusPaid": "Paga",
+    "moveToPrevInvoice": "Mover para a fatura anterior",
+    "moveToNextInvoice": "Mover para a fatura seguinte"
   },
   "accounts": {
     "retail": "Corrente",

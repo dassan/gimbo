@@ -1,7 +1,15 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, ChevronDown, CreditCard, X } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  ChevronsLeft,
+  ChevronsRight,
+  CreditCard,
+  X,
+} from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { useOutletContext } from 'react-router-dom'
@@ -57,6 +65,7 @@ export default function CreditCardPage() {
   const { accountId } = useParams<{ accountId: string }>()
   const data = useDataStore((s) => s.data)
   const addTransaction = useDataStore((s) => s.addTransaction)
+  const updateTransaction = useDataStore((s) => s.updateTransaction)
   const shadowClass = useWorkspaceStore((s) =>
     s.workspace.useAmbientShadows ? 'shadow-card-ambient' : 'shadow-card'
   )
@@ -211,6 +220,24 @@ export default function CreditCardPage() {
       referenceMonth: invoicePeriodKey(resolvedPeriod),
     })
     setShowPayModal(false)
+  }
+
+  // CC-32: reassign a charge/credit to the previous/-following invoice by setting its
+  // referenceMonth (B-18). Real closing dates are fuzzy, so the user gets the final say —
+  // moving never touches tx.date, only the invoice it posts to.
+  function handleMoveInvoice(tx: Transaction, direction: -1 | 1) {
+    if (!account?.creditMetadata) return
+    const period = getTxInvoicePeriod(tx, account)
+    let month = period.month + direction
+    let year = period.year
+    if (month < 1) {
+      month = 12
+      year -= 1
+    } else if (month > 12) {
+      month = 1
+      year += 1
+    }
+    updateTransaction({ ...tx, referenceMonth: invoicePeriodKey({ year, month }) })
   }
 
   return (
@@ -391,6 +418,7 @@ export default function CreditCardPage() {
                   data={data}
                   isLast={i === filteredTransactions.length - 1}
                   onEdit={openTransactionDrawer}
+                  onMove={handleMoveInvoice}
                 />
               ))
             )}
@@ -473,11 +501,13 @@ function InvoiceTxRow({
   data,
   isLast,
   onEdit,
+  onMove,
 }: {
   tx: Transaction
   data: NonNullable<ReturnType<typeof useDataStore.getState>['data']>
   isLast: boolean
   onEdit: (tx: Transaction) => void
+  onMove: (tx: Transaction, direction: -1 | 1) => void
 }) {
   const { t } = useTranslation()
   const cat = data.categories.find((c) => c.id === tx.categoryId)
@@ -527,6 +557,36 @@ function InvoiceTxRow({
           {acc && <span className="text-xs text-on-surface/30">· {acc.name}</span>}
         </div>
       </div>
+
+      {/* CC-32: move this charge/credit to the previous/next invoice (B-18). Not for payments. */}
+      {!isPayment && (
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            aria-label={t('creditCard.moveToPrevInvoice')}
+            title={t('creditCard.moveToPrevInvoice')}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMove(tx, -1)
+            }}
+            className="rounded-lg p-1.5 text-on-surface/30 hover:bg-surface-container-high hover:text-on-surface/70 transition-colors"
+          >
+            <ChevronsLeft size={16} strokeWidth={1.5} />
+          </button>
+          <button
+            type="button"
+            aria-label={t('creditCard.moveToNextInvoice')}
+            title={t('creditCard.moveToNextInvoice')}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMove(tx, 1)
+            }}
+            className="rounded-lg p-1.5 text-on-surface/30 hover:bg-surface-container-high hover:text-on-surface/70 transition-colors"
+          >
+            <ChevronsRight size={16} strokeWidth={1.5} />
+          </button>
+        </div>
+      )}
 
       {/* Amount */}
       <div className="text-right shrink-0">
