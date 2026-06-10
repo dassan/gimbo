@@ -88,7 +88,7 @@ export interface Transaction {
   installment?: Installment // only for installment purchases
   recurrence?: Recurrence // only for recurring INCOME/EXPENSE series (M-35)
   transferAccountId?: string // only for CREDIT_PAYMENT: the account that funds the payment
-  referenceMonth?: string // only for CREDIT_PAYMENT: invoice period being paid, "YYYY-MM" (Option 2)
+  referenceMonth?: string // CREDIT-account txs: the invoice period this entry is bound to, "YYYY-MM". For CREDIT_PAYMENT, the invoice being paid; for charges/credits, the invoice they post to (overrides the date-derived default) (B-18)
 }
 
 export interface Valuation {

@@ -10,6 +10,7 @@ import {
   cn,
   parseDateLocal,
   getInvoicePeriod,
+  getTxInvoicePeriod,
   getInvoiceDueDate,
   getOpenCreditBalance,
   getInvoiceStatus,
@@ -117,14 +118,13 @@ export default function CreditCardPage() {
   // this period (Option 2). Sorted newest-first for a statement-like view.
   const invoiceTransactions = useMemo(() => {
     if (!data || !account?.creditMetadata) return []
-    const { closingDay } = account.creditMetadata
     const periodKey = invoicePeriodKey(resolvedPeriod)
     return data.transactions
       .filter((tx) => {
         if (tx.accountId !== account.id) return false
         if (tx.type === 'CREDIT_PAYMENT') return tx.referenceMonth === periodKey
         if (tx.type !== 'EXPENSE' && tx.type !== 'INCOME') return false
-        const period = getInvoicePeriod(tx.date, closingDay)
+        const period = getTxInvoicePeriod(tx, account)
         return period.year === resolvedPeriod.year && period.month === resolvedPeriod.month
       })
       .sort((a, b) => b.date.localeCompare(a.date))

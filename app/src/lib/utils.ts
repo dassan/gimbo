@@ -65,14 +65,22 @@ export function todayStr(): string {
 // ─── Credit Card — Invoice Engine ─────────────────────────────────────────────
 
 /**
- * Returns the invoice period (year/month) to which a transaction belongs.
+ * Computes the *default* invoice period (year/month) for a transaction from its
+ * date — the fallback used when no explicit association is stored. Prefer
+ * getTxInvoicePeriod, which honours a per-transaction override first (B-18).
  *
- * Rule: if the transaction day is strictly greater than `closingDay`, the
- * transaction falls into the *next* month's invoice; otherwise it belongs to
- * the current month's invoice.
+ * Rule: a purchase on or after `closingDay` falls into the *next* month's
+ * invoice; before the closing day it belongs to the current month's invoice.
+ * The closing day itself opens the new cycle (matches real card statements and
+ * the Organizze export: a charge dated on the closing day appears on the
+ * following invoice).
  *
- * Edge case: a purchase in December after the closing day rolls into January
+ * Edge case: a purchase in December on/after the closing day rolls into January
  * of the following year.
+ *
+ * Note: this date rule is only a heuristic. Real closing dates drift (weekends,
+ * holidays, bank processing) so the same calendar day can land on either
+ * invoice; the authoritative association lives in Transaction.referenceMonth.
  */
 export function getInvoicePeriod(
   txDate: string,
@@ -83,7 +91,7 @@ export function getInvoicePeriod(
   const year = d.getFullYear()
   const month = d.getMonth() + 1 // 1-based
 
-  if (day > closingDay) {
+  if (day >= closingDay) {
     // Roll forward one month
     if (month === 12) {
       return { year: year + 1, month: 1 }
@@ -144,6 +152,30 @@ const INVOICE_EPSILON = 0.005
 export type InvoiceStatus = 'open' | 'partial' | 'paid'
 
 /**
+ * The invoice period a CREDIT-account transaction is associated to (B-18).
+ *
+ * Authoritative source is the stored association `referenceMonth` ("YYYY-MM"),
+ * set by sync from the card issuer (Organizze invoice) or by the user moving a
+ * charge between invoices — real closing dates are fuzzy, so no date rule is
+ * universally correct. When absent (Gimbo-native entries), fall back to the
+ * computed default `getInvoicePeriod(tx.date, closingDay)`.
+ *
+ * Use this — not getInvoicePeriod directly — whenever assigning an existing
+ * transaction to an invoice. getInvoicePeriod stays for "today → current
+ * period" lookups, where there is no transaction to override.
+ */
+export function getTxInvoicePeriod(
+  tx: Transaction,
+  account: Account
+): { year: number; month: number } {
+  if (tx.referenceMonth) {
+    const [year, month] = tx.referenceMonth.split('-').map(Number)
+    if (year && month >= 1 && month <= 12) return { year, month }
+  }
+  return getInvoicePeriod(tx.date, account.creditMetadata?.closingDay ?? 1)
+}
+
+/**
  * Net statement total for a card's invoice period: charges (EXPENSE) minus
  * credits/refunds (INCOME on the same CREDIT account, e.g. estornos). This mirrors
  * the closed amount printed on the bank statement. Returns 0 without creditMetadata.
@@ -154,12 +186,11 @@ export function getInvoiceTotal(
   period: { year: number; month: number }
 ): number {
   if (!account.creditMetadata) return 0
-  const { closingDay } = account.creditMetadata
   let total = 0
   for (const tx of transactions) {
     if (tx.accountId !== account.id) continue
     if (tx.type !== 'EXPENSE' && tx.type !== 'INCOME') continue
-    const p = getInvoicePeriod(tx.date, closingDay)
+    const p = getTxInvoicePeriod(tx, account)
     if (p.year !== period.year || p.month !== period.month) continue
     total += tx.type === 'EXPENSE' ? tx.amount : -tx.amount
   }
@@ -250,7 +281,6 @@ export function getEffectiveCashFlowDate(tx: Transaction, accounts: Account[]): 
   const account = accounts.find((a) => a.id === tx.accountId)
   if (!account || account.type !== 'CREDIT' || !account.creditMetadata) return tx.date
 
-  const { closingDay, dueDay } = account.creditMetadata
-  const period = getInvoicePeriod(tx.date, closingDay)
-  return getInvoiceDueDate(period, dueDay)
+  const period = getTxInvoicePeriod(tx, account)
+  return getInvoiceDueDate(period, account.creditMetadata.dueDay)
 }

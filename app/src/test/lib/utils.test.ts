@@ -9,6 +9,7 @@ import {
   getInvoicePeriod,
   getInvoiceStatus,
   getInvoiceTotal,
+  getTxInvoicePeriod,
   getTotalCreditLiability,
   invoicePeriodKey,
   isCardCredit,
@@ -82,9 +83,14 @@ describe('getInvoicePeriod', () => {
     expect(getInvoicePeriod('2026-04-15', 20)).toEqual({ year: 2026, month: 4 })
   })
 
-  it('returns the current month when purchase day equals closing day', () => {
-    // purchase on exactly the closing day belongs to the current month
-    expect(getInvoicePeriod('2026-04-20', 20)).toEqual({ year: 2026, month: 4 })
+  it('rolls to the next month when purchase day equals the closing day (B-18)', () => {
+    // The closing day opens the new cycle: a charge dated on the closing day posts to the
+    // following invoice (matches real card statements / Organizze). closingDay=20, day 20 → May.
+    expect(getInvoicePeriod('2026-04-20', 20)).toEqual({ year: 2026, month: 5 })
+  })
+
+  it('stays in the current month for the day just before closing', () => {
+    expect(getInvoicePeriod('2026-04-19', 20)).toEqual({ year: 2026, month: 4 })
   })
 
   it('returns the next month when purchase day is after closing day', () => {
@@ -157,6 +163,28 @@ function makeTx(overrides: Partial<Transaction> = {}): Transaction {
     ...overrides,
   }
 }
+
+describe('getTxInvoicePeriod (B-18)', () => {
+  it('honours an explicit referenceMonth over the date-derived default', () => {
+    // Charge dated 30/05 (which the date rule would push to June) but bound to May's invoice.
+    const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 30, dueDay: 7 } })
+    const tx = makeTx({ date: '2026-05-30', referenceMonth: '2026-05' })
+    expect(getTxInvoicePeriod(tx, account)).toEqual({ year: 2026, month: 5 })
+  })
+
+  it('falls back to the computed period when referenceMonth is absent', () => {
+    const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 30, dueDay: 7 } })
+    // 30/05 with no override → closingDay 30, day 30 >= 30 rolls to June.
+    const tx = makeTx({ date: '2026-05-30' })
+    expect(getTxInvoicePeriod(tx, account)).toEqual({ year: 2026, month: 6 })
+  })
+
+  it('ignores a malformed referenceMonth and uses the date', () => {
+    const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 20, dueDay: 10 } })
+    const tx = makeTx({ date: '2026-04-10', referenceMonth: 'not-a-month' })
+    expect(getTxInvoicePeriod(tx, account)).toEqual({ year: 2026, month: 4 })
+  })
+})
 
 describe('isCashRealized', () => {
   it('treats a paid INCOME/EXPENSE as realized', () => {
@@ -313,6 +341,13 @@ describe('getInvoiceTotal', () => {
     const other = makeTx({ amount: 100, date: '2026-06-10' })
     const payment = makeTx({ id: 'p', type: 'CREDIT_PAYMENT', amount: 999, date: '2026-05-10' })
     expect(getInvoiceTotal([other, payment], account, period)).toBe(0)
+  })
+  it('counts a charge by its referenceMonth, not its date (B-18)', () => {
+    // Dated in June (would be June's invoice by the date rule) but bound to May's invoice.
+    const moved = makeTx({ amount: 200, date: '2026-06-10', referenceMonth: '2026-05' })
+    expect(getInvoiceTotal([moved], account, period)).toBe(200)
+    // And it must NOT also count under June.
+    expect(getInvoiceTotal([moved], account, { year: 2026, month: 6 })).toBe(0)
   })
 })
 
