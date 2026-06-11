@@ -187,13 +187,16 @@ export default function Transactions() {
     const saldoAnterior = balanceUpTo(dayBeforeStart)
     const saldoPeriodo = balanceUpTo(endDate)
 
-    // Previsto = realized end-of-period balance + the pending items the period still brings in:
+    // Previsto = realized end-of-period balance + the pending items still to settle by `end`:
     //  (a) unpaid cash INCOME/EXPENSE with date ≤ end (also captures overdue carryover); minus
-    //  (b) card invoices that come due within the period and are not paid yet. The card lives off
-    //      the cash ledger, so its bill only hits cash when paid via CREDIT_PAYMENT — for a future
-    //      month no such payment exists, so the upcoming bill must be projected. Scoped to invoices
-    //      DUE within the period (avoids summing long, imperfectly-reconciled history). Only in the
-    //      all-accounts view — a future invoice can't be attributed to one funding account.
+    //  (b) unpaid card invoices coming due from today through `end`. The card lives off the cash
+    //      ledger, so its bill only hits cash when paid via CREDIT_PAYMENT — for a future month no
+    //      such payment exists yet, so the upcoming bill must be projected. The pending bills are
+    //      CUMULATIVE: a July invoice still weighs on August's projection until paid, so the lower
+    //      bound is *today*, not the period start. Invoices due before today are treated as settled
+    //      (consistent with getOpenCreditBalance) — which also avoids summing long, imperfectly
+    //      reconciled history. Only in the all-accounts view — a future invoice can't be attributed
+    //      to one funding account.
     let unpaidCashNet = 0
     for (const tx of data.transactions) {
       if (isCashRealized(tx) || !scopeIds.has(tx.accountId)) continue
@@ -202,8 +205,9 @@ export default function Transactions() {
       else if (tx.type === 'EXPENSE') unpaidCashNet -= tx.amount
     }
 
-    let cardDueInPeriod = 0
-    if (filterAccountId === 'all' && startDate && endDate) {
+    let cardOutstanding = 0
+    if (filterAccountId === 'all' && endDate) {
+      const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
       for (const account of data.accounts) {
         if (account.type !== 'CREDIT' || !account.creditMetadata) continue
         const { dueDay, closingDay } = account.creditMetadata
@@ -218,10 +222,10 @@ export default function Transactions() {
         for (const [key, net] of periodNet) {
           const [y, m] = key.split('-').map(Number)
           const due = parseDateLocal(getInvoiceDueDate({ year: y, month: m }, dueDay, closingDay))
-          if (due < startDate || due > endDate) continue
+          if (due < todayMidnight || due > endDate) continue
           const outstanding =
             net - getInvoicePaid(data.transactions, account, { year: y, month: m })
-          if (outstanding > 0.005) cardDueInPeriod += outstanding
+          if (outstanding > 0.005) cardOutstanding += outstanding
         }
       }
     }
@@ -229,9 +233,9 @@ export default function Transactions() {
     return {
       saldoAnterior,
       saldoPeriodo,
-      saldoPrevisto: saldoPeriodo + unpaidCashNet - cardDueInPeriod,
+      saldoPrevisto: saldoPeriodo + unpaidCashNet - cardOutstanding,
     }
-  }, [data, creditAccountIds, filterAccountId, startDate, endDate])
+  }, [data, creditAccountIds, filterAccountId, startDate, endDate, now])
 
   if (!data) return null
 

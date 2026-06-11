@@ -668,24 +668,31 @@ describe('Transactions — period balances', () => {
     )
   })
 
-  it('projects an unpaid card invoice due in the period into "previsto" (all-accounts view)', () => {
+  it('projects an unpaid card invoice coming due into "previsto" (all-accounts view)', async () => {
+    // View next month so the invoice's due date is deterministically in the future (≥ today),
+    // matching the "card invoices due from today onward" projection rule.
+    const next = new Date(today.getFullYear(), today.getMonth() + 1, 15)
+    const nextMonthStr = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-15`
+    const curMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+
     const retail = makeRetailAccount({ balance: 5000 })
     const credit = makeCreditAccount() // closing 20, due 10
-    // Current-month realized cash expense → keeps the footer visible and moves the saldo
+    // Unpaid cash expense in next month → keeps the footer visible and feeds "previsto"
     const cashExpense = makeTransaction({
       id: 'tx-cash',
       type: 'EXPENSE',
       amount: 200,
-      date: todayStr,
-      isPaid: true,
+      date: nextMonthStr,
+      isPaid: false,
     })
-    // Prior-month card charge → its invoice falls due this month and is still unpaid
+    // Card charge bound to the current invoice period → due the 10th of next month, unpaid
     const cardCharge = makeTransaction({
       id: 'tx-card',
       accountId: 'acc-credit',
       type: 'EXPENSE',
       amount: 1000,
-      date: prevMonthStr,
+      date: todayStr,
+      referenceMonth: curMonthKey,
       isPaid: true,
     })
 
@@ -697,16 +704,16 @@ describe('Transactions — period balances', () => {
     })
 
     render(<Transactions />)
+    await userEvent.click(screen.getByLabelText('next-period'))
 
-    // card lives off the cash ledger → saldo anterior unaffected by it
+    // saldo anterior = saldo = 5000 (nothing realized; card lives off the cash ledger)
     expect(screen.getByText('transactions.previousBalance').closest('div')?.textContent).toContain(
       '5.000,00'
     )
-    // saldo = 5000 − 200 realized cash
     expect(screen.getByText('transactions.periodBalance').closest('div')?.textContent).toContain(
-      '4.800,00'
+      '5.000,00'
     )
-    // previsto = 4800 − 1000 unpaid card invoice coming due this month
+    // previsto = 5000 − 200 unpaid cash − 1000 unpaid card invoice coming due = 3.800
     expect(screen.getByText('transactions.projectedBalance').closest('div')?.textContent).toContain(
       '3.800,00'
     )
