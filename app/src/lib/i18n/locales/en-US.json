@@ -115,7 +115,10 @@
     "positiveFlow": "Positive Flow",
     "negativeFlow": "Negative Flow",
     "listed": "transactions listed",
-    "accumulatedBalance": "Accumulated Balance"
+    "accumulatedBalance": "Accumulated Balance",
+    "previousBalance": "Previous balance",
+    "periodBalance": "Balance",
+    "projectedBalance": "Projected"
   },
   "analytics": {
     "title": "Reports",

@@ -115,7 +115,10 @@
     "positiveFlow": "Fluxo Positivo",
     "negativeFlow": "Fluxo Negativo",
     "listed": "transações listadas",
-    "accumulatedBalance": "Saldo Acumulado"
+    "accumulatedBalance": "Saldo Acumulado",
+    "previousBalance": "Saldo anterior",
+    "periodBalance": "Saldo",
+    "projectedBalance": "Previsto"
   },
   "analytics": {
     "title": "Relatórios",

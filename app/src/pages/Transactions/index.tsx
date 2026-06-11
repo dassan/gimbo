@@ -136,28 +136,61 @@ export default function Transactions() {
     .reduce((s, tx) => s + tx.amount, 0)
   const consolidated = income - expenses - payments
 
-  // Accumulated balance: net position across ALL non-CREDIT accounts, ignoring period filters.
-  const accumulatedBalance = useMemo(() => {
-    if (!data) return 0
-    const total = data.accounts
-      .filter((a) => !creditAccountIds.has(a.id))
+  // Period balances (Organizze-style): saldo anterior → saldo → previsto. Replaces the old
+  // all-time accumulated. Anchored to the real account balances (initial + realized flow) so it
+  // always reconciles. Respects the account filter; ignores type/status/search (those only narrow
+  // the listed rows, not the account's balance).
+  const { saldoAnterior, saldoPeriodo, saldoPrevisto } = useMemo(() => {
+    if (!data) return { saldoAnterior: 0, saldoPeriodo: 0, saldoPrevisto: 0 }
+    const scopeIds = new Set(
+      data.accounts
+        .filter((a) => !creditAccountIds.has(a.id))
+        .filter((a) => filterAccountId === 'all' || a.id === filterAccountId)
+        .map((a) => a.id)
+    )
+    const initial = data.accounts
+      .filter((a) => scopeIds.has(a.id))
       .reduce((s, a) => s + a.balance, 0)
-    return data.transactions.reduce((s, tx) => {
-      // CREDIT_PAYMENT: real outflow from the funding (non-CREDIT) account (B-16).
-      if (tx.type === 'CREDIT_PAYMENT') {
-        return tx.transferAccountId && !creditAccountIds.has(tx.transferAccountId)
-          ? s - tx.amount
-          : s
+
+    // Realized balance of the in-scope accounts up to and including `upTo` (null = all time).
+    const balanceUpTo = (upTo: Date | null): number => {
+      let total = initial
+      for (const tx of data.transactions) {
+        if (upTo && parseDateLocal(tx.date) > upTo) continue
+        if (!isCashRealized(tx)) continue // realized cash only
+        if (tx.type === 'TRANSFER') {
+          if (scopeIds.has(tx.accountId)) total -= tx.amount
+          if (tx.transferAccountId && scopeIds.has(tx.transferAccountId)) total += tx.amount
+        } else if (tx.type === 'CREDIT_PAYMENT') {
+          // Real outflow from the funding (non-CREDIT) account (B-16).
+          if (tx.transferAccountId && scopeIds.has(tx.transferAccountId)) total -= tx.amount
+        } else if (scopeIds.has(tx.accountId)) {
+          if (tx.type === 'INCOME') total += tx.amount
+          else if (tx.type === 'EXPENSE') total -= tx.amount
+        }
       }
-      if (creditAccountIds.has(tx.accountId)) return s
-      // B-15: skip unpaid entries unless projecting; TRANSFER is always realized.
-      if (!includeUnpaid && !isCashRealized(tx)) return s
-      if (tx.type === 'INCOME') return s + tx.amount
-      if (tx.type === 'EXPENSE') return s - tx.amount
-      if (tx.type === 'TRANSFER') return s
-      return s
-    }, total)
-  }, [data, creditAccountIds, includeUnpaid])
+      return total
+    }
+
+    const dayBeforeStart = startDate
+      ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() - 1)
+      : null
+    const saldoAnterior = balanceUpTo(dayBeforeStart)
+    const saldoPeriodo = balanceUpTo(endDate)
+
+    // Previsto = realized end-of-period balance + unpaid INCOME/EXPENSE within the period.
+    let unpaidNet = 0
+    for (const tx of data.transactions) {
+      if (isCashRealized(tx) || !scopeIds.has(tx.accountId)) continue
+      if (startDate && endDate) {
+        const d = parseDateLocal(tx.date)
+        if (d < startDate || d > endDate) continue
+      }
+      if (tx.type === 'INCOME') unpaidNet += tx.amount
+      else if (tx.type === 'EXPENSE') unpaidNet -= tx.amount
+    }
+    return { saldoAnterior, saldoPeriodo, saldoPrevisto: saldoPeriodo + unpaidNet }
+  }, [data, creditAccountIds, filterAccountId, startDate, endDate])
 
   if (!data) return null
 
@@ -314,20 +347,42 @@ export default function Transactions() {
 
               <div className="h-4 w-px bg-surface-container-high mx-4 shrink-0" />
 
-              {/* Accumulated balance — all-time net across non-CREDIT accounts */}
-              <div className="flex items-center gap-2">
-                <span className="label text-xs font-bold text-on-surface/40">
-                  {t('transactions.accumulatedBalance')}
-                </span>
-                <span
-                  className={cn(
-                    'text-sm font-bold tabular-nums',
-                    accumulatedBalance >= 0 ? 'text-on-surface' : 'text-tertiary'
-                  )}
-                >
-                  {accumulatedBalance >= 0 ? '+' : ''}
-                  {formatCurrency(accumulatedBalance)}
-                </span>
+              {/* Period balances (Organizze-style): saldo anterior → saldo → previsto */}
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="hidden sm:flex items-center gap-1.5">
+                  <span className="label text-[10px] font-bold text-on-surface/40">
+                    {t('transactions.previousBalance')}
+                  </span>
+                  <span className="text-xs font-semibold tabular-nums text-on-surface/50">
+                    {formatCurrency(saldoAnterior)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="label text-[10px] font-bold text-on-surface/40">
+                    {t('transactions.periodBalance')}
+                  </span>
+                  <span
+                    className={cn(
+                      'text-sm font-bold tabular-nums',
+                      saldoPeriodo >= 0 ? 'text-on-surface' : 'text-tertiary'
+                    )}
+                  >
+                    {formatCurrency(saldoPeriodo)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="label text-[10px] font-bold text-on-surface/40">
+                    {t('transactions.projectedBalance')}
+                  </span>
+                  <span
+                    className={cn(
+                      'text-xs font-semibold tabular-nums',
+                      saldoPrevisto >= 0 ? 'text-on-surface/50' : 'text-tertiary'
+                    )}
+                  >
+                    {formatCurrency(saldoPrevisto)}
+                  </span>
+                </div>
               </div>
             </div>
           </div>

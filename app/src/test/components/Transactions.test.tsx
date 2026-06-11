@@ -615,3 +615,56 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
     expect(footerSection?.textContent).toContain('4.000,00')
   })
 })
+
+// ── Period balances: saldo anterior → saldo → previsto (Organizze-style) ──────
+describe('Transactions — period balances', () => {
+  it('reconciles: saldo anterior + realized flow = saldo; previsto adds period unpaid', () => {
+    const account = makeRetailAccount({ balance: 1000 })
+    // Prior-month realized income → only in "saldo anterior"
+    const priorIncome = makeTransaction({
+      id: 'tx-prior',
+      type: 'INCOME',
+      amount: 500,
+      date: prevMonthStr,
+      isPaid: true,
+    })
+    // Current-month realized income → in the period flow
+    const currentIncome = makeTransaction({
+      id: 'tx-cur-inc',
+      type: 'INCOME',
+      amount: 300,
+      date: todayStr,
+      isPaid: true,
+    })
+    // Current-month unpaid expense → only affects "previsto"
+    const unpaidExpense = makeTransaction({
+      id: 'tx-cur-unpaid',
+      type: 'EXPENSE',
+      amount: 100,
+      date: todayStr,
+      isPaid: false,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [account],
+        transactions: [priorIncome, currentIncome, unpaidExpense],
+      }),
+    })
+
+    render(<Transactions />)
+
+    // saldo anterior = 1000 initial + 500 prior realized
+    expect(screen.getByText('transactions.previousBalance').closest('div')?.textContent).toContain(
+      '1.500,00'
+    )
+    // saldo = 1500 + 300 realized current
+    expect(screen.getByText('transactions.periodBalance').closest('div')?.textContent).toContain(
+      '1.800,00'
+    )
+    // previsto = 1800 − 100 unpaid expense
+    expect(screen.getByText('transactions.projectedBalance').closest('div')?.textContent).toContain(
+      '1.700,00'
+    )
+  })
+})
