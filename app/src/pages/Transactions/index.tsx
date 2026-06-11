@@ -4,7 +4,16 @@ import { useOutletContext } from 'react-router-dom'
 import { Search, CheckCircle2, Clock, ChevronDown, ArrowRightLeft, CreditCard } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
-import { formatCurrency, cn, parseDateLocal, isCashRealized } from '@/lib/utils'
+import {
+  formatCurrency,
+  cn,
+  parseDateLocal,
+  isCashRealized,
+  getTxInvoicePeriod,
+  getInvoiceDueDate,
+  getInvoicePaid,
+  invoicePeriodKey,
+} from '@/lib/utils'
 import PeriodSelector from '@/components/PeriodSelector'
 import type { PeriodValue } from '@/components/PeriodSelector'
 import type { AppLayoutContext } from '@/components/AppLayout'
@@ -178,18 +187,50 @@ export default function Transactions() {
     const saldoAnterior = balanceUpTo(dayBeforeStart)
     const saldoPeriodo = balanceUpTo(endDate)
 
-    // Previsto = realized end-of-period balance + unpaid INCOME/EXPENSE within the period.
-    let unpaidNet = 0
+    // Previsto = realized end-of-period balance + the pending items the period still brings in:
+    //  (a) unpaid cash INCOME/EXPENSE with date ≤ end (also captures overdue carryover); minus
+    //  (b) card invoices that come due within the period and are not paid yet. The card lives off
+    //      the cash ledger, so its bill only hits cash when paid via CREDIT_PAYMENT — for a future
+    //      month no such payment exists, so the upcoming bill must be projected. Scoped to invoices
+    //      DUE within the period (avoids summing long, imperfectly-reconciled history). Only in the
+    //      all-accounts view — a future invoice can't be attributed to one funding account.
+    let unpaidCashNet = 0
     for (const tx of data.transactions) {
       if (isCashRealized(tx) || !scopeIds.has(tx.accountId)) continue
-      if (startDate && endDate) {
-        const d = parseDateLocal(tx.date)
-        if (d < startDate || d > endDate) continue
-      }
-      if (tx.type === 'INCOME') unpaidNet += tx.amount
-      else if (tx.type === 'EXPENSE') unpaidNet -= tx.amount
+      if (endDate && parseDateLocal(tx.date) > endDate) continue
+      if (tx.type === 'INCOME') unpaidCashNet += tx.amount
+      else if (tx.type === 'EXPENSE') unpaidCashNet -= tx.amount
     }
-    return { saldoAnterior, saldoPeriodo, saldoPrevisto: saldoPeriodo + unpaidNet }
+
+    let cardDueInPeriod = 0
+    if (filterAccountId === 'all' && startDate && endDate) {
+      for (const account of data.accounts) {
+        if (account.type !== 'CREDIT' || !account.creditMetadata) continue
+        const { dueDay, closingDay } = account.creditMetadata
+        const periodNet = new Map<string, number>() // invoice periodKey → charges − credits
+        for (const tx of data.transactions) {
+          if (tx.accountId !== account.id) continue
+          if (tx.type !== 'EXPENSE' && tx.type !== 'INCOME') continue
+          const key = invoicePeriodKey(getTxInvoicePeriod(tx, account))
+          const delta = tx.type === 'EXPENSE' ? tx.amount : -tx.amount
+          periodNet.set(key, (periodNet.get(key) ?? 0) + delta)
+        }
+        for (const [key, net] of periodNet) {
+          const [y, m] = key.split('-').map(Number)
+          const due = parseDateLocal(getInvoiceDueDate({ year: y, month: m }, dueDay, closingDay))
+          if (due < startDate || due > endDate) continue
+          const outstanding =
+            net - getInvoicePaid(data.transactions, account, { year: y, month: m })
+          if (outstanding > 0.005) cardDueInPeriod += outstanding
+        }
+      }
+    }
+
+    return {
+      saldoAnterior,
+      saldoPeriodo,
+      saldoPrevisto: saldoPeriodo + unpaidCashNet - cardDueInPeriod,
+    }
   }, [data, creditAccountIds, filterAccountId, startDate, endDate])
 
   if (!data) return null

@@ -667,4 +667,48 @@ describe('Transactions — period balances', () => {
       '1.700,00'
     )
   })
+
+  it('projects an unpaid card invoice due in the period into "previsto" (all-accounts view)', () => {
+    const retail = makeRetailAccount({ balance: 5000 })
+    const credit = makeCreditAccount() // closing 20, due 10
+    // Current-month realized cash expense → keeps the footer visible and moves the saldo
+    const cashExpense = makeTransaction({
+      id: 'tx-cash',
+      type: 'EXPENSE',
+      amount: 200,
+      date: todayStr,
+      isPaid: true,
+    })
+    // Prior-month card charge → its invoice falls due this month and is still unpaid
+    const cardCharge = makeTransaction({
+      id: 'tx-card',
+      accountId: 'acc-credit',
+      type: 'EXPENSE',
+      amount: 1000,
+      date: prevMonthStr,
+      isPaid: true,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [retail, credit],
+        transactions: [cashExpense, cardCharge],
+      }),
+    })
+
+    render(<Transactions />)
+
+    // card lives off the cash ledger → saldo anterior unaffected by it
+    expect(screen.getByText('transactions.previousBalance').closest('div')?.textContent).toContain(
+      '5.000,00'
+    )
+    // saldo = 5000 − 200 realized cash
+    expect(screen.getByText('transactions.periodBalance').closest('div')?.textContent).toContain(
+      '4.800,00'
+    )
+    // previsto = 4800 − 1000 unpaid card invoice coming due this month
+    expect(screen.getByText('transactions.projectedBalance').closest('div')?.textContent).toContain(
+      '3.800,00'
+    )
+  })
 })
