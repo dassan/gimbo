@@ -17,6 +17,7 @@ import {
   parseDateLocal,
   getEffectiveCashFlowDate,
   isCardCredit,
+  isCashRealized,
 } from '@/lib/utils'
 import type { Transaction, Account } from '@/types'
 
@@ -95,7 +96,33 @@ export default function CashFlowView({
       }
     }
 
-    let cumulative = 0
+    // Anchor the running "Saldo" to the real opening balance (M-40): the cash accounts' balance
+    // at the start of the period. Without it the line started from zero, diverging from the
+    // statement by the whole opening balance. CREDIT accounts are excluded — their spending shows
+    // up in the flow as EXPENSE by invoice due date, not as a cash balance. The opening uses the
+    // payment model (tx.date, realized); a card charge across the boundary is counted once (by its
+    // due date in the flow, never in this opening), so there is no double-count.
+    const scopeIds = new Set(
+      accounts
+        .filter((a) => a.type !== 'CREDIT' && (accountId === undefined || a.id === accountId))
+        .map((a) => a.id)
+    )
+    let opening = accounts.filter((a) => scopeIds.has(a.id)).reduce((s, a) => s + a.balance, 0)
+    for (const tx of transactions) {
+      if (parseDateLocal(tx.date) >= startDate) continue // strictly before the period
+      if (!isCashRealized(tx)) continue
+      if (tx.type === 'TRANSFER') {
+        if (scopeIds.has(tx.accountId)) opening -= tx.amount
+        if (tx.transferAccountId && scopeIds.has(tx.transferAccountId)) opening += tx.amount
+      } else if (tx.type === 'CREDIT_PAYMENT') {
+        if (tx.transferAccountId && scopeIds.has(tx.transferAccountId)) opening -= tx.amount
+      } else if (scopeIds.has(tx.accountId)) {
+        if (tx.type === 'INCOME') opening += tx.amount
+        else if (tx.type === 'EXPENSE') opening -= tx.amount
+      }
+    }
+
+    let cumulative = opening
     return buckets.map(({ label, fullLabel, match }) => {
       const txs = transactions.filter((tx) => {
         // CC-17: CREDIT_PAYMENT is liability liquidation, not income/expense

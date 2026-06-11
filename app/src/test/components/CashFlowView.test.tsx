@@ -468,3 +468,31 @@ describe('CashFlowView — M-38: weekly granularity', () => {
     expect(capturedRows.data).toHaveLength(2)
   })
 })
+
+// ─── Opening balance anchor (M-40): cumulative starts from the real opening ───
+
+describe('CashFlowView — opening balance anchor', () => {
+  it('starts the running balance from the cash accounts opening balance, not zero', () => {
+    const account = makeRetailAccount({ balance: 1000 })
+    const transactions = [
+      // Realized pre-period income → part of the opening balance (date < April 1)
+      makeTx({ id: 'tx-prior', type: 'INCOME', amount: 500, date: '2026-03-15', isPaid: true }),
+      // In-period income → flows through the April result
+      makeTx({ id: 'tx-apr', type: 'INCOME', amount: 300, date: '2026-04-10', isPaid: true }),
+    ]
+    render(
+      <CashFlowView
+        transactions={transactions}
+        accounts={[account]}
+        startDate={APR_MAY_START}
+        endDate={APR_MAY_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+      />
+    )
+    // Two-month period → monthly buckets. opening = 1000 initial + 500 prior realized;
+    // April result = 300 → April balance = 1800.
+    expect(capturedRows.data[0]?.result).toBe(300)
+    expect(capturedRows.data[0]?.balance).toBe(1800)
+  })
+})
