@@ -163,6 +163,7 @@
       "incomeTitle": "Receitas por Categoria",
       "expensesTitle": "Despesas por Categoria",
       "drilldownTitle": "Transações da Categoria",
+      "directSpending": "Diretas (sem subcategoria)",
       "noData": "Sem dados",
       "noTransactions": "Nenhuma transação neste período"
     },

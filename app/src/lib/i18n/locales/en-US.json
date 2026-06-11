@@ -163,6 +163,7 @@
       "incomeTitle": "Income by Category",
       "expensesTitle": "Expenses by Category",
       "drilldownTitle": "Category Transactions",
+      "directSpending": "Direct (no subcategory)",
       "noData": "No data",
       "noTransactions": "No transactions in this period"
     },

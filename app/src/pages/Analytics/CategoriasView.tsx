@@ -14,6 +14,8 @@ import {
   Gift,
   Tag as TagIcon,
   Circle,
+  ChevronRight,
+  ChevronDown,
   X,
   Landmark,
   PiggyBank,
@@ -99,17 +101,25 @@ function formatPeriodLabel(start: Date, end: Date): string {
 
 // ─── Data types ───────────────────────────────────────────────────────────────
 
-interface CategoryEntry {
+// A bucket is one row in the breakdown: a top-level (root) category or one of its
+// children. `catIds` are all category ids it aggregates — used by the drill-down to
+// pull every transaction under that node (parent rows include their whole subtree).
+interface CategoryBucket {
   id: string
   name: string
   icon: string
   color: string
   value: number
-  pct: number
+  pct: number // share of the grand total
+  catIds: string[]
+}
+
+interface RootEntry extends CategoryBucket {
+  children: CategoryBucket[] // second-level breakdown; empty for a leaf root
 }
 
 interface DrilldownState {
-  categoryId: string
+  categoryIds: string[]
   categoryName: string
   type: 'INCOME' | 'EXPENSE'
 }
@@ -128,61 +138,113 @@ export default function CategoriasView({
   const { t } = useTranslation()
   const [drilldown, setDrilldown] = useState<DrilldownState | null>(null)
 
-  const { incomeEntries, expenseEntries } = useMemo(() => {
+  const { incomeRoots, expenseRoots } = useMemo(() => {
+    const catById = new Map(categories.map((c) => [c.id, c]))
+
+    // Ancestry chain for a category: [catId, parent, …, root]. Cycle-safe.
+    const ancestry = (catId: string): string[] => {
+      const chain: string[] = []
+      const seen = new Set<string>()
+      let cur: string | undefined = catId
+      while (cur && catById.has(cur) && !seen.has(cur)) {
+        chain.push(cur)
+        seen.add(cur)
+        cur = catById.get(cur)!.parentId ?? undefined
+      }
+      return chain
+    }
+
+    // Resolve, for every category, its root and its second-level node (the child of the
+    // root on its path — grandchildren roll up to it). Also the catId set per bucket.
+    const rootOf = new Map<string, string>()
+    const secondOf = new Map<string, string>()
+    const rootCatIds = new Map<string, Set<string>>()
+    const secondCatIds = new Map<string, Set<string>>()
+    for (const c of categories) {
+      const chain = ancestry(c.id)
+      const root = chain[chain.length - 1] ?? c.id
+      const second = chain.length >= 2 ? chain[chain.length - 2] : root
+      rootOf.set(c.id, root)
+      secondOf.set(c.id, second)
+      if (!rootCatIds.has(root)) rootCatIds.set(root, new Set())
+      rootCatIds.get(root)!.add(c.id)
+      if (!secondCatIds.has(second)) secondCatIds.set(second, new Set())
+      secondCatIds.get(second)!.add(c.id)
+    }
+
     const txs = transactions.filter((tx) => {
-      // CC-17: CREDIT_PAYMENT is liability liquidation, not income/expense
+      // CC-17: CREDIT_PAYMENT is liability liquidation, not income/expense.
       if (tx.type === 'CREDIT_PAYMENT') return false
-      // CC-18: category breakdown uses tx.date (budget perspective, not cash-flow date)
+      // CC-18: category breakdown uses tx.date (budget perspective, not cash-flow date).
       const d = parseDateLocal(tx.date)
-      const inPeriod = d >= startDate && d <= endDate
-      const isPaidOk = includeUnpaid || tx.isPaid
-      return inPeriod && isPaidOk
+      return d >= startDate && d <= endDate && (includeUnpaid || tx.isPaid)
     })
 
-    function groupByCategory(type: 'INCOME' | 'EXPENSE'): CategoryEntry[] {
-      const map: Record<string, { cat: Category | undefined; amount: number }> = {}
-      txs
-        .filter((tx) => tx.type === type)
-        .forEach((tx) => {
-          const cat = categories.find((c) => c.id === tx.categoryId)
-          const key = cat?.id ?? '__outros__'
-          if (!map[key]) map[key] = { cat, amount: 0 }
-          map[key].amount += tx.amount
-        })
-      const entries = Object.entries(map).map(([key, { cat, amount }]) => ({
-        id: key === '__outros__' ? '__outros__' : cat!.id,
-        name: cat?.name ?? 'Outros',
-        icon: cat?.icon ?? 'tag',
-        color: cat?.color ?? '#6B7280',
-        value: amount,
-        pct: 0,
-      }))
-      const total = entries.reduce((s, e) => s + e.value, 0)
-      if (total > 0) entries.forEach((e) => (e.pct = (e.value / total) * 100))
-      entries.sort((a, b) => b.value - a.value)
-      // M-37: reassign duplicate colors so each slice is visually distinct. The category's
-      // own color wins when unique; collisions fall back to the palette by index.
-      const usedColors = new Set<string>()
-      entries.forEach((e, i) => {
-        if (usedColors.has(e.color)) {
-          e.color = CHART_FALLBACK_COLORS[i % CHART_FALLBACK_COLORS.length]
+    const build = (type: 'INCOME' | 'EXPENSE'): RootEntry[] => {
+      const rootMap = new Map<string, { value: number; children: Map<string, number> }>()
+      for (const tx of txs) {
+        if (tx.type !== type) continue
+        const cat = catById.get(tx.categoryId)
+        const rootId = cat ? (rootOf.get(cat.id) ?? cat.id) : '__outros__'
+        const secondId = cat ? (secondOf.get(cat.id) ?? rootId) : '__outros__'
+        let r = rootMap.get(rootId)
+        if (!r) {
+          r = { value: 0, children: new Map() }
+          rootMap.set(rootId, r)
         }
-        usedColors.add(e.color)
+        r.value += tx.amount
+        r.children.set(secondId, (r.children.get(secondId) ?? 0) + tx.amount)
+      }
+
+      const grandTotal = [...rootMap.values()].reduce((s, r) => s + r.value, 0) || 1
+      const mkBucket = (
+        id: string,
+        value: number,
+        ids: Set<string> | undefined
+      ): CategoryBucket => {
+        const cat = catById.get(id)
+        return {
+          id,
+          name: cat?.name ?? 'Outros',
+          icon: cat?.icon ?? 'tag',
+          color: cat?.color ?? '#6B7280',
+          value,
+          pct: (value / grandTotal) * 100,
+          catIds: id === '__outros__' ? [] : [...(ids ?? new Set([id]))],
+        }
+      }
+
+      const roots: RootEntry[] = [...rootMap.entries()].map(([rootId, r]) => {
+        const children = [...r.children.entries()]
+          .map(([secondId, v]) => mkBucket(secondId, v, secondCatIds.get(secondId)))
+          .sort((a, b) => b.value - a.value)
+        // Expandable only when there's a real sub-category (a bucket other than the root
+        // itself — the self-bucket is spending posted directly on the parent category).
+        const hasRealChildren = children.some((c) => c.id !== rootId)
+        return {
+          ...mkBucket(rootId, r.value, rootCatIds.get(rootId)),
+          children: hasRealChildren ? children : [],
+        }
       })
-      return entries
+      roots.sort((a, b) => b.value - a.value)
+
+      // M-37: keep donut slices (roots) visually distinct when colors collide.
+      const used = new Set<string>()
+      roots.forEach((e, i) => {
+        if (used.has(e.color)) e.color = CHART_FALLBACK_COLORS[i % CHART_FALLBACK_COLORS.length]
+        used.add(e.color)
+      })
+      return roots
     }
 
-    return {
-      incomeEntries: groupByCategory('INCOME'),
-      expenseEntries: groupByCategory('EXPENSE'),
-    }
+    return { incomeRoots: build('INCOME'), expenseRoots: build('EXPENSE') }
   }, [transactions, categories, startDate, endDate, includeUnpaid])
 
   const periodLabel = formatPeriodLabel(startDate, endDate)
 
-  const openDrilldown = (entry: CategoryEntry, type: 'INCOME' | 'EXPENSE') => {
-    if (entry.id === '__outros__') return
-    setDrilldown({ categoryId: entry.id, categoryName: entry.name, type })
+  const openDrilldown = (bucket: CategoryBucket, type: 'INCOME' | 'EXPENSE') => {
+    if (bucket.catIds.length === 0) return // uncategorized "Outros" — nothing to drill into
+    setDrilldown({ categoryIds: bucket.catIds, categoryName: bucket.name, type })
   }
 
   return (
@@ -191,26 +253,24 @@ export default function CategoriasView({
         {/* Income donut */}
         <CategoryDonut
           title={t('analytics.categorias.incomeTitle')}
-          entries={incomeEntries}
-          type="INCOME"
+          entries={incomeRoots}
           shadowClass={shadowClass}
-          onEntryClick={(entry) => openDrilldown(entry, 'INCOME')}
+          onBucketClick={(bucket) => openDrilldown(bucket, 'INCOME')}
         />
 
         {/* Expenses donut */}
         <CategoryDonut
           title={t('analytics.categorias.expensesTitle')}
-          entries={expenseEntries}
-          type="EXPENSE"
+          entries={expenseRoots}
           shadowClass={shadowClass}
-          onEntryClick={(entry) => openDrilldown(entry, 'EXPENSE')}
+          onBucketClick={(bucket) => openDrilldown(bucket, 'EXPENSE')}
         />
       </div>
 
       {/* R-10: Drill-down modal */}
       {drilldown && (
         <DrilldownModal
-          categoryId={drilldown.categoryId}
+          categoryIds={drilldown.categoryIds}
           categoryName={drilldown.categoryName}
           transactionType={drilldown.type}
           transactions={transactions}
@@ -231,15 +291,29 @@ export default function CategoriasView({
 
 interface CategoryDonutProps {
   title: string
-  entries: CategoryEntry[]
-  type: 'INCOME' | 'EXPENSE'
+  entries: RootEntry[]
   shadowClass: string
-  onEntryClick: (entry: CategoryEntry) => void
+  onBucketClick: (bucket: CategoryBucket) => void
 }
 
-function CategoryDonut({ title, entries, shadowClass, onEntryClick }: CategoryDonutProps) {
+function CategoryDonut({ title, entries, shadowClass, onBucketClick }: CategoryDonutProps) {
   const { t } = useTranslation()
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const total = entries.reduce((s, e) => s + e.value, 0)
+
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  // Clicking a root expands it (when it has children) or drills straight in (leaf root).
+  const handleRoot = (root: RootEntry) => {
+    if (root.children.length > 0) toggle(root.id)
+    else onBucketClick(root)
+  }
 
   return (
     <div className={cn('rounded-2xl bg-surface-container p-6', shadowClass)}>
@@ -258,7 +332,7 @@ function CategoryDonut({ title, entries, shadowClass, onEntryClick }: CategoryDo
         </p>
       ) : (
         <div className="flex gap-6">
-          {/* Donut chart */}
+          {/* Donut chart — one slice per root category */}
           <div className="relative shrink-0" style={{ width: 160, height: 160 }}>
             <PieChart width={160} height={160}>
               <Pie
@@ -276,45 +350,85 @@ function CategoryDonut({ title, entries, shadowClass, onEntryClick }: CategoryDo
                     key={entry.id ?? i}
                     fill={entry.color}
                     className="cursor-pointer"
-                    onClick={() => onEntryClick(entry)}
+                    onClick={() => handleRoot(entry)}
                   />
                 ))}
               </Pie>
             </PieChart>
           </div>
 
-          {/* Legend — all categories, no 5-item limit (R-09) */}
-          <div className="flex-1 space-y-2">
-            {entries.map((entry) => (
-              <button
-                key={entry.id}
-                onClick={() => onEntryClick(entry)}
-                className="flex w-full items-center gap-2 rounded-lg px-1 py-0.5 hover:bg-surface-container-low transition-colors text-left"
-              >
-                {/* Category icon */}
-                <span
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-white"
-                  style={{ backgroundColor: entry.color }}
-                >
-                  {categoryIcon(entry.icon)}
-                </span>
+          {/* Legend — roots, expandable to their children (R-09: no item limit) */}
+          <div className="flex-1 space-y-1">
+            {entries.map((root) => {
+              const isExpandable = root.children.length > 0
+              const isOpen = expanded.has(root.id)
+              return (
+                <div key={root.id}>
+                  <button
+                    onClick={() => handleRoot(root)}
+                    aria-expanded={isExpandable ? isOpen : undefined}
+                    className="flex w-full items-center gap-2 rounded-lg px-1 py-0.5 hover:bg-surface-container-low transition-colors text-left"
+                  >
+                    {/* Expand chevron (only for roots with children) */}
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center text-on-surface/40">
+                      {isExpandable &&
+                        (isOpen ? (
+                          <ChevronDown size={13} strokeWidth={2} />
+                        ) : (
+                          <ChevronRight size={13} strokeWidth={2} />
+                        ))}
+                    </span>
 
-                {/* Name */}
-                <span className="flex-1 min-w-0 text-xs text-on-surface/70 truncate">
-                  {entry.name}
-                </span>
+                    {/* Category icon */}
+                    <span
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-white"
+                      style={{ backgroundColor: root.color }}
+                    >
+                      {categoryIcon(root.icon)}
+                    </span>
 
-                {/* Percentage */}
-                <span className="text-[10px] text-on-surface/40 shrink-0">
-                  {entry.pct.toFixed(1)}%
-                </span>
+                    <span className="flex-1 min-w-0 text-xs text-on-surface/70 truncate">
+                      {root.name}
+                    </span>
+                    <span className="text-[10px] text-on-surface/40 shrink-0">
+                      {root.pct.toFixed(1)}%
+                    </span>
+                    <span className="text-xs font-semibold tabular-nums text-on-surface shrink-0 ml-1">
+                      {formatCurrency(root.value)}
+                    </span>
+                  </button>
 
-                {/* Amount */}
-                <span className="text-xs font-semibold tabular-nums text-on-surface shrink-0 ml-1">
-                  {formatCurrency(entry.value)}
-                </span>
-              </button>
-            ))}
+                  {/* Children breakdown */}
+                  {isExpandable && isOpen && (
+                    <div className="mt-0.5 space-y-0.5 border-l border-surface-container-high ml-3 pl-3">
+                      {root.children.map((child) => (
+                        <button
+                          key={child.id}
+                          onClick={() => onBucketClick(child)}
+                          className="flex w-full items-center gap-2 rounded-lg px-1 py-0.5 hover:bg-surface-container-low transition-colors text-left"
+                        >
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: child.color }}
+                          />
+                          <span className="flex-1 min-w-0 text-xs text-on-surface/60 truncate">
+                            {child.id === root.id
+                              ? t('analytics.categorias.directSpending')
+                              : child.name}
+                          </span>
+                          <span className="text-[10px] text-on-surface/40 shrink-0">
+                            {child.pct.toFixed(1)}%
+                          </span>
+                          <span className="text-xs font-medium tabular-nums text-on-surface/80 shrink-0 ml-1">
+                            {formatCurrency(child.value)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
@@ -325,7 +439,7 @@ function CategoryDonut({ title, entries, shadowClass, onEntryClick }: CategoryDo
 // ─── DrilldownModal ───────────────────────────────────────────────────────────
 
 interface DrilldownModalProps {
-  categoryId: string
+  categoryIds: string[]
   categoryName: string
   transactionType: 'INCOME' | 'EXPENSE'
   transactions: Transaction[]
@@ -339,7 +453,7 @@ interface DrilldownModalProps {
 }
 
 function DrilldownModal({
-  categoryId,
+  categoryIds,
   categoryName,
   transactionType,
   transactions,
@@ -354,16 +468,17 @@ function DrilldownModal({
   const { t } = useTranslation()
 
   const filtered = useMemo(() => {
+    const idSet = new Set(categoryIds)
     return transactions.filter((tx) => {
       if (tx.type !== transactionType) return false
-      if (tx.categoryId !== categoryId) return false
+      if (!idSet.has(tx.categoryId)) return false
       // CC-18: use tx.date for category breakdown (budget perspective)
       const d = parseDateLocal(tx.date)
       const inPeriod = d >= startDate && d <= endDate
       const isPaidOk = includeUnpaid || tx.isPaid
       return inPeriod && isPaidOk
     })
-  }, [transactions, categoryId, transactionType, startDate, endDate, includeUnpaid])
+  }, [transactions, categoryIds, transactionType, startDate, endDate, includeUnpaid])
 
   const total = filtered.reduce((s, tx) => s + tx.amount, 0)
 

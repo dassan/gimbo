@@ -482,15 +482,68 @@ describe('CategoriasView — M-37: distinct colors', () => {
       />
     )
 
-    const swatchA = screen
-      .getByText('Cat A')
-      .closest('button')!
-      .querySelector('span') as HTMLElement
-    const swatchB = screen
-      .getByText('Cat B')
-      .closest('button')!
-      .querySelector('span') as HTMLElement
+    // The colour swatch is the icon span carrying an inline background-color (the leading
+    // span is now the expand-chevron placeholder).
+    const swatchOf = (name: string): HTMLElement => {
+      const spans = screen.getByText(name).closest('button')!.querySelectorAll('span')
+      return [...spans].find((s) => (s as HTMLElement).style.backgroundColor !== '') as HTMLElement
+    }
+    const swatchA = swatchOf('Cat A')
+    const swatchB = swatchOf('Cat B')
     expect(swatchA.style.backgroundColor).not.toBe('')
     expect(swatchA.style.backgroundColor).not.toBe(swatchB.style.backgroundColor)
+  })
+})
+
+// ─── Parent/child hierarchy: roll up to root, expand to children ──────────────
+
+describe('CategoriasView — parent/child hierarchy', () => {
+  const cats = [
+    makeCategory({ id: 'cat-food', name: 'Alimentação', parentId: null, type: 'EXPENSE' }),
+    makeCategory({ id: 'cat-mkt', name: 'Supermercado', parentId: 'cat-food', type: 'EXPENSE' }),
+    makeCategory({ id: 'cat-rest', name: 'Restaurante', parentId: 'cat-food', type: 'EXPENSE' }),
+  ]
+  const txs = [
+    makeTx({ id: 'tx-mkt', categoryId: 'cat-mkt', amount: 300, description: 'Pão' }),
+    makeTx({ id: 'tx-rest', categoryId: 'cat-rest', amount: 100, description: 'Jantar' }),
+  ]
+  const renderView = () =>
+    render(
+      <CategoriasView
+        transactions={txs}
+        accounts={[makeAccount()]}
+        categories={cats}
+        startDate={APR_START}
+        endDate={APR_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+      />
+    )
+
+  it('rolls children up into the parent and keeps children hidden until expanded', () => {
+    renderView()
+    expect(screen.getByText('Alimentação')).toBeInTheDocument()
+    // parent total = 300 + 100
+    expect(screen.getAllByText(/400,00/).length).toBeGreaterThanOrEqual(1)
+    // children collapsed
+    expect(screen.queryByText('Supermercado')).not.toBeInTheDocument()
+    expect(screen.queryByText('Restaurante')).not.toBeInTheDocument()
+  })
+
+  it('expands the parent to reveal the child breakdown on click', () => {
+    renderView()
+    fireEvent.click(screen.getByText('Alimentação'))
+    expect(screen.getByText('Supermercado')).toBeInTheDocument()
+    expect(screen.getByText('Restaurante')).toBeInTheDocument()
+  })
+
+  it('drills into a child category from the expanded list', () => {
+    renderView()
+    fireEvent.click(screen.getByText('Alimentação'))
+    fireEvent.click(screen.getByText('Supermercado'))
+    // drill-down modal opens scoped to the child's transactions only
+    expect(screen.getByText('analytics.categorias.drilldownTitle')).toBeInTheDocument()
+    expect(screen.getByText('Pão')).toBeInTheDocument()
+    expect(screen.queryByText('Jantar')).not.toBeInTheDocument()
   })
 })
