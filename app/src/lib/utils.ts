@@ -105,23 +105,28 @@ export function getInvoicePeriod(
 /**
  * Returns the due date string ("YYYY-MM-DD") for a given invoice period.
  *
- * The due date falls in the month *following* the invoice period.  If
- * `dueDay` exceeds the number of days in that month, the last day of the
- * month is used instead (conservative approach — avoids February edge cases).
+ * The bill closes on `closingDay` of the period month; the due date follows.
+ * When `dueDay > closingDay` the due date lands in the SAME month as the closing
+ * (e.g. Amazon: closes on the 1st, due on the 7th); otherwise it falls in the
+ * *following* month (e.g. Nubank: closes on the 30th, due on the 7th). If `dueDay`
+ * exceeds the days in the due month, the last day is used (avoids February edges).
  */
 export function getInvoiceDueDate(
   invoicePeriod: { year: number; month: number },
-  dueDay: number
+  dueDay: number,
+  closingDay: number
 ): string {
-  // Due month = month after the invoice period
   let dueYear = invoicePeriod.year
-  let dueMonth = invoicePeriod.month + 1
-  if (dueMonth > 12) {
-    dueMonth = 1
-    dueYear += 1
+  let dueMonth = invoicePeriod.month // 1-based; same month when dueDay > closingDay
+  if (dueDay <= closingDay) {
+    dueMonth += 1
+    if (dueMonth > 12) {
+      dueMonth = 1
+      dueYear += 1
+    }
   }
 
-  // Last day of the due month: day 0 of the following month
+  // Last day of the due month (day 0 of the following 0-based month)
   const lastDay = new Date(dueYear, dueMonth, 0).getDate()
   const clampedDay = Math.min(dueDay, lastDay)
 
@@ -282,5 +287,5 @@ export function getEffectiveCashFlowDate(tx: Transaction, accounts: Account[]): 
   if (!account || account.type !== 'CREDIT' || !account.creditMetadata) return tx.date
 
   const period = getTxInvoicePeriod(tx, account)
-  return getInvoiceDueDate(period, account.creditMetadata.dueDay)
+  return getInvoiceDueDate(period, account.creditMetadata.dueDay, account.creditMetadata.closingDay)
 }

@@ -109,29 +109,31 @@ describe('getInvoicePeriod', () => {
 })
 
 describe('getInvoiceDueDate', () => {
-  it('returns the correct due date in the month following the invoice period', () => {
-    // Invoice period April 2026, dueDay=10 → 2026-05-10
-    expect(getInvoiceDueDate({ year: 2026, month: 4 }, 10)).toBe('2026-05-10')
+  it('returns the due date in the following month when dueDay <= closingDay', () => {
+    // closingDay=20, dueDay=10 → closes the 20th, due the 10th of the next month
+    expect(getInvoiceDueDate({ year: 2026, month: 4 }, 10, 20)).toBe('2026-05-10')
   })
 
-  it('rolls into January when invoice period is December', () => {
-    // Invoice period December 2026, dueDay=5 → 2027-01-05
-    expect(getInvoiceDueDate({ year: 2026, month: 12 }, 5)).toBe('2027-01-05')
+  it('returns the due date in the SAME month when dueDay > closingDay (B-19, e.g. Amazon)', () => {
+    // closingDay=1, dueDay=7 → closes the 1st, due the 7th of the SAME month
+    expect(getInvoiceDueDate({ year: 2026, month: 6 }, 7, 1)).toBe('2026-06-07')
+  })
+
+  it('rolls into January when invoice period is December and due is next month', () => {
+    expect(getInvoiceDueDate({ year: 2026, month: 12 }, 5, 20)).toBe('2027-01-05')
   })
 
   it('clamps dueDay to the last day of the month when dueDay exceeds month length', () => {
-    // Invoice period January 2026, dueDay=31 → February has 28 days in 2026 → 2026-02-28
-    expect(getInvoiceDueDate({ year: 2026, month: 1 }, 31)).toBe('2026-02-28')
+    // period January, dueDay=31, closingDay=31 → due February (28 days in 2026) → 2026-02-28
+    expect(getInvoiceDueDate({ year: 2026, month: 1 }, 31, 31)).toBe('2026-02-28')
   })
 
-  it('clamps dueDay=31 for a 30-day month', () => {
-    // Invoice period March 2026 → due in April (30 days); dueDay=31 → 2026-04-30
-    expect(getInvoiceDueDate({ year: 2026, month: 3 }, 31)).toBe('2026-04-30')
+  it('clamps dueDay=31 for a 30-day due month', () => {
+    expect(getInvoiceDueDate({ year: 2026, month: 3 }, 31, 31)).toBe('2026-04-30')
   })
 
   it('handles leap year February correctly (dueDay=29)', () => {
-    // Invoice period January 2028 → February 2028 is a leap year (29 days)
-    expect(getInvoiceDueDate({ year: 2028, month: 1 }, 29)).toBe('2028-02-29')
+    expect(getInvoiceDueDate({ year: 2028, month: 1 }, 29, 30)).toBe('2028-02-29')
   })
 })
 
@@ -466,5 +468,14 @@ describe('getEffectiveCashFlowDate', () => {
     ]
     const tx = makeTx({ date: '2026-04-25', accountId: 'acc-1', type: 'EXPENSE' })
     expect(getEffectiveCashFlowDate(tx, accounts)).toBe('2026-06-05')
+  })
+
+  it('keeps the due date in the same month when dueDay > closingDay (B-19, Amazon)', () => {
+    // closingDay=1, dueDay=7; purchase 15 May → invoice closes 1 Jun → due 7 Jun (same month)
+    const accounts: Account[] = [
+      makeAccount({ id: 'acc-1', creditMetadata: { limit: 5000, closingDay: 1, dueDay: 7 } }),
+    ]
+    const tx = makeTx({ date: '2026-05-15', accountId: 'acc-1', type: 'EXPENSE' })
+    expect(getEffectiveCashFlowDate(tx, accounts)).toBe('2026-06-07')
   })
 })

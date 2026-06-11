@@ -118,7 +118,7 @@ export default function CreditCardPage() {
     const actualClosingDay = Math.min(closingDay, daysInClosingMonth)
     const closingDateStr = `${closingYear}-${String(closingMonth).padStart(2, '0')}-${String(actualClosingDay).padStart(2, '0')}`
 
-    const dueDateStr = getInvoiceDueDate(resolvedPeriod, dueDay)
+    const dueDateStr = getInvoiceDueDate(resolvedPeriod, dueDay, closingDay)
     return { closingDateStr, dueDateStr }
   }, [account, resolvedPeriod])
 
