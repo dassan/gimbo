@@ -93,13 +93,12 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-// ─── R-18 (a): Monthly aggregation by due date, not purchase date ─────────────
+// ─── R-18 (a): Monthly aggregation by invoice period (closing month) ──────────
 
-describe('FaturasView — R-18(a): aggregation by due date', () => {
-  it('places EXPENSE in the month of invoice due date (not purchase date)', () => {
-    // closingDay=5, dueDay=10
-    // Purchase on 2026-04-06 (day > closingDay=5) → invoice period = May → due = June 10
-    // So the expense falls in June, not April
+describe('FaturasView — R-18(a): aggregation by invoice period (closing month)', () => {
+  it('excludes a charge whose invoice closes outside the viewed period', () => {
+    // closingDay=5: a purchase on 2026-04-06 (day ≥ 5) closes in May, so it is NOT in
+    // April's invoice — matching the Dashboard's per-card "Fatura" (closing period).
     const creditAcc = makeCreditAccount({
       id: 'acc-credit',
       creditMetadata: { limit: 5000, closingDay: 5, dueDay: 10 },
@@ -123,16 +122,14 @@ describe('FaturasView — R-18(a): aggregation by due date', () => {
     expect(screen.getByText('analytics.faturasView.noData')).toBeInTheDocument()
   })
 
-  it('places EXPENSE in April when purchase is before closingDay', () => {
-    // closingDay=20, dueDay=10
-    // Purchase on 2026-03-15 (day < closingDay=20) → invoice period = March → due = April 10
-    // The expense appears in April
+  it('places a charge in its closing-month invoice', () => {
+    // closingDay=20: a purchase on 2026-04-10 (day < 20) closes in April → April's invoice.
     const creditAcc = makeCreditAccount({
       id: 'acc-credit',
       creditMetadata: { limit: 5000, closingDay: 20, dueDay: 10 },
     })
     const transactions = [
-      makeTx({ id: 'tx-1', date: '2026-03-15', amount: 250, accountId: 'acc-credit' }),
+      makeTx({ id: 'tx-1', date: '2026-04-10', amount: 250, accountId: 'acc-credit' }),
     ]
 
     render(
@@ -149,17 +146,15 @@ describe('FaturasView — R-18(a): aggregation by due date', () => {
     expect(capturedRows.data[0]?.['acc-credit']).toBe(250)
   })
 
-  it('distributes expenses to correct months across a multi-month period', () => {
-    // closingDay=20, dueDay=10
-    // Purchase 2026-03-15 → due April 10 → April bucket
-    // Purchase 2026-04-15 → due May 10 → May bucket
+  it('distributes charges to their closing-month invoices across a multi-month period', () => {
+    // closingDay=20: 2026-04-10 closes in April; 2026-05-10 closes in May.
     const creditAcc = makeCreditAccount({
       id: 'acc-credit',
       creditMetadata: { limit: 5000, closingDay: 20, dueDay: 10 },
     })
     const transactions = [
-      makeTx({ id: 'tx-apr', date: '2026-03-15', amount: 100, accountId: 'acc-credit' }),
-      makeTx({ id: 'tx-may', date: '2026-04-15', amount: 200, accountId: 'acc-credit' }),
+      makeTx({ id: 'tx-apr', date: '2026-04-10', amount: 100, accountId: 'acc-credit' }),
+      makeTx({ id: 'tx-may', date: '2026-05-10', amount: 200, accountId: 'acc-credit' }),
     ]
 
     render(
@@ -192,8 +187,8 @@ describe('FaturasView — R-18(b): multiple cards', () => {
       creditMetadata: { limit: 3000, closingDay: 20, dueDay: 15 },
     })
     const transactions = [
-      makeTx({ id: 'tx-c1', accountId: 'card-1', date: '2026-03-15', amount: 150 }),
-      makeTx({ id: 'tx-c2', accountId: 'card-2', date: '2026-03-15', amount: 80 }),
+      makeTx({ id: 'tx-c1', accountId: 'card-1', date: '2026-04-10', amount: 150 }),
+      makeTx({ id: 'tx-c2', accountId: 'card-2', date: '2026-04-10', amount: 80 }),
     ]
 
     render(
@@ -225,10 +220,10 @@ describe('FaturasView — R-18(b): multiple cards', () => {
     })
     const transactions = [
       // card-1: two purchases in March → both due April
-      makeTx({ id: 'tx-c1a', accountId: 'card-1', date: '2026-03-05', amount: 100 }),
-      makeTx({ id: 'tx-c1b', accountId: 'card-1', date: '2026-03-15', amount: 200 }),
-      // card-2: one purchase in March → due April
-      makeTx({ id: 'tx-c2', accountId: 'card-2', date: '2026-03-10', amount: 50 }),
+      makeTx({ id: 'tx-c1a', accountId: 'card-1', date: '2026-04-05', amount: 100 }),
+      makeTx({ id: 'tx-c1b', accountId: 'card-1', date: '2026-04-10', amount: 200 }),
+      // card-2: one charge in April's invoice (day < closingDay 20)
+      makeTx({ id: 'tx-c2', accountId: 'card-2', date: '2026-04-10', amount: 50 }),
     ]
 
     render(
@@ -282,7 +277,7 @@ describe('FaturasView — R-18(c): CREDIT_PAYMENT excluded', () => {
         id: 'tx-exp',
         type: 'EXPENSE',
         amount: 200,
-        date: '2026-03-15',
+        date: '2026-04-10',
         accountId: 'acc-credit',
       }),
       // Payment in April → must be excluded
@@ -414,8 +409,8 @@ describe('FaturasView — R-18(e): data grid total row', () => {
       creditMetadata: { limit: 3000, closingDay: 20, dueDay: 10 },
     })
     const transactions = [
-      makeTx({ id: 'tx-c1', accountId: 'card-1', date: '2026-03-15', amount: 150 }),
-      makeTx({ id: 'tx-c2', accountId: 'card-2', date: '2026-03-15', amount: 80 }),
+      makeTx({ id: 'tx-c1', accountId: 'card-1', date: '2026-04-10', amount: 150 }),
+      makeTx({ id: 'tx-c2', accountId: 'card-2', date: '2026-04-10', amount: 80 }),
     ]
 
     render(
@@ -438,7 +433,7 @@ describe('FaturasView — R-18(e): data grid total row', () => {
       creditMetadata: { limit: 5000, closingDay: 20, dueDay: 10 },
     })
     const transactions = [
-      makeTx({ id: 'tx-1', date: '2026-03-15', amount: 100, accountId: 'acc-credit' }),
+      makeTx({ id: 'tx-1', date: '2026-04-10', amount: 100, accountId: 'acc-credit' }),
     ]
 
     render(
@@ -462,7 +457,7 @@ describe('FaturasView — R-18(e): data grid total row', () => {
       creditMetadata: { limit: 5000, closingDay: 20, dueDay: 10 },
     })
     const transactions = [
-      makeTx({ id: 'tx-1', date: '2026-03-15', amount: 100, accountId: 'acc-credit' }),
+      makeTx({ id: 'tx-1', date: '2026-04-10', amount: 100, accountId: 'acc-credit' }),
     ]
 
     render(

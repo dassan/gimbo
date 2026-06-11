@@ -10,7 +10,7 @@ import {
   CartesianGrid,
   Legend,
 } from 'recharts'
-import { cn, formatCurrency, parseDateLocal, getEffectiveCashFlowDate } from '@/lib/utils'
+import { cn, formatCurrency, getInvoiceTotal } from '@/lib/utils'
 import type { Transaction, Account } from '@/types'
 
 export interface FaturasViewProps {
@@ -63,19 +63,14 @@ export default function FaturasView({
       cur.setMonth(cur.getMonth() + 1)
     }
 
+    // The invoice that BELONGS to each month = its closing period (getInvoiceTotal, charges −
+    // credits, netting estornos and honouring referenceMonth). Matches the Dashboard's per-card
+    // "Fatura" (getCurrentInvoiceBalance for the current period), not the due-date cash flow —
+    // so the report and the dashboard agree on which cycle a month shows.
     const chart: MonthBucket[] = months.map(({ label, fullLabel, m, y }) => {
       const bucket: MonthBucket = { label, fullLabel }
       for (const acc of creditAccounts) {
-        const total = transactions
-          .filter((tx) => {
-            // Charges (EXPENSE) and credits/refunds (INCOME on the card) net into the invoice.
-            if (tx.type !== 'EXPENSE' && tx.type !== 'INCOME') return false
-            if (tx.accountId !== acc.id) return false
-            const d = parseDateLocal(getEffectiveCashFlowDate(tx, accounts))
-            return d.getMonth() === m && d.getFullYear() === y
-          })
-          .reduce((s, tx) => s + (tx.type === 'EXPENSE' ? tx.amount : -tx.amount), 0)
-        bucket[acc.id] = total
+        bucket[acc.id] = getInvoiceTotal(transactions, acc, { year: y, month: m + 1 })
       }
       return bucket
     })
@@ -84,15 +79,7 @@ export default function FaturasView({
     for (const { fullLabel, m, y } of months) {
       let monthTotal = 0
       for (const acc of creditAccounts) {
-        const total = transactions
-          .filter((tx) => {
-            // Charges (EXPENSE) and credits/refunds (INCOME on the card) net into the invoice.
-            if (tx.type !== 'EXPENSE' && tx.type !== 'INCOME') return false
-            if (tx.accountId !== acc.id) return false
-            const d = parseDateLocal(getEffectiveCashFlowDate(tx, accounts))
-            return d.getMonth() === m && d.getFullYear() === y
-          })
-          .reduce((s, tx) => s + (tx.type === 'EXPENSE' ? tx.amount : -tx.amount), 0)
+        const total = getInvoiceTotal(transactions, acc, { year: y, month: m + 1 })
         if (total > 0 || creditAccounts.length === 1) {
           rows.push({ period: fullLabel, cardName: acc.name, total, isTotal: false })
         }
@@ -109,7 +96,7 @@ export default function FaturasView({
     }
 
     return { chartData: chart, gridRows: rows }
-  }, [transactions, accounts, creditAccounts, startDate, endDate, t])
+  }, [transactions, creditAccounts, startDate, endDate, t])
 
   const hasData = chartData.some((row) => creditAccounts.some((a) => (row[a.id] as number) > 0))
 
