@@ -11,6 +11,7 @@ import v1Schema from './migrations/v1.sql?raw'
 import v2Schema from './migrations/v2.sql?raw'
 import v3Schema from './migrations/v3.sql?raw'
 import v4Schema from './migrations/v4.sql?raw'
+import v5Schema from './migrations/v5.sql?raw'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
 
@@ -66,6 +67,7 @@ type RawTransaction = {
   recurrence?: { frequency: string; parentId: string; endDate?: string }
   transferAccountId?: string
   referenceMonth?: string
+  invoiceDueDate?: string
 }
 type RawAuditEntry = {
   id: string
@@ -141,6 +143,9 @@ async function runMigrations(): Promise<void> {
   }
   if (version < 4) {
     await sqlite3.run(db, v4Schema)
+  }
+  if (version < 5) {
+    await sqlite3.run(db, v5Schema)
   }
 }
 
@@ -272,8 +277,8 @@ async function replaceAll(raw: unknown): Promise<void> {
            (id, account_id, category_id, amount, type, description, date, is_paid,
             transfer_account_id, installment_parent_id, installment_index, installment_total,
             recurrence_parent_id, recurrence_frequency, recurrence_end_date, reference_month,
-            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            invoice_due_date, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           tx.id,
           tx.accountId,
@@ -291,6 +296,7 @@ async function replaceAll(raw: unknown): Promise<void> {
           tx.recurrence?.frequency ?? null,
           tx.recurrence?.endDate ?? null,
           tx.referenceMonth ?? null,
+          tx.invoiceDueDate ?? null,
           ts,
           ts,
         ]

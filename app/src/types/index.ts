@@ -89,6 +89,7 @@ export interface Transaction {
   recurrence?: Recurrence // only for recurring INCOME/EXPENSE series (M-35)
   transferAccountId?: string // only for CREDIT_PAYMENT: the account that funds the payment
   referenceMonth?: string // CREDIT-account txs: the invoice period this entry is bound to, "YYYY-MM". For CREDIT_PAYMENT, the invoice being paid; for charges/credits, the invoice they post to (overrides the date-derived default) (B-18)
+  invoiceDueDate?: string // CREDIT charges/credits: authoritative due date of the bound invoice, "YYYY-MM-DD", captured from the source. Used by getEffectiveCashFlowDate so historical invoices stay anchored even if the card's closing/due day later changes (CC-33)
 }
 
 export interface Valuation {

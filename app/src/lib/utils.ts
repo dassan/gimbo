@@ -272,6 +272,8 @@ export function getTotalCreditLiability(transactions: Transaction[], account: Ac
  * Returns the date that should be used when plotting a transaction on the
  * cash-flow chart.
  *
+ * - CREDIT charges/credits with a stored invoiceDueDate (from the source) → that date,
+ *   verbatim — authoritative and immune to later closing/due-day edits (CC-33).
  * - Transactions on CREDIT accounts with creditMetadata → projected due date
  *   of their invoice (so the cash impact shows up in the correct future month).
  * - All other cases (non-CREDIT, CREDIT without metadata, CREDIT_PAYMENT) →
@@ -284,7 +286,12 @@ export function getEffectiveCashFlowDate(tx: Transaction, accounts: Account[]): 
   if (tx.type === 'CREDIT_PAYMENT') return tx.date
 
   const account = accounts.find((a) => a.id === tx.accountId)
-  if (!account || account.type !== 'CREDIT' || !account.creditMetadata) return tx.date
+  if (!account || account.type !== 'CREDIT') return tx.date
+
+  // CC-33: the invoice due date captured from the source wins — it pins historical invoices to
+  // the date they really fell due, so changing the card's closing/due day never re-dates the past.
+  if (tx.invoiceDueDate) return tx.invoiceDueDate
+  if (!account.creditMetadata) return tx.date
 
   const period = getTxInvoicePeriod(tx, account)
   return getInvoiceDueDate(period, account.creditMetadata.dueDay, account.creditMetadata.closingDay)

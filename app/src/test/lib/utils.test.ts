@@ -478,4 +478,37 @@ describe('getEffectiveCashFlowDate', () => {
     const tx = makeTx({ date: '2026-05-15', accountId: 'acc-1', type: 'EXPENSE' })
     expect(getEffectiveCashFlowDate(tx, accounts)).toBe('2026-06-07')
   })
+
+  it('uses the stored invoiceDueDate verbatim, overriding the computed due date (CC-33)', () => {
+    // The computed path would give 2026-05-10; the authoritative stored due date wins.
+    const accounts: Account[] = [
+      makeAccount({ id: 'acc-1', creditMetadata: { limit: 5000, closingDay: 20, dueDay: 10 } }),
+    ]
+    const tx = makeTx({
+      date: '2026-04-15',
+      accountId: 'acc-1',
+      type: 'EXPENSE',
+      invoiceDueDate: '2026-04-26',
+    })
+    expect(getEffectiveCashFlowDate(tx, accounts)).toBe('2026-04-26')
+  })
+
+  it('stays anchored to invoiceDueDate even after the card closing/due day changes (CC-33)', () => {
+    // A past invoice fell due 2025-12-07. The user later changes the card to closingDay=26/dueDay=10;
+    // the computed path would now re-date it to 2026-01-10, but the stored due date keeps it put.
+    const tx = makeTx({
+      date: '2025-12-01',
+      accountId: 'acc-1',
+      type: 'EXPENSE',
+      invoiceDueDate: '2025-12-07',
+    })
+    const before: Account[] = [
+      makeAccount({ id: 'acc-1', creditMetadata: { limit: 5000, closingDay: 1, dueDay: 7 } }),
+    ]
+    const after: Account[] = [
+      makeAccount({ id: 'acc-1', creditMetadata: { limit: 5000, closingDay: 26, dueDay: 10 } }),
+    ]
+    expect(getEffectiveCashFlowDate(tx, before)).toBe('2025-12-07')
+    expect(getEffectiveCashFlowDate(tx, after)).toBe('2025-12-07')
+  })
 })

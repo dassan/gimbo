@@ -4,7 +4,7 @@ import { uuid, now } from '@/lib/utils'
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 6
+export const CURRENT_SCHEMA_VERSION = 7
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -95,6 +95,7 @@ const TransactionSchema = z.object({
   recurrence: RecurrenceSchema.optional(),
   transferAccountId: z.string().optional(), // only for CREDIT_PAYMENT
   referenceMonth: z.string().optional(), // CREDIT-account txs: invoice period this entry is bound to, "YYYY-MM" (B-18)
+  invoiceDueDate: z.string().optional(), // CREDIT charges/credits: authoritative invoice due date "YYYY-MM-DD" from the source (CC-33)
 })
 
 const ValuationSchema = z.object({
@@ -182,6 +183,14 @@ function migrateDataFile(data: DataFile): DataFile {
   // would otherwise ignore (and mis-total). Existing records only need the version bump.
   if (migrated.schemaVersion === 5) {
     migrated = { ...migrated, schemaVersion: 6 }
+  }
+
+  // v6 → v7: adds optional invoiceDueDate (Transaction) — the authoritative invoice due date
+  // captured from the source for CREDIT charges/credits (CC-33). Optional field, no shape
+  // change; bumping the version makes older apps refuse files whose charges carry a stored due
+  // date they would ignore (and re-derive, drifting if the card's closing/due day changed).
+  if (migrated.schemaVersion === 6) {
+    migrated = { ...migrated, schemaVersion: 7 }
   }
 
   return migrated

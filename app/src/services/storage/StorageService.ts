@@ -651,6 +651,9 @@ function rowToTransaction(row: Row): Transaction {
   if (row.reference_month !== null && row.reference_month !== undefined) {
     tx.referenceMonth = row.reference_month as string
   }
+  if (row.invoice_due_date !== null && row.invoice_due_date !== undefined) {
+    tx.invoiceDueDate = row.invoice_due_date as string
+  }
   if (row.installment_parent_id !== null && row.installment_parent_id !== undefined) {
     tx.installment = {
       parentId: row.installment_parent_id as string,

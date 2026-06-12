@@ -26,7 +26,7 @@ function makeEntry(daysAgo: number): AuditEntry {
 }
 
 const MINIMAL_VALID: DataFile = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   user: { name: 'x', email: '', createdAt: '', updatedAt: '' },
   settings: { fileCreatedAt: '', fileUpdatedAt: '', auditLogRetentionLimit: 200 },
   accounts: [],
@@ -322,9 +322,9 @@ describe('validateDataFile — v1 → v2 migration', () => {
     deletedIds: [],
   }
 
-  it('migrates a v1 file to schemaVersion 6 (current)', () => {
+  it('migrates a v1 file to schemaVersion 7 (current)', () => {
     const result = validateDataFile(V1_FILE)
-    expect(result.schemaVersion).toBe(6)
+    expect(result.schemaVersion).toBe(7)
   })
 
   it('preserves all existing accounts during v1 → v2 migration', () => {
@@ -341,33 +341,38 @@ describe('validateDataFile — v1 → v2 migration', () => {
     expect(result.transactions[0].installment).toBeUndefined()
   })
 
-  it('accepts a v2 file and migrates it to schemaVersion 6', () => {
+  it('accepts a v2 file and migrates it to schemaVersion 7', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 2 })
-    expect(result.schemaVersion).toBe(6)
+    expect(result.schemaVersion).toBe(7)
   })
 
-  it('migrates a v3 file to schemaVersion 6', () => {
+  it('migrates a v3 file to schemaVersion 7', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 3, valuations: [] })
-    expect(result.schemaVersion).toBe(6)
+    expect(result.schemaVersion).toBe(7)
   })
 
-  it('migrates a v4 file to schemaVersion 6', () => {
+  it('migrates a v4 file to schemaVersion 7', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 4, valuations: [] })
-    expect(result.schemaVersion).toBe(6)
+    expect(result.schemaVersion).toBe(7)
   })
 
-  it('migrates a v5 file to schemaVersion 6 (B-18, no-op shape change)', () => {
+  it('migrates a v5 file to schemaVersion 7 (B-18, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 5, valuations: [] })
-    expect(result.schemaVersion).toBe(6)
+    expect(result.schemaVersion).toBe(7)
   })
 
-  it('accepts a v6 file without running migration (idempotent)', () => {
+  it('migrates a v6 file to schemaVersion 7 (CC-33, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 6, valuations: [] })
-    expect(result.schemaVersion).toBe(6)
+    expect(result.schemaVersion).toBe(7)
   })
 
-  it('throws SchemaVersionError for a v7 file (future version)', () => {
-    expect(() => validateDataFile({ ...V1_FILE, schemaVersion: 7, valuations: [] })).toThrow(
+  it('accepts a v7 file without running migration (idempotent)', () => {
+    const result = validateDataFile({ ...V1_FILE, schemaVersion: 7, valuations: [] })
+    expect(result.schemaVersion).toBe(7)
+  })
+
+  it('throws SchemaVersionError for a v8 file (future version)', () => {
+    expect(() => validateDataFile({ ...V1_FILE, schemaVersion: 8, valuations: [] })).toThrow(
       SchemaVersionError
     )
   })
@@ -613,9 +618,9 @@ describe('validateDataFile — v2 → v3 migration (NW-08)', () => {
     deletedIds: [],
   }
 
-  it('migrates a v2 file to schemaVersion 6 (current)', () => {
+  it('migrates a v2 file to schemaVersion 7 (current)', () => {
     const result = validateDataFile(V2_FILE)
-    expect(result.schemaVersion).toBe(6)
+    expect(result.schemaVersion).toBe(7)
   })
 
   it('adds valuations: [] when field is absent in a v2 file', () => {
@@ -637,9 +642,9 @@ describe('validateDataFile — v2 → v3 migration (NW-08)', () => {
     expect(file.valuations).toEqual([])
   })
 
-  it('createEmptyDataFile sets schemaVersion to 6', () => {
+  it('createEmptyDataFile sets schemaVersion to 7', () => {
     const file = createEmptyDataFile('Test', 'test@example.com')
-    expect(file.schemaVersion).toBe(6)
+    expect(file.schemaVersion).toBe(7)
   })
 })
 
@@ -697,6 +702,18 @@ describe('validateDataFile — recurrence field (M-35)', () => {
         withTransaction({ ...baseTx, recurrence: { frequency: 'daily', parentId: 'tx1' } })
       )
     ).toThrow()
+  })
+
+  it('accepts and preserves a transaction with invoiceDueDate (CC-33)', () => {
+    const result = validateDataFile(
+      withTransaction({ ...baseTx, referenceMonth: '2025-12', invoiceDueDate: '2025-12-07' })
+    )
+    expect(result.transactions[0].invoiceDueDate).toBe('2025-12-07')
+  })
+
+  it('accepts a transaction without invoiceDueDate (optional field)', () => {
+    const result = validateDataFile(withTransaction(baseTx))
+    expect(result.transactions[0].invoiceDueDate).toBeUndefined()
   })
 })
 
