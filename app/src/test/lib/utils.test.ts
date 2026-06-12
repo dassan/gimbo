@@ -16,8 +16,9 @@ import {
   isCashRealized,
   now,
   parseDateLocal,
+  sortCategoriesHierarchical,
 } from '@/lib/utils'
-import type { Account, Transaction } from '@/types'
+import type { Account, Category, Transaction } from '@/types'
 
 describe('formatCurrency', () => {
   it('formats BRL with comma decimal separator', () => {
@@ -510,5 +511,45 @@ describe('getEffectiveCashFlowDate', () => {
     ]
     expect(getEffectiveCashFlowDate(tx, before)).toBe('2025-12-07')
     expect(getEffectiveCashFlowDate(tx, after)).toBe('2025-12-07')
+  })
+})
+
+describe('sortCategoriesHierarchical (M-46)', () => {
+  function makeCategory(overrides: Partial<Category> = {}): Category {
+    return {
+      id: 'cat-1',
+      parentId: null,
+      name: 'Cat',
+      icon: 'circle',
+      color: '#808080',
+      type: 'EXPENSE',
+      ...overrides,
+    }
+  }
+
+  it('orders root categories alphabetically, with each one followed by its children (also alphabetical)', () => {
+    const categories: Category[] = [
+      makeCategory({ id: 'root-aluguel', name: 'Aluguel', parentId: null }),
+      makeCategory({ id: 'root-alimentacao', name: 'Alimentação', parentId: null }),
+      makeCategory({
+        id: 'child-meninas',
+        name: 'Alimentação Meninas',
+        parentId: 'root-alimentacao',
+      }),
+      makeCategory({
+        id: 'child-supermercado',
+        name: 'Supermercado',
+        parentId: 'root-alimentacao',
+      }),
+    ]
+
+    const sorted = sortCategoriesHierarchical(categories)
+
+    expect(sorted.map((c) => c.id)).toEqual([
+      'root-alimentacao',
+      'child-meninas',
+      'child-supermercado',
+      'root-aluguel',
+    ])
   })
 })

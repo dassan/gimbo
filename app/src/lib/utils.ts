@@ -1,4 +1,4 @@
-import type { Account, Transaction } from '@/types'
+import type { Account, Category, Transaction } from '@/types'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
@@ -44,6 +44,27 @@ export function formatCurrency(value: number, locale: string = 'pt-BR'): string 
     style: 'currency',
     currency: locale === 'pt-BR' ? 'BRL' : 'USD',
   }).format(value)
+}
+
+/**
+ * M-46: order categories for selection UIs — root categories alphabetically, each
+ * followed immediately by its children (also alphabetical). Assumes a single level
+ * of nesting (root: parentId === null), consistent with the rest of the app.
+ */
+export function sortCategoriesHierarchical(categories: Category[]): Category[] {
+  const collator = new Intl.Collator('pt-BR')
+  const roots = categories
+    .filter((c) => c.parentId === null)
+    .sort((a, b) => collator.compare(a.name, b.name))
+  const result: Category[] = []
+  for (const root of roots) {
+    result.push(root)
+    const children = categories
+      .filter((c) => c.parentId === root.id)
+      .sort((a, b) => collator.compare(a.name, b.name))
+    result.push(...children)
+  }
+  return result
 }
 
 /**

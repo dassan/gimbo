@@ -229,11 +229,6 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
-      {/* ── Header: current month ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-on-surface">{currentMonthName}</h2>
-      </div>
-
       {/* ── Stat cards — "Previstas" (paid + unpaid of the month) ─────────── */}
       {/* Mobile: single column. Desktop: 3-column. */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">

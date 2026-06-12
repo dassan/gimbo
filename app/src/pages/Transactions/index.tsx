@@ -552,15 +552,6 @@ function TxRow({
               #{cat.name}
             </span>
           )}
-          {txTags.map((tag) => (
-            <span
-              key={tag.id}
-              className="rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
-              style={{ backgroundColor: tag.color }}
-            >
-              #{tag.name}
-            </span>
-          ))}
           {isTransfer ? (
             <span className="text-xs text-on-surface/30">
               {acc?.name ?? '—'} → {destAcc?.name ?? '—'}
@@ -572,6 +563,15 @@ function TxRow({
           ) : (
             acc && <span className="text-xs text-on-surface/30">{acc.name}</span>
           )}
+          {txTags.map((tag) => (
+            <span
+              key={tag.id}
+              className="rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
+              style={{ backgroundColor: tag.color }}
+            >
+              #{tag.name}
+            </span>
+          ))}
         </div>
       </div>
 

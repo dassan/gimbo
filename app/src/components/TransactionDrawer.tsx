@@ -2,7 +2,14 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, ChevronDown, Calendar, Tag, Trash2, CreditCard } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
-import { cn, uuid, formatCurrency, getCurrentInvoiceBalance, todayStr } from '@/lib/utils'
+import {
+  cn,
+  uuid,
+  formatCurrency,
+  getCurrentInvoiceBalance,
+  todayStr,
+  sortCategoriesHierarchical,
+} from '@/lib/utils'
 import type { Transaction, TransactionType, RecurrenceFrequency } from '@/types'
 
 export interface TransactionDrawerProps {
@@ -298,8 +305,10 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
     onClose()
   }
 
-  const categories = (data?.categories ?? []).filter((c) =>
-    type === 'INCOME' ? c.type === 'INCOME' : c.type === 'EXPENSE'
+  const categories = sortCategoriesHierarchical(
+    (data?.categories ?? []).filter((c) =>
+      type === 'INCOME' ? c.type === 'INCOME' : c.type === 'EXPENSE'
+    )
   )
 
   // Selected credit account (for invoice balance hint — CC-20)
@@ -765,7 +774,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                   <option value="">{t('transactions.category')}</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.name}
+                      {c.parentId ? `— ${c.name}` : c.name}
                     </option>
                   ))}
                 </select>
