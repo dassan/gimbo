@@ -549,12 +549,7 @@ function TxRow({
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-on-surface truncate">{title}</p>
         <div className="flex items-center gap-2 mt-0.5">
-          {/* M-36: category pill — neutral chip, only when the tx has a category */}
-          {cat && (
-            <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-[10px] font-medium text-on-surface/50">
-              #{cat.name}
-            </span>
-          )}
+          {/* M-43: account/transfer shown first, before category and tags */}
           {isTransfer ? (
             <span className="text-xs text-on-surface/30">
               {acc?.name ?? '—'} → {destAcc?.name ?? '—'}
@@ -565,6 +560,12 @@ function TxRow({
             </span>
           ) : (
             acc && <span className="text-xs text-on-surface/30">{acc.name}</span>
+          )}
+          {/* M-36: category pill — neutral chip, only when the tx has a category */}
+          {cat && (
+            <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-[10px] font-medium text-on-surface/50">
+              #{cat.name}
+            </span>
           )}
           {txTags.map((tag) => (
             <span
