@@ -11,6 +11,7 @@ import {
   sortCategoriesHierarchical,
   filterArchivedAccounts,
 } from '@/lib/utils'
+import DatePicker from '@/components/DatePicker'
 import type { Transaction, TransactionType, RecurrenceFrequency } from '@/types'
 
 export interface TransactionDrawerProps {
@@ -447,12 +448,11 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
               <div className="flex-1 relative">
                 <Calendar
                   size={16}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 z-10 text-on-surface/40"
                 />
-                <input
-                  type="date"
+                <DatePicker
                   value={date}
-                  onChange={(e) => setDate(e.target.value)}
+                  onChange={setDate}
                   className="w-full rounded-xl bg-surface-container-low py-3 pl-9 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
@@ -755,11 +755,10 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                     <label className="label text-on-surface/40 block mb-2">
                       {t('transactions.recurrenceEndDate')}
                     </label>
-                    <input
-                      type="date"
+                    <DatePicker
                       value={recurrenceEndDate}
                       min={date}
-                      onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                      onChange={setRecurrenceEndDate}
                       className="w-full rounded-xl bg-surface-container-high py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>

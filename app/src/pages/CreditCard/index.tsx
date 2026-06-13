@@ -27,6 +27,7 @@ import {
 } from '@/lib/utils'
 import type { InvoiceStatus } from '@/lib/utils'
 import type { AppLayoutContext } from '@/components/AppLayout'
+import DatePicker from '@/components/DatePicker'
 import type { Account, Transaction } from '@/types'
 
 // ─── Credit issuer colors (M-23) ─────────────────────────────────────────────
@@ -695,10 +696,9 @@ function PayInvoiceModal({
             <label className="text-[10px] font-semibold uppercase tracking-wider text-on-surface/40 block mb-2">
               {t('transactions.date')}
             </label>
-            <input
-              type="date"
+            <DatePicker
               value={date}
-              onChange={(e) => setDate(e.target.value)}
+              onChange={setDate}
               className="w-full rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>

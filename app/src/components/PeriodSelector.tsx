@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronLeft, ChevronRight, Calendar, Trash2 } from 'lucide-react'
 import { cn, parseDateLocal, uuid } from '@/lib/utils'
+import DatePicker from '@/components/DatePicker'
 import type { SavedPeriod } from '@/types'
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -239,21 +240,19 @@ export default function PeriodSelector({
         >
           <div className="space-y-3 mb-4">
             <div className="flex items-center gap-3 rounded-xl bg-surface-container-low px-4 py-3">
-              <input
-                aria-label="custom-start-date"
-                type="date"
+              <DatePicker
+                ariaLabel="custom-start-date"
                 value={pendingStart}
-                onChange={(e) => setPendingStart(e.target.value)}
+                onChange={setPendingStart}
                 className="flex-1 bg-transparent text-sm font-medium text-on-surface outline-none"
               />
               <Calendar size={16} className="text-on-surface/40 shrink-0" />
             </div>
             <div className="flex items-center gap-3 rounded-xl bg-surface-container-low px-4 py-3">
-              <input
-                aria-label="custom-end-date"
-                type="date"
+              <DatePicker
+                ariaLabel="custom-end-date"
                 value={pendingEnd}
-                onChange={(e) => setPendingEnd(e.target.value)}
+                onChange={setPendingEnd}
                 className="flex-1 bg-transparent text-sm font-medium text-on-surface outline-none"
               />
               <Calendar size={16} className="text-on-surface/40 shrink-0" />
