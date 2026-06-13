@@ -214,3 +214,115 @@ describe('PeriodSelector — R-16: custom range picker', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 })
+
+// ─── M-45: saved custom periods ──────────────────────────────────────────────
+
+describe('PeriodSelector — M-45: saved custom periods', () => {
+  function openCustomPicker(onSavePeriod = vi.fn(), onDeletePeriod = vi.fn(), savedPeriods = []) {
+    const onChange = vi.fn()
+    render(
+      <PeriodSelector
+        value={monthValue(0)}
+        onChange={onChange}
+        savedPeriods={savedPeriods}
+        onSavePeriod={onSavePeriod}
+        onDeletePeriod={onDeletePeriod}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /period-selector/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'transactions.choosePeriod' }))
+    return { onChange }
+  }
+
+  it('does not show the "save period" UI when onSavePeriod is not provided', () => {
+    render(<PeriodSelector value={monthValue(0)} onChange={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /period-selector/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'transactions.choosePeriod' }))
+
+    expect(screen.queryByText('transactions.savePeriod')).not.toBeInTheDocument()
+  })
+
+  it('shows the name input and "save period" button when onSavePeriod is provided', () => {
+    openCustomPicker()
+    expect(screen.getByPlaceholderText('transactions.periodNamePlaceholder')).toBeInTheDocument()
+    expect(screen.getByText('transactions.savePeriod')).toBeInTheDocument()
+  })
+
+  it('clicking "save period" calls onSavePeriod with the pending range and typed name', () => {
+    const onSavePeriod = vi.fn()
+    openCustomPicker(onSavePeriod)
+
+    fireEvent.change(screen.getByLabelText('custom-start-date'), {
+      target: { value: '2026-01-01' },
+    })
+    fireEvent.change(screen.getByLabelText('custom-end-date'), {
+      target: { value: '2026-03-31' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('transactions.periodNamePlaceholder'), {
+      target: { value: 'Q1 2026' },
+    })
+    fireEvent.click(screen.getByText('transactions.savePeriod'))
+
+    expect(onSavePeriod).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Q1 2026', start: '2026-01-01', end: '2026-03-31' })
+    )
+  })
+
+  it('falls back to a date-range name when no name is typed', () => {
+    const onSavePeriod = vi.fn()
+    openCustomPicker(onSavePeriod)
+
+    fireEvent.change(screen.getByLabelText('custom-start-date'), {
+      target: { value: '2026-01-01' },
+    })
+    fireEvent.change(screen.getByLabelText('custom-end-date'), {
+      target: { value: '2026-03-31' },
+    })
+    fireEvent.click(screen.getByText('transactions.savePeriod'))
+
+    expect(onSavePeriod).toHaveBeenCalledWith(
+      expect.objectContaining({ name: '2026-01-01 – 2026-03-31' })
+    )
+  })
+
+  it('lists saved periods in the dropdown and applies one on click', () => {
+    const onChange = vi.fn()
+    render(
+      <PeriodSelector
+        value={monthValue(0)}
+        onChange={onChange}
+        savedPeriods={[{ id: 'p1', name: 'Q1 2026', start: '2026-01-01', end: '2026-03-31' }]}
+        onSavePeriod={vi.fn()}
+        onDeletePeriod={vi.fn()}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /period-selector/i }))
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Q1 2026' }))
+
+    expect(onChange).toHaveBeenCalledWith({
+      mode: 'custom',
+      monthOffset: 0,
+      customStart: '2026-01-01',
+      customEnd: '2026-03-31',
+    })
+  })
+
+  it('clicking the trash icon on a saved period calls onDeletePeriod with its id', () => {
+    const onDeletePeriod = vi.fn()
+    render(
+      <PeriodSelector
+        value={monthValue(0)}
+        onChange={vi.fn()}
+        savedPeriods={[{ id: 'p1', name: 'Q1 2026', start: '2026-01-01', end: '2026-03-31' }]}
+        onSavePeriod={vi.fn()}
+        onDeletePeriod={onDeletePeriod}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: /period-selector/i }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'transactions.deletePeriod' }))
+
+    expect(onDeletePeriod).toHaveBeenCalledWith('p1')
+  })
+})

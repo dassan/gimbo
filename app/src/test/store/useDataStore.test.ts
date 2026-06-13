@@ -1,7 +1,15 @@
 ﻿import { describe, it, expect, beforeEach } from 'vitest'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '../fixtures/dataFile'
-import type { Account, Category, Tag, Transaction, CreditMetadata, Valuation } from '@/types'
+import type {
+  Account,
+  Category,
+  Tag,
+  Transaction,
+  CreditMetadata,
+  Valuation,
+  SavedPeriod,
+} from '@/types'
 
 function makeAccount(overrides: Partial<Account> = {}): Account {
   return {
@@ -994,6 +1002,58 @@ describe('deleteValuation', () => {
   it('is idempotent: deleting a non-existent id does not crash', () => {
     useDataStore.setState({ data: makeDataFile({ valuations: [] }) })
     expect(() => useDataStore.getState().deleteValuation('ghost-id')).not.toThrow()
+    expect(useDataStore.getState().data!.deletedIds).toContain('ghost-id')
+  })
+})
+
+// ─── Saved periods (M-45) ─────────────────────────────────────────────────────
+
+function makeSavedPeriod(overrides: Partial<SavedPeriod> = {}): SavedPeriod {
+  return {
+    id: 'sp-1',
+    name: 'Q1 2026',
+    start: '2026-01-01',
+    end: '2026-03-31',
+    ...overrides,
+  }
+}
+
+describe('addSavedPeriod', () => {
+  it('appends the period and creates a CREATE audit entry', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    useDataStore.getState().addSavedPeriod(makeSavedPeriod())
+    const { savedPeriods, auditLog } = useDataStore.getState().data!
+    expect(savedPeriods).toHaveLength(1)
+    expect(savedPeriods[0].name).toBe('Q1 2026')
+    const entry = auditLog.at(-1)!
+    expect(entry.action).toBe('CREATE')
+    expect(entry.entity).toBe('savedPeriod')
+    expect(entry.summary).toContain('Q1 2026')
+  })
+
+  it('does nothing when data is null', () => {
+    useDataStore.setState({ data: null })
+    useDataStore.getState().addSavedPeriod(makeSavedPeriod())
+    expect(useDataStore.getState().data).toBeNull()
+  })
+})
+
+describe('deleteSavedPeriod', () => {
+  it('removes the period and records id in deletedIds with a DELETE audit entry', () => {
+    useDataStore.setState({ data: makeDataFile({ savedPeriods: [makeSavedPeriod()] }) })
+    useDataStore.getState().deleteSavedPeriod('sp-1')
+    const { savedPeriods, deletedIds, auditLog } = useDataStore.getState().data!
+    expect(savedPeriods).toHaveLength(0)
+    expect(deletedIds).toContain('sp-1')
+    const entry = auditLog.at(-1)!
+    expect(entry.action).toBe('DELETE')
+    expect(entry.entity).toBe('savedPeriod')
+    expect(entry.summary).toContain('Q1 2026')
+  })
+
+  it('is idempotent: deleting a non-existent id does not crash', () => {
+    useDataStore.setState({ data: makeDataFile({ savedPeriods: [] }) })
+    expect(() => useDataStore.getState().deleteSavedPeriod('ghost-id')).not.toThrow()
     expect(useDataStore.getState().data!.deletedIds).toContain('ghost-id')
   })
 })

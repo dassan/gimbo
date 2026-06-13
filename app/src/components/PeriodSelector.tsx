@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
-import { cn, parseDateLocal } from '@/lib/utils'
+import { ChevronLeft, ChevronRight, Calendar, Trash2 } from 'lucide-react'
+import { cn, parseDateLocal, uuid } from '@/lib/utils'
+import type { SavedPeriod } from '@/types'
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -15,11 +16,22 @@ export interface PeriodValue {
 interface PeriodSelectorProps {
   value: PeriodValue
   onChange: (v: PeriodValue) => void
+  // M-45: saved custom periods — only populated by Reports (Analytics); when
+  // omitted, the saved-periods list and "save period" UI are not shown.
+  savedPeriods?: SavedPeriod[]
+  onSavePeriod?: (period: SavedPeriod) => void
+  onDeletePeriod?: (id: string) => void
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function PeriodSelector({ value, onChange }: PeriodSelectorProps) {
+export default function PeriodSelector({
+  value,
+  onChange,
+  savedPeriods,
+  onSavePeriod,
+  onDeletePeriod,
+}: PeriodSelectorProps) {
   const { t } = useTranslation()
 
   const [showMenu, setShowMenu] = useState(false)
@@ -35,6 +47,8 @@ export default function PeriodSelector({ value, onChange }: PeriodSelectorProps)
     const lastDay = new Date(n.getFullYear(), n.getMonth() + 1, 0).getDate()
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
   })
+  // M-45: optional name for saving the pending custom range
+  const [pendingName, setPendingName] = useState('')
 
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -92,6 +106,29 @@ export default function PeriodSelector({ value, onChange }: PeriodSelectorProps)
       customEnd: pendingEnd,
     })
     setShowCustomPicker(false)
+  }
+
+  // M-45: save the pending custom range for reuse
+  function handleSavePeriod() {
+    if (!pendingStart || !pendingEnd || !onSavePeriod) return
+    onSavePeriod({
+      id: uuid(),
+      name: pendingName.trim() || `${pendingStart} – ${pendingEnd}`,
+      start: pendingStart,
+      end: pendingEnd,
+    })
+    setPendingName('')
+  }
+
+  // M-45: apply a saved period and close the menu
+  function handleApplySavedPeriod(period: SavedPeriod) {
+    onChange({
+      mode: 'custom',
+      monthOffset: value.monthOffset,
+      customStart: period.start,
+      customEnd: period.end,
+    })
+    setShowMenu(false)
   }
 
   return (
@@ -159,6 +196,38 @@ export default function PeriodSelector({ value, onChange }: PeriodSelectorProps)
           >
             {t('transactions.choosePeriod')}
           </button>
+
+          {/* M-45: saved custom periods — only when the host page wires them up */}
+          {savedPeriods?.map((period) => (
+            <div
+              key={period.id}
+              className="group flex items-center hover:bg-surface-container-low transition-colors"
+            >
+              <button
+                role="menuitem"
+                onClick={() => handleApplySavedPeriod(period)}
+                className={cn(
+                  'flex-1 truncate px-5 py-3 text-left text-sm font-medium transition-colors',
+                  value.mode === 'custom' &&
+                    value.customStart === period.start &&
+                    value.customEnd === period.end
+                    ? 'text-primary'
+                    : 'text-on-surface'
+                )}
+              >
+                {period.name}
+              </button>
+              {onDeletePeriod && (
+                <button
+                  aria-label={t('transactions.deletePeriod')}
+                  onClick={() => onDeletePeriod(period.id)}
+                  className="pr-4 text-on-surface/30 hover:text-tertiary transition-colors"
+                >
+                  <Trash2 size={14} strokeWidth={2} />
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
@@ -197,6 +266,27 @@ export default function PeriodSelector({ value, onChange }: PeriodSelectorProps)
           >
             {t('transactions.applyPeriod')}
           </button>
+
+          {/* M-45: name + save the pending custom range — only when the host page wires it up */}
+          {onSavePeriod && (
+            <div className="mt-3 space-y-2">
+              <input
+                type="text"
+                value={pendingName}
+                onChange={(e) => setPendingName(e.target.value)}
+                placeholder={t('transactions.periodNamePlaceholder')}
+                className="w-full rounded-xl bg-surface-container-low px-4 py-2.5 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <button
+                onClick={handleSavePeriod}
+                disabled={!pendingStart || !pendingEnd}
+                className="w-full rounded-xl bg-surface-container-low py-2.5 text-sm font-semibold text-on-surface/70 transition-all hover:bg-surface-container active:scale-[0.97] disabled:opacity-40"
+              >
+                {t('transactions.savePeriod')}
+              </button>
+            </div>
+          )}
+
           <button
             onClick={() => setShowCustomPicker(false)}
             className="mt-3 w-full text-center text-sm text-on-surface/50 hover:text-on-surface/70 transition-colors"

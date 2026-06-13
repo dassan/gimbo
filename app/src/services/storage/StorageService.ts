@@ -12,6 +12,7 @@ import type {
   DataFile,
   Installment,
   Recurrence,
+  SavedPeriod,
   Settings,
   Tag,
   Transaction,
@@ -506,6 +507,20 @@ export class StorageService {
     }))
   }
 
+  // ─── Saved periods (M-45) ─────────────────────────────────────────────────────
+
+  async getSavedPeriods(): Promise<SavedPeriod[]> {
+    const rows = await this.query(
+      'SELECT id, name, start_date, end_date FROM saved_periods ORDER BY created_at'
+    )
+    return rows.map((r) => ({
+      id: r.id as string,
+      name: r.name as string,
+      start: r.start_date as string,
+      end: r.end_date as string,
+    }))
+  }
+
   // ─── Export / Import ─────────────────────────────────────────────────────────
 
   async exportBlob(): Promise<Blob> {
@@ -533,16 +548,25 @@ export class StorageService {
     const settings = await this.getSettings()
     if (!settings) return null
 
-    const [accounts, categories, tags, transactions, valuations, auditLog, deletedIds] =
-      await Promise.all([
-        this.getAccounts(),
-        this.getCategories(),
-        this.getTags(),
-        this.getTransactions(),
-        this.getValuations(),
-        this.getAuditLog(),
-        this.getDeletedIds(),
-      ])
+    const [
+      accounts,
+      categories,
+      tags,
+      transactions,
+      valuations,
+      auditLog,
+      deletedIds,
+      savedPeriods,
+    ] = await Promise.all([
+      this.getAccounts(),
+      this.getCategories(),
+      this.getTags(),
+      this.getTransactions(),
+      this.getValuations(),
+      this.getAuditLog(),
+      this.getDeletedIds(),
+      this.getSavedPeriods(),
+    ])
 
     return {
       schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -555,6 +579,7 @@ export class StorageService {
       valuations,
       auditLog,
       deletedIds,
+      savedPeriods,
     }
   }
 

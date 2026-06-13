@@ -22,6 +22,7 @@ export function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
     valuations: [],
     auditLog: [],
     deletedIds: [],
+    savedPeriods: [],
     ...overrides,
   }
 }

@@ -400,3 +400,60 @@ describe('Analytics — CC-18: category breakdown uses tx.date, not effective ca
     expect(screen.queryByText(/9\.999/)).not.toBeInTheDocument()
   })
 })
+
+// ─── M-45: saved custom periods ──────────────────────────────────────────────
+
+describe('Analytics — M-45: saved custom periods', () => {
+  it('saving a custom period from the picker persists it to the store', () => {
+    useDataStore.setState({ data: makeDataFile({ savedPeriods: [] }) })
+    render(<Analytics />)
+
+    fireEvent.click(screen.getByRole('button', { name: /period-selector/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'transactions.choosePeriod' }))
+
+    fireEvent.change(screen.getByLabelText('custom-start-date'), {
+      target: { value: '2026-01-01' },
+    })
+    fireEvent.change(screen.getByLabelText('custom-end-date'), {
+      target: { value: '2026-03-31' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('transactions.periodNamePlaceholder'), {
+      target: { value: 'Q1 2026' },
+    })
+    fireEvent.click(screen.getByText('transactions.savePeriod'))
+
+    const saved = useDataStore.getState().data?.savedPeriods
+    expect(saved).toHaveLength(1)
+    expect(saved?.[0]).toMatchObject({ name: 'Q1 2026', start: '2026-01-01', end: '2026-03-31' })
+  })
+
+  it('lists a saved period in the dropdown and applies it on click', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        savedPeriods: [{ id: 'p1', name: 'Q1 2026', start: '2026-01-01', end: '2026-03-31' }],
+      }),
+    })
+    render(<Analytics />)
+
+    fireEvent.click(screen.getByRole('button', { name: /period-selector/i }))
+    expect(screen.getByRole('menuitem', { name: 'Q1 2026' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Q1 2026' }))
+    // Applying closes the dropdown
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('deleting a saved period removes it from the store', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        savedPeriods: [{ id: 'p1', name: 'Q1 2026', start: '2026-01-01', end: '2026-03-31' }],
+      }),
+    })
+    render(<Analytics />)
+
+    fireEvent.click(screen.getByRole('button', { name: /period-selector/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'transactions.deletePeriod' }))
+
+    expect(useDataStore.getState().data?.savedPeriods).toHaveLength(0)
+  })
+})

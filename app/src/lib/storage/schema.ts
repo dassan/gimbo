@@ -4,7 +4,7 @@ import { uuid, now } from '@/lib/utils'
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 8
+export const CURRENT_SCHEMA_VERSION = 9
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -106,11 +106,19 @@ const ValuationSchema = z.object({
   marketValue: z.number(),
 })
 
+// M-45: named custom date range saved from the Reports period picker for reuse.
+const SavedPeriodSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  start: z.string(),
+  end: z.string(),
+})
+
 const AuditEntrySchema = z.object({
   id: z.string(),
   timestamp: z.string(),
   action: z.enum(['CREATE', 'UPDATE', 'DELETE']),
-  entity: z.enum(['account', 'category', 'tag', 'transaction', 'user']),
+  entity: z.enum(['account', 'category', 'tag', 'transaction', 'user', 'savedPeriod']),
   entityId: z.string(),
   summary: z.string(),
 })
@@ -126,6 +134,7 @@ export const DataFileSchema = z.object({
   valuations: z.array(ValuationSchema).default([]), // NW-08; absent in v1/v2 files defaults to []
   auditLog: z.array(AuditEntrySchema),
   deletedIds: z.array(z.string()).default([]), // tombstone — B-11; absent in v1/v2 files defaults to []
+  savedPeriods: z.array(SavedPeriodSchema).default([]), // M-45; absent in older files defaults to []
 })
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -201,6 +210,13 @@ function migrateDataFile(data: DataFile): DataFile {
     migrated = { ...migrated, schemaVersion: 8 }
   }
 
+  // v8 → v9: adds savedPeriods array (M-45) — named custom date ranges saved from the Reports
+  // period picker. Absent in older files; Zod default already fills it via DataFileSchema.parse,
+  // so we only need to bump the version here.
+  if (migrated.schemaVersion === 8) {
+    migrated = { ...migrated, schemaVersion: 9, savedPeriods: migrated.savedPeriods ?? [] }
+  }
+
   return migrated
 }
 
@@ -223,6 +239,7 @@ export function createEmptyDataFile(name: string, email: string): DataFile {
     valuations: [],
     auditLog: [],
     deletedIds: [],
+    savedPeriods: [],
   }
 }
 

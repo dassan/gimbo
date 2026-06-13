@@ -19,6 +19,8 @@ const TABS: ActiveTab[] = ['categorias', 'cashflow', 'contas', 'tags', 'faturas'
 export default function Analytics() {
   const { t } = useTranslation()
   const data = useDataStore((s) => s.data)
+  const addSavedPeriod = useDataStore((s) => s.addSavedPeriod)
+  const deleteSavedPeriod = useDataStore((s) => s.deleteSavedPeriod)
   const shadowClass = useWorkspaceStore((s) =>
     s.workspace.useAmbientShadows ? 'shadow-card-ambient' : 'shadow-card'
   )
@@ -80,7 +82,13 @@ export default function Analytics() {
       {/* ── Header controls ──────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3">
         {/* Period selector */}
-        <PeriodSelector value={period} onChange={setPeriod} />
+        <PeriodSelector
+          value={period}
+          onChange={setPeriod}
+          savedPeriods={data.savedPeriods}
+          onSavePeriod={addSavedPeriod}
+          onDeletePeriod={deleteSavedPeriod}
+        />
 
         {/* Include unpaid toggle */}
         <button

@@ -6,6 +6,7 @@ import type {
   Tag,
   Transaction,
   Valuation,
+  SavedPeriod,
   AuditEntry,
   AuditAction,
   AuditEntity,
@@ -58,6 +59,7 @@ function buildSummary(
     tag: 'Tag',
     transaction: 'Transação',
     user: 'Perfil',
+    savedPeriod: 'Período salvo',
   }
   const actionLabel: Record<AuditAction, string> = {
     CREATE: 'criada',
@@ -107,6 +109,10 @@ interface DataStore {
   addValuation: (valuation: Valuation) => void
   updateValuation: (valuation: Valuation) => void
   deleteValuation: (id: string) => void
+
+  // M-45: named custom date ranges saved from the Reports period picker
+  addSavedPeriod: (period: SavedPeriod) => void
+  deleteSavedPeriod: (id: string) => void
 
   updateUser: (patch: Partial<DataFile['user']>) => void
   setRetentionLimit: (limit: number | null) => void
@@ -498,6 +504,36 @@ export const useDataStore = create<DataStore>((set) => ({
             v?.accountId ?? id,
             `Valuation removido: ${accName} em ${v?.date ?? ''}`
           )
+        )
+      })
+    ),
+
+  // ── Saved periods (M-45) ─────────────────────────────────────────────────
+
+  addSavedPeriod: (period) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          d.savedPeriods.push(period)
+          addAudit(
+            d,
+            makeEntry('CREATE', 'savedPeriod', period.id, `Período salvo criado: ${period.name}`)
+          )
+        },
+        'saved_period_created'
+      )
+    ),
+
+  deleteSavedPeriod: (id) =>
+    set((s) =>
+      mutate(s, (d) => {
+        const period = d.savedPeriods.find((p) => p.id === id)
+        d.savedPeriods = d.savedPeriods.filter((p) => p.id !== id)
+        d.deletedIds = [...new Set([...d.deletedIds, id])]
+        addAudit(
+          d,
+          makeEntry('DELETE', 'savedPeriod', id, `Período salvo removido: ${period?.name ?? id}`)
         )
       })
     ),

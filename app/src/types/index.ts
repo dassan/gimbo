@@ -13,7 +13,7 @@ export type CategoryType = 'INCOME' | 'EXPENSE'
 export type TransactionType = 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'CREDIT_PAYMENT'
 
 export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE'
-export type AuditEntity = 'account' | 'category' | 'tag' | 'transaction' | 'user'
+export type AuditEntity = 'account' | 'category' | 'tag' | 'transaction' | 'user' | 'savedPeriod'
 
 // ─── Entities ─────────────────────────────────────────────────────────────────
 
@@ -109,6 +109,14 @@ export interface AuditEntry {
   summary: string // human-readable, generated in active locale at mutation time
 }
 
+// M-45: a named custom date range, saved from the Reports period picker for reuse.
+export interface SavedPeriod {
+  id: string // UUID
+  name: string
+  start: string // "YYYY-MM-DD"
+  end: string // "YYYY-MM-DD"
+}
+
 // ─── Root data.json shape ─────────────────────────────────────────────────────
 
 export interface DataFile {
@@ -122,6 +130,7 @@ export interface DataFile {
   valuations: Valuation[]
   auditLog: AuditEntry[]
   deletedIds: string[] // tombstone: IDs explicitly deleted on this device (B-11)
+  savedPeriods: SavedPeriod[] // M-45: named custom date ranges saved from Reports
 }
 
 // ─── workspace.json shape ─────────────────────────────────────────────────────
