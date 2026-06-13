@@ -225,6 +225,12 @@ export default function Dashboard() {
   // All CREDIT accounts: displayed in "Meus Cartões"
   const creditAccounts = data.accounts.filter((a) => a.type === 'CREDIT' && !a.archived)
 
+  // Sum of visible accounts' balances — mirrors the "Faturas de {mês}" total shown for cards
+  const totalAccountsBalance = visibleAccounts.reduce(
+    (sum, acc) => sum + (accountBalances[acc.id] ?? 0),
+    0
+  )
+
   const currentMonthName = (() => {
     const name = now.toLocaleString(i18n.language, { month: 'long' })
     return name.charAt(0).toUpperCase() + name.slice(1)
@@ -262,9 +268,24 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
         {/* My Accounts — standard accounts with includeInBalance */}
         <div className={cn('rounded-2xl bg-surface-container p-5 sm:p-6', shadowClass)}>
-          <h3 className="text-sm font-semibold text-on-surface mb-4">
-            {t('dashboard.myAccounts')}
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-on-surface">{t('dashboard.myAccounts')}</h3>
+            {visibleAccounts.length > 0 && (
+              <div className="text-right">
+                <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium leading-none mb-0.5">
+                  {t('dashboard.totalBalance')}
+                </p>
+                <p
+                  className={cn(
+                    'text-sm font-bold tabular-nums',
+                    totalAccountsBalance < 0 ? 'text-tertiary' : 'text-on-surface'
+                  )}
+                >
+                  {formatCurrency(totalAccountsBalance)}
+                </p>
+              </div>
+            )}
+          </div>
 
           {visibleAccounts.length === 0 ? (
             <p className="py-8 text-center text-sm text-on-surface/40">{t('common.noData')}</p>

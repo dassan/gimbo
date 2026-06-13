@@ -100,8 +100,9 @@ describe('Dashboard — CC-13: accountBalances bifurcation', () => {
 
     render(<Dashboard />)
 
-    // Standard balance = 7777 - 1111 = 6666 (stat cards show 0, so this is unique)
-    expect(screen.getByText(/6\.666,00/)).toBeInTheDocument()
+    // Standard balance = 7777 - 1111 = 6666 (stat cards show 0, so this is unique).
+    // Appears twice: in the account row and in the "Saldo Geral" total.
+    expect(screen.getAllByText(/6\.666,00/)).toHaveLength(2)
   })
 
   it('shows R$0,00 for CREDIT account without creditMetadata', () => {
@@ -226,6 +227,21 @@ describe('Dashboard — CC-14: Meus Cartões section', () => {
     // Both section headings
     expect(screen.getByText('dashboard.myAccounts')).toBeInTheDocument()
     expect(screen.getByText('dashboard.myCards')).toBeInTheDocument()
+  })
+
+  it('shows "Saldo Geral" as the sum of all visible accounts balances', () => {
+    const accountA = makeRetailAccount({ id: 'acc-a', name: 'Conta A', balance: 1000 })
+    const accountB = makeRetailAccount({ id: 'acc-b', name: 'Conta B', balance: 234.5 })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [accountA, accountB], transactions: [] }),
+    })
+
+    render(<Dashboard />)
+
+    expect(screen.getByText('dashboard.totalBalance')).toBeInTheDocument()
+    // 1000 + 234.50 = 1234.50 — sum is shown once (totalBalance), each account once (rows)
+    expect(screen.getAllByText(/1\.234,50/)).toHaveLength(1)
   })
 
   it('shows full available limit for CREDIT account with creditMetadata and no expenses', () => {
@@ -440,7 +456,8 @@ describe('Dashboard — B-15: unpaid counts toward "Previstas", never the balanc
     render(<Dashboard />)
 
     // Balance stays faithful to the statement: 1000 + 700 = 1700 (unpaid excluded).
-    expect(screen.getByText(/1\.700,00/)).toBeInTheDocument()
+    // Appears twice: in the account row and in the "Saldo Geral" total.
+    expect(screen.getAllByText(/1\.700,00/)).toHaveLength(2)
     // If the unpaid expense had wrongly hit the balance it would read 1450 — must not.
     expect(screen.queryByText(/1\.450,00/)).not.toBeInTheDocument()
     // The unpaid expense still drives "Despesas Previstas".
