@@ -581,6 +581,7 @@ function advanceByFrequency(dateStr: string, frequency: RecurrenceFrequency, n: 
 // Strips CREDIT-only fields (creditMetadata) from non-CREDIT accounts.
 // CC-12: non-CREDIT accounts must never carry creditMetadata in the saved object.
 // M-34: issuerIcon (institution branding) is allowed on any account type and is preserved.
+// M-42: archived is allowed on any account type and is preserved.
 function sanitizeAccount(account: Account): Account {
   if (account.type === 'CREDIT') return account
   return {
@@ -590,5 +591,6 @@ function sanitizeAccount(account: Account): Account {
     balance: account.balance,
     includeInBalance: account.includeInBalance,
     ...(account.issuerIcon ? { issuerIcon: account.issuerIcon } : {}),
+    ...(account.archived ? { archived: account.archived } : {}),
   }
 }

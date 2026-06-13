@@ -71,12 +71,13 @@ export default function ContasView({
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
 
   // ── Split accounts into non-CREDIT and CREDIT ─────────────────────────────
+  // M-42: archived accounts are hidden from this overview (history stays in Lançamentos)
   const regularAccounts = useMemo(
-    () => accounts.filter((a) => a.type !== 'CREDIT' && a.includeInBalance),
+    () => accounts.filter((a) => a.type !== 'CREDIT' && a.includeInBalance && !a.archived),
     [accounts]
   )
   const creditAccounts = useMemo(
-    () => accounts.filter((a) => a.type === 'CREDIT' && a.includeInBalance),
+    () => accounts.filter((a) => a.type === 'CREDIT' && a.includeInBalance && !a.archived),
     [accounts]
   )
 

@@ -218,9 +218,12 @@ export default function Dashboard() {
   if (!data) return null
 
   // Non-CREDIT accounts with includeInBalance: displayed in "Minhas Contas"
-  const visibleAccounts = data.accounts.filter((a) => a.type !== 'CREDIT' && a.includeInBalance)
+  // M-42: archived accounts are hidden from this overview (still counted in balances/totals)
+  const visibleAccounts = data.accounts.filter(
+    (a) => a.type !== 'CREDIT' && a.includeInBalance && !a.archived
+  )
   // All CREDIT accounts: displayed in "Meus Cartões"
-  const creditAccounts = data.accounts.filter((a) => a.type === 'CREDIT')
+  const creditAccounts = data.accounts.filter((a) => a.type === 'CREDIT' && !a.archived)
 
   const currentMonthName = (() => {
     const name = now.toLocaleString(i18n.language, { month: 'long' })

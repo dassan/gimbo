@@ -166,43 +166,52 @@ export default function NetWorth() {
     s.workspace.useAmbientShadows ? 'shadow-card-ambient' : 'shadow-card'
   )
 
-  const { assetAccounts, creditAccounts, assetBalances, totalAssets, totalLiabilities, netWorth } =
-    useMemo(() => {
-      if (!data) {
-        return {
-          assetAccounts: [],
-          creditAccounts: [],
-          assetBalances: {} as Record<string, number>,
-          totalAssets: 0,
-          totalLiabilities: 0,
-          netWorth: 0,
-        }
-      }
-
-      const assetAccounts = data.accounts.filter(
-        (a) => a.type !== 'CREDIT' && (includeHidden || a.includeInBalance)
-      )
-      const creditAccounts = data.accounts.filter(
-        (a) => a.type === 'CREDIT' && (includeHidden || a.includeInBalance)
-      )
-
-      const assetBalances = computeAssetBalances(assetAccounts, data.transactions, data.valuations)
-
-      const totalAssets = Object.values(assetBalances).reduce((s, v) => s + v, 0)
-      const totalLiabilities = creditAccounts.reduce(
-        (s, acc) => s + getTotalCreditLiability(data.transactions, acc),
-        0
-      )
-
+  const {
+    visibleAssetAccounts,
+    visibleCreditAccounts,
+    assetBalances,
+    totalAssets,
+    totalLiabilities,
+    netWorth,
+  } = useMemo(() => {
+    if (!data) {
       return {
-        assetAccounts,
-        creditAccounts,
-        assetBalances,
-        totalAssets,
-        totalLiabilities,
-        netWorth: totalAssets - totalLiabilities,
+        visibleAssetAccounts: [],
+        visibleCreditAccounts: [],
+        assetBalances: {} as Record<string, number>,
+        totalAssets: 0,
+        totalLiabilities: 0,
+        netWorth: 0,
       }
-    }, [data, includeHidden])
+    }
+
+    const assetAccounts = data.accounts.filter(
+      (a) => a.type !== 'CREDIT' && (includeHidden || a.includeInBalance)
+    )
+    const creditAccounts = data.accounts.filter(
+      (a) => a.type === 'CREDIT' && (includeHidden || a.includeInBalance)
+    )
+    // M-42: archived accounts keep contributing to totals below, but are hidden as rows.
+    const visibleAssetAccounts = assetAccounts.filter((a) => !a.archived)
+    const visibleCreditAccounts = creditAccounts.filter((a) => !a.archived)
+
+    const assetBalances = computeAssetBalances(assetAccounts, data.transactions, data.valuations)
+
+    const totalAssets = Object.values(assetBalances).reduce((s, v) => s + v, 0)
+    const totalLiabilities = creditAccounts.reduce(
+      (s, acc) => s + getTotalCreditLiability(data.transactions, acc),
+      0
+    )
+
+    return {
+      visibleAssetAccounts,
+      visibleCreditAccounts,
+      assetBalances,
+      totalAssets,
+      totalLiabilities,
+      netWorth: totalAssets - totalLiabilities,
+    }
+  }, [data, includeHidden])
 
   if (!data) return null
 
@@ -274,13 +283,13 @@ export default function NetWorth() {
             {t('netWorth.assetsSection')}
           </h3>
 
-          {assetAccounts.length === 0 ? (
+          {visibleAssetAccounts.length === 0 ? (
             <p className="py-8 text-center text-sm text-on-surface/40">
               {t('netWorth.noAccounts')}
             </p>
           ) : (
             <div className="space-y-1">
-              {[...assetAccounts]
+              {[...visibleAssetAccounts]
                 .sort((a, b) => (assetBalances[b.id] ?? 0) - (assetBalances[a.id] ?? 0))
                 .map((acc) => (
                   <AssetRow
@@ -303,13 +312,13 @@ export default function NetWorth() {
             {t('netWorth.liabilitiesSection')}
           </h3>
 
-          {creditAccounts.length === 0 ? (
+          {visibleCreditAccounts.length === 0 ? (
             <p className="py-8 text-center text-sm text-on-surface/40">
               {t('netWorth.noAccounts')}
             </p>
           ) : (
             <div className="space-y-3">
-              {creditAccounts.map((acc) => (
+              {visibleCreditAccounts.map((acc) => (
                 <LiabilityRow
                   key={acc.id}
                   account={acc}

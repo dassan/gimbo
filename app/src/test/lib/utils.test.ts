@@ -12,6 +12,7 @@ import {
   getTxInvoicePeriod,
   getTotalCreditLiability,
   invoicePeriodKey,
+  filterArchivedAccounts,
   isCardCredit,
   isCashRealized,
   now,
@@ -551,5 +552,39 @@ describe('sortCategoriesHierarchical (M-46)', () => {
       'child-supermercado',
       'root-aluguel',
     ])
+  })
+})
+
+describe('filterArchivedAccounts (M-42)', () => {
+  function makeAcc(overrides: Partial<Account> = {}): Account {
+    return {
+      id: 'acc-1',
+      name: 'Conta',
+      type: 'RETAIL',
+      balance: 0,
+      includeInBalance: true,
+      ...overrides,
+    }
+  }
+
+  it('hides archived accounts by default', () => {
+    const accounts = [
+      makeAcc({ id: 'active', archived: false }),
+      makeAcc({ id: 'old', name: 'Conta antiga', archived: true }),
+    ]
+    expect(filterArchivedAccounts(accounts).map((a) => a.id)).toEqual(['active'])
+  })
+
+  it('keeps an archived account if its id matches keepId', () => {
+    const accounts = [
+      makeAcc({ id: 'active', archived: false }),
+      makeAcc({ id: 'old', name: 'Conta antiga', archived: true }),
+    ]
+    expect(filterArchivedAccounts(accounts, 'old').map((a) => a.id)).toEqual(['active', 'old'])
+  })
+
+  it('returns all accounts when none are archived', () => {
+    const accounts = [makeAcc({ id: 'a' }), makeAcc({ id: 'b' })]
+    expect(filterArchivedAccounts(accounts)).toHaveLength(2)
   })
 })

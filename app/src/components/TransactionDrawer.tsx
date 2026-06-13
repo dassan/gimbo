@@ -9,6 +9,7 @@ import {
   getCurrentInvoiceBalance,
   todayStr,
   sortCategoriesHierarchical,
+  filterArchivedAccounts,
 } from '@/lib/utils'
 import type { Transaction, TransactionType, RecurrenceFrequency } from '@/types'
 
@@ -100,6 +101,16 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
     () => (data?.accounts ?? []).filter((a) => a.type !== 'CREDIT'),
     [data]
   )
+  // M-42: defaults for new transactions must pick an active (non-archived) account.
+  const activeAccounts = useMemo(() => filterArchivedAccounts(data?.accounts ?? []), [data])
+  const activeCreditAccounts = useMemo(
+    () => filterArchivedAccounts(creditAccounts),
+    [creditAccounts]
+  )
+  const activeNonCreditAccounts = useMemo(
+    () => filterArchivedAccounts(nonCreditAccounts),
+    [nonCreditAccounts]
+  )
 
   // Derived: selected account for standard (non-CREDIT_PAYMENT) mode
   const selectedAccount = useMemo(
@@ -139,8 +150,8 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
         setAmount(0)
         setAmountStr('0,00')
         setDate(todayStr())
-        setAccountId(data?.accounts[0]?.id ?? '')
-        setTransferAccountId(nonCreditAccounts[0]?.id ?? '')
+        setAccountId(activeAccounts[0]?.id ?? '')
+        setTransferAccountId(activeNonCreditAccounts[0]?.id ?? '')
         setCategoryId('')
         setDescription('')
         setSelectedTags([])
@@ -155,7 +166,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
       setShowRecurrenceDeleteModal(false)
       setShowTagMenu(false)
     }
-  }, [open, transaction, data, nonCreditAccounts])
+  }, [open, transaction, data, activeAccounts, activeNonCreditAccounts])
 
   // M-20: auto-focus the amount field whenever the drawer opens
   useEffect(() => {
@@ -180,18 +191,18 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   function handleTypeChange(newType: TxType) {
     setType(newType)
     if (newType === 'CREDIT_PAYMENT') {
-      setAccountId(creditAccounts[0]?.id ?? '')
-      setTransferAccountId(nonCreditAccounts[0]?.id ?? '')
+      setAccountId(activeCreditAccounts[0]?.id ?? '')
+      setTransferAccountId(activeNonCreditAccounts[0]?.id ?? '')
       setCategoryId('')
     } else if (newType === 'TRANSFER') {
-      const first = nonCreditAccounts[0]?.id ?? ''
-      const second = nonCreditAccounts[1]?.id ?? nonCreditAccounts[0]?.id ?? ''
+      const first = activeNonCreditAccounts[0]?.id ?? ''
+      const second = activeNonCreditAccounts[1]?.id ?? activeNonCreditAccounts[0]?.id ?? ''
       setAccountId(first)
       setTransferAccountId(second)
       setCategoryId('')
       setIsPaid(true)
     } else {
-      setAccountId(data?.accounts[0]?.id ?? '')
+      setAccountId(activeAccounts[0]?.id ?? '')
     }
     // Reset installment + recurrence state when type changes
     setInstallmentsEnabled(false)
@@ -230,7 +241,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
 
     const payload: Transaction = {
       id: txId,
-      accountId: accountId || data.accounts[0]?.id || '',
+      accountId: accountId || activeAccounts[0]?.id || '',
       categoryId: type === 'CREDIT_PAYMENT' ? '' : categoryId,
       amount,
       type,
@@ -482,12 +493,14 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                     onChange={(e) => setAccountId(e.target.value)}
                     className="w-full appearance-none rounded-xl bg-surface-container-low py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                   >
-                    {creditAccounts.map((a) => (
+                    {filterArchivedAccounts(creditAccounts, accountId).map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name}
                       </option>
                     ))}
-                    {creditAccounts.length === 0 && <option value="">{t('common.noData')}</option>}
+                    {filterArchivedAccounts(creditAccounts, accountId).length === 0 && (
+                      <option value="">{t('common.noData')}</option>
+                    )}
                   </select>
                   <ChevronDown
                     size={16}
@@ -507,12 +520,12 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                     onChange={(e) => setTransferAccountId(e.target.value)}
                     className="w-full appearance-none rounded-xl bg-surface-container-low py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                   >
-                    {nonCreditAccounts.map((a) => (
+                    {filterArchivedAccounts(nonCreditAccounts, transferAccountId).map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name}
                       </option>
                     ))}
-                    {nonCreditAccounts.length === 0 && (
+                    {filterArchivedAccounts(nonCreditAccounts, transferAccountId).length === 0 && (
                       <option value="">{t('common.noData')}</option>
                     )}
                   </select>
@@ -537,12 +550,12 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                     onChange={(e) => setAccountId(e.target.value)}
                     className="w-full appearance-none rounded-xl bg-surface-container-low py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                   >
-                    {nonCreditAccounts.map((a) => (
+                    {filterArchivedAccounts(nonCreditAccounts, accountId).map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name}
                       </option>
                     ))}
-                    {nonCreditAccounts.length === 0 && (
+                    {filterArchivedAccounts(nonCreditAccounts, accountId).length === 0 && (
                       <option value="">{t('common.noData')}</option>
                     )}
                   </select>
@@ -564,16 +577,18 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                     onChange={(e) => setTransferAccountId(e.target.value)}
                     className="w-full appearance-none rounded-xl bg-surface-container-low py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                   >
-                    {nonCreditAccounts
-                      .filter((a) => a.id !== accountId)
-                      .map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name}
-                        </option>
-                      ))}
-                    {nonCreditAccounts.filter((a) => a.id !== accountId).length === 0 && (
-                      <option value="">{t('common.noData')}</option>
-                    )}
+                    {filterArchivedAccounts(
+                      nonCreditAccounts.filter((a) => a.id !== accountId),
+                      transferAccountId
+                    ).map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                    {filterArchivedAccounts(
+                      nonCreditAccounts.filter((a) => a.id !== accountId),
+                      transferAccountId
+                    ).length === 0 && <option value="">{t('common.noData')}</option>}
                   </select>
                   <ChevronDown
                     size={16}
@@ -603,12 +618,12 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                   }}
                   className="w-full appearance-none rounded-xl bg-surface-container-low py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                 >
-                  {(data?.accounts ?? []).map((a) => (
+                  {filterArchivedAccounts(data?.accounts ?? [], accountId).map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name}
                     </option>
                   ))}
-                  {(data?.accounts ?? []).length === 0 && (
+                  {filterArchivedAccounts(data?.accounts ?? [], accountId).length === 0 && (
                     <option value="">{t('common.noData')}</option>
                   )}
                 </select>

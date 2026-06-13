@@ -38,6 +38,8 @@ import {
   Cloud,
   ExternalLink,
   RefreshCw,
+  ChevronDown,
+  RotateCcw,
 } from 'lucide-react'
 import {
   loadBackupDirHandle,
@@ -235,6 +237,9 @@ export default function Settings() {
   const [categoryModal, setCategoryModal] = useState<CategoryModalState>({ open: false })
   const [tagModal, setTagModal] = useState<TagModalState>({ open: false })
   const [importResult, setImportResult] = useState<ImportResult>(null)
+  // M-42: collapsible "Archived accounts" sections — collapsed by default
+  const [showArchivedAccounts, setShowArchivedAccounts] = useState(false)
+  const [showArchivedCards, setShowArchivedCards] = useState(false)
   useEffect(() => {
     void loadBackupDirHandle().then((handle) => setBackupDir(handle))
   }, [])
@@ -328,7 +333,8 @@ export default function Settings() {
     includeInBalance: boolean,
     initialBalance: number,
     creditMetadata?: CreditMetadata,
-    issuerIcon?: string
+    issuerIcon?: string,
+    archived?: boolean
   ) {
     if (modal.open && modal.account) {
       updateAccount({
@@ -339,6 +345,7 @@ export default function Settings() {
         includeInBalance,
         creditMetadata,
         issuerIcon,
+        archived,
       })
     } else {
       addAccount({
@@ -349,9 +356,15 @@ export default function Settings() {
         includeInBalance,
         creditMetadata,
         issuerIcon,
+        archived,
       })
     }
     setModal({ open: false })
+  }
+
+  // M-42: reactivate an archived account from the collapsible "Archived" section.
+  function handleReactivateAccount(account: Account) {
+    updateAccount({ ...account, archived: false })
   }
 
   function handleDeleteAccount(id: string) {
@@ -543,8 +556,19 @@ export default function Settings() {
             {/* Accounts & Cards */}
             {activeSection === 'accounts' &&
               (() => {
-                const nonCreditAccounts = data.accounts.filter((a) => a.type !== 'CREDIT')
-                const creditAccounts = data.accounts.filter((a) => a.type === 'CREDIT')
+                // M-42: active accounts in the main list; archived ones in a collapsible section
+                const nonCreditAccounts = data.accounts.filter(
+                  (a) => a.type !== 'CREDIT' && !a.archived
+                )
+                const creditAccounts = data.accounts.filter(
+                  (a) => a.type === 'CREDIT' && !a.archived
+                )
+                const archivedNonCreditAccounts = data.accounts.filter(
+                  (a) => a.type !== 'CREDIT' && a.archived
+                )
+                const archivedCreditAccounts = data.accounts.filter(
+                  (a) => a.type === 'CREDIT' && a.archived
+                )
                 return (
                   <Section title={t('settings.accountsAndCards')}>
                     {/* M-39: accounts | cards side by side on large screens; stacked below lg */}
@@ -609,6 +633,16 @@ export default function Settings() {
                             )
                           })}
                         </div>
+                        <ArchivedAccountsSection
+                          accounts={archivedNonCreditAccounts}
+                          open={showArchivedAccounts}
+                          onToggle={() => setShowArchivedAccounts((v) => !v)}
+                          onEdit={(acc) => setModal({ open: true, account: acc })}
+                          onReactivate={handleReactivateAccount}
+                          onViewCard={() => {}}
+                          accountBalances={accountBalances}
+                          isCredit={false}
+                        />
                       </div>
 
                       {/* ── Credit cards (CREDIT) ────────────────────────────── */}
@@ -670,6 +704,16 @@ export default function Settings() {
                             )
                           })}
                         </div>
+                        <ArchivedAccountsSection
+                          accounts={archivedCreditAccounts}
+                          open={showArchivedCards}
+                          onToggle={() => setShowArchivedCards((v) => !v)}
+                          onEdit={(acc) => setModal({ open: true, account: acc })}
+                          onReactivate={handleReactivateAccount}
+                          onViewCard={(acc) => void navigate(`/credit-card/${acc.id}`)}
+                          accountBalances={accountBalances}
+                          isCredit={true}
+                        />
                       </div>
                     </div>
                   </Section>
@@ -1114,7 +1158,8 @@ function AddAccountModal({
     includeInBalance: boolean,
     initialBalance: number,
     creditMetadata?: CreditMetadata,
-    issuerIcon?: string
+    issuerIcon?: string,
+    archived?: boolean
   ) => void
   onDelete: (id: string) => void
   onClose: () => void
@@ -1129,6 +1174,8 @@ function AddAccountModal({
     account?.includeInBalance ?? (defaultType === 'CREDIT' ? false : true)
   )
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // M-42: "Ativa" toggle — default to active for new accounts; respect saved value in edit mode
+  const [archived, setArchived] = useState(account?.archived ?? false)
   // M-23: issuer icon for CREDIT accounts — defaults to 'generic' (no visual branding)
   const [issuerIcon, setIssuerIcon] = useState<string>(account?.issuerIcon ?? 'generic')
   // M-33: initial balance — only for non-CREDIT accounts; pre-filled from account.balance in edit mode
@@ -1195,7 +1242,8 @@ function AddAccountModal({
       includeInBalance,
       resolvedInitialBalance,
       creditMetadata,
-      resolvedIssuerIcon
+      resolvedIssuerIcon,
+      archived
     )
   }
 
@@ -1425,6 +1473,29 @@ function AddAccountModal({
             </button>
           </div>
         )}
+
+        {/* M-42: Active toggle — archiving hides the account from selectors/lists without
+            affecting balances/totals */}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-on-surface/70">{t('accounts.active')}</span>
+          </div>
+          <button
+            aria-label={t('accounts.active')}
+            onClick={() => setArchived((v) => !v)}
+            className={cn(
+              'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200',
+              !archived ? 'bg-primary' : 'bg-surface-container-high'
+            )}
+          >
+            <span
+              className={cn(
+                'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 mt-0.5',
+                !archived ? 'translate-x-5' : 'translate-x-0.5'
+              )}
+            />
+          </button>
+        </div>
 
         {/* Actions */}
         <button
@@ -1824,6 +1895,86 @@ function AddCategoryModal({
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+// ─── ArchivedAccountsSection (M-42) ────────────────────────────────────────────
+
+function ArchivedAccountsSection({
+  accounts,
+  open,
+  onToggle,
+  onEdit,
+  onReactivate,
+  onViewCard,
+  accountBalances,
+  isCredit,
+}: {
+  accounts: Account[]
+  open: boolean
+  onToggle: () => void
+  onEdit: (acc: Account) => void
+  onReactivate: (acc: Account) => void
+  onViewCard: (acc: Account) => void
+  accountBalances: Record<string, number>
+  isCredit: boolean
+}) {
+  const { t } = useTranslation()
+  if (accounts.length === 0) return null
+
+  return (
+    <div className="mt-3">
+      <button
+        onClick={onToggle}
+        className="flex w-full items-center gap-1.5 rounded-xl px-1 py-2 text-[11px] font-semibold uppercase tracking-widest text-on-surface/40 hover:text-on-surface/60 transition-colors"
+      >
+        <ChevronDown
+          size={14}
+          strokeWidth={2.5}
+          className={cn('transition-transform duration-200', !open && '-rotate-90')}
+        />
+        {t('accounts.archivedAccounts')} ({accounts.length})
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2">
+          {accounts.map((acc) => (
+            <div
+              key={acc.id}
+              className="flex w-full items-center gap-4 rounded-2xl bg-surface-container/50 px-5 py-4 text-left opacity-60"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-on-surface/5 text-on-surface/40">
+                {isCredit ? <CreditCard size={20} strokeWidth={1.5} /> : accountTypeIcon(acc.type)}
+              </div>
+              <button
+                onClick={() => onEdit(acc)}
+                className="flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
+              >
+                <p className="text-sm font-semibold text-on-surface">{acc.name}</p>
+                <p className="text-xs text-on-surface/40">
+                  {t(`accounts.${acc.type.toLowerCase()}`)} ·{' '}
+                  {formatCurrency(accountBalances[acc.id] ?? 0)}
+                </p>
+              </button>
+              {isCredit && (
+                <button
+                  onClick={() => onViewCard(acc)}
+                  className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-on-surface/50 hover:bg-surface-container-high hover:text-on-surface transition-colors active:scale-[0.97]"
+                >
+                  {t('accounts.viewCard')}
+                </button>
+              )}
+              <button
+                onClick={() => onReactivate(acc)}
+                className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-on-surface/50 hover:bg-surface-container-high hover:text-on-surface transition-colors active:scale-[0.97]"
+              >
+                <RotateCcw size={13} strokeWidth={2.5} />
+                {t('accounts.reactivate')}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

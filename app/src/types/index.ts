@@ -44,6 +44,7 @@ export interface Account {
   includeInBalance: boolean
   creditMetadata?: CreditMetadata // only for CREDIT accounts
   issuerIcon?: string // institution key for any account type — e.g. 'nubank', 'itau', 'generic' (M-34)
+  archived?: boolean // M-42: hidden from selectors/lists but still counted in balances/totals
 }
 
 export interface Category {

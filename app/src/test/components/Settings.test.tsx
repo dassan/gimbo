@@ -14,8 +14,9 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { changeLanguage: vi.fn() } }),
 }))
 
+const mockNavigate = vi.fn()
 vi.mock('react-router-dom', () => ({
-  useNavigate: () => vi.fn(),
+  useNavigate: () => mockNavigate,
 }))
 
 vi.mock('@/lib/backupDir', () => ({
@@ -355,5 +356,94 @@ describe('Settings — M-23: issuer icon picker', () => {
     render(<Settings />)
     // The credit card row should be rendered — the issuer color is applied via style
     expect(screen.getByText('Nexus Visa Gold')).toBeInTheDocument()
+  })
+})
+
+// ─── Settings — M-42: archived accounts ──────────────────────────────────────
+
+describe('Settings — M-42: archived accounts', () => {
+  it('hides archived accounts from the main list but shows them in a collapsed "Archived" section', () => {
+    const activeAccount = makeRetailAccount({ id: 'acc-active', name: 'Conta Ativa' })
+    const archivedAccount = makeRetailAccount({
+      id: 'acc-old',
+      name: 'Conta Antiga',
+      archived: true,
+    })
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [activeAccount, archivedAccount], transactions: [] }),
+    })
+    render(<Settings />)
+
+    expect(screen.getByText('Conta Ativa')).toBeInTheDocument()
+    expect(screen.getByText(/accounts\.archivedAccounts/)).toBeInTheDocument()
+    // Collapsed by default — the archived account's name is not in the DOM yet
+    expect(screen.queryByText('Conta Antiga')).not.toBeInTheDocument()
+  })
+
+  it('expands the "Archived accounts" section to reveal the archived account', async () => {
+    const archivedAccount = makeRetailAccount({
+      id: 'acc-old',
+      name: 'Conta Antiga',
+      archived: true,
+    })
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [archivedAccount], transactions: [] }),
+    })
+    render(<Settings />)
+
+    await userEvent.click(screen.getByText(/accounts\.archivedAccounts/))
+
+    expect(screen.getByText('Conta Antiga')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /accounts\.reactivate/i })).toBeInTheDocument()
+  })
+
+  it('reactivates an archived account via the "Reativar" button', async () => {
+    const archivedAccount = makeRetailAccount({
+      id: 'acc-old',
+      name: 'Conta Antiga',
+      archived: true,
+    })
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [archivedAccount], transactions: [] }),
+    })
+    render(<Settings />)
+
+    await userEvent.click(screen.getByText(/accounts\.archivedAccounts/))
+    await userEvent.click(screen.getByRole('button', { name: /accounts\.reactivate/i }))
+
+    const saved = useDataStore.getState().data?.accounts.find((a) => a.id === 'acc-old')
+    expect(saved?.archived).toBeUndefined()
+  })
+
+  it('the "Ver cartão" button on an archived card navigates to its details page', async () => {
+    const archivedCard = makeCreditAccount({
+      id: 'acc-old-card',
+      name: 'Cartão Antigo',
+      archived: true,
+    })
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [archivedCard], transactions: [] }),
+    })
+    render(<Settings />)
+
+    await userEvent.click(screen.getByText(/accounts\.archivedAccounts/))
+    await userEvent.click(screen.getByRole('button', { name: /accounts\.viewCard/i }))
+
+    expect(mockNavigate).toHaveBeenCalledWith('/credit-card/acc-old-card')
+  })
+
+  it('toggling "Ativa" off in the account modal archives the account on save', async () => {
+    const account = makeRetailAccount({ id: 'acc-1', name: 'Conta 1' })
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account], transactions: [] }),
+    })
+    render(<Settings />)
+
+    await userEvent.click(screen.getByText('Conta 1'))
+    await userEvent.click(screen.getByRole('button', { name: 'accounts.active' }))
+    await userEvent.click(screen.getByRole('button', { name: /settings\.saveAccount/i }))
+
+    const saved = useDataStore.getState().data?.accounts.find((a) => a.id === 'acc-1')
+    expect(saved?.archived).toBe(true)
   })
 })

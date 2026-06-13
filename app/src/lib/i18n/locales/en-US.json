@@ -306,7 +306,12 @@
     "availableLimit": "Available limit",
     "issuer": "Issuer",
     "issuerGeneric": "Generic",
-    "institution": "Institution"
+    "institution": "Institution",
+    "active": "Active",
+    "archived": "Archived",
+    "archivedAccounts": "Archived accounts",
+    "reactivate": "Reactivate",
+    "viewCard": "View card"
   },
   "sync": {
     "syncNow": "Sync now",

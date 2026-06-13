@@ -479,3 +479,43 @@ describe('Dashboard — M-23: credit card issuer icon color', () => {
     expect(screen.getByText('Nexus Visa Gold')).toBeInTheDocument()
   })
 })
+
+// ─── M-42: archived accounts hidden from the overview ────────────────────────
+
+describe('Dashboard — M-42: archived accounts', () => {
+  it('hides an archived non-CREDIT account from "Minhas Contas"', () => {
+    const activeAccount = makeRetailAccount({ id: 'acc-active', name: 'Conta Ativa' })
+    const archivedAccount = makeRetailAccount({
+      id: 'acc-old',
+      name: 'Conta Antiga',
+      archived: true,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [activeAccount, archivedAccount], transactions: [] }),
+    })
+
+    render(<Dashboard />)
+
+    expect(screen.getByText('Conta Ativa')).toBeInTheDocument()
+    expect(screen.queryByText('Conta Antiga')).not.toBeInTheDocument()
+  })
+
+  it('hides an archived CREDIT account from "Meus Cartões"', () => {
+    const activeCard = makeCreditAccount({ id: 'acc-card-active', name: 'Cartão Ativo' })
+    const archivedCard = makeCreditAccount({
+      id: 'acc-card-old',
+      name: 'Cartão Antigo',
+      archived: true,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [activeCard, archivedCard], transactions: [] }),
+    })
+
+    render(<Dashboard />)
+
+    expect(screen.getByText('Cartão Ativo')).toBeInTheDocument()
+    expect(screen.queryByText('Cartão Antigo')).not.toBeInTheDocument()
+  })
+})

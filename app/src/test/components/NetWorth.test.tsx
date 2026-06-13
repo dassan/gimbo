@@ -6,7 +6,7 @@ import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { makeDataFile, makeCreditAccount, makeValuation } from '@/test/fixtures/dataFile'
 import { createDefaultWorkspace } from '@/lib/storage/schema'
 import type { Account, Transaction } from '@/types'
-import { uuid, formatCurrency } from '@/lib/utils'
+import { uuid, formatCurrency, todayStr } from '@/lib/utils'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -210,5 +210,39 @@ describe('NetWorth page', () => {
     })
     render(<NetWorth />)
     expect(screen.getByText('netWorth.totalCommitted')).toBeInTheDocument()
+  })
+
+  // ─── M-42: archived accounts ────────────────────────────────────────────────
+
+  it('hides an archived asset account as a row but keeps it in the Assets total', () => {
+    const archived = makeRetailAccount({
+      id: 'acc-old',
+      name: 'Conta Antiga',
+      balance: 1000,
+      archived: true,
+    })
+    useDataStore.setState({ data: makeDataFile({ accounts: [archived], transactions: [] }) })
+    render(<NetWorth />)
+    expect(screen.queryByText('Conta Antiga')).not.toBeInTheDocument()
+    // The "no accounts" empty state still shows for the (now empty) assets list...
+    expect(screen.getAllByText('netWorth.noAccounts')).toHaveLength(2)
+    // ...but the archived account's balance is still reflected in the Assets total.
+    expect(document.body.textContent).toContain(formatCurrency(1000))
+  })
+
+  it('hides an archived CREDIT account as a row but keeps it in the Liabilities total', () => {
+    const archivedCard = makeCreditAccount({
+      id: 'acc-old-card',
+      name: 'Cartão Antigo',
+      archived: true,
+      creditMetadata: { limit: 10000, closingDay: 28, dueDay: 10 },
+    })
+    const expense = makeTx({ accountId: 'acc-old-card', amount: 700, date: todayStr() })
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [archivedCard], transactions: [expense] }),
+    })
+    render(<NetWorth />)
+    expect(screen.queryByText('Cartão Antigo')).not.toBeInTheDocument()
+    expect(document.body.textContent).toContain(formatCurrency(700))
   })
 })

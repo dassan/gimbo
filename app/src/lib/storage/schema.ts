@@ -4,7 +4,7 @@ import { uuid, now } from '@/lib/utils'
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 7
+export const CURRENT_SCHEMA_VERSION = 8
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -51,6 +51,7 @@ const AccountSchema = z.object({
   includeInBalance: z.boolean(),
   creditMetadata: CreditMetadataSchema.optional(),
   issuerIcon: z.string().optional(), // institution key for any account type — e.g. 'nubank', 'itau', 'generic' (M-34)
+  archived: z.boolean().optional(), // M-42: hidden from selectors/lists but still counted in balances/totals
 })
 
 const CategorySchema = z.object({
@@ -191,6 +192,13 @@ function migrateDataFile(data: DataFile): DataFile {
   // date they would ignore (and re-derive, drifting if the card's closing/due day changed).
   if (migrated.schemaVersion === 6) {
     migrated = { ...migrated, schemaVersion: 7 }
+  }
+
+  // v7 → v8: adds optional archived (Account) — hides the account from selectors/lists while
+  // keeping it in balance/net-worth/liability totals (M-42). Optional field, no shape change;
+  // existing records only need the version bump.
+  if (migrated.schemaVersion === 7) {
+    migrated = { ...migrated, schemaVersion: 8 }
   }
 
   return migrated

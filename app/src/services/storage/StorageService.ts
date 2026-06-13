@@ -174,9 +174,9 @@ export class StorageService {
     await this.run(
       `INSERT INTO accounts
          (id, name, type, balance, include_in_balance,
-          credit_limit, credit_closing_day, credit_due_day, issuer_icon,
+          credit_limit, credit_closing_day, credit_due_day, issuer_icon, archived,
           created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         data.name,
@@ -187,6 +187,7 @@ export class StorageService {
         data.creditMetadata?.closingDay ?? null,
         data.creditMetadata?.dueDay ?? null,
         data.issuerIcon ?? null,
+        data.archived ? 1 : 0,
         now,
         now,
       ]
@@ -203,7 +204,7 @@ export class StorageService {
       `UPDATE accounts SET
          name = ?, type = ?, balance = ?, include_in_balance = ?,
          credit_limit = ?, credit_closing_day = ?, credit_due_day = ?,
-         issuer_icon = ?, updated_at = ?
+         issuer_icon = ?, archived = ?, updated_at = ?
        WHERE id = ?`,
       [
         merged.name,
@@ -214,6 +215,7 @@ export class StorageService {
         merged.creditMetadata?.closingDay ?? null,
         merged.creditMetadata?.dueDay ?? null,
         merged.issuerIcon ?? null,
+        merged.archived ? 1 : 0,
         new Date().toISOString(),
         id,
       ]
@@ -609,6 +611,9 @@ function rowToAccount(row: Row): Account {
   }
   if (row.issuer_icon !== null && row.issuer_icon !== undefined) {
     account.issuerIcon = row.issuer_icon as string
+  }
+  if (row.archived) {
+    account.archived = true
   }
   return account
 }

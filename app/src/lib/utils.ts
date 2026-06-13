@@ -68,6 +68,18 @@ export function sortCategoriesHierarchical(categories: Category[]): Category[] {
 }
 
 /**
+ * M-42: filter out archived accounts from selection UIs, except an account whose id matches
+ * `keepId` (e.g. the account already selected on a transaction being edited, or the active
+ * filter) — archiving only hides accounts from *new* selections, never breaks an existing one.
+ */
+export function filterArchivedAccounts<T extends { id: string; archived?: boolean }>(
+  accounts: T[],
+  keepId?: string
+): T[] {
+  return accounts.filter((a) => !a.archived || a.id === keepId)
+}
+
+/**
  * Parse a "YYYY-MM-DD" date string as local midnight.
  * Using new Date(str) with a date-only string creates a UTC midnight Date,
  * which causes getMonth()/getFullYear() to return wrong values in UTC- timezones.

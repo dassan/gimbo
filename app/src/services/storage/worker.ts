@@ -12,6 +12,7 @@ import v2Schema from './migrations/v2.sql?raw'
 import v3Schema from './migrations/v3.sql?raw'
 import v4Schema from './migrations/v4.sql?raw'
 import v5Schema from './migrations/v5.sql?raw'
+import v6Schema from './migrations/v6.sql?raw'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
 
@@ -43,6 +44,7 @@ type RawAccount = {
   includeInBalance: boolean
   creditMetadata?: { limit: number; closingDay: number; dueDay: number }
   issuerIcon?: string
+  archived?: boolean
 }
 type RawCategory = {
   id: string
@@ -147,6 +149,9 @@ async function runMigrations(): Promise<void> {
   if (version < 5) {
     await sqlite3.run(db, v5Schema)
   }
+  if (version < 6) {
+    await sqlite3.run(db, v6Schema)
+  }
 }
 
 // ─── Export / Import ──────────────────────────────────────────────────────────
@@ -229,9 +234,9 @@ async function replaceAll(raw: unknown): Promise<void> {
         db,
         `INSERT INTO accounts
            (id, name, type, balance, include_in_balance,
-            credit_limit, credit_closing_day, credit_due_day, issuer_icon,
+            credit_limit, credit_closing_day, credit_due_day, issuer_icon, archived,
             created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           acc.id,
           acc.name,
@@ -242,6 +247,7 @@ async function replaceAll(raw: unknown): Promise<void> {
           acc.creditMetadata?.closingDay ?? null,
           acc.creditMetadata?.dueDay ?? null,
           acc.issuerIcon ?? null,
+          acc.archived ? 1 : 0,
           ts,
           ts,
         ]

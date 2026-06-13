@@ -13,6 +13,7 @@ import {
   getInvoiceDueDate,
   getInvoicePaid,
   invoicePeriodKey,
+  filterArchivedAccounts,
 } from '@/lib/utils'
 import PeriodSelector from '@/components/PeriodSelector'
 import type { PeriodValue } from '@/components/PeriodSelector'
@@ -276,9 +277,11 @@ export default function Transactions() {
             options={[
               { value: 'all', label: t('transactions.filterAccounts') },
               // M-26: CREDIT accounts are excluded — their transactions live in /credit-card/:id
-              ...data.accounts
-                .filter((a) => a.type !== 'CREDIT')
-                .map((a) => ({ value: a.id, label: a.name })),
+              // M-42: archived accounts are hidden unless currently selected as the filter
+              ...filterArchivedAccounts(
+                data.accounts.filter((a) => a.type !== 'CREDIT'),
+                filterAccountId
+              ).map((a) => ({ value: a.id, label: a.name })),
             ]}
           />
           <FilterDropdown

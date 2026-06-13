@@ -264,6 +264,32 @@ describe('ContasView — R-15: CREDIT accounts in separate section', () => {
     expect(screen.queryByText('Cartão Oculto')).not.toBeInTheDocument()
     expect(screen.getByText('analytics.contas.selectPrompt')).toBeInTheDocument()
   })
+
+  // M-42: archived accounts are hidden from this overview
+  it('hides archived accounts and credit cards', () => {
+    const accounts = [
+      makeRetailAccount({ id: 'acc-old', name: 'Conta Antiga', archived: true }),
+      makeCreditAccount({
+        id: 'acc-credit-old',
+        name: 'Cartão Antigo',
+        includeInBalance: true,
+        archived: true,
+      }),
+    ]
+    render(
+      <ContasView
+        transactions={[]}
+        accounts={accounts}
+        startDate={APR_START}
+        endDate={APR_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+      />
+    )
+    expect(screen.queryByText('Conta Antiga')).not.toBeInTheDocument()
+    expect(screen.queryByText('Cartão Antigo')).not.toBeInTheDocument()
+    expect(screen.getByText('analytics.contas.selectPrompt')).toBeInTheDocument()
+  })
 })
 
 // ─── R-16: Drill-down — click card → CashFlowView; "Voltar" → grid ───────────

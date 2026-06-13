@@ -287,6 +287,34 @@ describe('creditMetadata handling (CC-12)', () => {
     expect(saved?.issuerIcon).toBe('itau')
     expect(saved?.creditMetadata).toBeUndefined()
   })
+
+  // M-42: archived (visibility flag) is allowed on any account type
+  it('addAccount with non-CREDIT type preserves archived: true', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    useDataStore
+      .getState()
+      .addAccount(makeAccount({ id: 'acc-retail', type: 'RETAIL', archived: true }))
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.archived).toBe(true)
+  })
+
+  it('addAccount with non-CREDIT type and archived: false omits the field', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    useDataStore
+      .getState()
+      .addAccount(makeAccount({ id: 'acc-retail', type: 'RETAIL', archived: false }))
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.archived).toBeUndefined()
+    expect(Object.prototype.hasOwnProperty.call(saved, 'archived')).toBe(false)
+  })
+
+  it('updateAccount reactivates an archived account by setting archived: false', () => {
+    const archivedAccount = makeAccount({ id: 'acc-1', type: 'SAVINGS', archived: true })
+    useDataStore.setState({ data: makeDataFile({ accounts: [archivedAccount] }) })
+    useDataStore.getState().updateAccount({ ...archivedAccount, archived: false })
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.archived).toBeUndefined()
+  })
 })
 
 describe('CREDIT_PAYMENT handling (CC-21)', () => {

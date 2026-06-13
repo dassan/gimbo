@@ -501,6 +501,25 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
     expect(screen.queryByText('Nubank Cartão')).not.toBeInTheDocument()
   })
 
+  // M-42: archived accounts are hidden from the filter dropdown by default
+  it('does not include an archived account in the filter dropdown', () => {
+    const activeAccount = makeRetailAccount({ name: 'Conta Ativa' })
+    const archivedAccount = makeRetailAccount({
+      id: 'acc-old',
+      name: 'Conta Antiga',
+      archived: true,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [activeAccount, archivedAccount], transactions: [] }),
+    })
+
+    render(<Transactions />)
+
+    expect(screen.getByText('Conta Ativa')).toBeInTheDocument()
+    expect(screen.queryByText('Conta Antiga')).not.toBeInTheDocument()
+  })
+
   it('consolidated flow excludes CREDIT card purchases but counts CREDIT_PAYMENT as outflow', () => {
     const retailAccount = makeRetailAccount()
     const creditAccount = makeCreditAccount()

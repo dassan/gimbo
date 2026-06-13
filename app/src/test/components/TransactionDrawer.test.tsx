@@ -1,5 +1,5 @@
 ﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import TransactionDrawer from '@/components/TransactionDrawer'
 import { useDataStore } from '@/store/useDataStore'
@@ -565,5 +565,44 @@ describe('TransactionDrawer — M-20: auto-focus amount field on open', () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue('150,00')).toHaveFocus()
     })
+  })
+})
+
+// ─── M-42: archived accounts ─────────────────────────────────────────────────
+
+describe('TransactionDrawer — M-42: archived accounts', () => {
+  const archivedAccount = {
+    ...testAccount,
+    id: 'acc-archived',
+    name: 'Conta Arquivada',
+    archived: true,
+  }
+
+  it('excludes an archived account from the standard account selector', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [testAccount, archivedAccount],
+        categories: [testCategory],
+      }),
+    })
+    renderDrawer()
+    const [accountSelect] = screen.getAllByRole('combobox')
+    const optionValues = within(accountSelect)
+      .getAllByRole('option')
+      .map((o) => (o as HTMLOptionElement).value)
+    expect(optionValues).not.toContain('acc-archived')
+    expect(optionValues).toContain('acc-1')
+  })
+
+  it('still shows an archived account as the selected option when editing a transaction bound to it', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [testAccount, archivedAccount],
+        categories: [testCategory],
+      }),
+    })
+    renderDrawer({ transaction: { ...testTransaction, accountId: 'acc-archived' } })
+    const [accountSelect] = screen.getAllByRole('combobox')
+    expect(accountSelect).toHaveDisplayValue('Conta Arquivada')
   })
 })
