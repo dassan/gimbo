@@ -9,6 +9,7 @@ import {
   ChevronsRight,
   CreditCard,
   Filter,
+  Search,
   X,
 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
@@ -79,6 +80,8 @@ export default function CreditCardPage() {
   const [filterCategory, setFilterCategory] = useState<string>('all')
   // M-54: collapsible category filter bar (replaces the M-31 horizontal chips)
   const [filterExpanded, setFilterExpanded] = useState(false)
+  // M-55: free-text search within the filter bar
+  const [searchQuery, setSearchQuery] = useState('')
   // M-30: Pay Invoice modal
   const [showPayModal, setShowPayModal] = useState(false)
 
@@ -171,11 +174,22 @@ export default function CreditCardPage() {
     return cats
   }, [invoiceTransactions, data])
 
-  // Filtered transactions by selected category
+  // Filtered transactions by selected category and/or free-text search (M-55)
   const filteredTransactions = useMemo(() => {
-    if (filterCategory === 'all') return invoiceTransactions
-    return invoiceTransactions.filter((tx) => tx.categoryId === filterCategory)
-  }, [invoiceTransactions, filterCategory])
+    let txs = invoiceTransactions
+    if (filterCategory !== 'all') txs = txs.filter((tx) => tx.categoryId === filterCategory)
+    const q = searchQuery.trim().toLowerCase()
+    if (q) txs = txs.filter((tx) => tx.description.toLowerCase().includes(q))
+    return txs
+  }, [invoiceTransactions, filterCategory, searchQuery])
+
+  // M-55: whether any filter (category or search) is currently active
+  const hasActiveFilter = filterCategory !== 'all' || searchQuery.trim() !== ''
+
+  function clearFilters() {
+    setFilterCategory('all')
+    setSearchQuery('')
+  }
 
   // Statement total of the period = charges − credits (estornos); payments are tracked
   // separately (Pago/Restante), mirroring the bank statement (Option 2).
@@ -400,8 +414,8 @@ export default function CreditCardPage() {
 
         {/* Right column: category filter + spending summary (sticky) */}
         <div className="col-span-1 sticky top-8 space-y-4">
-          {/* M-54: collapsible category filter bar, replaces the M-31 horizontal chips */}
-          {categoryOptions.length > 0 && (
+          {/* M-54/M-55: collapsible filter bar (search + category), replaces the M-31 chips */}
+          {invoiceTransactions.length > 0 && (
             <div className={cn('rounded-2xl bg-surface-container overflow-hidden', shadowClass)}>
               <div className="flex items-center gap-1 px-4 py-3">
                 <button
@@ -411,9 +425,11 @@ export default function CreditCardPage() {
                 >
                   <Filter size={14} className="shrink-0" />
                   <span className="truncate">
-                    {filterCategory === 'all'
-                      ? t('creditCard.filterByCategory')
-                      : categoryOptions.find((c) => c.id === filterCategory)?.name}
+                    {filterCategory !== 'all'
+                      ? categoryOptions.find((c) => c.id === filterCategory)?.name
+                      : searchQuery.trim()
+                        ? searchQuery
+                        : t('creditCard.filterPlaceholder')}
                   </span>
                   <ChevronDown
                     size={14}
@@ -423,11 +439,11 @@ export default function CreditCardPage() {
                     )}
                   />
                 </button>
-                {filterCategory !== 'all' && (
+                {hasActiveFilter && (
                   <button
                     type="button"
                     aria-label={t('creditCard.allCategories')}
-                    onClick={() => setFilterCategory('all')}
+                    onClick={clearFilters}
                     className="shrink-0 rounded-full p-1 text-on-surface/40 hover:bg-surface-container-high hover:text-on-surface/70 transition-colors"
                   >
                     <X size={12} />
@@ -435,19 +451,34 @@ export default function CreditCardPage() {
                 )}
               </div>
               {filterExpanded && (
-                <div className="px-4 pb-3">
-                  <select
-                    value={filterCategory}
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                    className="w-full appearance-none rounded-xl bg-surface-container-low py-2 px-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
-                  >
-                    <option value="all">{t('creditCard.allCategories')}</option>
-                    {categoryOptions.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className="px-4 pb-3 space-y-2">
+                  <div className="relative">
+                    <Search
+                      size={14}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
+                    />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder={t('creditCard.searchPlaceholder')}
+                      className="w-full rounded-xl bg-surface-container-low py-2 pl-8 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+                  {categoryOptions.length > 0 && (
+                    <select
+                      value={filterCategory}
+                      onChange={(e) => setFilterCategory(e.target.value)}
+                      className="w-full appearance-none rounded-xl bg-surface-container-low py-2 px-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="all">{t('creditCard.allCategories')}</option>
+                      {categoryOptions.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               )}
             </div>

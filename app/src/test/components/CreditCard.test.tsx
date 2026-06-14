@@ -177,7 +177,7 @@ describe('CreditCardPage — M-54: collapsible category filter', () => {
     setupTwoCategories()
     render(<CreditCardPage />)
 
-    expect(screen.getByText('creditCard.filterByCategory')).toBeInTheDocument()
+    expect(screen.getByText('creditCard.filterPlaceholder')).toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     // Both transactions visible (no filter applied)
     expect(screen.getByText('Mercado')).toBeInTheDocument()
@@ -188,7 +188,7 @@ describe('CreditCardPage — M-54: collapsible category filter', () => {
     setupTwoCategories()
     render(<CreditCardPage />)
 
-    fireEvent.click(screen.getByText('creditCard.filterByCategory'))
+    fireEvent.click(screen.getByText('creditCard.filterPlaceholder'))
     const select = screen.getByRole('combobox')
     expect(select).toBeInTheDocument()
 
@@ -202,7 +202,7 @@ describe('CreditCardPage — M-54: collapsible category filter', () => {
     setupTwoCategories()
     render(<CreditCardPage />)
 
-    fireEvent.click(screen.getByText('creditCard.filterByCategory'))
+    fireEvent.click(screen.getByText('creditCard.filterPlaceholder'))
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'cat-food' } })
     expect(screen.queryByText('Uber')).not.toBeInTheDocument()
 
@@ -210,6 +210,42 @@ describe('CreditCardPage — M-54: collapsible category filter', () => {
 
     expect(screen.getByText('Mercado')).toBeInTheDocument()
     expect(screen.getByText('Uber')).toBeInTheDocument()
+  })
+
+  // ─── M-55: free-text search ────────────────────────────────────────────────
+
+  it('shows a search input when expanded, and filters the list by description', () => {
+    setupTwoCategories()
+    render(<CreditCardPage />)
+
+    fireEvent.click(screen.getByText('creditCard.filterPlaceholder'))
+    const searchInput = screen.getByPlaceholderText('creditCard.searchPlaceholder')
+    expect(searchInput).toBeInTheDocument()
+
+    fireEvent.change(searchInput, { target: { value: 'merc' } })
+
+    expect(screen.getByText('Mercado')).toBeInTheDocument()
+    expect(screen.queryByText('Uber')).not.toBeInTheDocument()
+    // The collapsed bar reflects the active search query
+    expect(screen.getByText('merc')).toBeInTheDocument()
+  })
+
+  it('clears both the search and category filters via the "x" button', () => {
+    setupTwoCategories()
+    render(<CreditCardPage />)
+
+    fireEvent.click(screen.getByText('creditCard.filterPlaceholder'))
+    fireEvent.change(screen.getByPlaceholderText('creditCard.searchPlaceholder'), {
+      target: { value: 'merc' },
+    })
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'cat-food' } })
+    expect(screen.queryByText('Uber')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('creditCard.allCategories'))
+
+    expect(screen.getByText('Mercado')).toBeInTheDocument()
+    expect(screen.getByText('Uber')).toBeInTheDocument()
+    expect(screen.getByText('creditCard.filterPlaceholder')).toBeInTheDocument()
   })
 })
 
