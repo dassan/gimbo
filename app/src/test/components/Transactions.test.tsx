@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Transactions from '@/pages/Transactions'
 import { useDataStore } from '@/store/useDataStore'
-import { makeDataFile } from '@/test/fixtures/dataFile'
+import { makeDataFile, makeInstallmentGroup } from '@/test/fixtures/dataFile'
 import type { Account, Transaction } from '@/types'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -418,6 +418,38 @@ describe('Transactions — M-36: ledger redesign', () => {
 
     // No category pill (#...) should be present when categoryId is empty
     expect(container.textContent).not.toContain('#')
+  })
+
+  it('M-50: shows a "current/total" badge for installment transactions', () => {
+    const retailAccount = makeRetailAccount()
+    const installments = makeInstallmentGroup(3, {
+      amount: 300,
+      date: todayStr,
+      description: 'Compra',
+      accountId: retailAccount.id,
+      categoryId: '',
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [retailAccount], transactions: installments }),
+    })
+
+    render(<Transactions />)
+
+    expect(screen.getByText('1/3')).toBeInTheDocument()
+  })
+
+  it('M-50: omits the installment badge for transactions without installment data', () => {
+    const retailAccount = makeRetailAccount()
+    const expense = makeTransaction({ type: 'EXPENSE', amount: 120, categoryId: '' })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [retailAccount], transactions: [expense] }),
+    })
+
+    const { container } = render(<Transactions />)
+
+    expect(container.textContent).not.toMatch(/\d\/\d/)
   })
 })
 

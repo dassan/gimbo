@@ -586,6 +586,18 @@ function TxRow({
               #{cat.name}
             </span>
           )}
+          {/* M-50: installment badge — current/total parcel, only for installment purchases */}
+          {tx.installment && (
+            <span
+              aria-label={t('transactions.installmentBadge', {
+                current: tx.installment.currentIndex,
+                total: tx.installment.total,
+              })}
+              className="rounded-full bg-surface-container-high px-2 py-0.5 text-[10px] font-medium text-on-surface/50"
+            >
+              {tx.installment.currentIndex}/{tx.installment.total}
+            </span>
+          )}
           {txTags.map((tag) => (
             <span
               key={tag.id}
