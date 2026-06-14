@@ -364,52 +364,14 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
   })
 })
 
-// ─── CC-32: move a charge between invoices (B-18) ─────────────────────────────
+// ─── M-58: move-invoice buttons moved into TransactionDrawer ──────────────────
 
-describe('CreditCardPage — CC-32: move charge to an adjacent invoice', () => {
-  const closing = makeCreditAccountFixed().creditMetadata!.closingDay
-  const periodKey = invoicePeriodKey(getInvoicePeriod(todayStr, closing))
-
-  it('sets referenceMonth to the next period when clicking "next invoice"', () => {
-    const base = getInvoicePeriod(todayStr, closing)
-    let month = base.month + 1
-    let year = base.year
-    if (month > 12) {
-      month = 1
-      year += 1
-    }
-    const expectedKey = invoicePeriodKey({ year, month })
-
+describe('CreditCardPage — M-58: move-invoice buttons no longer in the invoice row', () => {
+  it('does not render the move-invoice buttons on an invoice row (moved to TransactionDrawer)', () => {
     useDataStore.setState({
       data: makeDataFile({
         accounts: [makeCreditAccountFixed()],
         transactions: [makeTransaction({ id: 'c1', amount: 200 })],
-      }),
-    })
-
-    const updateSpy = vi.spyOn(useDataStore.getState(), 'updateTransaction')
-    render(<CreditCardPage />)
-
-    fireEvent.click(screen.getByLabelText('creditCard.moveToNextInvoice'))
-
-    expect(updateSpy).toHaveBeenCalledOnce()
-    expect(updateSpy.mock.calls[0][0].id).toBe('c1')
-    expect(updateSpy.mock.calls[0][0].referenceMonth).toBe(expectedKey)
-  })
-
-  it('does not render move buttons for a CREDIT_PAYMENT row', () => {
-    const payment = makeTransaction({
-      id: 'p1',
-      type: 'CREDIT_PAYMENT',
-      amount: 300,
-      transferAccountId: 'acc-retail',
-      referenceMonth: periodKey,
-    })
-
-    useDataStore.setState({
-      data: makeDataFile({
-        accounts: [makeCreditAccountFixed(), makeRetailAccount()],
-        transactions: [payment],
       }),
     })
 

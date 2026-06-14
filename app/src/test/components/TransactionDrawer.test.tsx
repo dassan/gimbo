@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import TransactionDrawer from '@/components/TransactionDrawer'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '@/test/fixtures/dataFile'
+import { getTxInvoicePeriod, invoicePeriodKey } from '@/lib/utils'
 import type { Transaction } from '@/types'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -317,6 +318,99 @@ describe('TransactionDrawer — CC-20: invoice balance hint', () => {
   it('does not show invoice hint when type is not CREDIT_PAYMENT', () => {
     renderDrawer()
     expect(screen.queryByText('transactions.currentInvoice')).not.toBeInTheDocument()
+  })
+})
+
+// ─── M-58: move charge/credit to previous/next invoice (CC-32/B-18) ─────────
+
+const testCreditChargeTransaction: Transaction = {
+  id: 'tx-credit-charge',
+  accountId: 'acc-credit',
+  categoryId: 'cat-1',
+  amount: 100,
+  type: 'EXPENSE',
+  date: '2024-03-15',
+  description: 'Compra cartão',
+  isPaid: false,
+  tags: [],
+}
+
+describe('TransactionDrawer — M-58: move charge/credit to previous/next invoice', () => {
+  beforeEach(() => {
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [testAccount, testCreditAccount],
+        categories: [testCategory],
+        transactions: [testCreditChargeTransaction],
+      }),
+    })
+  })
+
+  it('shows move-invoice buttons when editing a charge on a CREDIT account', () => {
+    renderDrawer({ transaction: testCreditChargeTransaction })
+    expect(screen.getByLabelText('creditCard.moveToPrevInvoice')).toBeInTheDocument()
+    expect(screen.getByLabelText('creditCard.moveToNextInvoice')).toBeInTheDocument()
+  })
+
+  it('does not show move-invoice buttons when editing on a non-CREDIT account', () => {
+    renderDrawer({ transaction: testTransaction })
+    expect(screen.queryByLabelText('creditCard.moveToPrevInvoice')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('creditCard.moveToNextInvoice')).not.toBeInTheDocument()
+  })
+
+  it('does not show move-invoice buttons for a CREDIT_PAYMENT', () => {
+    renderDrawer({ transaction: testCreditPaymentTransaction })
+    expect(screen.queryByLabelText('creditCard.moveToPrevInvoice')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('creditCard.moveToNextInvoice')).not.toBeInTheDocument()
+  })
+
+  it('moves the transaction to the next invoice and closes the drawer', async () => {
+    const updateTransaction = vi.fn()
+    const onClose = vi.fn()
+    vi.spyOn(useDataStore.getState(), 'updateTransaction').mockImplementation(updateTransaction)
+
+    renderDrawer({ transaction: testCreditChargeTransaction, onClose })
+
+    await userEvent.click(screen.getByLabelText('creditCard.moveToNextInvoice'))
+
+    const period = getTxInvoicePeriod(testCreditChargeTransaction, testCreditAccount)
+    let month = period.month + 1
+    let year = period.year
+    if (month > 12) {
+      month = 1
+      year += 1
+    }
+    const expectedKey = invoicePeriodKey({ year, month })
+
+    expect(updateTransaction).toHaveBeenCalledOnce()
+    expect(updateTransaction.mock.calls[0][0]).toMatchObject({
+      id: testCreditChargeTransaction.id,
+      referenceMonth: expectedKey,
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('moves the transaction to the previous invoice', async () => {
+    const updateTransaction = vi.fn()
+    vi.spyOn(useDataStore.getState(), 'updateTransaction').mockImplementation(updateTransaction)
+
+    renderDrawer({ transaction: testCreditChargeTransaction })
+
+    await userEvent.click(screen.getByLabelText('creditCard.moveToPrevInvoice'))
+
+    const period = getTxInvoicePeriod(testCreditChargeTransaction, testCreditAccount)
+    let month = period.month - 1
+    let year = period.year
+    if (month < 1) {
+      month = 12
+      year -= 1
+    }
+    const expectedKey = invoicePeriodKey({ year, month })
+
+    expect(updateTransaction.mock.calls[0][0]).toMatchObject({
+      id: testCreditChargeTransaction.id,
+      referenceMonth: expectedKey,
+    })
   })
 })
 

@@ -296,7 +296,8 @@
     "statusPartial": "Parcial",
     "statusPaid": "Paga",
     "moveToPrevInvoice": "Mover para a fatura anterior",
-    "moveToNextInvoice": "Mover para a fatura seguinte"
+    "moveToNextInvoice": "Mover para a fatura seguinte",
+    "moveInvoice": "Mover para outra fatura"
   },
   "accounts": {
     "retail": "Corrente",

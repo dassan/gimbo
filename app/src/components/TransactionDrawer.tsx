@@ -1,12 +1,23 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, ChevronDown, Calendar, Tag, Trash2, CreditCard } from 'lucide-react'
+import {
+  X,
+  ChevronDown,
+  ChevronsLeft,
+  ChevronsRight,
+  Calendar,
+  Tag,
+  Trash2,
+  CreditCard,
+} from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import {
   cn,
   uuid,
   formatCurrency,
   getCurrentInvoiceBalance,
+  getTxInvoicePeriod,
+  invoicePeriodKey,
   todayStr,
   sortCategoriesHierarchical,
   filterArchivedAccounts,
@@ -121,6 +132,14 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
         : undefined,
     [type, accountId, data]
   )
+
+  // M-58: move-to-invoice section — editing a charge/credit (not a payment) on a CREDIT
+  // account with creditMetadata. Moved here from CC-32's inline row buttons.
+  const showMoveInvoiceSection =
+    isEditMode &&
+    (type === 'EXPENSE' || type === 'INCOME') &&
+    selectedAccount?.type === 'CREDIT' &&
+    !!selectedAccount.creditMetadata
 
   // CC-23: Show installment section only when creating an EXPENSE on a CREDIT account.
   // M-35: installments and recurrence are mutually exclusive.
@@ -314,6 +333,25 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
     if (!transaction?.installment) return
     deleteInstallmentGroup(transaction.installment.parentId)
     setShowInstallmentDeleteModal(false)
+    onClose()
+  }
+
+  // M-58: move a CREDIT charge/credit to the previous/next invoice by setting its
+  // referenceMonth (CC-32/B-18). Real closing dates are fuzzy, so the user gets the final
+  // say — moving never touches tx.date, only the invoice it posts to.
+  function handleMoveInvoice(direction: -1 | 1) {
+    if (!transaction || !selectedAccount?.creditMetadata) return
+    const period = getTxInvoicePeriod(transaction, selectedAccount)
+    let month = period.month + direction
+    let year = period.year
+    if (month < 1) {
+      month = 12
+      year -= 1
+    } else if (month > 12) {
+      month = 1
+      year += 1
+    }
+    updateTransaction({ ...transaction, referenceMonth: invoicePeriodKey({ year, month }) })
     onClose()
   }
 
@@ -882,6 +920,33 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── M-58: move charge/credit to previous/next invoice (CC-32/B-18) ── */}
+          {showMoveInvoiceSection && (
+            <div className="rounded-xl bg-surface-container-low px-4 py-3 flex items-center justify-between">
+              <p className="text-xs text-on-surface/50">{t('creditCard.moveInvoice')}</p>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  aria-label={t('creditCard.moveToPrevInvoice')}
+                  title={t('creditCard.moveToPrevInvoice')}
+                  onClick={() => handleMoveInvoice(-1)}
+                  className="rounded-lg p-1.5 text-on-surface/40 hover:bg-surface-container-high hover:text-on-surface/70 transition-colors"
+                >
+                  <ChevronsLeft size={16} strokeWidth={1.5} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={t('creditCard.moveToNextInvoice')}
+                  title={t('creditCard.moveToNextInvoice')}
+                  onClick={() => handleMoveInvoice(1)}
+                  className="rounded-lg p-1.5 text-on-surface/40 hover:bg-surface-container-high hover:text-on-surface/70 transition-colors"
+                >
+                  <ChevronsRight size={16} strokeWidth={1.5} />
+                </button>
+              </div>
             </div>
           )}
 

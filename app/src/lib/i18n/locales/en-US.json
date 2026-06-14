@@ -296,7 +296,8 @@
     "statusPartial": "Partial",
     "statusPaid": "Paid",
     "moveToPrevInvoice": "Move to previous invoice",
-    "moveToNextInvoice": "Move to next invoice"
+    "moveToNextInvoice": "Move to next invoice",
+    "moveInvoice": "Move to another invoice"
   },
   "accounts": {
     "retail": "Checking",
