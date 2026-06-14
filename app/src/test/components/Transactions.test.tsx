@@ -385,7 +385,7 @@ describe('Transactions — M-36: ledger redesign', () => {
     expect(screen.queryByText('Despesa')).not.toBeInTheDocument()
   })
 
-  it("shows each transaction's category as a #chip next to the account name", () => {
+  it("shows each transaction's category as a chip next to the account name (M-60: no '#' prefix)", () => {
     const retailAccount = makeRetailAccount()
     const cat = {
       id: 'cat-food',
@@ -403,7 +403,8 @@ describe('Transactions — M-36: ledger redesign', () => {
 
     render(<Transactions />)
 
-    expect(screen.getByText('#Alimentação')).toBeInTheDocument()
+    expect(screen.getByText('Alimentação')).toBeInTheDocument()
+    expect(screen.queryByText('#Alimentação')).not.toBeInTheDocument()
   })
 
   it('omits the category chip for transactions without a category', () => {
@@ -416,8 +417,8 @@ describe('Transactions — M-36: ledger redesign', () => {
 
     const { container } = render(<Transactions />)
 
-    // No category pill (#...) should be present when categoryId is empty
-    expect(container.textContent).not.toContain('#')
+    // No category pill rendered when categoryId is empty
+    expect(container.querySelector('span.rounded-full.bg-surface-container-high')).toBeNull()
   })
 
   it('M-50: shows a "current/total" badge for installment transactions', () => {

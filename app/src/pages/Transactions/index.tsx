@@ -581,9 +581,10 @@ function TxRow({
             acc && <span className="text-xs text-on-surface/30">{acc.name}</span>
           )}
           {/* M-36: category pill — neutral chip, only when the tx has a category */}
+          {/* M-60: no "#" prefix — standardized with the credit card invoice view */}
           {cat && (
             <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-[10px] font-medium text-on-surface/50">
-              #{cat.name}
+              {cat.name}
             </span>
           )}
           {/* M-50: installment badge — current/total parcel, only for installment purchases */}
