@@ -242,7 +242,7 @@ export default function Transactions() {
 
   return (
     <>
-      <div className="mx-auto max-w-5xl px-4 sm:px-6 pt-6 sm:pt-8 pb-24">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-6 sm:pt-8 pb-24 lg:pb-8">
         {/* ── Period selector + Search ─────────────────────────────────────── */}
         {/* Mobile: stacked. Desktop: 3-col grid (period 2/3, search 1/3). */}
         <div className="flex flex-col sm:grid sm:grid-cols-3 gap-3 sm:gap-6 mb-4 sm:mb-6">
@@ -317,125 +317,144 @@ export default function Transactions() {
               { value: 'transfer', label: t('transactions.transfer') },
             ]}
           />
-          {/* B-15: include unpaid entries in the footer totals (off = realized cash only) */}
-          <button
-            onClick={() => setIncludeUnpaid((v) => !v)}
-            className={cn(
-              'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-all',
-              includeUnpaid
-                ? 'bg-on-surface text-white'
-                : 'bg-surface-container-low text-on-surface/50 hover:text-on-surface/70'
-            )}
-          >
-            {t('analytics.includeUnpaid')}
-          </button>
         </div>
 
-        {/* ── M-36: full-width transaction list (spending summary card removed) ── */}
-        <div className="space-y-4 sm:space-y-6">
-          {grouped.length === 0 ? (
-            <div className={cn('rounded-2xl bg-surface-container p-12 text-center', shadowClass)}>
-              <p className="text-sm text-on-surface/40">{t('common.noData')}</p>
+        {/* ── M-36: full-width transaction list / M-48: lg sidebar for the summary ── */}
+        <div className="lg:grid lg:grid-cols-[1fr_280px] lg:gap-6 lg:items-start">
+          <div className="space-y-4 sm:space-y-6">
+            {grouped.length === 0 ? (
+              <div className={cn('rounded-2xl bg-surface-container p-12 text-center', shadowClass)}>
+                <p className="text-sm text-on-surface/40">{t('common.noData')}</p>
+              </div>
+            ) : (
+              grouped.map(([dateKey, txs]) => (
+                <DateGroup
+                  key={dateKey}
+                  dateKey={dateKey}
+                  txs={txs}
+                  data={data}
+                  onEditTx={openTransactionDrawer}
+                  shadowClass={shadowClass}
+                />
+              ))
+            )}
+          </div>
+
+          {/* ── Summary: fixed footer on mobile/tablet, sticky sidebar on lg (M-48) ── */}
+          {filtered.length > 0 && (
+            <div className="fixed bottom-6 left-0 right-0 z-30 pointer-events-none lg:static">
+              <div className="mx-auto max-w-7xl px-6 lg:mx-0 lg:max-w-none lg:px-0 lg:sticky lg:top-6 lg:mt-6 pointer-events-auto space-y-3">
+                <div
+                  className={cn(
+                    'flex items-center justify-between rounded-2xl bg-surface-container px-6 py-4',
+                    'lg:flex-col lg:items-stretch lg:gap-4 lg:px-5 lg:py-5',
+                    shadowClass
+                  )}
+                >
+                  {/* Count */}
+                  <p className="text-xs text-on-surface/40 shrink-0">
+                    <span className="font-semibold text-on-surface">{filtered.length}</span>{' '}
+                    {t('transactions.listed')}
+                  </p>
+
+                  <div className="h-4 w-px bg-surface-container-high mx-4 shrink-0 lg:h-px lg:w-full lg:mx-0" />
+
+                  {/* Period flow */}
+                  <div className="flex items-center gap-2 shrink-0 lg:justify-between">
+                    <span
+                      className={cn(
+                        'label text-xs font-bold',
+                        consolidated >= 0 ? 'text-primary' : 'text-tertiary'
+                      )}
+                    >
+                      {consolidated >= 0
+                        ? t('transactions.positiveFlow')
+                        : t('transactions.negativeFlow')}
+                    </span>
+                    <span
+                      className={cn(
+                        'text-sm font-bold tabular-nums',
+                        consolidated >= 0 ? 'text-primary' : 'text-tertiary'
+                      )}
+                    >
+                      {consolidated >= 0 ? '+' : ''}
+                      {formatCurrency(consolidated)}
+                    </span>
+                  </div>
+
+                  <div className="h-4 w-px bg-surface-container-high mx-4 shrink-0 lg:h-px lg:w-full lg:mx-0" />
+
+                  {/* Period balances (Organizze-style): saldo anterior → saldo → previsto */}
+                  <div className="flex items-center gap-3 sm:gap-4 lg:flex-col lg:items-stretch lg:gap-2">
+                    <div className="hidden sm:flex items-center gap-1.5 lg:justify-between">
+                      <span className="label text-[10px] font-bold text-on-surface/40">
+                        {t('transactions.previousBalance')}
+                      </span>
+                      <span className="text-xs font-semibold tabular-nums text-on-surface/50">
+                        {formatCurrency(saldoAnterior)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 lg:justify-between">
+                      <span className="label text-[10px] font-bold text-on-surface/40">
+                        {t('transactions.periodBalance')}
+                      </span>
+                      <span
+                        className={cn(
+                          'text-sm font-bold tabular-nums',
+                          saldoPeriodo >= 0 ? 'text-on-surface' : 'text-tertiary'
+                        )}
+                      >
+                        {formatCurrency(saldoPeriodo)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 lg:justify-between">
+                      <span className="label text-[10px] font-bold text-on-surface/40">
+                        {t('transactions.projectedBalance')}
+                      </span>
+                      <span
+                        className={cn(
+                          'text-xs font-semibold tabular-nums',
+                          saldoPrevisto >= 0 ? 'text-on-surface/50' : 'text-tertiary'
+                        )}
+                      >
+                        {formatCurrency(saldoPrevisto)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* B-15: include unpaid entries in the summary totals (off = realized cash only) */}
+                <button
+                  role="switch"
+                  aria-checked={includeUnpaid}
+                  onClick={() => setIncludeUnpaid((v) => !v)}
+                  className={cn(
+                    'flex w-full items-center justify-between rounded-2xl bg-surface-container px-5 py-4',
+                    shadowClass
+                  )}
+                >
+                  <span className="text-sm font-medium text-on-surface">
+                    {t('analytics.includeUnpaid')}
+                  </span>
+                  <span
+                    className={cn(
+                      'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+                      includeUnpaid ? 'bg-primary' : 'bg-on-surface/20'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                        includeUnpaid ? 'translate-x-6' : 'translate-x-1'
+                      )}
+                    />
+                  </span>
+                </button>
+              </div>
             </div>
-          ) : (
-            grouped.map(([dateKey, txs]) => (
-              <DateGroup
-                key={dateKey}
-                dateKey={dateKey}
-                txs={txs}
-                data={data}
-                onEditTx={openTransactionDrawer}
-                shadowClass={shadowClass}
-              />
-            ))
           )}
         </div>
       </div>
-
-      {/* ── Fixed footer: full-width, matches the transaction list (M-36) ── */}
-      {filtered.length > 0 && (
-        <div className="fixed bottom-6 left-0 right-0 z-30 pointer-events-none">
-          <div className="mx-auto max-w-5xl px-6">
-            <div
-              className={cn(
-                'flex items-center justify-between rounded-2xl bg-surface-container px-6 py-4 pointer-events-auto',
-                shadowClass
-              )}
-            >
-              {/* Count */}
-              <p className="text-xs text-on-surface/40 shrink-0">
-                <span className="font-semibold text-on-surface">{filtered.length}</span>{' '}
-                {t('transactions.listed')}
-              </p>
-
-              <div className="h-4 w-px bg-surface-container-high mx-4 shrink-0" />
-
-              {/* Period flow */}
-              <div className="flex items-center gap-2 shrink-0">
-                <span
-                  className={cn(
-                    'label text-xs font-bold',
-                    consolidated >= 0 ? 'text-primary' : 'text-tertiary'
-                  )}
-                >
-                  {consolidated >= 0
-                    ? t('transactions.positiveFlow')
-                    : t('transactions.negativeFlow')}
-                </span>
-                <span
-                  className={cn(
-                    'text-sm font-bold tabular-nums',
-                    consolidated >= 0 ? 'text-primary' : 'text-tertiary'
-                  )}
-                >
-                  {consolidated >= 0 ? '+' : ''}
-                  {formatCurrency(consolidated)}
-                </span>
-              </div>
-
-              <div className="h-4 w-px bg-surface-container-high mx-4 shrink-0" />
-
-              {/* Period balances (Organizze-style): saldo anterior → saldo → previsto */}
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className="hidden sm:flex items-center gap-1.5">
-                  <span className="label text-[10px] font-bold text-on-surface/40">
-                    {t('transactions.previousBalance')}
-                  </span>
-                  <span className="text-xs font-semibold tabular-nums text-on-surface/50">
-                    {formatCurrency(saldoAnterior)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="label text-[10px] font-bold text-on-surface/40">
-                    {t('transactions.periodBalance')}
-                  </span>
-                  <span
-                    className={cn(
-                      'text-sm font-bold tabular-nums',
-                      saldoPeriodo >= 0 ? 'text-on-surface' : 'text-tertiary'
-                    )}
-                  >
-                    {formatCurrency(saldoPeriodo)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="label text-[10px] font-bold text-on-surface/40">
-                    {t('transactions.projectedBalance')}
-                  </span>
-                  <span
-                    className={cn(
-                      'text-xs font-semibold tabular-nums',
-                      saldoPrevisto >= 0 ? 'text-on-surface/50' : 'text-tertiary'
-                    )}
-                  >
-                    {formatCurrency(saldoPrevisto)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }
