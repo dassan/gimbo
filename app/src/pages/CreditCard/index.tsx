@@ -583,6 +583,18 @@ function InvoiceTxRow({
         <div className="flex items-center gap-2 mt-0.5">
           {!isPayment && cat && <span className="text-xs text-on-surface/40">{cat.name}</span>}
           {acc && <span className="text-xs text-on-surface/30">· {acc.name}</span>}
+          {/* M-59: installment badge — current/total parcel, mirrors M-50 in Lançamentos */}
+          {tx.installment && (
+            <span
+              aria-label={t('transactions.installmentBadge', {
+                current: tx.installment.currentIndex,
+                total: tx.installment.total,
+              })}
+              className="rounded-full bg-surface-container-high px-2 py-0.5 text-[10px] font-medium text-on-surface/50"
+            >
+              {tx.installment.currentIndex}/{tx.installment.total}
+            </span>
+          )}
         </div>
       </div>
 

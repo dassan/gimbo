@@ -455,3 +455,36 @@ describe('CreditCardPage — Option 2: credits and invoice payment cycle', () =>
     expect(screen.queryByText('creditCard.payNow')).not.toBeInTheDocument()
   })
 })
+
+// ─── M-59: installment badge on invoice rows (mirrors M-50) ───────────────────
+
+describe('CreditCardPage — M-59: installment badge on invoice rows', () => {
+  it('shows a "current/total" badge for installment transactions', () => {
+    const creditAccount = makeCreditAccountFixed()
+    const expense = makeTransaction({
+      description: 'Compra parcelada',
+      installment: { parentId: 'p1', currentIndex: 2, total: 3 },
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [creditAccount], transactions: [expense] }),
+    })
+
+    render(<CreditCardPage />)
+
+    expect(screen.getByText('2/3')).toBeInTheDocument()
+  })
+
+  it('omits the badge for transactions without installment data', () => {
+    const creditAccount = makeCreditAccountFixed()
+    const expense = makeTransaction({ description: 'Compra normal' })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [creditAccount], transactions: [expense] }),
+    })
+
+    render(<CreditCardPage />)
+
+    expect(screen.queryByText(/^\d+\/\d+$/)).not.toBeInTheDocument()
+  })
+})
