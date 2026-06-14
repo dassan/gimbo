@@ -489,7 +489,7 @@ describe('CreditCardPage — Option 2: credits and invoice payment cycle', () =>
 
     expect(screen.getByText('creditCard.statusPaid')).toBeInTheDocument()
     expect(screen.getByText(/creditCard\.paid/)).toBeInTheDocument()
-    // Pay button is disabled when the invoice is fully settled
-    expect(screen.getByText('creditCard.payNow').closest('button')).toBeDisabled()
+    // M-57: Pay button is hidden (not just disabled) once the invoice is fully settled
+    expect(screen.queryByText('creditCard.payNow')).not.toBeInTheDocument()
   })
 })
