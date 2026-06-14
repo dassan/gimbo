@@ -153,6 +153,16 @@ export default function CashFlowView({
 
   const hasData = rows.some((r) => r.income !== 0 || r.expenses !== 0)
 
+  // M-53: `label` (e.g. "MAR") repeats across years in multi-year periods. Recharts indexes
+  // the active tooltip point by the XAxis dataKey value, so duplicated labels make it resolve
+  // to the first matching bucket — the chart line/dot render at the right position, but the
+  // tooltip shows the first year's values. `fullLabel` (e.g. "Março de 2026"/"Março de 2027")
+  // is always unique, so use it as the dataKey and format the axis tick back to the short form.
+  const shortLabelByFullLabel = useMemo(
+    () => new Map(rows.map((r) => [r.fullLabel, r.label])),
+    [rows]
+  )
+
   const tooltipLabels: Record<string, string> = {
     income: t('analytics.cashflowView.income'),
     expenses: t('analytics.cashflowView.expenses'),
@@ -168,7 +178,10 @@ export default function CashFlowView({
             <ComposedChart data={rows} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(25,28,29,0.04)" vertical={false} />
               <XAxis
-                dataKey="label"
+                dataKey="fullLabel"
+                tickFormatter={(fullLabel: string) =>
+                  shortLabelByFullLabel.get(fullLabel) ?? fullLabel
+                }
                 tick={{ fontSize: 11, fill: '#9CA3AF' }}
                 axisLine={false}
                 tickLine={false}
@@ -248,7 +261,7 @@ export default function CashFlowView({
           <div className="space-y-0.5">
             {rows.map((row) => (
               <div
-                key={row.label}
+                key={row.fullLabel}
                 className="grid grid-cols-5 rounded-xl px-2 py-2 hover:bg-surface-container-low transition-colors"
               >
                 <p className="text-xs font-medium text-on-surface">{row.fullLabel}</p>

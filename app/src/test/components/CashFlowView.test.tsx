@@ -8,6 +8,7 @@ import type { Account, Transaction } from '@/types'
 const capturedRows = vi.hoisted(() => ({
   data: [] as Array<{
     label: string
+    fullLabel: string
     income: number
     expenses: number
     result: number
@@ -28,6 +29,7 @@ vi.mock('recharts', () => ({
     children: React.ReactNode
     data: Array<{
       label: string
+      fullLabel: string
       income: number
       expenses: number
       result: number
@@ -93,6 +95,10 @@ const APR_END = new Date(2026, 3, 30)
 /** Two-month period: April + May 2026 */
 const APR_MAY_START = new Date(2026, 3, 1)
 const APR_MAY_END = new Date(2026, 4, 31)
+
+/** Multi-year period: January 2026 to March 2027 (15 months, same months repeat across years) */
+const MULTI_YEAR_START = new Date(2026, 0, 1)
+const MULTI_YEAR_END = new Date(2027, 2, 31)
 
 const SHADOW = 'shadow-card'
 
@@ -466,6 +472,33 @@ describe('CashFlowView — M-38: weekly granularity', () => {
       />
     )
     expect(capturedRows.data).toHaveLength(2)
+  })
+})
+
+// ─── M-53: unique x-axis keys across years (tooltip indexing) ─────────────────
+
+describe('CashFlowView — M-53: multi-year period bucket labels', () => {
+  it('gives every bucket a unique fullLabel even when the short label (month) repeats across years', () => {
+    const accounts = [makeRetailAccount()]
+    const transactions = [
+      makeTx({ id: 'tx-jan-2026', type: 'INCOME', amount: 100, date: '2026-01-10' }),
+    ]
+    render(
+      <CashFlowView
+        transactions={transactions}
+        accounts={accounts}
+        startDate={MULTI_YEAR_START}
+        endDate={MULTI_YEAR_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+      />
+    )
+    // 15 months (Jan/2026 .. Mar/2027) — "JAN"/"FEV"/"MAR" repeat, but fullLabel must not.
+    expect(capturedRows.data).toHaveLength(15)
+    const shortLabels = capturedRows.data.map((r) => r.label)
+    const fullLabels = capturedRows.data.map((r) => r.fullLabel)
+    expect(shortLabels.filter((l) => l === 'JAN')).toHaveLength(2)
+    expect(new Set(fullLabels).size).toBe(fullLabels.length)
   })
 })
 
