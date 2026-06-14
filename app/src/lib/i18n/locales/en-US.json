@@ -277,6 +277,8 @@
   },
   "creditCard": {
     "invoicePeriod": "Invoice Period",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
     "closingDate": "Closing",
     "dueDate": "Due date",
     "payNow": "Pay Now",

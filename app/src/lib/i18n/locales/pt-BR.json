@@ -277,6 +277,8 @@
   },
   "creditCard": {
     "invoicePeriod": "Período da Fatura",
+    "previousMonth": "Mês anterior",
+    "nextMonth": "Próximo mês",
     "closingDate": "Fechamento",
     "dueDate": "Vencimento",
     "payNow": "Pagar Agora",

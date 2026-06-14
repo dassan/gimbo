@@ -260,23 +260,43 @@ export default function CreditCardPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
-      {/* ── Header: back + card name ──────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => void navigate('/dashboard')}
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-low text-on-surface/60 hover:bg-surface-container-high transition-colors"
-        >
-          <ChevronLeft size={16} />
-        </button>
-        <div className="flex items-center gap-2">
-          {/* M-23: header icon color reflects the card issuer */}
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-white"
-            style={{ backgroundColor: getIssuerColor(account.issuerIcon) }}
+      {/* ── Header: back + card name + invoice navigation ─────────────────── */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => void navigate('/dashboard')}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-low text-on-surface/60 hover:bg-surface-container-high transition-colors"
           >
-            <CreditCard size={14} strokeWidth={1.5} />
+            <ChevronLeft size={16} />
+          </button>
+          <div className="flex items-center gap-2">
+            {/* M-23: header icon color reflects the card issuer */}
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-white"
+              style={{ backgroundColor: getIssuerColor(account.issuerIcon) }}
+            >
+              <CreditCard size={14} strokeWidth={1.5} />
+            </div>
+            <h1 className="text-base font-semibold text-on-surface">{account.name}</h1>
           </div>
-          <h1 className="text-base font-semibold text-on-surface">{account.name}</h1>
+        </div>
+
+        {/* M-56: invoice period navigation, moved here from the summary card footer */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPeriodOffset((o) => o - 1)}
+            aria-label={t('creditCard.previousMonth')}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-low text-on-surface/60 hover:bg-surface-container-high transition-colors"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            onClick={() => setPeriodOffset((o) => o + 1)}
+            aria-label={t('creditCard.nextMonth')}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-container-low text-on-surface/60 hover:bg-surface-container-high transition-colors"
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
       </div>
 
@@ -365,25 +385,6 @@ export default function CreditCardPage() {
               {t('creditCard.payNow')}
             </button>
           </div>
-        </div>
-
-        {/* Period navigation */}
-        <div className="flex items-center justify-between mt-4 pt-4 border-t border-surface-container-low">
-          <button
-            onClick={() => setPeriodOffset((o) => o - 1)}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-container-low text-on-surface/60 hover:bg-surface-container-high transition-colors"
-          >
-            <ChevronLeft size={14} />
-          </button>
-          <span className="text-xs font-medium text-on-surface/60">
-            {monthLabel} {resolvedPeriod.year}
-          </span>
-          <button
-            onClick={() => setPeriodOffset((o) => o + 1)}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-container-low text-on-surface/60 hover:bg-surface-container-high transition-colors"
-          >
-            <ChevronRight size={14} />
-          </button>
         </div>
       </div>
 
