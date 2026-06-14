@@ -35,35 +35,35 @@ O Gimbo é um aplicativo web (PWA Client-side) de gestão de finanças pessoais 
 * **F-6:** Dashboard do mês atual: receitas, despesas, saldo consolidado, card "Minhas Contas", seção "Meus Cartões" com barra de utilização, donut de despesas por categoria, últimos lançamentos (1ª parcela apenas para parcelados).
 * **F-7:** Painel Analítico: Gráfico de linha/barra (Fluxo de Caixa ±3 Meses), com transações não-pagas.
 * **F-8:** Painel Analítico: Gráfico de pizza de Despesas por Categoria.
-* **F-9:** Motor de Arquivo Client-Side PWA (Exportar/Importar `data.json` local).
+* **F-9:** Motor de Armazenamento Local — SQLite via `wa-sqlite` (WASM) + OPFS, com export/import de um arquivo de backup `.db` portátil.
 * **F-10:** Seletor de idioma (pt-BR / en-US).
-* **F-11:** Onboarding: "Criar Novo Arquivo" ou "Importar data.json Existente". Após a criação do cofre, exibir modal de boas-vindas (uma vez, com checkbox "não mostrar novamente" persistido em `localStorage`) explicando o app, sua proposta de privacidade local-first e alertando sobre o risco do armazenamento padrão no navegador — com link interno para `/docs/why-browser-storage`. Ver tarefa BK-06 em `plan/BACKLOG.md`.
-* **F-12:** Auto-save via IndexedDB (debounce ~300ms).
-* **F-13:** Audit Log com retenção configurável (200 entradas ou 90 dias, opt-in ilimitado).
-* **F-14:** Badge de sync na Navbar com contagem de mutações pendentes.
-* **F-15:** Tela "Modificações Recentes" em Configurações.
-* **F-16:** Cold Start Sync — FileHandle persistido no IDB, restaurado no startup.
-* **F-17:** Hydration Sync — validação Zod completa ao importar.
-* **F-18:** Conflict Sync — detecção de modificação externa via `lastModified`, modal de conflito.
-* **F-19:** Lost File Sync — detecção de `NotFoundError`, ícone vermelho, re-pick.
-* **F-20:** Re-permissão do FileHandle — `queryPermission` no startup, fluxo de prompt/denied.
+* **F-11:** Onboarding: "Criar Novo Cofre" ou "Importar Backup Existente" (arquivo `.db`). Após a criação do cofre, exibir modal de boas-vindas (uma vez, com checkbox "não mostrar novamente" persistido em `localStorage`) explicando o app, sua proposta de privacidade local-first e o setup opcional de backup automático — com link interno para `/docs/why-browser-storage` e `/docs/backup-local`. Ver tarefa BK-06 em `plan/BACKLOG.md`.
+* **F-12:** Auto-save em SQLite (OPFS) via `replaceAll()` numa transação atômica, com debounce de ~300ms após cada mutação.
+* **F-13:** Audit Log com retenção configurável (200 entradas, ou ilimitado opt-in).
+* **F-14:** ~~Badge de sync na Navbar com contagem de mutações pendentes.~~ **Removido** — não há mais um arquivo externo para sincronizar; cada mutação já é persistida localmente (F-12).
+* **F-15:** Aba "Histórico" em Configurações — Audit Log agrupado por data (CREATE/UPDATE/DELETE).
+* **F-16:** ~~Cold Start Sync — FileHandle persistido no IDB, restaurado no startup.~~ **Removido** — substituído pelo armazenamento SQLite/OPFS, que não depende de seleção de arquivo. Backup automático em pasta local é F-28 Nível 1.
+* **F-17:** Hydration — validação Zod completa ao importar um backup `.db` (`importBlob()` + `runMigrations()`).
+* **F-18:** ~~Conflict Sync — detecção de modificação externa via `lastModified`, modal de conflito.~~ **Removido** — cada dispositivo mantém seu próprio banco SQLite local, sem merge automático. Sync multi-dispositivo é F-28 Nível 2 (planejado).
+* **F-19:** ~~Lost File Sync — detecção de `NotFoundError`, ícone vermelho, re-pick.~~ **Removido** — não aplicável ao OPFS (não depende de um `FileHandle` externo).
+* **F-20:** ~~Re-permissão do FileHandle — `queryPermission` no startup, fluxo de prompt/denied.~~ **Removido** do fluxo principal; aplicável apenas à pasta de backup opcional (F-28 Nível 1 — banner de reconexão `BK-04`, aberto).
 * **F-21:** Gestão de Lifecycle de Cartões de Crédito — `creditMetadata`, motor de fatura virtual, saldo disponível, página `/credit-card/:accountId`, painel de pagamento dedicado.
 * **F-22:** Parcelas — N transações com sufixo `" (X/N)"`, modal de exclusão "só esta / todas".
 * **F-23:** Pagamento de Fatura — tipo `CREDIT_PAYMENT`, exclusão dos totais de receita/despesa.
-* **F-24:** Patrimônio Líquido (Net Worth) — página dedicada na navbar com snapshot e evolução histórica mensal. Todas as contas participam: não-CREDIT somam como ativos, CREDIT contribui como passivo. Ver épico `plan/BACKLOG.md` (NW-01 a NW-07).
-* **F-25:** Demo Mode — versão pública do app com dados sintéticos pré-carregados e persistência desabilitada (`persist()` no-op). Ativado via `VITE_DEMO_MODE=true`. Inclui banner de aviso e deploy no Vercel. Ver épico `plan/BACKLOG.md` (DM-01 a DM-05).
+* **F-24:** Patrimônio Líquido (Net Worth) — página dedicada na navbar (`/net-worth`) com stat cards, breakdown por conta e gráfico de evolução histórica mensal (AreaChart). Ativos = contas não-CREDIT com `includeInBalance` + valuations de STOCKS/CRYPTO/FOREX/ASSET; passivos = `getTotalCreditLiability` de cada conta CREDIT (fatura atual em aberto). Toggle `netWorthIncludeHidden` controla a inclusão de contas com `includeInBalance=false`. Ver épico `plan/BACKLOG.md` (NW-01 a NW-08) e `plan/NET_WORTH.md`.
+* **F-25:** Demo Mode — versão pública do app com dados sintéticos pré-carregados (`assets/demo-data.json`) e persistência desabilitada (mutações no-op). Ativado via `VITE_DEMO_MODE=true`. Inclui banner de aviso e deploy estático (build via `npm run build`, hospedável em qualquer host estático). Ver épico `plan/BACKLOG.md` (DM-01 a DM-05).
 
 * **F-26:** Bug Report System — coleta local de eventos em ring buffer (sem transmissão automática), formulário de reporte opt-in com preview do snapshot seguro, envio via link GitHub Issues pré-preenchido. Ver épico completo em `plan/METRICS.md`.
 
-* **F-27:** Mobile PWA — versão responsiva do Gimbo instalável em dispositivos móveis. Subconjunto de funcionalidades: saldos de contas (dashboard simplificado) + CRUD de transações. Mesma codebase, layout adaptativo; sem app nativo separado. Requer F-28 para sincronização de dados com o desktop. Ver épico `MB` em `plan/BACKLOG.md`.
+* **F-27:** Mobile PWA — versão responsiva do Gimbo instalável em dispositivos móveis. Mesma codebase, layout adaptativo (bottom nav, bottom sheets, `DatePicker` nativo em mobile); sem app nativo separado. Cobre Dashboard, Lançamentos (CRUD completo), Configurações e Patrimônio. **Pendente:** Analytics ainda exibe placeholder "em breve" em telas pequenas (`MB-08`, aberto — gráficos Recharts não são responsivos). Ver épico `MB` em `plan/BACKLOG.md`.
 
 * **F-28:** Backup & Sync — modelo em três níveis, cada um independente e opcional. O usuário escolhe o nível adequado ao seu perfil; níveis mais avançados só são implementados se houver demanda comprovada.
 
   | Nível | Mecanismo | Risco principal | Status |
   |-------|-----------|-----------------|--------|
-  | 0 — Somente navegador | IndexedDB (padrão atual) | Browser limpa dados (`Clear site data`, troca de browser) | Implementado |
-  | 1 — Pasta local | FSA `FileSystemDirectoryHandle` persistido no IDB; escrita automática a cada `persist()` | Requer re-permissão por sessão; sem sync mobile | Ver épico `BK` em `plan/BACKLOG.md` |
-  | 2 — Cloud Sync | Google Drive ou Dropbox via OAuth2 PKCE; merge aditivo por UUID | OAuth, conflitos multi-device, dependência de rede | Ver épico `CS` em `plan/BACKLOG.md` — demand-driven |
+  | 0 — Somente navegador | SQLite via `wa-sqlite` + OPFS | Browser limpa dados (`Clear site data`, troca de browser) | Implementado |
+  | 1 — Pasta local | FSA `FileSystemDirectoryHandle` persistido via `idb`; escrita automática (`exportBlob()`) após cada mutação, debounced | Requer re-permissão por sessão (banner de reconexão); Chrome/Edge apenas; sem sync mobile | Implementado — ver épico `BK` em `plan/BACKLOG.md` |
+  | 2 — Cloud Sync | Google Drive ou Dropbox via OAuth2 PKCE; merge aditivo por UUID | OAuth, conflitos multi-device, dependência de rede | Planejado — ver épico `CS` em `plan/BACKLOG.md` (CS-01 a CS-12), demand-driven |
 
   **Nível 1 — nota de produto:** se a pasta configurada estiver dentro do Google Drive, Dropbox ou OneDrive, o sync para a nuvem ocorre automaticamente pelo cliente desktop — sem OAuth, sem código adicional. Cobre a maioria dos usuários desktop sem implementar o Nível 2.
 
@@ -85,22 +85,26 @@ O Gimbo é um aplicativo web (PWA Client-side) de gestão de finanças pessoais 
 
 Documentação detalhada em `ARCHITECTURE.md`. Resumo:
 
-1. **Config UI (`localStorage nexus_workspace`):** Tema, idioma, visualização padrão, ambient shadows.
-2. **Ledger Financeiro (`data.json`):** Schema v2. Entidades: `user`, `settings`, `accounts` (com `creditMetadata?`, `issuerIcon?`), `categories`, `tags`, `transactions` (com `installment?`, `transferAccountId?`), `auditLog`, `deletedIds`.
+1. **Config UI (`localStorage nexus_workspace`):** Tema, idioma, visualização padrão, ambient shadows, inclusão de contas ocultas no Patrimônio.
+2. **Ledger Financeiro:** persistido em SQLite local (`wa-sqlite` + OPFS), representado em memória como `DataFile` (schema v9). Entidades: `user`, `settings`, `accounts` (com `creditMetadata?`, `issuerIcon?`, `archived?`), `categories`, `tags`, `transactions` (com `installment?`, `recurrence?`, `transferAccountId?`, `referenceMonth?`, `invoiceDueDate?`), `valuations`, `auditLog`, `deletedIds`, `savedPeriods`.
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 9,
   "user": { "name": "", "email": "", "createdAt": "", "updatedAt": "" },
   "settings": { "fileCreatedAt": "", "fileUpdatedAt": "", "auditLogRetentionLimit": 200 },
-  "accounts": [{ "id": "", "name": "", "type": "RETAIL|SAVINGS|CREDIT|...", "balance": 0, "includeInBalance": true, "creditMetadata?": {}, "issuerIcon?": "" }],
+  "accounts": [{ "id": "", "name": "", "type": "RETAIL|SAVINGS|CREDIT|CRYPTO|FOREX|ASSET|STOCKS|OTHER", "balance": 0, "includeInBalance": true, "creditMetadata?": { "limit": 0, "closingDay": 1, "dueDay": 1 }, "issuerIcon?": "", "archived?": false }],
   "categories": [{ "id": "", "parentId": null, "name": "", "icon": "", "color": "", "type": "INCOME|EXPENSE" }],
   "tags": [{ "id": "", "name": "", "color": "" }],
-  "transactions": [{ "id": "", "accountId": "", "categoryId": "", "amount": 0, "type": "INCOME|EXPENSE|TRANSFER|CREDIT_PAYMENT", "date": "", "description": "", "isPaid": false, "tags": [], "installment?": {}, "transferAccountId?": "" }],
+  "transactions": [{ "id": "", "accountId": "", "categoryId": "", "amount": 0, "type": "INCOME|EXPENSE|TRANSFER|CREDIT_PAYMENT", "date": "", "description": "", "isPaid": false, "tags": [], "installment?": { "parentId": "", "currentIndex": 1, "total": 2 }, "recurrence?": { "frequency": "monthly", "parentId": "", "endDate?": "" }, "transferAccountId?": "", "referenceMonth?": "YYYY-MM", "invoiceDueDate?": "YYYY-MM-DD" }],
+  "valuations": [{ "id": "", "accountId": "", "date": "", "marketValue": 0 }],
   "auditLog": [{ "id": "", "timestamp": "", "action": "", "entity": "", "entityId": "", "summary": "" }],
-  "deletedIds": []
+  "deletedIds": [],
+  "savedPeriods": [{ "id": "", "name": "", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" }]
 }
 ```
+
+Backup/restore: exportar/importar um arquivo `.db` (SQLite) ou configurar gravação automática numa pasta local via File System Access API (F-28 Nível 1).
 
 ## 7. Requisitos Não Funcionais (NFRs)
 * **Arquitetura PWA/Static:** Sistema operando em Javascript puro sem servidor.
@@ -119,38 +123,61 @@ Documentação detalhada em `ARCHITECTURE.md`. Resumo:
   * *Então* a saída de caixa deve deslocar para o mês seguinte.
 
 ## 9. Riscos e Premissas
-* **Risco (UX de Sync manual):** Uso intercalado exige que o usuário hospede seu `data.json` em cloud storage.
-* **Risco (File API Access limits):** Se browsers móveis restringirem a FSA, o fallback import/export é a saída.
+* **Risco (perda de dados no browser):** o cofre vive no OPFS do navegador; limpar dados do site
+  (`Clear site data`) ou trocar de browser/dispositivo apaga o cofre local. Mitigado por export
+  manual de backup `.db` e pelo backup automático em pasta local (F-28 Nível 1).
+* **Risco (uso multi-dispositivo):** sem Cloud Sync (F-28 Nível 2, planejado), cada dispositivo
+  tem seu próprio cofre — uso intercalado exige export/import manual ou uma pasta de backup
+  compartilhada via cliente de nuvem (Drive/Dropbox/OneDrive) do sistema operacional.
+* **Risco (File System Access API):** o backup automático em pasta local (F-28 Nível 1) é
+  Chrome/Edge-only; em Firefox/Safari essa opção fica oculta e o usuário depende do export manual.
 
 ## 10. Perguntas em Aberto
 *(Nenhuma pergunta pendente no momento)*
 
-## 11. Status de Implementação (2026-05-24)
+## 11. Status de Implementação (2026-06-14)
 
 ### Features Must-have — todas implementadas
 
 | Feature | Status |
 |---------|--------|
-| F-1 a F-20 | Perfil, contas, categorias, tags, transações, dashboard, analytics, sync, i18n, onboarding, IndexedDB, audit log, badge, cold start, hydration, conflict, lost file, re-permissão | ✅ |
+| F-1 a F-20 | Perfil, contas, categorias, tags, transações, dashboard, analytics, persistência SQLite/OPFS, i18n, onboarding, audit log | ✅ |
 | F-21 | Cartões de crédito — creditMetadata, motor de fatura virtual, saldo disponível, página dedicada, ícone de emissora, painel de pagamento | ✅ |
-| F-22 | Parcelas — N transações com sufixo, modal de exclusão | ✅ |
+| F-22 | Parcelas — N transações com sufixo, modal de exclusão, selo "(X/N)" em Lançamentos e na fatura do cartão | ✅ |
 | F-23 | Pagamento de fatura — CREDIT_PAYMENT, exclusão dos totais | ✅ |
-| F-24 | Patrimônio Líquido — página dedicada, snapshot + gráfico de evolução | 🔲 planejado |
+| F-24 | Patrimônio Líquido — página dedicada, stat cards, breakdown por conta, gráfico de evolução (AreaChart) | ✅ |
+| F-25 | Demo Mode — dados sintéticos, banner, persistência no-op | ✅ |
+| F-26 | Bug Report System — telemetria local + reporte opt-in via GitHub Issues | ✅ |
+| F-27 | Mobile PWA — bottom nav, layouts responsivos, bottom sheets, DatePicker nativo | ✅ (Analytics mobile pendente — `MB-08`) |
+| F-28 Nível 0/1 | SQLite/OPFS local + backup automático em pasta local (FSA) | ✅ |
+| F-28 Nível 2 | Cloud Sync (Google Drive/Dropbox) | 🔲 planejado (`CS-01` a `CS-12`) |
 
-### Melhorias implementadas (M-01 a M-33)
+### Melhorias implementadas (M-01 a M-60)
 
-Todas as 33 melhorias planejadas foram implementadas, incluindo:
-- M-23: Ícone da instituição emissora para contas CREDIT
-- M-24: Separação visual "Contas e Cartões" no Settings
-- M-25: Dashboard exibe apenas 1ª parcela de parcelados
-- M-26: Tela de Lançamentos exclui transações de cartão
-- M-27: Seletor de período com date-picker de mês
-- M-28: Remoção da aba "Pag. Fatura" do TransactionDrawer
-- M-29: Correção de sobreposição no centro do donut
-- M-30: Painel dedicado "Pagar Fatura" na página do cartão
-- M-31: Resumo de Gastos em coluna direita na página do cartão
-- M-32: Resumo de Gastos em coluna direita na tela de Lançamentos
-- M-33: Saldo inicial editável para contas
+Todas as melhorias até M-60 foram implementadas. Destaques desde a última revisão deste documento:
+
+- **M-34 a M-44**: ícone de instituição emissora, ordenação de categorias em hierarquia, design
+  system (chips, espaçamentos), remoção de elementos redundantes do Dashboard
+- **M-42**: contas/cartões arquiváveis (`Account.archived`) — ocultos de seletores/listas, mas
+  continuam contando em saldos e no Patrimônio
+- **M-45**: períodos customizados salvos no seletor de Relatórios (`savedPeriods`, schema v9)
+- **M-47**: `DatePicker` próprio (nativo em mobile, popup calendário em desktop), substituindo
+  `<input type="date">` em todos os formulários
+- **M-48/M-49**: rodapé de resumo de Lançamentos em coluna lateral (desktop) + "Saldo Geral" no
+  Dashboard
+- **M-50/M-59**: selo "(X/N)" para transações parceladas em Lançamentos e na fatura do cartão
+- **M-51/M-52**: ferramenta de sync Organizze→Gimbo passa a refletir contas/cartões arquivados e
+  normaliza nomes de tags (remove `#` duplicado)
+- **M-53**: tooltip do gráfico de Entradas x Saídas corrigido para períodos > 12 meses (eixo X
+  com chave única por ano)
+- **M-54/M-55**: barra de filtro colapsável (categoria + busca por texto) na página do cartão,
+  substituindo as chips horizontais
+- **M-56/M-57**: navegação entre faturas movida para o cabeçalho da página do cartão; botão
+  "Pagar Agora" oculto (não apenas desabilitado) quando a fatura está paga
+- **M-58**: ação "mover para fatura anterior/seguinte" movida da linha do extrato para o
+  `TransactionDrawer`
+- **M-60**: padronização da exibição de categorias (sem `#`) entre Lançamentos e a fatura do
+  cartão
 
 ### Relatórios Avançados — concluídos
 
@@ -162,16 +189,17 @@ Todas as 33 melhorias planejadas foram implementadas, incluindo:
 - ✅ Fase 5 — Contas com Drill-Down (R-11 a R-12)
 - ✅ Fase 6 — Tags com Multi-filtro (R-13 a R-14)
 - ✅ Fase 7 — Testes (R-15 a R-16)
+- ✅ Fase 8 — Aba "Faturas" (R-17 a R-18)
 
 ### Cobertura de testes
 
-**474 testes unitários** (28 arquivos) + **19 testes E2E** (4 specs). Cobertura: ~97% statements.
+**548 testes unitários** (21 arquivos) + **44 testes E2E** (5 specs, perfis desktop e mobile). Cobertura: ~97% statements.
 
 ### Melhorias e features em aberto
 
 | ID | Descrição | Prioridade |
 |----|-----------|-----------|
-| M-22 | Estornos e chargebacks em contas CREDIT | baixa |
-| F-24 | Patrimônio Líquido — página dedicada (NW-01 a NW-07) | média |
-| F-25 | Demo Mode — dados sintéticos + persist no-op + deploy Vercel (DM-01 a DM-05) | alta |
-| F-26 | Bug Report System — telemetria local + reporte opt-in via GitHub Issues (TASK-BR-01 a TASK-BR-08) | média |
+| MB-08 | Analytics responsivo para mobile — os 5 gráficos do Relatórios mostram placeholder "em breve" em telas pequenas | média |
+| BK-04 | Banner de re-permissão da pasta de backup no startup (hoje só ocorre ao tentar gravar) | média |
+| CC-34 | Agrupamento de parcelas importadas via `sync_gimbo.py` (`installment_parent_id` entre parcelas) | média |
+| CS-01 a CS-12 | Cloud Sync (Nível 2) — Google Drive/Dropbox via OAuth2 PKCE, merge por UUID | demand-driven |
