@@ -129,6 +129,90 @@ describe('CreditCardPage — M-31: spending summary in right column', () => {
   })
 })
 
+// ─── M-54: collapsible category filter bar (replaces M-31 chips) ──────────────
+
+describe('CreditCardPage — M-54: collapsible category filter', () => {
+  function setupTwoCategories() {
+    const creditAccount = makeCreditAccountFixed()
+    const categories = [
+      {
+        id: 'cat-food',
+        name: 'Alimentação',
+        icon: 'ShoppingCart',
+        color: '#F00',
+        parentId: null,
+        type: 'EXPENSE' as const,
+      },
+      {
+        id: 'cat-transport',
+        name: 'Transporte',
+        icon: 'Car',
+        color: '#00F',
+        parentId: null,
+        type: 'EXPENSE' as const,
+      },
+    ]
+    const foodTx = makeTransaction({
+      id: 'tx-food',
+      amount: 100,
+      description: 'Mercado',
+      categoryId: 'cat-food',
+    })
+    const transportTx = makeTransaction({
+      id: 'tx-transport',
+      amount: 50,
+      description: 'Uber',
+      categoryId: 'cat-transport',
+    })
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [creditAccount],
+        transactions: [foodTx, transportTx],
+        categories,
+      }),
+    })
+  }
+
+  it('shows the filter bar collapsed by default, without a visible category select', () => {
+    setupTwoCategories()
+    render(<CreditCardPage />)
+
+    expect(screen.getByText('creditCard.filterByCategory')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    // Both transactions visible (no filter applied)
+    expect(screen.getByText('Mercado')).toBeInTheDocument()
+    expect(screen.getByText('Uber')).toBeInTheDocument()
+  })
+
+  it('expands to show a category select on click, and filters the list on selection', () => {
+    setupTwoCategories()
+    render(<CreditCardPage />)
+
+    fireEvent.click(screen.getByText('creditCard.filterByCategory'))
+    const select = screen.getByRole('combobox')
+    expect(select).toBeInTheDocument()
+
+    fireEvent.change(select, { target: { value: 'cat-food' } })
+
+    expect(screen.getByText('Mercado')).toBeInTheDocument()
+    expect(screen.queryByText('Uber')).not.toBeInTheDocument()
+  })
+
+  it('clears the filter via the "x" button next to the selected category', () => {
+    setupTwoCategories()
+    render(<CreditCardPage />)
+
+    fireEvent.click(screen.getByText('creditCard.filterByCategory'))
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'cat-food' } })
+    expect(screen.queryByText('Uber')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('creditCard.allCategories'))
+
+    expect(screen.getByText('Mercado')).toBeInTheDocument()
+    expect(screen.getByText('Uber')).toBeInTheDocument()
+  })
+})
+
 // ─── M-30: PayInvoiceModal ────────────────────────────────────────────────────
 
 describe('CreditCardPage — M-30: PayInvoiceModal', () => {

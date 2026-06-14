@@ -283,6 +283,7 @@
     "payInvoice": "Pay invoice",
     "referenceMonth": "Reference month",
     "allCategories": "All categories",
+    "filterByCategory": "Filter by category",
     "noTransactions": "No transactions in this invoice",
     "spendingSummary": "Spending Summary",
     "creditLimit": "Credit Limit",

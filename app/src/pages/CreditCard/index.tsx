@@ -8,6 +8,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   CreditCard,
+  Filter,
   X,
 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
@@ -76,6 +77,8 @@ export default function CreditCardPage() {
   const [periodOffset, setPeriodOffset] = useState(0)
   // Category filter
   const [filterCategory, setFilterCategory] = useState<string>('all')
+  // M-54: collapsible category filter bar (replaces the M-31 horizontal chips)
+  const [filterExpanded, setFilterExpanded] = useState(false)
   // M-30: Pay Invoice modal
   const [showPayModal, setShowPayModal] = useState(false)
 
@@ -370,41 +373,10 @@ export default function CreditCardPage() {
         </div>
       </div>
 
-      {/* ── M-31: Two-column layout: chips + list | spending summary ─────── */}
+      {/* ── M-31: Two-column layout: list | filter + spending summary ─────── */}
       <div className="grid grid-cols-3 gap-6 items-start">
-        {/* Left column: category chips + transaction list */}
+        {/* Left column: transaction list */}
         <div className="col-span-2 space-y-4">
-          {/* Category filter chips */}
-          {categoryOptions.length > 0 && (
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              <button
-                onClick={() => setFilterCategory('all')}
-                className={cn(
-                  'shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-all',
-                  filterCategory === 'all'
-                    ? 'bg-primary text-white'
-                    : 'bg-surface-container-low text-on-surface/60 hover:text-on-surface/80'
-                )}
-              >
-                {t('creditCard.allCategories')}
-              </button>
-              {categoryOptions.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => setFilterCategory(cat.id)}
-                  className={cn(
-                    'shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-all',
-                    filterCategory === cat.id
-                      ? 'bg-primary text-white'
-                      : 'bg-surface-container-low text-on-surface/60 hover:text-on-surface/80'
-                  )}
-                >
-                  {cat.name}
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* Transaction list */}
           <div className={cn('rounded-2xl bg-surface-container overflow-hidden', shadowClass)}>
             {filteredTransactions.length === 0 ? (
@@ -426,8 +398,61 @@ export default function CreditCardPage() {
           </div>
         </div>
 
-        {/* Right column: spending summary (sticky) */}
-        <div className="col-span-1 sticky top-8">
+        {/* Right column: category filter + spending summary (sticky) */}
+        <div className="col-span-1 sticky top-8 space-y-4">
+          {/* M-54: collapsible category filter bar, replaces the M-31 horizontal chips */}
+          {categoryOptions.length > 0 && (
+            <div className={cn('rounded-2xl bg-surface-container overflow-hidden', shadowClass)}>
+              <div className="flex items-center gap-1 px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => setFilterExpanded((v) => !v)}
+                  className="flex flex-1 items-center gap-2 min-w-0 text-sm text-on-surface/60 hover:text-on-surface/80 transition-colors"
+                >
+                  <Filter size={14} className="shrink-0" />
+                  <span className="truncate">
+                    {filterCategory === 'all'
+                      ? t('creditCard.filterByCategory')
+                      : categoryOptions.find((c) => c.id === filterCategory)?.name}
+                  </span>
+                  <ChevronDown
+                    size={14}
+                    className={cn(
+                      'shrink-0 ml-auto transition-transform',
+                      filterExpanded && 'rotate-180'
+                    )}
+                  />
+                </button>
+                {filterCategory !== 'all' && (
+                  <button
+                    type="button"
+                    aria-label={t('creditCard.allCategories')}
+                    onClick={() => setFilterCategory('all')}
+                    className="shrink-0 rounded-full p-1 text-on-surface/40 hover:bg-surface-container-high hover:text-on-surface/70 transition-colors"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+              {filterExpanded && (
+                <div className="px-4 pb-3">
+                  <select
+                    value={filterCategory}
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                    className="w-full appearance-none rounded-xl bg-surface-container-low py-2 px-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="all">{t('creditCard.allCategories')}</option>
+                    {categoryOptions.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+
           {categoryTotals.length > 0 && (
             <div className={cn('rounded-2xl bg-surface-container p-6', shadowClass)}>
               <h3 className="text-sm font-semibold text-on-surface mb-4">
