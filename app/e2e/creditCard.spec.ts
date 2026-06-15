@@ -59,7 +59,8 @@ test('credit dashboard: CREDIT account shows "Limite disponível" in Meus Cartõ
 
 // ─── (b) Analytics: EXPENSE on CREDIT projected to due-date month ─────────────
 
-test('analytics: EXPENSE on CREDIT account appears in due-date month, not purchase month', async ({
+// @desktop-only — Analytics is not yet available on mobile (MB-08)
+test('analytics: EXPENSE on CREDIT account appears in due-date month, not purchase month @desktop-only', async ({
   page,
 }) => {
   /**

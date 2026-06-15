@@ -69,7 +69,7 @@ test('edit transaction: opens drawer pre-filled on row click', async ({ page }) 
   await expect(page.locator('input[placeholder="0,00"]')).toHaveValue('5000,00')
 
   // Description should be pre-filled
-  await expect(page.locator('input[placeholder*="comprou"]')).toHaveValue('Salário Janeiro')
+  await expect(page.locator('input[placeholder*="Descrição"]')).toHaveValue('Salário Janeiro')
 
   // Save-update button should be visible
   await expect(page.getByRole('button', { name: 'Salvar Alterações →' })).toBeVisible()
@@ -95,7 +95,7 @@ test('edit transaction: updates description and saves', async ({ page }) => {
   await expect(page.getByText('Editar Transação')).toBeVisible({ timeout: 3000 })
 
   // Edit description
-  const descInput = page.locator('input[placeholder*="comprou"]')
+  const descInput = page.locator('input[placeholder*="Descrição"]')
   await descInput.clear()
   await descInput.fill('Salário Fevereiro')
 
