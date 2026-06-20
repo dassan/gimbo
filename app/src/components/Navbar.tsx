@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { to: '/transactions', key: 'nav.transactions' },
   { to: '/analytics', key: 'nav.analytics' },
   { to: '/net-worth', key: 'nav.netWorth' },
+  { to: '/health', key: 'nav.health' },
 ]
 
 // Bottom navigation items for mobile (MB-02)

@@ -8,6 +8,7 @@
     "transactions": "Lançamentos",
     "analytics": "Relatórios",
     "netWorth": "Patrimônio",
+    "health": "Saúde",
     "settings": "Configurações"
   },
   "onboarding": {
@@ -423,6 +424,33 @@
     "assetsSection": "Ativos",
     "liabilitiesSection": "Passivos",
     "ofTotal": "do total"
+  },
+  "health": {
+    "title": "Saúde Financeira",
+    "subtitle": "O peso real das suas dívidas no seu orçamento",
+    "totalDebt": "Dívida total comprometida",
+    "debtLeverageSuffix": "da sua renda mensal",
+    "debtWindow": "Impacta seu orçamento por {{count}} meses",
+    "budgetTitle": "Peso no seu orçamento",
+    "monthlyIncome": "Renda mensal",
+    "monthlyCommitted": "Comprometido por mês",
+    "incomeCommitted": "da sua renda já está comprometida",
+    "longestHorizon": "Compromisso mais longo",
+    "months": "{{count}} meses",
+    "emergencyTitle": "Reserva de Emergência",
+    "emergencyBalance": "Saldo da Reserva",
+    "emergencyRecommended": "Valor Recomendado",
+    "emergencyPctSuffix": "do recomendado",
+    "emergencyShortfall": "Faltam {{value}} para o recomendado",
+    "emergencyComplete": "Reserva completa",
+    "detailTitle": "Detalhamento das dívidas",
+    "perMonth": "/mês",
+    "installmentsRemaining": "Parcela {{current}}/{{total}} · restam {{remaining}}",
+    "card": "Cartão de crédito",
+    "loan": "Empréstimo",
+    "adjust": "Ajustar renda",
+    "insightTitle": "Entenda este número",
+    "insightBody": "O valor acima é o total que você ainda deve pagar em parcelas e contratos — não apenas a parcela deste mês. É a dívida real que pesa sobre as suas próximas escolhas."
   },
   "welcome": {
     "title": "Bem-vindo ao Gimbo",

@@ -405,3 +405,29 @@ Sincronização automática do banco de dados via Google Drive (fase 1) e Dropbo
 |----|-----------|------------|--------|
 | CS-11 | **Registrar app no Dropbox Developer Console e implementar `dropboxAuth.ts` + `dropboxDrive.ts`.** Mesma estrutura que CS-02/CS-03, adaptada para a API do Dropbox (OAuth2 PKCE, endpoint `/files/upload`, `/files/download`, `/files/get_metadata`). | média | aberto |
 | CS-12 | **Adaptar `syncService.ts` e Settings para suportar múltiplos providers.** Abstrair provider com interface `CloudProvider { upload, download, getMetadata, isConnected }`. `syncService` usa o provider configurado. Settings exibe ambas as opções (Google Drive / Dropbox) com estado de conexão independente. | média | aberto |
+
+---
+
+## Saúde Financeira — F-29
+
+Página `/health` focada em dívida e seu peso no orçamento (≠ Patrimônio, que é F-24). Decisões de produto e design, conceitos, fórmulas e pontos em aberto em `plan/FINANCIAL_HEALTH.md`. A Fase 1 (design mockado) está **resolvida**; as fases seguintes ligam os motores reais e ainda dependem das decisões de §6 do doc.
+
+> **Decisão de produto (2026-06-20):** escopo estreitado para **dívida + orçamento**. Bens ilíquidos (imóvel, carro) fora; saldos líquidos entram só como contexto da reserva de emergência. Card de dívida usa hero **grafite** (Bambu 900), não verde — passivo não recebe a cor "positiva" da marca.
+
+### Fase 1 — Design inicial mockado
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| HE-01 | **`App.tsx` + `components/Navbar.tsx` — Rota `/health` e item de navbar "Saúde".** Item posicionado entre "Patrimônio" e "Configurações" no nav desktop (`NAV_ITEMS`); fora do bottom nav mobile (5 slots cheios), espelhando Patrimônio. Chaves i18n `nav.health` (`pt-BR`: "Saúde", `en-US`: "Health"). | alta | resolvido |
+| HE-02 | **`pages/Health/index.tsx` — Página mockada (sem motores).** Componente autocontido com dados fixos em `MOCK_*` no topo; nada lê do `useDataStore` nem persiste. Três cards de resumo (Peso no orçamento, Reserva de Emergência, Dívida total comprometida) de mesma altura + detalhamento expansível por dívida + callout educativo. Derivações puras (`debtTotal`, `monthlyCommitted`, `longestHorizon`, `leverage`, `reserveRatio`) reconciliam totais com itens. Chaves i18n `health.*` em ambos os locales. | alta | resolvido |
+| HE-03 | **Card de dívida — hero grafite + alavancagem + janela temporal.** Número único centralizado (`text-4xl`), fundo Bambu 900 (`#1A1F2E`), número-herói de alavancagem (dívida ÷ renda, `2,6×`) com régua de cor em tons claros, legenda de janela temporal. Distinção registrada em `design/DESIGN.md`. | alta | resolvido |
+
+### Fase 2 — Motores reais (bloqueada por decisões do doc §6)
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| HE-04 | **Motor de dívida total — funções puras em `lib/utils.ts`.** Derivar `debtTotal`, `monthlyCommitted` e `longestHorizon` das transações reais: parcelas (`installment`) em aberto de contas CREDIT + empréstimos/financiamentos. Definir como modelar empréstimos não-cartão (hoje não há tipo dedicado). Substituir `MOCK_DEBTS`. Testes unitários cobrindo reconciliação total↔itens. | alta | aberto |
+| HE-05 | **Renda mensal — fonte e edição.** Decidir entre campo informado pelo usuário (persistido) ou média de `INCOME` de N meses. Implementar o affordance de edição (lápis, hoje não-funcional). Substituir `MOCK_INCOME`. Ver `FINANCIAL_HEALTH.md` §6.3. | alta | aberto |
+| HE-06 | **Reserva de emergência — saldo e custo mensal médio.** Definir (a) quais contas compõem o saldo da reserva (flag na conta? poupança? conta corrente?) e (b) a fonte do custo mensal médio que define o recomendado (média de `EXPENSE` de N meses; inclui/exclui parcelas de cartão e não-recorrentes?). Substituir `MOCK_EMERGENCY_RESERVE`/`MOCK_MONTHLY_COST`. Ver `FINANCIAL_HEALTH.md` §6.1–6.2 e §6.4. | alta | aberto |
+| HE-07 | **Detalhamento das dívidas a partir de dados reais.** Listar parcelamentos/contratos em aberto por cartão/empréstimo, com X/N e total restante, derivados do motor de HE-04. Card expansível já existe no mock. | média | aberto |
+| HE-08 | **Testes de componente — `src/test/components/Health.test.tsx`.** Renderizar com fixture `makeDataFile()` e verificar os três cards, as réguas de cor por faixa e o detalhamento expansível. Adicionar após os motores (HE-04 a HE-07). | média | aberto |
