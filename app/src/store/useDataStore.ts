@@ -618,6 +618,7 @@ function advanceByFrequency(dateStr: string, frequency: RecurrenceFrequency, n: 
 // CC-12: non-CREDIT accounts must never carry creditMetadata in the saved object.
 // M-34: issuerIcon (institution branding) is allowed on any account type and is preserved.
 // M-42: archived is allowed on any account type and is preserved.
+// HE-05/HE-06: loanMetadata is allowed only on LOAN accounts and is preserved.
 function sanitizeAccount(account: Account): Account {
   if (account.type === 'CREDIT') return account
   return {
@@ -628,5 +629,8 @@ function sanitizeAccount(account: Account): Account {
     includeInBalance: account.includeInBalance,
     ...(account.issuerIcon ? { issuerIcon: account.issuerIcon } : {}),
     ...(account.archived ? { archived: account.archived } : {}),
+    ...(account.type === 'LOAN' && account.loanMetadata
+      ? { loanMetadata: account.loanMetadata }
+      : {}),
   }
 }
