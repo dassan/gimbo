@@ -7,6 +7,7 @@ import type {
   Tag,
   Transaction,
   CreditMetadata,
+  LoanMetadata,
   Valuation,
   SavedPeriod,
 } from '@/types'
@@ -322,6 +323,69 @@ describe('creditMetadata handling (CC-12)', () => {
     useDataStore.getState().updateAccount({ ...archivedAccount, archived: false })
     const saved = useDataStore.getState().data?.accounts[0]
     expect(saved?.archived).toBeUndefined()
+  })
+})
+
+describe('loanMetadata handling (HE-06)', () => {
+  const loanMeta: LoanMetadata = {
+    outstandingBalance: 15000,
+    monthlyPayment: 800,
+    remainingInstallments: 18,
+    interestRate: 1.5,
+  }
+
+  it('addAccount with LOAN type persists loanMetadata', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    const loanAccount = makeAccount({ id: 'acc-loan', type: 'LOAN', loanMetadata: loanMeta })
+    useDataStore.getState().addAccount(loanAccount)
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.loanMetadata).toEqual(loanMeta)
+  })
+
+  // HE-06: the agreed update path for outstandingBalance is direct edit via updateAccount
+  // (no separate Valuation-style history mechanism in v1 — see plan/FINANCIAL_HEALTH.md §D5).
+  it('updateAccount with LOAN type updates loanMetadata (manual outstandingBalance edit)', () => {
+    const loanAccount = makeAccount({ id: 'acc-loan', type: 'LOAN', loanMetadata: loanMeta })
+    useDataStore.setState({ data: makeDataFile({ accounts: [loanAccount] }) })
+    const updated: LoanMetadata = { ...loanMeta, outstandingBalance: 14200 }
+    useDataStore.getState().updateAccount({ ...loanAccount, loanMetadata: updated })
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.loanMetadata).toEqual(updated)
+  })
+
+  it('addAccount with non-LOAN type does not include loanMetadata', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    // Simulate a stale account object that erroneously carries loanMetadata
+    const staleAccount = makeAccount({ id: 'acc-retail', type: 'RETAIL', loanMetadata: loanMeta })
+    useDataStore.getState().addAccount(staleAccount)
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.loanMetadata).toBeUndefined()
+    expect(Object.prototype.hasOwnProperty.call(saved, 'loanMetadata')).toBe(false)
+  })
+
+  it('updateAccount changing type away from LOAN strips loanMetadata', () => {
+    const loanAccount = makeAccount({ id: 'acc-1', type: 'LOAN', loanMetadata: loanMeta })
+    useDataStore.setState({ data: makeDataFile({ accounts: [loanAccount] }) })
+    useDataStore
+      .getState()
+      .updateAccount({ ...loanAccount, type: 'SAVINGS', loanMetadata: loanMeta })
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.type).toBe('SAVINGS')
+    expect(saved?.loanMetadata).toBeUndefined()
+  })
+
+  it('strips loanMetadata from a non-LOAN account while keeping its issuerIcon', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    const staleAccount = makeAccount({
+      id: 'acc-retail',
+      type: 'RETAIL',
+      issuerIcon: 'itau',
+      loanMetadata: loanMeta,
+    })
+    useDataStore.getState().addAccount(staleAccount)
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.issuerIcon).toBe('itau')
+    expect(saved?.loanMetadata).toBeUndefined()
   })
 })
 

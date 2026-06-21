@@ -114,7 +114,7 @@ Denominador do "Peso no orçamento". **Derivar uma sugestão, o usuário confirm
 Novo tipo de conta para empréstimos/financiamentos não-cartão (empréstimo pessoal, consignado, financiamento de carro/imóvel). **Incluído no primeiro corte** porque enriquece duas telas:
 - **Saúde Financeira (F-29):** saldo devedor entra na Dívida total; parcela entra no Comprometido por mês; prazo restante no maior horizonte.
 - **Patrimônio (F-24):** passa a contribuir como **passivo** ao lado de CREDIT (hoje o net worth só conta cartões como passivo).
-- **Modelo v1 (a confirmar no design do épico):** saldo devedor é figura **mantida pelo usuário**, espelhando o padrão de `Valuation` que já existe para ativos (STOCKS/CRYPTO/ASSET) — sem amortização automática de juros/principal nesta fase. Juros como campo opcional para um insight futuro de "custo dos juros".
+- **Modelo v1 (confirmado na HE-06, 2026-06-21):** saldo devedor é figura **mantida pelo usuário**, atualizada por **edição direta no modal de conta** (`pages/Settings/index.tsx`) — não um histórico de snapshots como o `Valuation` de STOCKS/CRYPTO/ASSET. Motivo: o `Valuation` existe para registrar a evolução de um valor de mercado externo (preço de ação, cripto); o saldo devedor de um empréstimo não tem "preço de mercado" para snapshot — é só um número que o usuário corrige periodicamente. Sem amortização automática de juros/principal nesta fase. Juros como campo opcional para um insight futuro de "custo dos juros".
 
 ### Premissas a validar (pós-lançamento)
 - A maioria dos usuários terá histórico rico (import Organizze). Se muitos começarem do zero, o caminho manual de D1 vira regra, não exceção.
