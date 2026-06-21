@@ -15,6 +15,7 @@ import {
   getTotalCommittedDebt,
   getMonthlyCommitment,
   getDebtHorizon,
+  deriveMonthlyIncome,
   invoicePeriodKey,
   filterArchivedAccounts,
   isCardCredit,
@@ -423,6 +424,125 @@ describe('getTotalCommittedDebt / getMonthlyCommitment / getDebtHorizon (HE-08)'
     expect(getTotalCommittedDebt(cardGroup, [cardAccount, loanAccount])).toBe(1500 + 15000)
     expect(getMonthlyCommitment(cardGroup, [cardAccount, loanAccount])).toBe(300 + 800)
     expect(getDebtHorizon(cardGroup, [cardAccount, loanAccount])).toBe(18)
+  })
+})
+
+// ─── Financial Health — Income Engine (HE-09) ────────────────────────────────
+
+describe('deriveMonthlyIncome (HE-09)', () => {
+  const retail = makeAccount({ id: 'acc-retail', type: 'RETAIL', creditMetadata: undefined })
+  const credit = makeAccount({ id: 'acc-credit', type: 'CREDIT' })
+  const today = new Date().toISOString().slice(0, 10)
+
+  it('returns null with 0 confidence when there is no qualified income', () => {
+    const result = deriveMonthlyIncome([], [retail])
+    expect(result).toEqual({ value: null, confidenceMonths: 0, isEstimate: false })
+  })
+
+  it('excludes INCOME on a CREDIT account (B-16 estornos) from qualified income', () => {
+    const estorno = makeTx({
+      accountId: 'acc-credit',
+      type: 'INCOME',
+      amount: 9999,
+      date: addMonths(today, -1),
+    })
+    expect(deriveMonthlyIncome([estorno], [retail, credit]).value).toBeNull()
+  })
+
+  it('excludes the current (incomplete) month from the window', () => {
+    const currentMonthIncome = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 5000,
+      date: today,
+    })
+    expect(deriveMonthlyIncome([currentMonthIncome], [retail]).value).toBeNull()
+  })
+
+  it('uses the single available month as an estimate when there is only 1 month of data', () => {
+    const tx = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 3000,
+      date: addMonths(today, -1),
+    })
+    const result = deriveMonthlyIncome([tx], [retail])
+    expect(result).toEqual({ value: 3000, confidenceMonths: 1, isEstimate: true })
+  })
+
+  it('averages 2 available months and labels it as an estimate', () => {
+    const txA = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 3000,
+      date: addMonths(today, -1),
+    })
+    const txB = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 5000,
+      date: addMonths(today, -2),
+    })
+    const result = deriveMonthlyIncome([txA, txB], [retail])
+    expect(result).toEqual({ value: 4000, confidenceMonths: 2, isEstimate: true })
+  })
+
+  it('uses the median (not the average) once the 3-month floor is met', () => {
+    const transactions = [1000, 2000, 9000].map((amount, i) =>
+      makeTx({
+        accountId: 'acc-retail',
+        type: 'INCOME',
+        amount,
+        date: addMonths(today, -(i + 1)),
+      })
+    )
+    const result = deriveMonthlyIncome(transactions, [retail])
+    expect(result).toEqual({ value: 2000, confidenceMonths: 3, isEstimate: false })
+  })
+
+  it('sums multiple qualified transactions within the same month', () => {
+    const a = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 1000,
+      date: addMonths(today, -1),
+    })
+    const b = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 500,
+      date: addMonths(today, -1),
+    })
+    const result = deriveMonthlyIncome([a, b], [retail])
+    expect(result).toEqual({ value: 1500, confidenceMonths: 1, isEstimate: true })
+  })
+
+  it('caps the lookback window at 6 complete months, ignoring older data', () => {
+    const tooOld = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 99999,
+      date: addMonths(today, -7),
+    })
+    const result = deriveMonthlyIncome([tooOld], [retail])
+    expect(result).toEqual({ value: null, confidenceMonths: 0, isEstimate: false })
+  })
+
+  it('ignores EXPENSE and TRANSFER transactions', () => {
+    const expense = makeTx({
+      accountId: 'acc-retail',
+      type: 'EXPENSE',
+      amount: 1000,
+      date: addMonths(today, -1),
+    })
+    const transfer = makeTx({
+      accountId: 'acc-retail',
+      type: 'TRANSFER',
+      amount: 1000,
+      date: addMonths(today, -1),
+      transferAccountId: 'acc-other',
+    })
+    expect(deriveMonthlyIncome([expense, transfer], [retail]).value).toBeNull()
   })
 })
 

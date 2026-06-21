@@ -156,4 +156,5 @@ export interface WorkspaceFile {
   defaultView: string
   useAmbientShadows: boolean
   netWorthIncludeHidden: boolean // D3: include accounts with includeInBalance=false (default true)
+  monthlyIncomeOverride?: number // HE-09/D1: user-confirmed income; always wins over the derived suggestion
 }

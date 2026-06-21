@@ -411,6 +411,85 @@ export function getDebtHorizon(transactions: Transaction[], accounts: Account[])
   return Math.max(creditHorizon, loanHorizon)
 }
 
+// ─── Financial Health — Income Engine (HE-09, D1) ────────────────────────────
+//
+// Suggests the denominator of "peso no orçamento" (F-29) from history. This is
+// only a suggestion — the user's own confirmed value always wins and must never
+// be silently recalculated over (workspace.monthlyIncomeOverride, set via the
+// page's pencil — HE-10). See plan/FINANCIAL_HEALTH.md §6 D1.
+
+export interface MonthlyIncomeEstimate {
+  /** null when there's no qualified income in the lookback window — caller should prompt manual entry. */
+  value: number | null
+  /** How many of the last 6 complete calendar months had qualified income. */
+  confidenceMonths: number
+  /** True when confidenceMonths is 1–2 (below the 3-month median floor) — label as an estimate to confirm. */
+  isEstimate: boolean
+}
+
+function _monthKey(dateStr: string): string {
+  const d = parseDateLocal(dateStr)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** Returns the `n` calendar month keys immediately preceding `monthKey`, most recent first. */
+function _monthsBefore(monthKey: string, n: number): string[] {
+  const [y, m] = monthKey.split('-').map(Number)
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(y, m - 1 - (i + 1), 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })
+}
+
+function _median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+}
+
+/**
+ * Derives a suggested monthly income from up to the last 6 complete calendar
+ * months (the current month is excluded — its income hasn't fully landed yet).
+ * "Qualified" income = INCOME transactions on non-CREDIT accounts (B-16
+ * estornos are INCOME on a card and would inflate this otherwise; TRANSFER
+ * transactions are a different type and are already excluded).
+ *
+ * - ≥ 3 months with data → median of those months (resists an atypical month,
+ *   e.g. a 13º salário).
+ * - 1–2 months → the median of what's available (== the value itself for 1,
+ *   or the average of the two for 2), labelled as an estimate.
+ * - 0 months → no number; the caller should fall back to manual entry.
+ */
+export function deriveMonthlyIncome(
+  transactions: Transaction[],
+  accounts: Account[]
+): MonthlyIncomeEstimate {
+  const creditAccountIds = new Set(accounts.filter((a) => a.type === 'CREDIT').map((a) => a.id))
+  const currentMonthKey = _monthKey(todayStr())
+
+  const sumsByMonth = new Map<string, number>()
+  for (const tx of transactions) {
+    if (tx.type !== 'INCOME' || creditAccountIds.has(tx.accountId)) continue
+    const key = _monthKey(tx.date)
+    if (key >= currentMonthKey) continue
+    sumsByMonth.set(key, (sumsByMonth.get(key) ?? 0) + tx.amount)
+  }
+
+  const monthlyValues = _monthsBefore(currentMonthKey, 6)
+    .filter((key) => sumsByMonth.has(key))
+    .map((key) => sumsByMonth.get(key) as number)
+
+  if (monthlyValues.length === 0) {
+    return { value: null, confidenceMonths: 0, isEstimate: false }
+  }
+
+  return {
+    value: _median(monthlyValues),
+    confidenceMonths: monthlyValues.length,
+    isEstimate: monthlyValues.length < 3,
+  }
+}
+
 /**
  * Returns the date that should be used when plotting a transaction on the
  * cash-flow chart.

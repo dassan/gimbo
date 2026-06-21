@@ -109,6 +109,7 @@ Denominador do "Peso no orçamento". **Derivar uma sugestão, o usuário confirm
 - O **valor definido pelo usuário sempre vence** e **nunca é sobrescrito em silêncio**. A derivação só sugere; um "recalcular pelo histórico" fica opt-in.
 - **Requisito de UI:** o rótulo de confiança ("baseado em N meses") aparece **no card**, não só no input — senão o usuário lê o % como verdade absoluta (falsa precisão).
 - Esse cold start fixa o **mesmo padrão** para o "custo mensal médio" do épico da Reserva.
+- **Persistência do valor confirmado (decidido na HE-09, 2026-06-21):** `workspace.monthlyIncomeOverride` (local, mesmo padrão de `netWorthIncludeHidden`), **não** `Settings`/SQLite. Motivo: evita nova coluna SQLite + migration + bump de `CURRENT_SCHEMA_VERSION` para uma única figura cujo pior caso de "perda" (troca de dispositivo, restore de backup) já é coberto pelo próprio design do D1 — sem override, a tela volta a sugerir pelo histórico ou pede confirmação manual; não é perda de dado financeiro real.
 
 ### D5 — Dívida não-cartão: entidade de passivo de primeira classe (`LOAN`), no v1
 Novo tipo de conta para empréstimos/financiamentos não-cartão (empréstimo pessoal, consignado, financiamento de carro/imóvel). **Incluído no primeiro corte** porque enriquece duas telas:

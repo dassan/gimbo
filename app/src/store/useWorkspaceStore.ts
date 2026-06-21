@@ -12,6 +12,7 @@ interface WorkspaceStore {
   setDefaultView: (view: string) => void
   setAmbientShadows: (v: boolean) => void
   setNetWorthIncludeHidden: (v: boolean) => void
+  setMonthlyIncomeOverride: (v: number | undefined) => void
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
@@ -48,6 +49,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setNetWorthIncludeHidden: (netWorthIncludeHidden) => {
     const workspace = { ...get().workspace, netWorthIncludeHidden }
+    set({ workspace })
+    saveWorkspace(workspace)
+  },
+
+  setMonthlyIncomeOverride: (monthlyIncomeOverride) => {
+    const workspace = { ...get().workspace, monthlyIncomeOverride }
     set({ workspace })
     saveWorkspace(workspace)
   },
