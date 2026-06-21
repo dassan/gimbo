@@ -94,15 +94,39 @@ Valores entre parênteses = mock atual (`MOCK_*` em `pages/Health/index.tsx`).
 
 ---
 
-## 6. Pontos em aberto (a discutir antes dos motores)
+## 6. Decisões de produto (sessão 2026-06-21)
 
-1. **Custo mensal médio** (base do ideal de reserva): fonte? Média de `EXPENSE` dos últimos N meses? Inclui ou exclui as próprias parcelas de cartão? Inclui despesas não-recorrentes? Muda bastante o valor recomendado.
-2. **Saldo da reserva**: quais contas contam como reserva de emergência? (poupança? conta corrente? um flag específico na conta?). Hoje é um número solto no mock.
-3. **Renda mensal**: campo informado pelo usuário ou média de `INCOME`? O card já prevê um affordance de edição (lápis, não-funcional).
-4. **Reserva de Emergência como conceito**: discutir se vira uma entidade/meta de primeira classe (semelhante a uma conta marcada) ou um cálculo derivado.
+Os pontos que estavam em aberto foram decididos numa sessão de produto. As tarefas correspondentes estão no épico `HE` em `plan/BACKLOG.md`.
+
+### D0 — Escopo do v1: dívida primeiro
+O primeiro corte funcional liga os motores de **Dívida total comprometida** e **Peso no orçamento** (renda). A **Reserva de Emergência sai do v1** e vira um épico próprio (custo mensal médio, contas da reserva, reserva-entidade — antigos pontos 1, 2 e 4). Motivo: o *job* central da tela é consciência de dívida; a reserva é um *job* distinto (preparação para imprevistos) e travava o v1 nas decisões mais espinhosas.
+
+### D1 — Renda mensal: híbrido derivar + override
+Denominador do "Peso no orçamento". **Derivar uma sugestão, o usuário confirma/ajusta, o valor persiste.**
+- **Renda qualificada** = transações `INCOME` **excluindo conta CREDIT** (estornos da B-16 são `INCOME` em cartão e inflariam a renda) **e excluindo transferências**.
+- **Janela** = até **6 meses completos** (o mês corrente fica de fora — a renda dele ainda não entrou inteira).
+- **Piso de 3 meses** com renda qualificada → usa a **mediana** (mês típico, resiste a meses atípicos como 13º/resgate). **1–2 meses** → usa o disponível, mas rotulado como *"estimativa de N meses — confirme"*. **0 meses** → sem número; campo manual com CTA.
+- O **valor definido pelo usuário sempre vence** e **nunca é sobrescrito em silêncio**. A derivação só sugere; um "recalcular pelo histórico" fica opt-in.
+- **Requisito de UI:** o rótulo de confiança ("baseado em N meses") aparece **no card**, não só no input — senão o usuário lê o % como verdade absoluta (falsa precisão).
+- Esse cold start fixa o **mesmo padrão** para o "custo mensal médio" do épico da Reserva.
+
+### D5 — Dívida não-cartão: entidade de passivo de primeira classe (`LOAN`), no v1
+Novo tipo de conta para empréstimos/financiamentos não-cartão (empréstimo pessoal, consignado, financiamento de carro/imóvel). **Incluído no primeiro corte** porque enriquece duas telas:
+- **Saúde Financeira (F-29):** saldo devedor entra na Dívida total; parcela entra no Comprometido por mês; prazo restante no maior horizonte.
+- **Patrimônio (F-24):** passa a contribuir como **passivo** ao lado de CREDIT (hoje o net worth só conta cartões como passivo).
+- **Modelo v1 (a confirmar no design do épico):** saldo devedor é figura **mantida pelo usuário**, espelhando o padrão de `Valuation` que já existe para ativos (STOCKS/CRYPTO/ASSET) — sem amortização automática de juros/principal nesta fase. Juros como campo opcional para um insight futuro de "custo dos juros".
+
+### Premissas a validar (pós-lançamento)
+- A maioria dos usuários terá histórico rico (import Organizze). Se muitos começarem do zero, o caminho manual de D1 vira regra, não exceção.
+- O modelo de saldo devedor mantido pelo usuário (`LOAN`) é suficiente; amortização automática pode ser demandada depois.
+
+### Nota de escopo
+Ao incluir `LOAN` no v1, a F-29 deixou de ser "ligar motores num mock": virou um épico que cruza schema + Settings + Patrimônio. Decisão consciente. **Sequenciar `LOAN` como a primeira fatia** do épico para não virar gargalo do resto.
 
 ---
 
 ## 7. Estado atual
 
-**Mock visual completo, sem motores.** `pages/Health/index.tsx` é autocontido: dados fixos em `MOCK_*` no topo do arquivo, nada lê do `useDataStore` nem persiste. Rota, navbar e i18n (`nav.health`, `health.*`) ligados. Próximo passo: épico `HE` (motores + testes) em `plan/BACKLOG.md`. Referência de design inicial (Stitch): `design/saude-financeira.png`.
+**Mock visual completo, sem motores.** `pages/Health/index.tsx` é autocontido: dados fixos em `MOCK_*` no topo do arquivo, nada lê do `useDataStore` nem persiste. Rota, navbar e i18n (`nav.health`, `health.*`) ligados.
+
+**Decisões de produto tomadas** (§6) — próximo passo é executar o épico `HE` em `plan/BACKLOG.md`: a entidade `LOAN` primeiro (fatia que destrava dívida real + Patrimônio), depois o motor de dívida, a renda e o detalhamento. A Reserva de Emergência fica para um épico posterior. Referência de design inicial (Stitch): `design/saude-financeira.png`.

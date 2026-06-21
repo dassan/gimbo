@@ -410,9 +410,11 @@ Sincronização automática do banco de dados via Google Drive (fase 1) e Dropbo
 
 ## Saúde Financeira — F-29
 
-Página `/health` focada em dívida e seu peso no orçamento (≠ Patrimônio, que é F-24). Decisões de produto e design, conceitos, fórmulas e pontos em aberto em `plan/FINANCIAL_HEALTH.md`. A Fase 1 (design mockado) está **resolvida**; as fases seguintes ligam os motores reais e ainda dependem das decisões de §6 do doc.
+Página `/health` focada em dívida e seu peso no orçamento (≠ Patrimônio, que é F-24). Decisões de produto e design, conceitos e fórmulas em `plan/FINANCIAL_HEALTH.md`. A Fase 1 (design mockado) está **resolvida**; as decisões de produto foram tomadas (ver doc §6) e destravam as fases de implementação. **Ordem das fases é dependente** — `LOAN` (Fase 2) antes do motor de dívida (Fase 3), que soma o saldo de empréstimos.
 
-> **Decisão de produto (2026-06-20):** escopo estreitado para **dívida + orçamento**. Bens ilíquidos (imóvel, carro) fora; saldos líquidos entram só como contexto da reserva de emergência. Card de dívida usa hero **grafite** (Bambu 900), não verde — passivo não recebe a cor "positiva" da marca.
+> **Decisão de produto (2026-06-20):** escopo estreitado para **dívida + orçamento**. Bens ilíquidos (imóvel, carro) fora. Card de dívida usa hero **grafite** (Bambu 900), não verde — passivo não recebe a cor "positiva" da marca.
+>
+> **Decisões de produto (2026-06-21, ver `FINANCIAL_HEALTH.md` §6):** (D0) v1 = dívida + orçamento; **Reserva de Emergência adiada** para épico próprio. (D1) renda = híbrido derivar+override, mediana de 6 meses completos (exclui income de cartão e transferências), piso de 3 meses, fallback manual no cold start, valor do usuário nunca sobrescrito. (D5) empréstimos não-cartão = **entidade de passivo de primeira classe `LOAN`, incluída no v1**, que também passa a ser passivo no Patrimônio (F-24).
 
 ### Fase 1 — Design inicial mockado
 
@@ -422,12 +424,32 @@ Página `/health` focada em dívida e seu peso no orçamento (≠ Patrimônio, q
 | HE-02 | **`pages/Health/index.tsx` — Página mockada (sem motores).** Componente autocontido com dados fixos em `MOCK_*` no topo; nada lê do `useDataStore` nem persiste. Três cards de resumo (Peso no orçamento, Reserva de Emergência, Dívida total comprometida) de mesma altura + detalhamento expansível por dívida + callout educativo. Derivações puras (`debtTotal`, `monthlyCommitted`, `longestHorizon`, `leverage`, `reserveRatio`) reconciliam totais com itens. Chaves i18n `health.*` em ambos os locales. | alta | resolvido |
 | HE-03 | **Card de dívida — hero grafite + alavancagem + janela temporal.** Número único centralizado (`text-4xl`), fundo Bambu 900 (`#1A1F2E`), número-herói de alavancagem (dívida ÷ renda, `2,6×`) com régua de cor em tons claros, legenda de janela temporal. Distinção registrada em `design/DESIGN.md`. | alta | resolvido |
 
-### Fase 2 — Motores reais (bloqueada por decisões do doc §6)
+### Fase 2 — Entidade de passivo `LOAN` (primeira fatia funcional; cruza F-24)
+
+Empréstimos/financiamentos não-cartão como cidadão de primeira classe. Saldo devedor **mantido pelo usuário** (espelha o padrão de `Valuation` dos ativos), sem amortização automática de juros/principal no v1. Esta fase é pré-requisito da Fase 3 (o motor de dívida soma o saldo de `LOAN`).
 
 | ID | Descrição | Prioridade | Status |
 |----|-----------|------------|--------|
-| HE-04 | **Motor de dívida total — funções puras em `lib/utils.ts`.** Derivar `debtTotal`, `monthlyCommitted` e `longestHorizon` das transações reais: parcelas (`installment`) em aberto de contas CREDIT + empréstimos/financiamentos. Definir como modelar empréstimos não-cartão (hoje não há tipo dedicado). Substituir `MOCK_DEBTS`. Testes unitários cobrindo reconciliação total↔itens. | alta | aberto |
-| HE-05 | **Renda mensal — fonte e edição.** Decidir entre campo informado pelo usuário (persistido) ou média de `INCOME` de N meses. Implementar o affordance de edição (lápis, hoje não-funcional). Substituir `MOCK_INCOME`. Ver `FINANCIAL_HEALTH.md` §6.3. | alta | aberto |
-| HE-06 | **Reserva de emergência — saldo e custo mensal médio.** Definir (a) quais contas compõem o saldo da reserva (flag na conta? poupança? conta corrente?) e (b) a fonte do custo mensal médio que define o recomendado (média de `EXPENSE` de N meses; inclui/exclui parcelas de cartão e não-recorrentes?). Substituir `MOCK_EMERGENCY_RESERVE`/`MOCK_MONTHLY_COST`. Ver `FINANCIAL_HEALTH.md` §6.1–6.2 e §6.4. | alta | aberto |
-| HE-07 | **Detalhamento das dívidas a partir de dados reais.** Listar parcelamentos/contratos em aberto por cartão/empréstimo, com X/N e total restante, derivados do motor de HE-04. Card expansível já existe no mock. | média | aberto |
-| HE-08 | **Testes de componente — `src/test/components/Health.test.tsx`.** Renderizar com fixture `makeDataFile()` e verificar os três cards, as réguas de cor por faixa e o detalhamento expansível. Adicionar após os motores (HE-04 a HE-07). | média | aberto |
+| HE-04 | **`types/index.ts` + `schema.ts` — Tipo de conta `LOAN` e `LoanMetadata`.** Adicionar `'LOAN'` ao `AccountType`. Criar `interface LoanMetadata { outstandingBalance: number; monthlyPayment: number; remainingInstallments: number; interestRate?: number }` e `loanMetadata?` em `Account`. Schema Zod correspondente (`LoanMetadataSchema`, `.optional()` em `AccountSchema`). Incrementar `CURRENT_SCHEMA_VERSION` + migração lógica no-op + migração SQLite (`loan_metadata` ou colunas dedicadas) no worker. Testes de schema (arquivo antigo migra, novo aceita). | alta | aberto |
+| HE-05 | **`pages/Settings/index.tsx` — Criar/editar conta `LOAN`.** Seção condicional no modal de conta (espelhando o padrão `CREDIT` de CC-10): campos "Saldo devedor" (`outstandingBalance`, moeda), "Parcela mensal" (`monthlyPayment`, moeda), "Parcelas restantes" (`remainingInstallments`, inteiro) e "Juros a.m." (`interestRate`, opcional, %). `includeInBalance` default `false` (como CREDIT). Chaves i18n `accounts.loan`, `accounts.outstandingBalance`, `accounts.monthlyPayment`, `accounts.remainingInstallments`, `accounts.interestRate` em ambos os locales. | alta | aberto |
+| HE-06 | **`store/useDataStore.ts` — Persistir `loanMetadata` + atualização do saldo devedor.** Garantir que `addAccount`/`updateAccount` preservam `loanMetadata`. Definir o caminho de atualização periódica do `outstandingBalance` (reusar o mecanismo de `Valuation` dos ativos ou edição direta no modal — decisão de design da fatia). Testes de store. | alta | aberto |
+| HE-07 | **`pages/NetWorth/index.tsx` + `lib/utils.ts` — `LOAN` como passivo no Patrimônio (F-24).** Incluir contas `LOAN` em `totalLiabilities` (saldo devedor) e no breakdown de passivos, ao lado de CREDIT. Helper puro (`getLoanLiability`) e testes em `utils.test.ts`/`NetWorth.test.tsx`. **Cruza a F-24** — validar que o gráfico de evolução e os stat cards continuam corretos. | alta | aberto |
+
+### Fase 3 — Motores da Saúde Financeira
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| HE-08 | **`lib/utils.ts` — Motor de dívida total (funções puras).** `getTotalCommittedDebt`, `getMonthlyCommitment` e `getDebtHorizon` somando **parcelas `installment` em aberto de contas CREDIT** + **saldo/parcela/prazo de cada conta `LOAN`**. Todos os agregados reconciliam com os itens (premissa do mock). Substituir `MOCK_DEBTS`. Testes unitários: mix CREDIT+LOAN, reconciliação total↔itens, sem dívida = 0. Depende de HE-04. | alta | aberto |
+| HE-09 | **Renda mensal híbrida (D1).** Motor de derivação: mediana da renda qualificada (`INCOME` excluindo conta CREDIT e transferências) sobre até 6 meses completos; piso de 3 meses para mediana, 1–2 meses = estimativa rotulada, 0 = sem número. Persistir o valor escolhido pelo usuário (campo em `workspace`/`user`); override pelo lápis do card; **nunca** sobrescrever valor do usuário em silêncio. **Rótulo de confiança ("baseado em N meses") visível no card.** Substituir `MOCK_INCOME`. Testes do motor + do fallback de cold start. | alta | aberto |
+| HE-10 | **`pages/Health/index.tsx` — Ligar a página aos motores.** Substituir todos os `MOCK_*` de dívida e renda pelos motores (HE-08, HE-09); detalhamento expansível real por cartão/`LOAN` (descrição, X/N, total restante). Manter o card de Reserva mockado até o épico próprio (sinalizar visualmente que é placeholder, se necessário). | alta | aberto |
+| HE-11 | **Testes de componente — `src/test/components/Health.test.tsx`.** Renderizar com fixture `makeDataFile()` (incluindo conta `LOAN` e parcelas CREDIT) e verificar os cards de Dívida e Peso no orçamento, as réguas de cor por faixa, o detalhamento expansível e o rótulo de confiança da renda. | média | aberto |
+
+### Fase 4 — Reserva de Emergência (épico posterior, fora do v1)
+
+Adiada na D0. Reaproveita o cold start de renda (HE-09) para o custo mensal médio.
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| HE-12 | **Custo mensal médio — fonte e cold start.** Definir a base do recomendado de reserva: média/mediana de `EXPENSE` de N meses; **decidir** inclusão de parcelas de cartão e de despesas não-recorrentes. Mesmo padrão de degradação graciosa da renda (HE-09). Substituir `MOCK_MONTHLY_COST`. | média | aberto |
+| HE-13 | **Saldo da reserva — quais contas.** Definir o mecanismo: flag por conta (ex.: `isEmergencyReserve`) vs. tipo/heurística (poupança). UI no Settings. Substituir `MOCK_EMERGENCY_RESERVE`. | média | aberto |
+| HE-14 | **Reserva como conceito + ligar o card.** Decidir entre meta/entidade de primeira classe vs. cálculo derivado; ligar o card de Reserva aos dados reais (saldo vs. recomendado, régua de cor, "quanto falta"). | média | aberto |

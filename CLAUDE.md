@@ -174,10 +174,12 @@ Features concluídas desde 2026-05-27:
 - **B-16/M-22** — Ciclo de fatura de cartão (Opção 2): pagamento vinculado ao período (`referenceMonth`, schema v4→v5), `CREDIT_PAYMENT` debita a conta pagadora, fatura líquida de créditos + selo de status (aberta/parcial/paga), estornos como `INCOME` na conta CREDIT; sync preserva sinal e infere `referenceMonth`
 
 Em andamento:
-- **F-29** — Saúde Financeira: tela `/health` com **design inicial mockado** (HE-01 a HE-03 resolvidos; dados fixos em `MOCK_*`, sem motores). Foco em dívida total comprometida + peso no orçamento + reserva de emergência. Motores reais (HE-04 a HE-08) em aberto, bloqueados por decisões de produto. Ver `plan/FINANCIAL_HEALTH.md`.
+- **F-29** — Saúde Financeira: tela `/health` com **design inicial mockado** (HE-01 a HE-03 resolvidos; dados fixos em `MOCK_*`, sem motores). **Decisões de produto tomadas (2026-06-21):** v1 = dívida + peso no orçamento; Reserva de Emergência adiada; renda híbrida (mediana 6m, piso 3m, fallback manual); empréstimos não-cartão viram entidade `LOAN` de primeira classe (cruza F-24). Ver `plan/FINANCIAL_HEALTH.md` §6.
 
 Itens em aberto:
-- **HE-04 a HE-08** — Motores da Saúde Financeira: dívida real, renda, reserva/custo mensal, detalhamento, testes (alta/média)
+- **HE-04 a HE-07** — Entidade de passivo `LOAN` (schema + Settings + store + Patrimônio): primeira fatia do v1, cruza F-24 (alta)
+- **HE-08 a HE-11** — Motores da Saúde Financeira: dívida real (CREDIT+LOAN), renda híbrida, ligação da página, testes (alta/média)
+- **HE-12 a HE-14** — Reserva de Emergência (épico posterior, fora do v1)
 - **MB-08** — Analytics responsivo para mobile (média prioridade)
 - **BK-04** — Banner de re-permissão da pasta de backup no startup (média prioridade)
 - **F-28 Nível 2** — Cloud Sync Google Drive/Dropbox (CS-01 a CS-12) — demand-driven
