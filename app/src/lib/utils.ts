@@ -309,6 +309,108 @@ export function getLoanLiability(account: Account): number {
   return account.loanMetadata?.outstandingBalance ?? 0
 }
 
+// ─── Financial Health — Debt Engine (HE-08) ──────────────────────────────────
+//
+// Distinct from getTotalCreditLiability (current-invoice scope only, used by
+// /net-worth): this engine answers "how much have I committed in total", the
+// F-29 insight that an installment purchase is real debt, not just this
+// month's parcela. Each installment occurrence is already a materialized
+// Transaction (one per month, see useDataStore's CC-24/CC-25 expansion) — open
+// ones are those dated today or later; past occurrences are treated as settled.
+
+interface OpenInstallmentGroup {
+  monthly: number // amount of the next-due occurrence (approximates the group's fixed parcela)
+  remainingTotal: number // sum of all still-open occurrences in the group
+  remainingCount: number // number of still-open occurrences (≈ remaining months)
+}
+
+/** Groups open installment-purchase transactions on a CREDIT account by parentId. */
+function _getOpenInstallmentGroups(
+  transactions: Transaction[],
+  accountId: string
+): OpenInstallmentGroup[] {
+  const today = parseDateLocal(todayStr())
+  const openByParent = new Map<string, Transaction[]>()
+  for (const tx of transactions) {
+    if (tx.accountId !== accountId || tx.type !== 'EXPENSE' || !tx.installment) continue
+    if (parseDateLocal(tx.date) < today) continue
+    const group = openByParent.get(tx.installment.parentId) ?? []
+    group.push(tx)
+    openByParent.set(tx.installment.parentId, group)
+  }
+
+  return [...openByParent.values()].map((group) => {
+    const sorted = [...group].sort(
+      (a, b) => parseDateLocal(a.date).getTime() - parseDateLocal(b.date).getTime()
+    )
+    return {
+      monthly: sorted[0].amount,
+      remainingTotal: sorted.reduce((s, tx) => s + tx.amount, 0),
+      remainingCount: sorted.length,
+    }
+  })
+}
+
+/**
+ * Total committed debt = open (today-or-future) installment purchases on CREDIT
+ * accounts + outstandingBalance of LOAN accounts. Always reconciles with the sum
+ * of its underlying items (installment groups + loans).
+ */
+export function getTotalCommittedDebt(transactions: Transaction[], accounts: Account[]): number {
+  const creditTotal = accounts
+    .filter((a) => a.type === 'CREDIT')
+    .reduce(
+      (s, acc) =>
+        s +
+        _getOpenInstallmentGroups(transactions, acc.id).reduce((gs, g) => gs + g.remainingTotal, 0),
+      0
+    )
+  const loanTotal = accounts
+    .filter((a) => a.type === 'LOAN')
+    .reduce((s, a) => s + getLoanLiability(a), 0)
+  return creditTotal + loanTotal
+}
+
+/**
+ * Monthly commitment = the next-due occurrence of each open CREDIT installment
+ * group + the monthlyPayment of each LOAN account.
+ */
+export function getMonthlyCommitment(transactions: Transaction[], accounts: Account[]): number {
+  const creditMonthly = accounts
+    .filter((a) => a.type === 'CREDIT')
+    .reduce(
+      (s, acc) =>
+        s + _getOpenInstallmentGroups(transactions, acc.id).reduce((gs, g) => gs + g.monthly, 0),
+      0
+    )
+  const loanMonthly = accounts
+    .filter((a) => a.type === 'LOAN')
+    .reduce((s, a) => s + (a.loanMetadata?.monthlyPayment ?? 0), 0)
+  return creditMonthly + loanMonthly
+}
+
+/**
+ * Debt horizon, in months — the longest-running open commitment across CREDIT
+ * installment groups and LOAN accounts (drives the "impacts your budget for N
+ * months" framing).
+ */
+export function getDebtHorizon(transactions: Transaction[], accounts: Account[]): number {
+  const creditHorizon = accounts
+    .filter((a) => a.type === 'CREDIT')
+    .reduce(
+      (m, acc) =>
+        Math.max(
+          m,
+          ..._getOpenInstallmentGroups(transactions, acc.id).map((g) => g.remainingCount)
+        ),
+      0
+    )
+  const loanHorizon = accounts
+    .filter((a) => a.type === 'LOAN')
+    .reduce((m, a) => Math.max(m, a.loanMetadata?.remainingInstallments ?? 0), 0)
+  return Math.max(creditHorizon, loanHorizon)
+}
+
 /**
  * Returns the date that should be used when plotting a transaction on the
  * cash-flow chart.

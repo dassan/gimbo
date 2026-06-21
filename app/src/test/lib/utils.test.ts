@@ -12,6 +12,9 @@ import {
   getTxInvoicePeriod,
   getTotalCreditLiability,
   getLoanLiability,
+  getTotalCommittedDebt,
+  getMonthlyCommitment,
+  getDebtHorizon,
   invoicePeriodKey,
   filterArchivedAccounts,
   isCardCredit,
@@ -327,6 +330,99 @@ describe('getLoanLiability (HE-07)', () => {
 
   it('returns 0 for a non-LOAN account', () => {
     expect(getLoanLiability(makeAccount({ type: 'RETAIL' }))).toBe(0)
+  })
+})
+
+// ─── Financial Health — Debt Engine (HE-08) ──────────────────────────────────
+
+/** Adds `n` months to a "YYYY-MM-DD" date string, returning a new "YYYY-MM-DD" string. */
+function addMonths(dateStr: string, n: number): string {
+  const d = parseDateLocal(dateStr)
+  d.setMonth(d.getMonth() + n)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Builds the N materialized installment transactions for a single purchase (mirrors the
+ * CC-24/CC-25 expansion in useDataStore: one tx per month, sharing a parentId). */
+function makeInstallmentGroup(
+  accountId: string,
+  parentId: string,
+  total: number,
+  monthly: number,
+  firstDate: string,
+  currentIndex = 1
+): Transaction[] {
+  return Array.from({ length: total - currentIndex + 1 }, (_, i) =>
+    makeTx({
+      id: `${parentId}-${currentIndex + i}`,
+      accountId,
+      amount: monthly,
+      date: addMonths(firstDate, i),
+      installment: { parentId, currentIndex: currentIndex + i, total },
+    })
+  )
+}
+
+describe('getTotalCommittedDebt / getMonthlyCommitment / getDebtHorizon (HE-08)', () => {
+  it('returns 0 for accounts with no debt', () => {
+    const accounts = [makeAccount({ type: 'RETAIL', creditMetadata: undefined })]
+    expect(getTotalCommittedDebt([], accounts)).toBe(0)
+    expect(getMonthlyCommitment([], accounts)).toBe(0)
+    expect(getDebtHorizon([], accounts)).toBe(0)
+  })
+
+  it('ignores non-installment EXPENSE transactions on a CREDIT account', () => {
+    const account = makeAccount({ id: 'acc-credit' })
+    const tx = makeTx({ accountId: 'acc-credit', amount: 500 })
+    expect(getTotalCommittedDebt([tx], [account])).toBe(0)
+    expect(getMonthlyCommitment([tx], [account])).toBe(0)
+  })
+
+  it('sums remaining occurrences of an open CREDIT installment group', () => {
+    const account = makeAccount({ id: 'acc-credit' })
+    const today = new Date().toISOString().slice(0, 10)
+    // 10x of 100, currently on installment 4 (today) — 7 remain (4..10).
+    const group = makeInstallmentGroup('acc-credit', 'p1', 10, 100, today, 4)
+    expect(getTotalCommittedDebt(group, [account])).toBe(700)
+    expect(getMonthlyCommitment(group, [account])).toBe(100)
+    expect(getDebtHorizon(group, [account])).toBe(7)
+  })
+
+  it('excludes past (already-settled) installment occurrences', () => {
+    const account = makeAccount({ id: 'acc-credit' })
+    const pastTx = makeTx({
+      id: 'p2-1',
+      accountId: 'acc-credit',
+      amount: 100,
+      date: '2015-01-01',
+      installment: { parentId: 'p2', currentIndex: 1, total: 3 },
+    })
+    expect(getTotalCommittedDebt([pastTx], [account])).toBe(0)
+  })
+
+  it('reconciles the total with the sum of individual open installment groups', () => {
+    const account = makeAccount({ id: 'acc-credit' })
+    const today = new Date().toISOString().slice(0, 10)
+    const groupA = makeInstallmentGroup('acc-credit', 'pA', 6, 200, today, 2) // 5 remain × 200 = 1000
+    const groupB = makeInstallmentGroup('acc-credit', 'pB', 4, 150, today, 1) // 4 remain × 150 = 600
+    const all = [...groupA, ...groupB]
+    expect(getTotalCommittedDebt(all, [account])).toBe(1000 + 600)
+  })
+
+  it('mixes CREDIT installments and a LOAN balance', () => {
+    const cardAccount = makeAccount({ id: 'acc-credit' })
+    const loanAccount = makeAccount({
+      id: 'acc-loan',
+      type: 'LOAN',
+      creditMetadata: undefined,
+      loanMetadata: { outstandingBalance: 15000, monthlyPayment: 800, remainingInstallments: 18 },
+    })
+    const today = new Date().toISOString().slice(0, 10)
+    const cardGroup = makeInstallmentGroup('acc-credit', 'p3', 5, 300, today, 1) // 5 remain × 300 = 1500
+
+    expect(getTotalCommittedDebt(cardGroup, [cardAccount, loanAccount])).toBe(1500 + 15000)
+    expect(getMonthlyCommitment(cardGroup, [cardAccount, loanAccount])).toBe(300 + 800)
+    expect(getDebtHorizon(cardGroup, [cardAccount, loanAccount])).toBe(18)
   })
 })
 
