@@ -4,7 +4,7 @@ import { uuid, now } from '@/lib/utils'
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 9
+export const CURRENT_SCHEMA_VERSION = 10
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -43,13 +43,32 @@ const CreditMetadataSchema = z.object({
   dueDay: z.number().int().min(1).max(31),
 })
 
+// HE-04: non-card loans/financing as a first-class liability (Account.loanMetadata).
+const LoanMetadataSchema = z.object({
+  outstandingBalance: z.number(),
+  monthlyPayment: z.number(),
+  remainingInstallments: z.number().int().min(0),
+  interestRate: z.number().optional(),
+})
+
 const AccountSchema = z.object({
   id: z.string(),
   name: z.string(),
-  type: z.enum(['RETAIL', 'SAVINGS', 'CREDIT', 'CRYPTO', 'FOREX', 'ASSET', 'STOCKS', 'OTHER']),
+  type: z.enum([
+    'RETAIL',
+    'SAVINGS',
+    'CREDIT',
+    'CRYPTO',
+    'FOREX',
+    'ASSET',
+    'STOCKS',
+    'LOAN',
+    'OTHER',
+  ]),
   balance: z.number(),
   includeInBalance: z.boolean(),
   creditMetadata: CreditMetadataSchema.optional(),
+  loanMetadata: LoanMetadataSchema.optional(), // only for LOAN accounts (HE-04)
   issuerIcon: z.string().optional(), // institution key for any account type — e.g. 'nubank', 'itau', 'generic' (M-34)
   archived: z.boolean().optional(), // M-42: hidden from selectors/lists but still counted in balances/totals
 })
@@ -215,6 +234,13 @@ function migrateDataFile(data: DataFile): DataFile {
   // so we only need to bump the version here.
   if (migrated.schemaVersion === 8) {
     migrated = { ...migrated, schemaVersion: 9, savedPeriods: migrated.savedPeriods ?? [] }
+  }
+
+  // v9 → v10: adds the LOAN account type and optional loanMetadata (Account), for non-card
+  // loans/financing as a first-class liability (HE-04). Optional field, no shape change for
+  // existing records; existing accounts only need the version bump.
+  if (migrated.schemaVersion === 9) {
+    migrated = { ...migrated, schemaVersion: 10 }
   }
 
   return migrated

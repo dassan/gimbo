@@ -26,7 +26,7 @@ function makeEntry(daysAgo: number): AuditEntry {
 }
 
 const MINIMAL_VALID: DataFile = {
-  schemaVersion: 9,
+  schemaVersion: 10,
   user: { name: 'x', email: '', createdAt: '', updatedAt: '' },
   settings: { fileCreatedAt: '', fileUpdatedAt: '', auditLogRetentionLimit: 200 },
   accounts: [],
@@ -324,9 +324,9 @@ describe('validateDataFile — v1 → v2 migration', () => {
     savedPeriods: [],
   }
 
-  it('migrates a v1 file to schemaVersion 9 (current)', () => {
+  it('migrates a v1 file to schemaVersion 10 (current)', () => {
     const result = validateDataFile(V1_FILE)
-    expect(result.schemaVersion).toBe(9)
+    expect(result.schemaVersion).toBe(10)
   })
 
   it('preserves all existing accounts during v1 → v2 migration', () => {
@@ -343,48 +343,53 @@ describe('validateDataFile — v1 → v2 migration', () => {
     expect(result.transactions[0].installment).toBeUndefined()
   })
 
-  it('accepts a v2 file and migrates it to schemaVersion 9', () => {
+  it('accepts a v2 file and migrates it to schemaVersion 10', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 2 })
-    expect(result.schemaVersion).toBe(9)
+    expect(result.schemaVersion).toBe(10)
   })
 
-  it('migrates a v3 file to schemaVersion 9', () => {
+  it('migrates a v3 file to schemaVersion 10', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 3, valuations: [] })
-    expect(result.schemaVersion).toBe(9)
+    expect(result.schemaVersion).toBe(10)
   })
 
-  it('migrates a v4 file to schemaVersion 9', () => {
+  it('migrates a v4 file to schemaVersion 10', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 4, valuations: [] })
-    expect(result.schemaVersion).toBe(9)
+    expect(result.schemaVersion).toBe(10)
   })
 
-  it('migrates a v5 file to schemaVersion 9 (B-18, no-op shape change)', () => {
+  it('migrates a v5 file to schemaVersion 10 (B-18, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 5, valuations: [] })
-    expect(result.schemaVersion).toBe(9)
+    expect(result.schemaVersion).toBe(10)
   })
 
-  it('migrates a v6 file to schemaVersion 9 (CC-33, no-op shape change)', () => {
+  it('migrates a v6 file to schemaVersion 10 (CC-33, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 6, valuations: [] })
-    expect(result.schemaVersion).toBe(9)
+    expect(result.schemaVersion).toBe(10)
   })
 
-  it('migrates a v7 file to schemaVersion 9 (M-42, no-op shape change)', () => {
+  it('migrates a v7 file to schemaVersion 10 (M-42, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 7, valuations: [] })
-    expect(result.schemaVersion).toBe(9)
+    expect(result.schemaVersion).toBe(10)
   })
 
-  it('migrates a v8 file to schemaVersion 9 (M-45, no-op shape change)', () => {
+  it('migrates a v8 file to schemaVersion 10 (M-45, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 8, valuations: [] })
-    expect(result.schemaVersion).toBe(9)
+    expect(result.schemaVersion).toBe(10)
   })
 
-  it('accepts a v9 file without running migration (idempotent)', () => {
+  it('migrates a v9 file to schemaVersion 10 (HE-04, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 9, valuations: [] })
-    expect(result.schemaVersion).toBe(9)
+    expect(result.schemaVersion).toBe(10)
   })
 
-  it('throws SchemaVersionError for a v10 file (future version)', () => {
-    expect(() => validateDataFile({ ...V1_FILE, schemaVersion: 10, valuations: [] })).toThrow(
+  it('accepts a v10 file without running migration (idempotent)', () => {
+    const result = validateDataFile({ ...V1_FILE, schemaVersion: 10, valuations: [] })
+    expect(result.schemaVersion).toBe(10)
+  })
+
+  it('throws SchemaVersionError for a v11 file (future version)', () => {
+    expect(() => validateDataFile({ ...V1_FILE, schemaVersion: 11, valuations: [] })).toThrow(
       SchemaVersionError
     )
   })
@@ -631,9 +636,9 @@ describe('validateDataFile — v2 → v3 migration (NW-08)', () => {
     savedPeriods: [],
   }
 
-  it('migrates a v2 file to schemaVersion 9 (current)', () => {
+  it('migrates a v2 file to schemaVersion 10 (current)', () => {
     const result = validateDataFile(V2_FILE)
-    expect(result.schemaVersion).toBe(9)
+    expect(result.schemaVersion).toBe(10)
   })
 
   it('adds valuations: [] when field is absent in a v2 file', () => {
@@ -655,9 +660,9 @@ describe('validateDataFile — v2 → v3 migration (NW-08)', () => {
     expect(file.valuations).toEqual([])
   })
 
-  it('createEmptyDataFile sets schemaVersion to 9', () => {
+  it('createEmptyDataFile sets schemaVersion to 10', () => {
     const file = createEmptyDataFile('Test', 'test@example.com')
-    expect(file.schemaVersion).toBe(9)
+    expect(file.schemaVersion).toBe(10)
   })
 
   it('createEmptyDataFile includes savedPeriods: []', () => {
@@ -826,6 +831,93 @@ describe('validateDataFile — archived field on Account (M-42)', () => {
     }
     const result = validateDataFile(data)
     expect(result.accounts[0].archived).toBeUndefined()
+  })
+})
+
+// ─── Schema v10 — LOAN account type (HE-04) ──────────────────────────────────
+
+describe('validateDataFile — LOAN account type and loanMetadata (HE-04)', () => {
+  it('accepts an Account of type LOAN with full loanMetadata', () => {
+    const data = {
+      ...MINIMAL_VALID,
+      accounts: [
+        {
+          id: 'a1',
+          name: 'Empréstimo Pessoal',
+          type: 'LOAN',
+          balance: 0,
+          includeInBalance: false,
+          loanMetadata: {
+            outstandingBalance: 8000,
+            monthlyPayment: 500,
+            remainingInstallments: 16,
+            interestRate: 1.9,
+          },
+        },
+      ],
+    }
+    const result = validateDataFile(data)
+    expect(result.accounts[0].type).toBe('LOAN')
+    expect(result.accounts[0].loanMetadata).toEqual({
+      outstandingBalance: 8000,
+      monthlyPayment: 500,
+      remainingInstallments: 16,
+      interestRate: 1.9,
+    })
+  })
+
+  it('accepts loanMetadata without the optional interestRate', () => {
+    const data = {
+      ...MINIMAL_VALID,
+      accounts: [
+        {
+          id: 'a1',
+          name: 'Financiamento',
+          type: 'LOAN',
+          balance: 0,
+          includeInBalance: false,
+          loanMetadata: {
+            outstandingBalance: 20000,
+            monthlyPayment: 800,
+            remainingInstallments: 30,
+          },
+        },
+      ],
+    }
+    const result = validateDataFile(data)
+    expect(result.accounts[0].loanMetadata?.interestRate).toBeUndefined()
+  })
+
+  it('accepts an Account without loanMetadata (field is optional)', () => {
+    const data = {
+      ...MINIMAL_VALID,
+      accounts: [
+        { id: 'a1', name: 'Corrente', type: 'RETAIL', balance: 0, includeInBalance: true },
+      ],
+    }
+    const result = validateDataFile(data)
+    expect(result.accounts[0].loanMetadata).toBeUndefined()
+  })
+
+  it('rejects loanMetadata with negative remainingInstallments', () => {
+    const data = {
+      ...MINIMAL_VALID,
+      accounts: [
+        {
+          id: 'a1',
+          name: 'Empréstimo',
+          type: 'LOAN',
+          balance: 0,
+          includeInBalance: false,
+          loanMetadata: {
+            outstandingBalance: 1000,
+            monthlyPayment: 100,
+            remainingInstallments: -1,
+          },
+        },
+      ],
+    }
+    expect(() => validateDataFile(data)).toThrow()
   })
 })
 

@@ -14,6 +14,7 @@ import v4Schema from './migrations/v4.sql?raw'
 import v5Schema from './migrations/v5.sql?raw'
 import v6Schema from './migrations/v6.sql?raw'
 import v7Schema from './migrations/v7.sql?raw'
+import v8Schema from './migrations/v8.sql?raw'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
 
@@ -44,6 +45,12 @@ type RawAccount = {
   balance: number
   includeInBalance: boolean
   creditMetadata?: { limit: number; closingDay: number; dueDay: number }
+  loanMetadata?: {
+    outstandingBalance: number
+    monthlyPayment: number
+    remainingInstallments: number
+    interestRate?: number
+  }
   issuerIcon?: string
   archived?: boolean
 }
@@ -163,6 +170,9 @@ async function runMigrations(): Promise<void> {
   if (version < 7) {
     await sqlite3.run(db, v7Schema)
   }
+  if (version < 8) {
+    await sqlite3.run(db, v8Schema)
+  }
 }
 
 // ─── Export / Import ──────────────────────────────────────────────────────────
@@ -246,9 +256,10 @@ async function replaceAll(raw: unknown): Promise<void> {
         db,
         `INSERT INTO accounts
            (id, name, type, balance, include_in_balance,
-            credit_limit, credit_closing_day, credit_due_day, issuer_icon, archived,
-            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            credit_limit, credit_closing_day, credit_due_day,
+            loan_outstanding_balance, loan_monthly_payment, loan_remaining_installments, loan_interest_rate,
+            issuer_icon, archived, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           acc.id,
           acc.name,
@@ -258,6 +269,10 @@ async function replaceAll(raw: unknown): Promise<void> {
           acc.creditMetadata?.limit ?? null,
           acc.creditMetadata?.closingDay ?? null,
           acc.creditMetadata?.dueDay ?? null,
+          acc.loanMetadata?.outstandingBalance ?? null,
+          acc.loanMetadata?.monthlyPayment ?? null,
+          acc.loanMetadata?.remainingInstallments ?? null,
+          acc.loanMetadata?.interestRate ?? null,
           acc.issuerIcon ?? null,
           acc.archived ? 1 : 0,
           ts,

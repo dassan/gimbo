@@ -11,6 +11,7 @@ import type {
   CreditMetadata,
   DataFile,
   Installment,
+  LoanMetadata,
   Recurrence,
   SavedPeriod,
   Settings,
@@ -175,9 +176,10 @@ export class StorageService {
     await this.run(
       `INSERT INTO accounts
          (id, name, type, balance, include_in_balance,
-          credit_limit, credit_closing_day, credit_due_day, issuer_icon, archived,
-          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          credit_limit, credit_closing_day, credit_due_day,
+          loan_outstanding_balance, loan_monthly_payment, loan_remaining_installments, loan_interest_rate,
+          issuer_icon, archived, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         data.name,
@@ -187,6 +189,10 @@ export class StorageService {
         data.creditMetadata?.limit ?? null,
         data.creditMetadata?.closingDay ?? null,
         data.creditMetadata?.dueDay ?? null,
+        data.loanMetadata?.outstandingBalance ?? null,
+        data.loanMetadata?.monthlyPayment ?? null,
+        data.loanMetadata?.remainingInstallments ?? null,
+        data.loanMetadata?.interestRate ?? null,
         data.issuerIcon ?? null,
         data.archived ? 1 : 0,
         now,
@@ -205,6 +211,7 @@ export class StorageService {
       `UPDATE accounts SET
          name = ?, type = ?, balance = ?, include_in_balance = ?,
          credit_limit = ?, credit_closing_day = ?, credit_due_day = ?,
+         loan_outstanding_balance = ?, loan_monthly_payment = ?, loan_remaining_installments = ?, loan_interest_rate = ?,
          issuer_icon = ?, archived = ?, updated_at = ?
        WHERE id = ?`,
       [
@@ -215,6 +222,10 @@ export class StorageService {
         merged.creditMetadata?.limit ?? null,
         merged.creditMetadata?.closingDay ?? null,
         merged.creditMetadata?.dueDay ?? null,
+        merged.loanMetadata?.outstandingBalance ?? null,
+        merged.loanMetadata?.monthlyPayment ?? null,
+        merged.loanMetadata?.remainingInstallments ?? null,
+        merged.loanMetadata?.interestRate ?? null,
         merged.issuerIcon ?? null,
         merged.archived ? 1 : 0,
         new Date().toISOString(),
@@ -633,6 +644,16 @@ function rowToAccount(row: Row): Account {
       closingDay: row.credit_closing_day as number,
       dueDay: row.credit_due_day as number,
     } satisfies CreditMetadata
+  }
+  if (row.loan_outstanding_balance !== null && row.loan_outstanding_balance !== undefined) {
+    account.loanMetadata = {
+      outstandingBalance: row.loan_outstanding_balance as number,
+      monthlyPayment: row.loan_monthly_payment as number,
+      remainingInstallments: row.loan_remaining_installments as number,
+      ...(row.loan_interest_rate !== null && row.loan_interest_rate !== undefined
+        ? { interestRate: row.loan_interest_rate as number }
+        : {}),
+    } satisfies LoanMetadata
   }
   if (row.issuer_icon !== null && row.issuer_icon !== undefined) {
     account.issuerIcon = row.issuer_icon as string

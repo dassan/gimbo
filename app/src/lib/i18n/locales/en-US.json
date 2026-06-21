@@ -308,6 +308,7 @@
     "forex": "Forex",
     "asset": "Asset",
     "stocks": "Stocks",
+    "loan": "Loan",
     "other": "Other",
     "balance": "Balance",
     "initialBalance": "Initial Balance",
