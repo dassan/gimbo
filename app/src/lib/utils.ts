@@ -302,6 +302,14 @@ export function getTotalCreditLiability(transactions: Transaction[], account: Ac
 }
 
 /**
+ * Total liability of a LOAN account for net-worth purposes = outstandingBalance,
+ * the user-maintained figure (no transaction replay — HE-06).
+ */
+export function getLoanLiability(account: Account): number {
+  return account.loanMetadata?.outstandingBalance ?? 0
+}
+
+/**
  * Returns the date that should be used when plotting a transaction on the
  * cash-flow chart.
  *

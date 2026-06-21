@@ -3,7 +3,12 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import NetWorth from '@/pages/NetWorth'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
-import { makeDataFile, makeCreditAccount, makeValuation } from '@/test/fixtures/dataFile'
+import {
+  makeDataFile,
+  makeCreditAccount,
+  makeLoanAccount,
+  makeValuation,
+} from '@/test/fixtures/dataFile'
 import { createDefaultWorkspace } from '@/lib/storage/schema'
 import type { Account, Transaction } from '@/types'
 import { uuid, formatCurrency, todayStr } from '@/lib/utils'
@@ -210,6 +215,50 @@ describe('NetWorth page', () => {
     })
     render(<NetWorth />)
     expect(screen.getByText('netWorth.totalCommitted')).toBeInTheDocument()
+  })
+
+  // ─── HE-07: LOAN as a liability ─────────────────────────────────────────────
+
+  it('shows LOAN account in liabilities section with outstandingBalance and monthlyPayment', () => {
+    const acc = makeLoanAccount({ id: 'acc-loan', name: 'Empréstimo Carro' })
+    useDataStore.setState({ data: makeDataFile({ accounts: [acc] }) })
+    render(<NetWorth />)
+    expect(screen.getByText('Empréstimo Carro')).toBeInTheDocument()
+    expect(screen.getByText('accounts.outstandingBalance')).toBeInTheDocument()
+    expect(screen.getByText('accounts.monthlyPayment')).toBeInTheDocument()
+    expect(document.body.textContent).toContain(formatCurrency(15000))
+  })
+
+  it('does not count LOAN outstandingBalance as an asset', () => {
+    const acc = makeLoanAccount({ id: 'acc-loan' })
+    useDataStore.setState({ data: makeDataFile({ accounts: [acc] }) })
+    render(<NetWorth />)
+    // Assets section stays empty; the loan only shows up under Liabilities.
+    expect(screen.getAllByText('netWorth.noAccounts')).toHaveLength(1)
+  })
+
+  it('sums CREDIT and LOAN balances into totalLiabilities (negative netWorth)', () => {
+    const card = makeCreditAccount({ id: 'acc-credit' })
+    const loan = makeLoanAccount({ id: 'acc-loan' })
+    const charge = makeTx({ accountId: 'acc-credit', amount: 500, date: todayStr() })
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [card, loan], transactions: [charge] }),
+    })
+    render(<NetWorth />)
+    // Liabilities total: 500 (credit) + 15000 (loan) = 15500; net worth: 0 - 15500.
+    expect(document.body.textContent).toContain(formatCurrency(15500))
+  })
+
+  it('hides an archived LOAN account as a row but keeps it in the Liabilities total', () => {
+    const archivedLoan = makeLoanAccount({
+      id: 'acc-old-loan',
+      name: 'Empréstimo Antigo',
+      archived: true,
+    })
+    useDataStore.setState({ data: makeDataFile({ accounts: [archivedLoan] }) })
+    render(<NetWorth />)
+    expect(screen.queryByText('Empréstimo Antigo')).not.toBeInTheDocument()
+    expect(document.body.textContent).toContain(formatCurrency(15000))
   })
 
   // ─── M-42: archived accounts ────────────────────────────────────────────────

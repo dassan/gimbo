@@ -11,6 +11,7 @@ import {
   getInvoiceTotal,
   getTxInvoicePeriod,
   getTotalCreditLiability,
+  getLoanLiability,
   invoicePeriodKey,
   filterArchivedAccounts,
   isCardCredit,
@@ -307,6 +308,25 @@ describe('getTotalCreditLiability', () => {
     const currentTx = makeTx({ amount: 200, date: today })
     const futureTx = makeTx({ id: 'tx-2', amount: 300, date: '2099-12-01' })
     expect(getTotalCreditLiability([currentTx, futureTx], account)).toBe(200)
+  })
+})
+
+describe('getLoanLiability (HE-07)', () => {
+  it('returns the outstandingBalance for a LOAN account', () => {
+    const account = makeAccount({
+      type: 'LOAN',
+      loanMetadata: { outstandingBalance: 15000, monthlyPayment: 800, remainingInstallments: 18 },
+    })
+    expect(getLoanLiability(account)).toBe(15000)
+  })
+
+  it('returns 0 when the account has no loanMetadata', () => {
+    const account = makeAccount({ type: 'LOAN', loanMetadata: undefined })
+    expect(getLoanLiability(account)).toBe(0)
+  })
+
+  it('returns 0 for a non-LOAN account', () => {
+    expect(getLoanLiability(makeAccount({ type: 'RETAIL' }))).toBe(0)
   })
 })
 
