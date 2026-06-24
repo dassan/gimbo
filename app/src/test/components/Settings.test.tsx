@@ -3,6 +3,8 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Settings from '@/pages/Settings'
 import { useDataStore } from '@/store/useDataStore'
+import { useWorkspaceStore } from '@/store/useWorkspaceStore'
+import { createDefaultWorkspace } from '@/lib/storage/schema'
 import { makeDataFile } from '@/test/fixtures/dataFile'
 import { storage } from '@/services/storage'
 import { loadBackupDirHandle, writeBackupToDir } from '@/lib/backupDir'
@@ -45,6 +47,7 @@ globalThis.URL.revokeObjectURL = vi.fn()
 
 beforeEach(() => {
   useDataStore.setState({ data: makeDataFile() })
+  useWorkspaceStore.setState({ workspace: createDefaultWorkspace() })
   vi.clearAllMocks()
   vi.mocked(storage).replaceAll.mockResolvedValue(undefined)
   vi.mocked(storage).exportBlob.mockResolvedValue(new Blob())
@@ -546,5 +549,39 @@ describe('Settings — HE-05: create/edit LOAN account', () => {
     render(<Settings />)
 
     expect(screen.getByText(/15\.000,00/)).toBeInTheDocument()
+  })
+})
+
+// ─── Settings — HE-09 follow-up: configurable income lookback window ────────
+
+describe('Settings — income lookback window preference', () => {
+  async function openPreferences() {
+    const user = userEvent.setup()
+    render(<Settings />)
+    await user.click((await screen.findAllByText('settings.preferences'))[0])
+    return user
+  }
+
+  it('defaults to 6 months', async () => {
+    await openPreferences()
+    expect(screen.getByDisplayValue('health.months')).toHaveValue('6')
+  })
+
+  it('persists the chosen window to the workspace store', async () => {
+    const user = await openPreferences()
+    const select = screen.getByDisplayValue('health.months')
+
+    await user.selectOptions(select, '3')
+
+    expect(useWorkspaceStore.getState().workspace.incomeWindowMonths).toBe(3)
+  })
+
+  it.each([3, 9, 12] as const)('accepts %i months as a valid selection', async (months) => {
+    const user = await openPreferences()
+    const select = screen.getByDisplayValue('health.months')
+
+    await user.selectOptions(select, String(months))
+
+    expect(useWorkspaceStore.getState().workspace.incomeWindowMonths).toBe(months)
   })
 })

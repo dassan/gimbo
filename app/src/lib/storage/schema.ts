@@ -276,6 +276,7 @@ export function createDefaultWorkspace(): WorkspaceFile {
     defaultView: 'dashboard',
     useAmbientShadows: false,
     netWorthIncludeHidden: true,
+    incomeWindowMonths: 6,
   }
 }
 

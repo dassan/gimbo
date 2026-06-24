@@ -67,6 +67,7 @@ import type {
   Locale,
   Theme,
   AuditAction,
+  IncomeWindowMonths,
 } from '@/types'
 
 type Section = 'accounts' | 'categories' | 'tags' | 'profile' | 'preferences' | 'backup' | 'history'
@@ -219,7 +220,7 @@ export default function Settings() {
     setRetentionLimit,
   } = useDataStore()
   const loadData = useDataStore((s) => s.loadData)
-  const { workspace, setTheme, setLocale } = useWorkspaceStore()
+  const { workspace, setTheme, setLocale, setIncomeWindowMonths } = useWorkspaceStore()
 
   const navigate = useNavigate()
 
@@ -872,6 +873,21 @@ export default function Settings() {
                       <option value="system">{t('settings.themeSystem')}</option>
                       <option value="light">{t('settings.themeLight')}</option>
                       <option value="dark">{t('settings.themeDark')}</option>
+                    </select>
+                  </SettingRow>
+
+                  <SettingRow label={t('settings.incomeWindowMonths')}>
+                    <select
+                      value={workspace.incomeWindowMonths}
+                      onChange={(e) =>
+                        setIncomeWindowMonths(Number(e.target.value) as IncomeWindowMonths)
+                      }
+                      className="appearance-none rounded-xl bg-surface-container-high px-4 py-2.5 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                    >
+                      <option value={3}>{t('health.months', { count: 3 })}</option>
+                      <option value={6}>{t('health.months', { count: 6 })}</option>
+                      <option value={9}>{t('health.months', { count: 9 })}</option>
+                      <option value={12}>{t('health.months', { count: 12 })}</option>
                     </select>
                   </SettingRow>
 

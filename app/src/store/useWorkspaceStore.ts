@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { WorkspaceFile, Theme, Locale } from '@/types'
+import type { WorkspaceFile, Theme, Locale, IncomeWindowMonths } from '@/types'
 import { loadWorkspace, saveWorkspace } from '@/lib/storage/workspace'
 import { createDefaultWorkspace } from '@/lib/storage/schema'
 
@@ -13,6 +13,7 @@ interface WorkspaceStore {
   setAmbientShadows: (v: boolean) => void
   setNetWorthIncludeHidden: (v: boolean) => void
   setMonthlyIncomeOverride: (v: number | undefined) => void
+  setIncomeWindowMonths: (v: IncomeWindowMonths) => void
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
@@ -55,6 +56,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setMonthlyIncomeOverride: (monthlyIncomeOverride) => {
     const workspace = { ...get().workspace, monthlyIncomeOverride }
+    set({ workspace })
+    saveWorkspace(workspace)
+  },
+
+  setIncomeWindowMonths: (incomeWindowMonths) => {
+    const workspace = { ...get().workspace, incomeWindowMonths }
     set({ workspace })
     saveWorkspace(workspace)
   },

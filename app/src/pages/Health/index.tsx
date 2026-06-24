@@ -1,81 +1,25 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { CreditCard, Landmark, ChevronDown, Info, Pencil, Check, X, Umbrella } from 'lucide-react'
+import { useDataStore } from '@/store/useDataStore'
+import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import {
-  CreditCard,
-  Landmark,
-  ChevronDown,
-  Info,
-  Pencil,
-  TrendingDown,
-  Umbrella,
-} from 'lucide-react'
-import { formatCurrency, cn } from '@/lib/utils'
+  formatCurrency,
+  cn,
+  getTotalCommittedDebt,
+  getMonthlyCommitment,
+  getMonthlyExpenses,
+  getDebtHorizon,
+  getDebtBreakdown,
+  deriveMonthlyIncome,
+} from '@/lib/utils'
+import type { DebtGroup } from '@/lib/utils'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MOCK PAGE — Saúde Financeira
-//
-// Esta é uma versão *mockada* da tela, sem motores reais por trás. Os dados abaixo
-// são fixos e existem apenas para revisão dos elementos de tela. Quando o layout for
-// aprovado, os números virão de funções puras sobre `data.transactions`/`accounts`
-// (motor de fatura virtual + parcelas), e a renda mensal de um campo do usuário ou
-// da média de INCOME. Nada aqui persiste ou lê do store ainda.
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface MockInstallment {
-  id: string
-  description: string
-  current: number // parcela atual (1-based)
-  total: number // total de parcelas
-  monthly: number // valor da parcela
-}
-
-interface MockDebt {
-  id: string
-  name: string
-  kind: 'card' | 'loan'
-  issuer?: string // chave de cor da emissora
-  installments: MockInstallment[]
-}
-
-const MOCK_INCOME = 11500
-
-const MOCK_EMERGENCY_RESERVE = 22700 // reserva de emergência atual do usuário
-
-const MOCK_MONTHLY_COST = 6000 // média de custo mensal (base do ideal de reserva)
-
-const RESERVE_TARGET_MONTHS = 6 // ideal: 6× o custo mensal médio
-
-const MOCK_DEBTS: MockDebt[] = [
-  {
-    id: 'd1',
-    name: 'Nubank Platinum',
-    kind: 'card',
-    issuer: 'nubank',
-    installments: [
-      { id: 'i1', description: 'Notebook Dell', current: 4, total: 10, monthly: 420 },
-      { id: 'i2', description: 'Geladeira Brastemp', current: 2, total: 12, monthly: 280 },
-      { id: 'i3', description: 'Passagens GOL', current: 1, total: 6, monthly: 480 },
-    ],
-  },
-  {
-    id: 'd2',
-    name: 'Itaú Click',
-    kind: 'card',
-    issuer: 'itau',
-    installments: [
-      { id: 'i4', description: 'iPhone 15', current: 6, total: 12, monthly: 530 },
-      { id: 'i5', description: 'Curso de inglês', current: 3, total: 10, monthly: 190 },
-    ],
-  },
-  {
-    id: 'd3',
-    name: 'Empréstimo Pessoal',
-    kind: 'loan',
-    installments: [
-      { id: 'i6', description: 'Empréstimo Pessoal', current: 18, total: 36, monthly: 850 },
-    ],
-  },
-]
+// HE-12 a HE-14 (épico próprio): Reserva de Emergência segue mockada — não há motor
+// de custo mensal médio nem de saldo de reserva ainda. Sinalizado na UI com "Em breve".
+const MOCK_EMERGENCY_RESERVE = 22700
+const MOCK_MONTHLY_COST = 6000
+const RESERVE_TARGET_MONTHS = 6
 
 const ISSUER_COLORS: Record<string, string> = {
   nubank: '#820AD1',
@@ -85,63 +29,97 @@ const ISSUER_COLORS: Record<string, string> = {
   santander: '#EC0000',
 }
 
-// ── Derivações puras (sempre reconciliam o total com os itens) ────────────────
-
-function remainingCount(inst: MockInstallment): number {
-  return inst.total - inst.current + 1
-}
-
-function installmentRemaining(inst: MockInstallment): number {
-  return remainingCount(inst) * inst.monthly
-}
-
-function debtTotal(debt: MockDebt): number {
-  return debt.installments.reduce((s, i) => s + installmentRemaining(i), 0)
-}
-
-function debtMonthly(debt: MockDebt): number {
-  return debt.installments.reduce((s, i) => s + i.monthly, 0)
-}
-
-function debtLongestHorizon(debt: MockDebt): number {
-  return debt.installments.reduce((m, i) => Math.max(m, remainingCount(i)), 0)
-}
-
 // ── Página ────────────────────────────────────────────────────────────────────
 
 export default function Health() {
   const { t, i18n } = useTranslation()
+  const data = useDataStore((s) => s.data)
+  const incomeOverride = useWorkspaceStore((s) => s.workspace.monthlyIncomeOverride)
+  const setIncomeOverride = useWorkspaceStore((s) => s.setMonthlyIncomeOverride)
+  const incomeWindowMonths = useWorkspaceStore((s) => s.workspace.incomeWindowMonths)
 
-  const { totalDebt, monthlyCommitted, commitmentPct, longestHorizon } = useMemo(() => {
-    const totalDebt = MOCK_DEBTS.reduce((s, d) => s + debtTotal(d), 0)
-    const monthlyCommitted = MOCK_DEBTS.reduce((s, d) => s + debtMonthly(d), 0)
-    const longestHorizon = MOCK_DEBTS.reduce((m, d) => Math.max(m, debtLongestHorizon(d)), 0)
-    return {
-      totalDebt,
-      monthlyCommitted,
-      commitmentPct: MOCK_INCOME > 0 ? (monthlyCommitted / MOCK_INCOME) * 100 : 0,
-      longestHorizon,
+  const [editingIncome, setEditingIncome] = useState(false)
+  const [incomeInput, setIncomeInput] = useState('')
+  const [sortBy, setSortBy] = useState<'time' | 'value'>('time')
+
+  const {
+    totalDebt,
+    monthlyCommitted,
+    monthlyExpenses,
+    longestHorizon,
+    debtGroups,
+    incomeEstimate,
+  } = useMemo(() => {
+    if (!data) {
+      return {
+        totalDebt: 0,
+        monthlyCommitted: 0,
+        monthlyExpenses: 0,
+        longestHorizon: 0,
+        debtGroups: [] as DebtGroup[],
+        incomeEstimate: deriveMonthlyIncome([], [], incomeWindowMonths),
+      }
     }
-  }, [])
+    return {
+      totalDebt: getTotalCommittedDebt(data.transactions, data.accounts),
+      monthlyCommitted: getMonthlyCommitment(data.transactions, data.accounts),
+      monthlyExpenses: getMonthlyExpenses(data.transactions, data.accounts),
+      longestHorizon: getDebtHorizon(data.transactions, data.accounts),
+      debtGroups: getDebtBreakdown(data.transactions, data.accounts),
+      incomeEstimate: deriveMonthlyIncome(data.transactions, data.accounts, incomeWindowMonths),
+    }
+  }, [data, incomeWindowMonths])
 
-  // Cor do medidor de comprometimento de renda: calmo até 30%, alerta até 50%, crítico acima.
+  // D1: the user's confirmed value always wins; the derived estimate is only a suggestion.
+  const monthlyIncome = incomeOverride ?? incomeEstimate.value ?? 0
+  const hasIncome = incomeOverride !== undefined || incomeEstimate.value !== null
+
+  const commitmentPct = monthlyIncome > 0 ? (monthlyCommitted / monthlyIncome) * 100 : 0
   const gaugeColor = commitmentPct > 50 ? '#C0392B' : commitmentPct >= 30 ? '#D4A017' : '#2D6A4F'
 
   // Reserva de emergência: atual vs. recomendado (6× custo mensal). Cheia 100%+ verde,
-  // 50–100% atenção, abaixo de 50% frágil.
+  // 50–100% atenção, abaixo de 50% frágil. (Mockado — HE-12 a HE-14.)
   const recommendedReserve = RESERVE_TARGET_MONTHS * MOCK_MONTHLY_COST
   const reserveRatio = recommendedReserve > 0 ? MOCK_EMERGENCY_RESERVE / recommendedReserve : 0
   const reserveShortfall = Math.max(recommendedReserve - MOCK_EMERGENCY_RESERVE, 0)
   const reserveColor = reserveRatio >= 1 ? '#2D6A4F' : reserveRatio >= 0.5 ? '#D4A017' : '#C0392B'
 
   // Alavancagem pessoal: dívida total como múltiplo da renda mensal. Até 3× confortável,
-  // 3–6× atenção, acima de 6× pesada. Tons claros p/ contraste sobre o card escuro.
-  const leverage = MOCK_INCOME > 0 ? totalDebt / MOCK_INCOME : 0
-  const leverageColor = leverage <= 3 ? '#3D9E82' : leverage <= 6 ? '#D4A017' : '#F1948A'
+  // 3–6× atenção, acima de 6× pesada.
+  const leverage = monthlyIncome > 0 ? totalDebt / monthlyIncome : 0
+  const leverageColor = leverage <= 3 ? '#2D6A4F' : leverage <= 6 ? '#D4A017' : '#C0392B'
   const leverageText = `${new Intl.NumberFormat(i18n.language, {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   }).format(leverage)}×`
+
+  // Quanto das despesas deste mês é composto por parcelas (cartão/empréstimo) — dá ao
+  // usuário a percepção de quanto do seu gasto mensal já está "pré-comprometido".
+  const installmentSharePct = monthlyExpenses > 0 ? (monthlyCommitted / monthlyExpenses) * 100 : 0
+
+  function startEditIncome() {
+    setIncomeInput(monthlyIncome > 0 ? monthlyIncome.toFixed(2).replace('.', ',') : '')
+    setEditingIncome(true)
+  }
+
+  function confirmEditIncome() {
+    const parsed = parseFloat(incomeInput.replace(',', '.'))
+    if (!Number.isNaN(parsed) && parsed >= 0) setIncomeOverride(parsed)
+    setEditingIncome(false)
+  }
+
+  // Confidence label rendered on the card itself (not just the input) — otherwise the
+  // user reads a derived % as absolute truth (falsa precisão). See FINANCIAL_HEALTH.md §6 D1.
+  let incomeConfidenceLabel: string | null = null
+  if (incomeOverride !== undefined) {
+    incomeConfidenceLabel = t('health.confirmedByYou')
+  } else if (incomeEstimate.value !== null) {
+    incomeConfidenceLabel = incomeEstimate.isEstimate
+      ? t('health.estimateConfirm', { count: incomeEstimate.confidenceMonths })
+      : t('health.basedOnMonths', { count: incomeEstimate.confidenceMonths })
+  }
+
+  if (!data) return null
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
@@ -151,28 +129,85 @@ export default function Health() {
         <p className="text-sm text-on-surface/50 mt-0.5">{t('health.subtitle')}</p>
       </div>
 
-      {/* ── Linha de resumo: Peso | Posição | Dívida ───────────────────────── */}
+      {/* ── Linha de resumo: Peso (renda, parcelas e dívida) | Reserva ──────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
-        {/* Peso no orçamento */}
-        <div className="flex h-full flex-col rounded-2xl bg-surface-container-lowest p-5 sm:p-6 shadow-card border-[0.5px] border-surface-container-high">
+        {/* Peso no orçamento — ocupa 2 colunas: renda, parcelas do mês e dívida total */}
+        <div className="flex h-full flex-col rounded-2xl bg-surface-container-lowest p-5 sm:p-6 shadow-card border-[0.5px] border-surface-container-high lg:col-span-2">
           <h2 className="text-base font-semibold text-on-surface">{t('health.budgetTitle')}</h2>
 
-          <div className="mt-4 grid grid-cols-2 gap-4">
+          <div className="mt-4 grid grid-cols-3 gap-4">
             <div>
               <div className="flex items-center gap-1.5">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-on-surface/40">
                   {t('health.monthlyIncome')}
                 </p>
-                <button
-                  aria-label={t('health.adjust')}
-                  className="text-on-surface/30 hover:text-primary transition-colors"
-                >
-                  <Pencil size={12} strokeWidth={1.5} />
-                </button>
+                {!editingIncome && (
+                  <button
+                    aria-label={t('health.adjust')}
+                    onClick={startEditIncome}
+                    className="text-on-surface/30 hover:text-primary transition-colors"
+                  >
+                    <Pencil size={12} strokeWidth={1.5} />
+                  </button>
+                )}
               </div>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-on-surface">
-                {formatCurrency(MOCK_INCOME)}
-              </p>
+
+              {editingIncome ? (
+                <div className="mt-1 flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    autoFocus
+                    value={incomeInput}
+                    onChange={(e) => setIncomeInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') confirmEditIncome()
+                      if (e.key === 'Escape') setEditingIncome(false)
+                    }}
+                    placeholder={t('health.incomePlaceholder')}
+                    className="w-24 rounded-lg bg-surface-container-high px-2 py-1 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                  <button
+                    aria-label={t('common.save')}
+                    onClick={confirmEditIncome}
+                    className="flex h-6 w-6 items-center justify-center rounded-full text-primary hover:bg-surface-container-high"
+                  >
+                    <Check size={14} strokeWidth={2} />
+                  </button>
+                  <button
+                    aria-label={t('common.cancel')}
+                    onClick={() => setEditingIncome(false)}
+                    className="flex h-6 w-6 items-center justify-center rounded-full text-on-surface/40 hover:bg-surface-container-high"
+                  >
+                    <X size={14} strokeWidth={2} />
+                  </button>
+                </div>
+              ) : hasIncome ? (
+                <p className="mt-1 text-lg font-semibold tabular-nums text-on-surface">
+                  {formatCurrency(monthlyIncome)}
+                </p>
+              ) : (
+                <button
+                  onClick={startEditIncome}
+                  className="mt-1 text-sm font-medium text-primary hover:underline"
+                >
+                  {t('health.setIncomeCta')}
+                </button>
+              )}
+
+              {incomeConfidenceLabel && !editingIncome && (
+                <p className="mt-1 flex items-center gap-1 text-[11px] text-on-surface/40">
+                  <span>{incomeConfidenceLabel}</span>
+                  {incomeOverride !== undefined && (
+                    <button
+                      onClick={() => setIncomeOverride(undefined)}
+                      className="text-primary hover:underline"
+                    >
+                      {t('health.recalculate')}
+                    </button>
+                  )}
+                </p>
+              )}
             </div>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-on-surface/40">
@@ -180,6 +215,21 @@ export default function Health() {
               </p>
               <p className="mt-1 text-lg font-semibold tabular-nums text-tertiary">
                 {formatCurrency(monthlyCommitted)}
+              </p>
+            </div>
+            {/* Dívida total comprometida — ex-card próprio, agora mais à direita aqui dentro */}
+            <div className="text-right">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-on-surface/40">
+                {t('health.totalDebt')}
+              </p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-on-surface">
+                {formatCurrency(totalDebt)}
+              </p>
+              <p className="mt-1 text-[11px] text-on-surface/40">
+                <span className="font-semibold" style={{ color: leverageColor }}>
+                  {leverageText}
+                </span>{' '}
+                {t('health.debtLeverageSuffix')}
               </p>
             </div>
           </div>
@@ -198,22 +248,33 @@ export default function Health() {
                 style={{ width: `${Math.min(commitmentPct, 100)}%`, backgroundColor: gaugeColor }}
               />
             </div>
-            <p className="mt-3 text-xs text-on-surface/40">
-              {t('health.longestHorizon')}:{' '}
-              <span className="text-on-surface/60">
-                {t('health.months', { count: longestHorizon })}
-              </span>
-            </p>
+            <div className="mt-3 flex items-baseline justify-between gap-2 text-xs text-on-surface/40">
+              <p>
+                {t('health.installmentShareOfExpenses', { pct: installmentSharePct.toFixed(0) })}
+              </p>
+              <p className="text-right shrink-0">
+                {t('health.longestHorizon')}:{' '}
+                <span className="text-on-surface/60">
+                  {t('health.months', { count: longestHorizon })}
+                </span>
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Reserva de emergência: saldo atual vs. recomendado (6× custo mensal) */}
+        {/* Reserva de emergência: saldo atual vs. recomendado (6× custo mensal). Mockado
+            até o épico próprio (HE-12 a HE-14) — sinalizado com o selo "Em breve". */}
         <div className="flex h-full flex-col rounded-2xl bg-surface-container-lowest p-5 sm:p-6 shadow-card border-[0.5px] border-surface-container-high">
-          <div className="flex items-center gap-2">
-            <Umbrella size={18} strokeWidth={1.5} className="text-on-surface/40" />
-            <h2 className="text-base font-semibold text-on-surface">
-              {t('health.emergencyTitle')}
-            </h2>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Umbrella size={18} strokeWidth={1.5} className="text-on-surface/40" />
+              <h2 className="text-base font-semibold text-on-surface">
+                {t('health.emergencyTitle')}
+              </h2>
+            </div>
+            <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-[10px] font-medium text-on-surface/40">
+              {t('health.reservePlaceholder')}
+            </span>
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-4">
@@ -259,46 +320,33 @@ export default function Health() {
             </p>
           </div>
         </div>
-
-        {/* Dívida total comprometida — ponto de peso visual. Fundo grafite neutro (não verde):
-            o container transmite gravidade sem viés positivo; a cor avaliativa fica só na alavancagem. */}
-        <div
-          className="flex h-full flex-col rounded-2xl p-5 sm:p-6 text-white shadow-card-ambient"
-          style={{ backgroundColor: '#1A1F2E' }}
-        >
-          <div className="flex items-center gap-2">
-            <TrendingDown size={18} strokeWidth={1.5} className="text-white/50" />
-            <h2 className="text-base font-semibold text-white">{t('health.totalDebt')}</h2>
-          </div>
-
-          {/* Número único, grande e centralizado no corpo do card */}
-          <div className="flex flex-1 items-center justify-center py-6">
-            <p className="text-4xl font-semibold tabular-nums tracking-tight">
-              {formatCurrency(totalDebt)}
-            </p>
-          </div>
-
-          {/* Alavancagem + janela temporal */}
-          <div>
-            <p className="text-sm text-white/60">
-              <span className="text-xl font-semibold tabular-nums" style={{ color: leverageColor }}>
-                {leverageText}
-              </span>{' '}
-              {t('health.debtLeverageSuffix')}
-            </p>
-            <p className="mt-3 text-xs text-white/40">
-              {t('health.debtWindow', { count: longestHorizon })}
-            </p>
-          </div>
-        </div>
       </div>
 
       {/* ── Detalhamento das dívidas (expansível) ──────────────────────────── */}
       <div className="space-y-3">
-        <h2 className="text-base font-semibold text-on-surface px-1">{t('health.detailTitle')}</h2>
-        {MOCK_DEBTS.map((debt) => (
-          <DebtCard key={debt.id} debt={debt} />
-        ))}
+        <div className="flex items-center justify-between px-1">
+          <h2 className="text-base font-semibold text-on-surface">{t('health.detailTitle')}</h2>
+          {debtGroups.length > 0 && (
+            <label className="flex items-center gap-2 text-xs text-on-surface/50">
+              <span>{t('health.sortBy')}</span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as 'time' | 'value')}
+                className="rounded-lg bg-surface-container-high px-2 py-1 text-xs text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="time">{t('health.sortByTime')}</option>
+                <option value="value">{t('health.sortByValue')}</option>
+              </select>
+            </label>
+          )}
+        </div>
+        {debtGroups.length === 0 ? (
+          <p className="py-8 text-center text-sm text-on-surface/40">{t('health.noDebt')}</p>
+        ) : (
+          debtGroups.map((group) => (
+            <DebtCard key={group.accountId} group={group} sortBy={sortBy} />
+          ))
+        )}
       </div>
 
       {/* ── Callout educativo ──────────────────────────────────────────────── */}
@@ -327,15 +375,25 @@ export default function Health() {
 
 // ── Card de dívida expansível ──────────────────────────────────────────────────
 
-function DebtCard({ debt }: { debt: MockDebt }) {
+function DebtCard({ group, sortBy }: { group: DebtGroup; sortBy: 'time' | 'value' }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
 
-  const total = debtTotal(debt)
-  const monthly = debtMonthly(debt)
-  const badgeColor = debt.issuer ? (ISSUER_COLORS[debt.issuer] ?? '#1F2937') : '#1B4F72'
-  const kindLabel = debt.kind === 'loan' ? t('health.loan') : t('health.card')
-  const Icon = debt.kind === 'loan' ? Landmark : CreditCard
+  const items = useMemo(() => {
+    if (sortBy === 'value') {
+      return [...group.items].sort((a, b) => b.remainingTotal - a.remainingTotal)
+    }
+    return group.items
+  }, [group.items, sortBy])
+
+  const badgeColor =
+    group.kind === 'loan'
+      ? '#92400E'
+      : group.issuerIcon
+        ? (ISSUER_COLORS[group.issuerIcon] ?? '#1F2937')
+        : '#1B4F72'
+  const kindLabel = group.kind === 'loan' ? t('health.loan') : t('health.card')
+  const Icon = group.kind === 'loan' ? Landmark : CreditCard
 
   return (
     <div className="rounded-2xl bg-surface-container-lowest shadow-card border-[0.5px] border-surface-container-high overflow-hidden">
@@ -353,16 +411,16 @@ function DebtCard({ debt }: { debt: MockDebt }) {
         </div>
 
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-on-surface truncate">{debt.name}</p>
+          <p className="text-sm font-medium text-on-surface truncate">{group.accountName}</p>
           <p className="text-xs text-on-surface/40 mt-0.5">
-            {kindLabel} · {formatCurrency(monthly)}
+            {kindLabel} · {formatCurrency(group.monthly)}
             {t('health.perMonth')}
           </p>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-base font-semibold tabular-nums text-tertiary">
-            {formatCurrency(total)}
+            {formatCurrency(group.remainingTotal)}
           </span>
           <ChevronDown
             size={18}
@@ -375,27 +433,32 @@ function DebtCard({ debt }: { debt: MockDebt }) {
         </div>
       </button>
 
-      {/* Lista de parcelamentos */}
+      {/* Lista de parcelamentos / saldo do empréstimo */}
       {open && (
         <div className="border-t-[0.5px] border-surface-container px-4 py-2">
-          {debt.installments.map((inst) => (
-            <div key={inst.id} className="flex items-center gap-3 py-2.5">
+          {items.map((item, idx) => (
+            <div key={idx} className="flex items-center gap-3 py-2.5">
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-on-surface truncate">{inst.description}</p>
+                <p className="text-sm text-on-surface truncate">{item.description}</p>
                 <p className="text-xs text-on-surface/40 mt-0.5">
-                  {t('health.installmentsRemaining', {
-                    current: inst.current,
-                    total: inst.total,
-                    remaining: remainingCount(inst),
-                  })}
+                  {item.kind === 'installment'
+                    ? t('health.installmentsRemaining', {
+                        current: item.current,
+                        total: item.total,
+                        remaining: item.remaining,
+                      })
+                    : t('health.loanRemaining', { remaining: item.remaining })}
+                  {item.kind === 'loan' && item.interestRate !== undefined && (
+                    <> · {t('health.interestRate', { rate: item.interestRate })}</>
+                  )}
                 </p>
               </div>
               <div className="text-right shrink-0">
                 <p className="text-sm font-semibold tabular-nums" style={{ color: '#A87B0C' }}>
-                  {formatCurrency(installmentRemaining(inst))}
+                  {formatCurrency(item.remainingTotal)}
                 </p>
                 <p className="text-xs text-on-surface/40 mt-0.5 tabular-nums">
-                  {formatCurrency(inst.monthly)}
+                  {formatCurrency(item.monthly)}
                   {t('health.perMonth')}
                 </p>
               </div>

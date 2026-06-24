@@ -149,6 +149,7 @@ export interface DataFile {
 
 export type Theme = 'light' | 'dark' | 'system'
 export type Locale = 'pt-BR' | 'en-US'
+export type IncomeWindowMonths = 3 | 6 | 9 | 12
 
 export interface WorkspaceFile {
   theme: Theme
@@ -157,4 +158,5 @@ export interface WorkspaceFile {
   useAmbientShadows: boolean
   netWorthIncludeHidden: boolean // D3: include accounts with includeInBalance=false (default true)
   monthlyIncomeOverride?: number // HE-09/D1: user-confirmed income; always wins over the derived suggestion
+  incomeWindowMonths: IncomeWindowMonths // HE-09: lookback window for the income suggestion (default 6)
 }
