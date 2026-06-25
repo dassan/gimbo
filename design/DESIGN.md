@@ -378,6 +378,11 @@ Biblioteca: **Lucide Icons** (`lucide-react`). Linha fina, geométrica, consiste
 **Card de destaque (ex: saldo total):**
 - Fundo Floresta 800 (`#143326`), texto branco, sem borda, `shadow-ambient`
 
+**Hero de passivo/gravidade (ex: dívida total comprometida):**
+- Fundo **Bambu 900 (`#1A1F2E`)**, texto branco, sem borda, `shadow-ambient`
+- **Por quê grafite e não Floresta 800:** o verde é a cor de "dinheiro/positivo" da marca; usá-lo como recipiente de um passivo passa viés positivo errado. O fundo neutro transmite gravidade sem julgar o número — quem julga é o indicador no card (régua de cor). Sobre fundo escuro, a régua avaliativa usa tons claros do dark mode (verde `#3D9E82`, âmbar `#D4A017`, vermelho `#F1948A`).
+- **Regra:** Floresta 800 = saldo/positivo; Bambu 900 = passivo/gravidade.
+
 ### Inputs de Formulário (estilo "filled")
 
 - **Fundo:** `surface-container-high` (`#D6D8D0`)

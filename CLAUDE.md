@@ -25,6 +25,7 @@ Workflow de desenvolvimento IA + humano definido em `plan/RULES.md`.
 | Cenários de sync | `plan/SYNC_SCENARIOS.md` | 14 cenários de sincronização e recuperação |
 | Telemetria e bug report | `plan/METRICS.md` | Decisões de privacidade, arquitetura do F-26 (Bug Report System), tasks TASK-BR-01 a BR-08 |
 | Relatórios avançados | `plan/REPORTS.md` | Épico do módulo analítico (4 views) |
+| Saúde Financeira | `plan/FINANCIAL_HEALTH.md` | Decisões de produto/design da tela `/health` (F-29), conceitos, fórmulas e pontos em aberto |
 | Sistema de design | `design/DESIGN.md` | Cores, tipografia, espaçamento, sombras, componentes (fonte única) |
 | Workflow | `plan/RULES.md` | SDLC, cerimônias, divisão de responsabilidades |
 
@@ -172,7 +173,11 @@ Features concluídas desde 2026-05-27:
 - **R-17/R-18** — View "Faturas" em Analytics: `FaturasView.tsx`, aba 5 na sub-nav, 14 testes unitários
 - **B-16/M-22** — Ciclo de fatura de cartão (Opção 2): pagamento vinculado ao período (`referenceMonth`, schema v4→v5), `CREDIT_PAYMENT` debita a conta pagadora, fatura líquida de créditos + selo de status (aberta/parcial/paga), estornos como `INCOME` na conta CREDIT; sync preserva sinal e infere `referenceMonth`
 
+Em andamento:
+- **F-29** — Saúde Financeira: tela `/health` **v1 (dívida + peso no orçamento) ligada aos motores reais** (HE-01 a HE-11 resolvidos: entidade `LOAN`, motor de dívida total/comprometido/horizonte, renda híbrida com override editável, detalhamento expansível real por cartão/`LOAN`, testes de componente). Reserva de Emergência segue mockada com selo "Em breve" (épico próprio). Ver `plan/FINANCIAL_HEALTH.md` §6-7.
+
 Itens em aberto:
+- **HE-12 a HE-14** — Reserva de Emergência (épico posterior, fora do v1)
 - **MB-08** — Analytics responsivo para mobile (média prioridade)
 - **BK-04** — Banner de re-permissão da pasta de backup no startup (média prioridade)
 - **F-28 Nível 2** — Cloud Sync Google Drive/Dropbox (CS-01 a CS-12) — demand-driven

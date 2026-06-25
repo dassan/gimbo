@@ -3,6 +3,8 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Settings from '@/pages/Settings'
 import { useDataStore } from '@/store/useDataStore'
+import { useWorkspaceStore } from '@/store/useWorkspaceStore'
+import { createDefaultWorkspace } from '@/lib/storage/schema'
 import { makeDataFile } from '@/test/fixtures/dataFile'
 import { storage } from '@/services/storage'
 import { loadBackupDirHandle, writeBackupToDir } from '@/lib/backupDir'
@@ -45,6 +47,7 @@ globalThis.URL.revokeObjectURL = vi.fn()
 
 beforeEach(() => {
   useDataStore.setState({ data: makeDataFile() })
+  useWorkspaceStore.setState({ workspace: createDefaultWorkspace() })
   vi.clearAllMocks()
   vi.mocked(storage).replaceAll.mockResolvedValue(undefined)
   vi.mocked(storage).exportBlob.mockResolvedValue(new Blob())
@@ -445,5 +448,140 @@ describe('Settings — M-42: archived accounts', () => {
 
     const saved = useDataStore.getState().data?.accounts.find((a) => a.id === 'acc-1')
     expect(saved?.archived).toBe(true)
+  })
+})
+
+// ─── Settings — HE-05: create/edit LOAN account ──────────────────────────────
+
+function makeLoanAccount(overrides: Partial<Account> = {}): Account {
+  return {
+    id: 'acc-loan',
+    name: 'Financiamento do carro',
+    type: 'LOAN',
+    balance: 0,
+    includeInBalance: false,
+    loanMetadata: {
+      outstandingBalance: 15000,
+      monthlyPayment: 800,
+      remainingInstallments: 18,
+      interestRate: 1.5,
+    },
+    ...overrides,
+  }
+}
+
+describe('Settings — HE-05: create/edit LOAN account', () => {
+  it('shows the loan metadata fields when LOAN is selected in the new-account modal', async () => {
+    useDataStore.setState({ data: makeDataFile({ accounts: [], transactions: [] }) })
+    render(<Settings />)
+
+    await userEvent.click(screen.getByRole('button', { name: /settings\.newAccount/i }))
+    await userEvent.click(screen.getByText('accounts.loan'))
+
+    expect(screen.getByText('accounts.outstandingBalance')).toBeInTheDocument()
+    expect(screen.getByText('accounts.monthlyPayment')).toBeInTheDocument()
+    expect(screen.getByText('accounts.remainingInstallments')).toBeInTheDocument()
+    expect(screen.getByText('accounts.interestRate')).toBeInTheDocument()
+  })
+
+  it('does not show the initial-balance field for LOAN accounts (uses outstandingBalance instead)', async () => {
+    useDataStore.setState({ data: makeDataFile({ accounts: [], transactions: [] }) })
+    render(<Settings />)
+
+    await userEvent.click(screen.getByRole('button', { name: /settings\.newAccount/i }))
+    await userEvent.click(screen.getByText('accounts.loan'))
+
+    expect(screen.queryByText('accounts.initialBalance')).not.toBeInTheDocument()
+  })
+
+  it('saves a new LOAN account with the entered loanMetadata', async () => {
+    useDataStore.setState({ data: makeDataFile({ accounts: [], transactions: [] }) })
+    render(<Settings />)
+
+    await userEvent.click(screen.getByRole('button', { name: /settings\.newAccount/i }))
+    await userEvent.type(
+      screen.getByPlaceholderText('settings.accountNamePlaceholder'),
+      'Financiamento do apê'
+    )
+    await userEvent.click(screen.getByText('accounts.loan'))
+
+    const balanceInputs = screen.getAllByPlaceholderText('R$ 0,00')
+    await userEvent.type(balanceInputs[0], '20000')
+    await userEvent.type(balanceInputs[1], '950')
+    await userEvent.type(screen.getByPlaceholderText('0'), '24')
+    await userEvent.type(screen.getByPlaceholderText('0,00%'), '1,2')
+
+    await userEvent.click(screen.getByRole('button', { name: /settings\.saveAccount/i }))
+
+    const saved = useDataStore
+      .getState()
+      .data?.accounts.find((a) => a.name === 'Financiamento do apê')
+    expect(saved?.type).toBe('LOAN')
+    expect(saved?.includeInBalance).toBe(false)
+    expect(saved?.loanMetadata).toEqual({
+      outstandingBalance: 20000,
+      monthlyPayment: 950,
+      remainingInstallments: 24,
+      interestRate: 1.2,
+    })
+  })
+
+  it('pre-fills the loan fields when editing an existing LOAN account', async () => {
+    const loanAccount = makeLoanAccount()
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [loanAccount], transactions: [] }),
+    })
+    render(<Settings />)
+
+    await userEvent.click(screen.getByText('Financiamento do carro'))
+
+    expect(screen.getByDisplayValue('15000')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('800')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('18')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('1.5')).toBeInTheDocument()
+  })
+
+  it('shows the outstandingBalance (not the derived cash-flow balance) in the accounts list', () => {
+    const loanAccount = makeLoanAccount()
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [loanAccount], transactions: [] }),
+    })
+    render(<Settings />)
+
+    expect(screen.getByText(/15\.000,00/)).toBeInTheDocument()
+  })
+})
+
+// ─── Settings — HE-09 follow-up: configurable income lookback window ────────
+
+describe('Settings — income lookback window preference', () => {
+  async function openPreferences() {
+    const user = userEvent.setup()
+    render(<Settings />)
+    await user.click((await screen.findAllByText('settings.preferences'))[0])
+    return user
+  }
+
+  it('defaults to 6 months', async () => {
+    await openPreferences()
+    expect(screen.getByDisplayValue('health.months')).toHaveValue('6')
+  })
+
+  it('persists the chosen window to the workspace store', async () => {
+    const user = await openPreferences()
+    const select = screen.getByDisplayValue('health.months')
+
+    await user.selectOptions(select, '3')
+
+    expect(useWorkspaceStore.getState().workspace.incomeWindowMonths).toBe(3)
+  })
+
+  it.each([3, 9, 12] as const)('accepts %i months as a valid selection', async (months) => {
+    const user = await openPreferences()
+    const select = screen.getByDisplayValue('health.months')
+
+    await user.selectOptions(select, String(months))
+
+    expect(useWorkspaceStore.getState().workspace.incomeWindowMonths).toBe(months)
   })
 })

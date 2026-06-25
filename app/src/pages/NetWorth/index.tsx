@@ -10,6 +10,7 @@ import {
   Briefcase,
   MoreHorizontal,
   RefreshCw,
+  Banknote,
 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
@@ -19,6 +20,7 @@ import {
   parseDateLocal,
   getCurrentInvoiceBalance,
   getTotalCreditLiability,
+  getLoanLiability,
   isCashRealized,
 } from '@/lib/utils'
 import type { Account, AccountType, Transaction, Valuation } from '@/types'
@@ -33,6 +35,7 @@ const ACCOUNT_TYPE_ICONS: Record<AccountType, React.ReactNode> = {
   FOREX: <ArrowLeftRight size={18} strokeWidth={1.5} />,
   ASSET: <Briefcase size={18} strokeWidth={1.5} />,
   STOCKS: <TrendingUp size={18} strokeWidth={1.5} />,
+  LOAN: <Banknote size={18} strokeWidth={1.5} />,
   OTHER: <MoreHorizontal size={18} strokeWidth={1.5} />,
 }
 
@@ -44,6 +47,7 @@ const ACCOUNT_TYPE_COLORS: Record<AccountType, string> = {
   FOREX: '#8B5CF6',
   ASSET: '#6B7280',
   STOCKS: '#2D6A4F',
+  LOAN: '#92400E',
   OTHER: '#9CA3AF',
 }
 
@@ -169,6 +173,7 @@ export default function NetWorth() {
   const {
     visibleAssetAccounts,
     visibleCreditAccounts,
+    visibleLoanAccounts,
     assetBalances,
     totalAssets,
     totalLiabilities,
@@ -178,6 +183,7 @@ export default function NetWorth() {
       return {
         visibleAssetAccounts: [],
         visibleCreditAccounts: [],
+        visibleLoanAccounts: [],
         assetBalances: {} as Record<string, number>,
         totalAssets: 0,
         totalLiabilities: 0,
@@ -185,27 +191,35 @@ export default function NetWorth() {
       }
     }
 
+    // HE-07: LOAN is a liability (saldo devedor), not an asset — excluded from assetAccounts.
     const assetAccounts = data.accounts.filter(
-      (a) => a.type !== 'CREDIT' && (includeHidden || a.includeInBalance)
+      (a) => a.type !== 'CREDIT' && a.type !== 'LOAN' && (includeHidden || a.includeInBalance)
     )
     const creditAccounts = data.accounts.filter(
       (a) => a.type === 'CREDIT' && (includeHidden || a.includeInBalance)
     )
+    const loanAccounts = data.accounts.filter(
+      (a) => a.type === 'LOAN' && (includeHidden || a.includeInBalance)
+    )
     // M-42: archived accounts keep contributing to totals below, but are hidden as rows.
     const visibleAssetAccounts = assetAccounts.filter((a) => !a.archived)
     const visibleCreditAccounts = creditAccounts.filter((a) => !a.archived)
+    const visibleLoanAccounts = loanAccounts.filter((a) => !a.archived)
 
     const assetBalances = computeAssetBalances(assetAccounts, data.transactions, data.valuations)
 
     const totalAssets = Object.values(assetBalances).reduce((s, v) => s + v, 0)
-    const totalLiabilities = creditAccounts.reduce(
+    const totalCreditLiabilities = creditAccounts.reduce(
       (s, acc) => s + getTotalCreditLiability(data.transactions, acc),
       0
     )
+    const totalLoanLiabilities = loanAccounts.reduce((s, acc) => s + getLoanLiability(acc), 0)
+    const totalLiabilities = totalCreditLiabilities + totalLoanLiabilities
 
     return {
       visibleAssetAccounts,
       visibleCreditAccounts,
+      visibleLoanAccounts,
       assetBalances,
       totalAssets,
       totalLiabilities,
@@ -312,7 +326,7 @@ export default function NetWorth() {
             {t('netWorth.liabilitiesSection')}
           </h3>
 
-          {visibleCreditAccounts.length === 0 ? (
+          {visibleCreditAccounts.length === 0 && visibleLoanAccounts.length === 0 ? (
             <p className="py-8 text-center text-sm text-on-surface/40">
               {t('netWorth.noAccounts')}
             </p>
@@ -328,6 +342,18 @@ export default function NetWorth() {
                   currentInvoiceLabel={t('netWorth.currentInvoice')}
                   totalCommittedLabel={t('netWorth.totalCommitted')}
                   totalCommittedHint={t('netWorth.totalCommittedHint')}
+                  ofTotalLabel={t('netWorth.ofTotal')}
+                />
+              ))}
+              {visibleLoanAccounts.map((acc) => (
+                <LoanLiabilityRow
+                  key={acc.id}
+                  account={acc}
+                  outstandingBalance={getLoanLiability(acc)}
+                  totalLiabilities={totalLiabilities}
+                  outstandingBalanceLabel={t('accounts.outstandingBalance')}
+                  monthlyPaymentLabel={t('accounts.monthlyPayment')}
+                  remainingInstallmentsLabel={t('accounts.remainingInstallments')}
                   ofTotalLabel={t('netWorth.ofTotal')}
                 />
               ))}
@@ -468,6 +494,71 @@ function LiabilityRow({
             {formatCurrency(totalCommitted)}
           </p>
           <p className="text-[10px] text-on-surface/30 mt-0.5">{totalCommittedHint}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LoanLiabilityRow({
+  account,
+  outstandingBalance,
+  totalLiabilities,
+  outstandingBalanceLabel,
+  monthlyPaymentLabel,
+  remainingInstallmentsLabel,
+  ofTotalLabel,
+}: {
+  account: Account
+  outstandingBalance: number
+  totalLiabilities: number
+  outstandingBalanceLabel: string
+  monthlyPaymentLabel: string
+  remainingInstallmentsLabel: string
+  ofTotalLabel: string
+}) {
+  const pct = totalLiabilities > 0 ? Math.round((outstandingBalance / totalLiabilities) * 100) : 0
+
+  return (
+    <div className="rounded-xl border border-surface-container-low px-4 py-3 space-y-2">
+      {/* Loan name */}
+      <div className="flex items-center gap-3">
+        <div
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white"
+          style={{ backgroundColor: ACCOUNT_TYPE_COLORS.LOAN }}
+        >
+          <Banknote size={18} strokeWidth={1.5} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-on-surface truncate">{account.name}</p>
+          {totalLiabilities > 0 && (
+            <p className="text-xs text-on-surface/30 mt-0.5">
+              {pct}% {ofTotalLabel}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Two numbers */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
+            {outstandingBalanceLabel}
+          </p>
+          <p className="text-sm font-bold tabular-nums text-tertiary">
+            {formatCurrency(outstandingBalance)}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
+            {monthlyPaymentLabel}
+          </p>
+          <p className="text-sm font-bold tabular-nums text-on-surface">
+            {formatCurrency(account.loanMetadata?.monthlyPayment ?? 0)}
+          </p>
+          <p className="text-[10px] text-on-surface/30 mt-0.5">
+            {remainingInstallmentsLabel}: {account.loanMetadata?.remainingInstallments ?? 0}
+          </p>
         </div>
       </div>
     </div>

@@ -8,6 +8,7 @@ export type AccountType =
   | 'FOREX'
   | 'ASSET'
   | 'STOCKS'
+  | 'LOAN'
   | 'OTHER'
 export type CategoryType = 'INCOME' | 'EXPENSE'
 export type TransactionType = 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'CREDIT_PAYMENT'
@@ -36,6 +37,16 @@ export interface CreditMetadata {
   dueDay: number // 1–31
 }
 
+// HE-04: non-card loans/financing as a first-class liability. outstandingBalance is
+// maintained by the user (mirrors the Valuation pattern for STOCKS/CRYPTO/ASSET) — no
+// automatic interest/principal amortization in v1.
+export interface LoanMetadata {
+  outstandingBalance: number
+  monthlyPayment: number
+  remainingInstallments: number
+  interestRate?: number // % a.m., optional
+}
+
 export interface Account {
   id: string // UUID
   name: string
@@ -43,6 +54,7 @@ export interface Account {
   balance: number
   includeInBalance: boolean
   creditMetadata?: CreditMetadata // only for CREDIT accounts
+  loanMetadata?: LoanMetadata // only for LOAN accounts (HE-04)
   issuerIcon?: string // institution key for any account type — e.g. 'nubank', 'itau', 'generic' (M-34)
   archived?: boolean // M-42: hidden from selectors/lists but still counted in balances/totals
 }
@@ -137,6 +149,7 @@ export interface DataFile {
 
 export type Theme = 'light' | 'dark' | 'system'
 export type Locale = 'pt-BR' | 'en-US'
+export type IncomeWindowMonths = 3 | 6 | 9 | 12
 
 export interface WorkspaceFile {
   theme: Theme
@@ -144,4 +157,6 @@ export interface WorkspaceFile {
   defaultView: string
   useAmbientShadows: boolean
   netWorthIncludeHidden: boolean // D3: include accounts with includeInBalance=false (default true)
+  monthlyIncomeOverride?: number // HE-09/D1: user-confirmed income; always wins over the derived suggestion
+  incomeWindowMonths: IncomeWindowMonths // HE-09: lookback window for the income suggestion (default 6)
 }

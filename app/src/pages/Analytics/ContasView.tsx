@@ -10,6 +10,7 @@ import {
   TrendingUp,
   MoreHorizontal,
   ChevronLeft,
+  Banknote,
 } from 'lucide-react'
 import { cn, formatCurrency, parseDateLocal, getEffectiveCashFlowDate } from '@/lib/utils'
 import type { Transaction, Account, AccountType } from '@/types'
@@ -34,6 +35,7 @@ const ACCOUNT_TYPE_ICONS: Record<AccountType, React.ReactNode> = {
   FOREX: <ArrowLeftRight size={18} strokeWidth={1.5} />,
   ASSET: <Briefcase size={18} strokeWidth={1.5} />,
   STOCKS: <TrendingUp size={18} strokeWidth={1.5} />,
+  LOAN: <Banknote size={18} strokeWidth={1.5} />,
   OTHER: <MoreHorizontal size={18} strokeWidth={1.5} />,
 }
 
@@ -45,6 +47,7 @@ const ACCOUNT_TYPE_COLORS: Record<AccountType, string> = {
   FOREX: '#8B5CF6',
   ASSET: '#6B7280',
   STOCKS: '#2D6A4F',
+  LOAN: '#92400E',
   OTHER: '#9CA3AF',
 }
 

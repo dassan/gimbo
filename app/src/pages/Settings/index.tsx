@@ -40,6 +40,7 @@ import {
   RefreshCw,
   ChevronDown,
   RotateCcw,
+  Banknote,
 } from 'lucide-react'
 import {
   loadBackupDirHandle,
@@ -61,10 +62,12 @@ import type {
   Category,
   CategoryType,
   CreditMetadata,
+  LoanMetadata,
   Tag,
   Locale,
   Theme,
   AuditAction,
+  IncomeWindowMonths,
 } from '@/types'
 
 type Section = 'accounts' | 'categories' | 'tags' | 'profile' | 'preferences' | 'backup' | 'history'
@@ -91,6 +94,7 @@ const ACCOUNT_TYPES: { type: AccountType; icon: React.ReactNode }[] = [
   { type: 'FOREX', icon: <ArrowLeftRight size={20} strokeWidth={1.5} /> },
   { type: 'ASSET', icon: <Briefcase size={20} strokeWidth={1.5} /> },
   { type: 'STOCKS', icon: <TrendingUp size={20} strokeWidth={1.5} /> },
+  { type: 'LOAN', icon: <Banknote size={20} strokeWidth={1.5} /> },
   { type: 'OTHER', icon: <MoreHorizontal size={20} strokeWidth={1.5} /> },
 ]
 
@@ -216,7 +220,7 @@ export default function Settings() {
     setRetentionLimit,
   } = useDataStore()
   const loadData = useDataStore((s) => s.loadData)
-  const { workspace, setTheme, setLocale } = useWorkspaceStore()
+  const { workspace, setTheme, setLocale, setIncomeWindowMonths } = useWorkspaceStore()
 
   const navigate = useNavigate()
 
@@ -334,7 +338,8 @@ export default function Settings() {
     initialBalance: number,
     creditMetadata?: CreditMetadata,
     issuerIcon?: string,
-    archived?: boolean
+    archived?: boolean,
+    loanMetadata?: LoanMetadata
   ) {
     if (modal.open && modal.account) {
       updateAccount({
@@ -346,6 +351,7 @@ export default function Settings() {
         creditMetadata,
         issuerIcon,
         archived,
+        loanMetadata,
       })
     } else {
       addAccount({
@@ -357,6 +363,7 @@ export default function Settings() {
         creditMetadata,
         issuerIcon,
         archived,
+        loanMetadata,
       })
     }
     setModal({ open: false })
@@ -625,8 +632,12 @@ export default function Settings() {
                                   </p>
                                 </div>
                                 <div className="text-right">
+                                  {/* HE-05: LOAN balance is the user-maintained outstandingBalance, not the
+                                      derived cash-flow balance used by other account types */}
                                   <span className="text-sm font-bold tabular-nums text-on-surface">
-                                    {formatCurrency(accountBalances[acc.id] ?? 0)}
+                                    {acc.type === 'LOAN'
+                                      ? formatCurrency(acc.loanMetadata?.outstandingBalance ?? 0)
+                                      : formatCurrency(accountBalances[acc.id] ?? 0)}
                                   </span>
                                 </div>
                               </button>
@@ -862,6 +873,21 @@ export default function Settings() {
                       <option value="system">{t('settings.themeSystem')}</option>
                       <option value="light">{t('settings.themeLight')}</option>
                       <option value="dark">{t('settings.themeDark')}</option>
+                    </select>
+                  </SettingRow>
+
+                  <SettingRow label={t('settings.incomeWindowMonths')}>
+                    <select
+                      value={workspace.incomeWindowMonths}
+                      onChange={(e) =>
+                        setIncomeWindowMonths(Number(e.target.value) as IncomeWindowMonths)
+                      }
+                      className="appearance-none rounded-xl bg-surface-container-high px-4 py-2.5 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                    >
+                      <option value={3}>{t('health.months', { count: 3 })}</option>
+                      <option value={6}>{t('health.months', { count: 6 })}</option>
+                      <option value={9}>{t('health.months', { count: 9 })}</option>
+                      <option value={12}>{t('health.months', { count: 12 })}</option>
                     </select>
                   </SettingRow>
 
@@ -1159,7 +1185,8 @@ function AddAccountModal({
     initialBalance: number,
     creditMetadata?: CreditMetadata,
     issuerIcon?: string,
-    archived?: boolean
+    archived?: boolean,
+    loanMetadata?: LoanMetadata
   ) => void
   onDelete: (id: string) => void
   onClose: () => void
@@ -1170,8 +1197,9 @@ function AddAccountModal({
   const [name, setName] = useState(account?.name ?? '')
   const [type, setType] = useState<AccountType>(account?.type ?? defaultType)
   // CC-11: CREDIT accounts default to excluded from balance; respect saved value in edit mode
+  // HE-05: LOAN accounts behave like CREDIT here — they aren't liquid funds.
   const [includeInBalance, setIncludeInBalance] = useState(
-    account?.includeInBalance ?? (defaultType === 'CREDIT' ? false : true)
+    account?.includeInBalance ?? (defaultType === 'CREDIT' || defaultType === 'LOAN' ? false : true)
   )
   const [confirmDelete, setConfirmDelete] = useState(false)
   // M-42: "Ativa" toggle — default to active for new accounts; respect saved value in edit mode
@@ -1196,13 +1224,35 @@ function AddAccountModal({
     account?.creditMetadata?.dueDay !== undefined ? String(account.creditMetadata.dueDay) : ''
   )
 
+  // ── Loan metadata state (HE-05) ────────────────────────────────────────────
+  const [outstandingBalance, setOutstandingBalance] = useState<string>(
+    account?.loanMetadata?.outstandingBalance !== undefined
+      ? String(account.loanMetadata.outstandingBalance)
+      : ''
+  )
+  const [monthlyPayment, setMonthlyPayment] = useState<string>(
+    account?.loanMetadata?.monthlyPayment !== undefined
+      ? String(account.loanMetadata.monthlyPayment)
+      : ''
+  )
+  const [remainingInstallments, setRemainingInstallments] = useState<string>(
+    account?.loanMetadata?.remainingInstallments !== undefined
+      ? String(account.loanMetadata.remainingInstallments)
+      : ''
+  )
+  const [interestRate, setInterestRate] = useState<string>(
+    account?.loanMetadata?.interestRate !== undefined
+      ? String(account.loanMetadata.interestRate)
+      : ''
+  )
+
   function handleTypeSelect(selected: AccountType) {
     setType(selected)
-    // CC-11: auto-deselect "include in balance" for CREDIT accounts
-    if (selected === 'CREDIT') {
+    // CC-11/HE-05: auto-deselect "include in balance" for CREDIT and LOAN accounts
+    if (selected === 'CREDIT' || selected === 'LOAN') {
       setIncludeInBalance(false)
     } else {
-      // Restore default for non-CREDIT types when switching (only on create)
+      // Restore default for other types when switching (only on create)
       if (!isEdit) setIncludeInBalance(true)
       // M-34: issuerIcon (institution) applies to all types, so it is kept across type changes.
     }
@@ -1212,10 +1262,10 @@ function AddAccountModal({
     const trimmed = name.trim()
     if (!trimmed) return
 
-    // M-33: parse initial balance; CREDIT accounts always use 0 (limit is tracked separately)
+    // M-33: parse initial balance; CREDIT/LOAN accounts always use 0 (tracked via metadata).
     // B-12: the field is now free text (inputMode=decimal), so accept a comma decimal separator.
     const resolvedInitialBalance =
-      type !== 'CREDIT' ? parseFloat(initialBalance.replace(',', '.')) || 0 : 0
+      type !== 'CREDIT' && type !== 'LOAN' ? parseFloat(initialBalance.replace(',', '.')) || 0 : 0
 
     let creditMetadata: CreditMetadata | undefined
     if (type === 'CREDIT') {
@@ -1233,6 +1283,22 @@ function AddAccountModal({
         creditMetadata = { limit, closingDay: closing, dueDay: due }
       }
     }
+
+    // HE-05: loanMetadata — outstandingBalance is user-maintained (mirrors Valuation pattern).
+    let loanMetadata: LoanMetadata | undefined
+    if (type === 'LOAN') {
+      const outstanding = parseFloat(outstandingBalance.replace(',', '.')) || 0
+      const payment = parseFloat(monthlyPayment.replace(',', '.')) || 0
+      const remaining = parseInt(remainingInstallments, 10)
+      const rate = parseFloat(interestRate.replace(',', '.'))
+      loanMetadata = {
+        outstandingBalance: outstanding,
+        monthlyPayment: payment,
+        remainingInstallments: Number.isNaN(remaining) ? 0 : remaining,
+        ...(interestRate.trim() && !Number.isNaN(rate) ? { interestRate: rate } : {}),
+      }
+    }
+
     // M-34: institution branding applies to every account type; 'generic' means "no institution".
     const resolvedIssuerIcon = issuerIcon !== 'generic' ? issuerIcon : undefined
 
@@ -1243,7 +1309,8 @@ function AddAccountModal({
       resolvedInitialBalance,
       creditMetadata,
       resolvedIssuerIcon,
-      archived
+      archived,
+      loanMetadata
     )
   }
 
@@ -1326,8 +1393,8 @@ function AddAccountModal({
             ))}
           </div>
 
-          {/* M-33: Initial balance — shown only for non-CREDIT accounts */}
-          {type !== 'CREDIT' && (
+          {/* M-33/HE-05: Initial balance — shown only for non-CREDIT, non-LOAN accounts */}
+          {type !== 'CREDIT' && type !== 'LOAN' && (
             <div className="mt-4">
               <label className="block text-[11px] font-semibold uppercase tracking-widest text-on-surface/40 mb-2">
                 {t('accounts.initialBalance')}
@@ -1449,10 +1516,71 @@ function AddAccountModal({
               </div>
             </div>
           )}
+
+          {/* Loan metadata fields (HE-05) — shown only when type === LOAN */}
+          {type === 'LOAN' && (
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-widest text-on-surface/40 mb-2">
+                  {t('accounts.outstandingBalance')}
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={outstandingBalance}
+                  onChange={(e) => setOutstandingBalance(e.target.value)}
+                  placeholder="R$ 0,00"
+                  className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-widest text-on-surface/40 mb-2">
+                    {t('accounts.monthlyPayment')}
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={monthlyPayment}
+                    onChange={(e) => setMonthlyPayment(e.target.value)}
+                    placeholder="R$ 0,00"
+                    className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-widest text-on-surface/40 mb-2">
+                    {t('accounts.remainingInstallments')}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={remainingInstallments}
+                    onChange={(e) => setRemainingInstallments(e.target.value)}
+                    placeholder="0"
+                    className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-widest text-on-surface/40 mb-2">
+                  {t('accounts.interestRate')}
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={interestRate}
+                  onChange={(e) => setInterestRate(e.target.value)}
+                  placeholder="0,00%"
+                  className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Include in balance toggle — hidden for CREDIT accounts */}
-        {type !== 'CREDIT' && (
+        {/* Include in balance toggle — hidden for CREDIT and LOAN accounts (HE-05) */}
+        {type !== 'CREDIT' && type !== 'LOAN' && (
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
               <span className="text-sm text-on-surface/70">{t('settings.includeInBalance')}</span>
@@ -1953,7 +2081,9 @@ function ArchivedAccountsSection({
                 <p className="text-sm font-semibold text-on-surface">{acc.name}</p>
                 <p className="text-xs text-on-surface/40">
                   {t(`accounts.${acc.type.toLowerCase()}`)} ·{' '}
-                  {formatCurrency(accountBalances[acc.id] ?? 0)}
+                  {acc.type === 'LOAN'
+                    ? formatCurrency(acc.loanMetadata?.outstandingBalance ?? 0)
+                    : formatCurrency(accountBalances[acc.id] ?? 0)}
                 </p>
               </button>
               {isCredit && (

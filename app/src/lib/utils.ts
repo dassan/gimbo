@@ -1,4 +1,4 @@
-import type { Account, Category, Transaction } from '@/types'
+import type { Account, Category, IncomeWindowMonths, Transaction } from '@/types'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
@@ -299,6 +299,327 @@ export function getOpenCreditBalance(transactions: Transaction[], account: Accou
  */
 export function getTotalCreditLiability(transactions: Transaction[], account: Account): number {
   return getOpenCreditBalance(transactions, account)
+}
+
+/**
+ * Total liability of a LOAN account for net-worth purposes = outstandingBalance,
+ * the user-maintained figure (no transaction replay — HE-06).
+ */
+export function getLoanLiability(account: Account): number {
+  return account.loanMetadata?.outstandingBalance ?? 0
+}
+
+// ─── Financial Health — Debt Engine (HE-08) ──────────────────────────────────
+//
+// Distinct from getTotalCreditLiability (current-invoice scope only, used by
+// /net-worth): this engine answers "how much have I committed in total", the
+// F-29 insight that an installment purchase is real debt, not just this
+// month's parcela. Each installment occurrence is already a materialized
+// Transaction (one per month, see useDataStore's CC-24/CC-25 expansion) — open
+// ones are those dated today or later; past occurrences are treated as settled.
+
+interface OpenInstallmentGroup {
+  description: string // purchase description, with the "(X/N)" suffix stripped (HE-10)
+  currentIndex: number // 1-based installment index of the next-due occurrence (HE-10)
+  total: number // total installments in the group, e.g. 10 for a 10x purchase (HE-10)
+  monthly: number // amount of the next-due occurrence (approximates the group's fixed parcela)
+  remainingTotal: number // sum of all still-open occurrences in the group
+  remainingCount: number // number of still-open occurrences (≈ remaining months)
+}
+
+/** Groups open installment-purchase transactions on a CREDIT account by parentId. */
+function _getOpenInstallmentGroups(
+  transactions: Transaction[],
+  accountId: string
+): OpenInstallmentGroup[] {
+  const today = parseDateLocal(todayStr())
+  const openByParent = new Map<string, Transaction[]>()
+  for (const tx of transactions) {
+    if (tx.accountId !== accountId || tx.type !== 'EXPENSE' || !tx.installment) continue
+    if (parseDateLocal(tx.date) < today) continue
+    const group = openByParent.get(tx.installment.parentId) ?? []
+    group.push(tx)
+    openByParent.set(tx.installment.parentId, group)
+  }
+
+  return [...openByParent.values()].map((group) => {
+    const sorted = [...group].sort(
+      (a, b) => parseDateLocal(a.date).getTime() - parseDateLocal(b.date).getTime()
+    )
+    const next = sorted[0]
+    return {
+      description: next.description.replace(/\s*\(\d+\/\d+\)$/, ''),
+      currentIndex: next.installment?.currentIndex ?? 1,
+      total: next.installment?.total ?? sorted.length,
+      monthly: next.amount,
+      remainingTotal: sorted.reduce((s, tx) => s + tx.amount, 0),
+      remainingCount: sorted.length,
+    }
+  })
+}
+
+/**
+ * Total committed debt = open (today-or-future) installment purchases on CREDIT
+ * accounts + outstandingBalance of LOAN accounts. Always reconciles with the sum
+ * of its underlying items (installment groups + loans).
+ */
+export function getTotalCommittedDebt(transactions: Transaction[], accounts: Account[]): number {
+  const creditTotal = accounts
+    .filter((a) => a.type === 'CREDIT')
+    .reduce(
+      (s, acc) =>
+        s +
+        _getOpenInstallmentGroups(transactions, acc.id).reduce((gs, g) => gs + g.remainingTotal, 0),
+      0
+    )
+  const loanTotal = accounts
+    .filter((a) => a.type === 'LOAN')
+    .reduce((s, a) => s + getLoanLiability(a), 0)
+  return creditTotal + loanTotal
+}
+
+/**
+ * Monthly commitment = the next-due occurrence of each open CREDIT installment
+ * group + the monthlyPayment of each LOAN account.
+ */
+export function getMonthlyCommitment(transactions: Transaction[], accounts: Account[]): number {
+  const creditMonthly = accounts
+    .filter((a) => a.type === 'CREDIT')
+    .reduce(
+      (s, acc) =>
+        s + _getOpenInstallmentGroups(transactions, acc.id).reduce((gs, g) => gs + g.monthly, 0),
+      0
+    )
+  const loanMonthly = accounts
+    .filter((a) => a.type === 'LOAN')
+    .reduce((s, a) => s + (a.loanMetadata?.monthlyPayment ?? 0), 0)
+  return creditMonthly + loanMonthly
+}
+
+/**
+ * Debt horizon, in months — the longest-running open commitment across CREDIT
+ * installment groups and LOAN accounts (drives the "impacts your budget for N
+ * months" framing).
+ */
+export function getDebtHorizon(transactions: Transaction[], accounts: Account[]): number {
+  const creditHorizon = accounts
+    .filter((a) => a.type === 'CREDIT')
+    .reduce(
+      (m, acc) =>
+        Math.max(
+          m,
+          ..._getOpenInstallmentGroups(transactions, acc.id).map((g) => g.remainingCount)
+        ),
+      0
+    )
+  const loanHorizon = accounts
+    .filter((a) => a.type === 'LOAN')
+    .reduce((m, a) => Math.max(m, a.loanMetadata?.remainingInstallments ?? 0), 0)
+  return Math.max(creditHorizon, loanHorizon)
+}
+
+// ─── Financial Health — Debt Breakdown (HE-10) ───────────────────────────────
+//
+// Per-account, per-item detail behind the aggregates above — feeds the expandable
+// debt list on /health. Every group's monthly/remainingTotal/longestHorizon is the
+// sum/max of its own items, so it always reconciles with getTotalCommittedDebt /
+// getMonthlyCommitment / getDebtHorizon computed over the same accounts.
+
+export interface DebtInstallmentItem {
+  kind: 'installment'
+  description: string
+  current: number // 1-based index of the next-due occurrence
+  total: number // total installments in the purchase
+  remaining: number // still-open occurrences
+  monthly: number
+  remainingTotal: number
+}
+
+export interface DebtLoanItem {
+  kind: 'loan'
+  description: string
+  remaining: number // remainingInstallments
+  monthly: number
+  remainingTotal: number // outstandingBalance
+  interestRate?: number
+}
+
+export type DebtItem = DebtInstallmentItem | DebtLoanItem
+
+export interface DebtGroup {
+  accountId: string
+  accountName: string
+  kind: 'card' | 'loan'
+  issuerIcon?: string
+  monthly: number
+  remainingTotal: number
+  longestHorizon: number
+  items: DebtItem[]
+}
+
+/** Per-account breakdown of open committed debt — CREDIT installment groups + LOAN balances. */
+export function getDebtBreakdown(transactions: Transaction[], accounts: Account[]): DebtGroup[] {
+  const cardGroups = accounts
+    .filter((a) => a.type === 'CREDIT')
+    .map((acc): DebtGroup => {
+      const items: DebtInstallmentItem[] = _getOpenInstallmentGroups(transactions, acc.id).map(
+        (g) => ({
+          kind: 'installment',
+          description: g.description,
+          current: g.currentIndex,
+          total: g.total,
+          remaining: g.remainingCount,
+          monthly: g.monthly,
+          remainingTotal: g.remainingTotal,
+        })
+      )
+      return {
+        accountId: acc.id,
+        accountName: acc.name,
+        kind: 'card',
+        issuerIcon: acc.issuerIcon,
+        monthly: items.reduce((s, i) => s + i.monthly, 0),
+        remainingTotal: items.reduce((s, i) => s + i.remainingTotal, 0),
+        longestHorizon: items.reduce((m, i) => Math.max(m, i.remaining), 0),
+        items,
+      }
+    })
+    .filter((g) => g.items.length > 0)
+
+  const loanGroups = accounts
+    .filter((a) => a.type === 'LOAN' && a.loanMetadata)
+    .map((acc): DebtGroup => {
+      const lm = acc.loanMetadata!
+      const item: DebtLoanItem = {
+        kind: 'loan',
+        description: acc.name,
+        remaining: lm.remainingInstallments,
+        monthly: lm.monthlyPayment,
+        remainingTotal: lm.outstandingBalance,
+        interestRate: lm.interestRate,
+      }
+      return {
+        accountId: acc.id,
+        accountName: acc.name,
+        kind: 'loan',
+        issuerIcon: acc.issuerIcon,
+        monthly: lm.monthlyPayment,
+        remainingTotal: lm.outstandingBalance,
+        longestHorizon: lm.remainingInstallments,
+        items: [item],
+      }
+    })
+
+  return [...cardGroups, ...loanGroups]
+}
+
+/**
+ * Total expenses of the current calendar month — same definition as the Dashboard's
+ * "Despesas" stat: CREDIT charges land in their invoice due month (cash-flow-effective
+ * date), card credits (estornos) net against expenses rather than counting as income,
+ * CREDIT_PAYMENT is liability settlement (excluded), and accounts excluded from balance
+ * are excluded too. Used as the denominator for "parcelas do mês ÷ despesas do mês" (F-29).
+ */
+export function getMonthlyExpenses(transactions: Transaction[], accounts: Account[]): number {
+  const today = parseDateLocal(todayStr())
+  const m = today.getMonth()
+  const y = today.getFullYear()
+  let expenses = 0
+  for (const tx of transactions) {
+    if (tx.type === 'CREDIT_PAYMENT') continue
+    const account = accounts.find((a) => a.id === tx.accountId)
+    if (!account) continue
+    if (account.type !== 'CREDIT' && !account.includeInBalance) continue
+    const effectiveDate = parseDateLocal(getEffectiveCashFlowDate(tx, accounts))
+    if (effectiveDate.getMonth() !== m || effectiveDate.getFullYear() !== y) continue
+    if (tx.type === 'INCOME') {
+      if (isCardCredit(tx, accounts)) expenses -= tx.amount
+    } else if (tx.type === 'EXPENSE') {
+      expenses += tx.amount
+    }
+  }
+  return expenses
+}
+
+// ─── Financial Health — Income Engine (HE-09, D1) ────────────────────────────
+//
+// Suggests the denominator of "peso no orçamento" (F-29) from history. This is
+// only a suggestion — the user's own confirmed value always wins and must never
+// be silently recalculated over (workspace.monthlyIncomeOverride, set via the
+// page's pencil — HE-10). See plan/FINANCIAL_HEALTH.md §6 D1.
+
+export interface MonthlyIncomeEstimate {
+  /** null when there's no qualified income in the lookback window — caller should prompt manual entry. */
+  value: number | null
+  /** How many of the last 6 complete calendar months had qualified income. */
+  confidenceMonths: number
+  /** True when confidenceMonths is 1–2 (below the 3-month median floor) — label as an estimate to confirm. */
+  isEstimate: boolean
+}
+
+function _monthKey(dateStr: string): string {
+  const d = parseDateLocal(dateStr)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** Returns the `n` calendar month keys immediately preceding `monthKey`, most recent first. */
+function _monthsBefore(monthKey: string, n: number): string[] {
+  const [y, m] = monthKey.split('-').map(Number)
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(y, m - 1 - (i + 1), 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  })
+}
+
+function _median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+}
+
+/**
+ * Derives a suggested monthly income from up to the last `windowMonths` complete
+ * calendar months (default 6, user-configurable via workspace.incomeWindowMonths —
+ * the current month is excluded either way, since its income hasn't fully landed yet).
+ * "Qualified" income = INCOME transactions on non-CREDIT accounts (B-16
+ * estornos are INCOME on a card and would inflate this otherwise; TRANSFER
+ * transactions are a different type and are already excluded).
+ *
+ * - ≥ 3 months with data → median of those months (resists an atypical month,
+ *   e.g. a 13º salário). This 3-month floor is independent of `windowMonths`.
+ * - 1–2 months → the median of what's available (== the value itself for 1,
+ *   or the average of the two for 2), labelled as an estimate.
+ * - 0 months → no number; the caller should fall back to manual entry.
+ */
+export function deriveMonthlyIncome(
+  transactions: Transaction[],
+  accounts: Account[],
+  windowMonths: IncomeWindowMonths = 6
+): MonthlyIncomeEstimate {
+  const creditAccountIds = new Set(accounts.filter((a) => a.type === 'CREDIT').map((a) => a.id))
+  const currentMonthKey = _monthKey(todayStr())
+
+  const sumsByMonth = new Map<string, number>()
+  for (const tx of transactions) {
+    if (tx.type !== 'INCOME' || creditAccountIds.has(tx.accountId)) continue
+    const key = _monthKey(tx.date)
+    if (key >= currentMonthKey) continue
+    sumsByMonth.set(key, (sumsByMonth.get(key) ?? 0) + tx.amount)
+  }
+
+  const monthlyValues = _monthsBefore(currentMonthKey, windowMonths)
+    .filter((key) => sumsByMonth.has(key))
+    .map((key) => sumsByMonth.get(key) as number)
+
+  if (monthlyValues.length === 0) {
+    return { value: null, confidenceMonths: 0, isEstimate: false }
+  }
+
+  return {
+    value: _median(monthlyValues),
+    confidenceMonths: monthlyValues.length,
+    isEstimate: monthlyValues.length < 3,
+  }
 }
 
 /**

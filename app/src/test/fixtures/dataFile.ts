@@ -48,6 +48,26 @@ export function makeCreditAccount(overrides: Partial<Account> = {}): Account {
 }
 
 /**
+ * Returns a LOAN Account with default loanMetadata.
+ * Useful for tests that need a loan account without building the full object (HE-07).
+ */
+export function makeLoanAccount(overrides: Partial<Account> = {}): Account {
+  return {
+    id: uuid(),
+    name: 'Empréstimo Teste',
+    type: 'LOAN',
+    balance: 0,
+    includeInBalance: false,
+    loanMetadata: {
+      outstandingBalance: 15000,
+      monthlyPayment: 800,
+      remainingInstallments: 18,
+    },
+    ...overrides,
+  }
+}
+
+/**
  * Returns a Valuation snapshot for an investment account.
  * Eligible account types: STOCKS | CRYPTO | FOREX | ASSET.
  */

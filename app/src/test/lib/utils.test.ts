@@ -11,6 +11,12 @@ import {
   getInvoiceTotal,
   getTxInvoicePeriod,
   getTotalCreditLiability,
+  getLoanLiability,
+  getTotalCommittedDebt,
+  getMonthlyCommitment,
+  getDebtHorizon,
+  getDebtBreakdown,
+  deriveMonthlyIncome,
   invoicePeriodKey,
   filterArchivedAccounts,
   isCardCredit,
@@ -307,6 +313,375 @@ describe('getTotalCreditLiability', () => {
     const currentTx = makeTx({ amount: 200, date: today })
     const futureTx = makeTx({ id: 'tx-2', amount: 300, date: '2099-12-01' })
     expect(getTotalCreditLiability([currentTx, futureTx], account)).toBe(200)
+  })
+})
+
+describe('getLoanLiability (HE-07)', () => {
+  it('returns the outstandingBalance for a LOAN account', () => {
+    const account = makeAccount({
+      type: 'LOAN',
+      loanMetadata: { outstandingBalance: 15000, monthlyPayment: 800, remainingInstallments: 18 },
+    })
+    expect(getLoanLiability(account)).toBe(15000)
+  })
+
+  it('returns 0 when the account has no loanMetadata', () => {
+    const account = makeAccount({ type: 'LOAN', loanMetadata: undefined })
+    expect(getLoanLiability(account)).toBe(0)
+  })
+
+  it('returns 0 for a non-LOAN account', () => {
+    expect(getLoanLiability(makeAccount({ type: 'RETAIL' }))).toBe(0)
+  })
+})
+
+// ─── Financial Health — Debt Engine (HE-08) ──────────────────────────────────
+
+/** Adds `n` months to a "YYYY-MM-DD" date string, returning a new "YYYY-MM-DD" string. */
+function addMonths(dateStr: string, n: number): string {
+  const d = parseDateLocal(dateStr)
+  d.setMonth(d.getMonth() + n)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Builds the N materialized installment transactions for a single purchase (mirrors the
+ * CC-24/CC-25 expansion in useDataStore: one tx per month, sharing a parentId). */
+function makeInstallmentGroup(
+  accountId: string,
+  parentId: string,
+  total: number,
+  monthly: number,
+  firstDate: string,
+  currentIndex = 1
+): Transaction[] {
+  return Array.from({ length: total - currentIndex + 1 }, (_, i) =>
+    makeTx({
+      id: `${parentId}-${currentIndex + i}`,
+      accountId,
+      amount: monthly,
+      date: addMonths(firstDate, i),
+      installment: { parentId, currentIndex: currentIndex + i, total },
+    })
+  )
+}
+
+describe('getTotalCommittedDebt / getMonthlyCommitment / getDebtHorizon (HE-08)', () => {
+  it('returns 0 for accounts with no debt', () => {
+    const accounts = [makeAccount({ type: 'RETAIL', creditMetadata: undefined })]
+    expect(getTotalCommittedDebt([], accounts)).toBe(0)
+    expect(getMonthlyCommitment([], accounts)).toBe(0)
+    expect(getDebtHorizon([], accounts)).toBe(0)
+  })
+
+  it('ignores non-installment EXPENSE transactions on a CREDIT account', () => {
+    const account = makeAccount({ id: 'acc-credit' })
+    const tx = makeTx({ accountId: 'acc-credit', amount: 500 })
+    expect(getTotalCommittedDebt([tx], [account])).toBe(0)
+    expect(getMonthlyCommitment([tx], [account])).toBe(0)
+  })
+
+  it('sums remaining occurrences of an open CREDIT installment group', () => {
+    const account = makeAccount({ id: 'acc-credit' })
+    const today = new Date().toISOString().slice(0, 10)
+    // 10x of 100, currently on installment 4 (today) — 7 remain (4..10).
+    const group = makeInstallmentGroup('acc-credit', 'p1', 10, 100, today, 4)
+    expect(getTotalCommittedDebt(group, [account])).toBe(700)
+    expect(getMonthlyCommitment(group, [account])).toBe(100)
+    expect(getDebtHorizon(group, [account])).toBe(7)
+  })
+
+  it('excludes past (already-settled) installment occurrences', () => {
+    const account = makeAccount({ id: 'acc-credit' })
+    const pastTx = makeTx({
+      id: 'p2-1',
+      accountId: 'acc-credit',
+      amount: 100,
+      date: '2015-01-01',
+      installment: { parentId: 'p2', currentIndex: 1, total: 3 },
+    })
+    expect(getTotalCommittedDebt([pastTx], [account])).toBe(0)
+  })
+
+  it('reconciles the total with the sum of individual open installment groups', () => {
+    const account = makeAccount({ id: 'acc-credit' })
+    const today = new Date().toISOString().slice(0, 10)
+    const groupA = makeInstallmentGroup('acc-credit', 'pA', 6, 200, today, 2) // 5 remain × 200 = 1000
+    const groupB = makeInstallmentGroup('acc-credit', 'pB', 4, 150, today, 1) // 4 remain × 150 = 600
+    const all = [...groupA, ...groupB]
+    expect(getTotalCommittedDebt(all, [account])).toBe(1000 + 600)
+  })
+
+  it('mixes CREDIT installments and a LOAN balance', () => {
+    const cardAccount = makeAccount({ id: 'acc-credit' })
+    const loanAccount = makeAccount({
+      id: 'acc-loan',
+      type: 'LOAN',
+      creditMetadata: undefined,
+      loanMetadata: { outstandingBalance: 15000, monthlyPayment: 800, remainingInstallments: 18 },
+    })
+    const today = new Date().toISOString().slice(0, 10)
+    const cardGroup = makeInstallmentGroup('acc-credit', 'p3', 5, 300, today, 1) // 5 remain × 300 = 1500
+
+    expect(getTotalCommittedDebt(cardGroup, [cardAccount, loanAccount])).toBe(1500 + 15000)
+    expect(getMonthlyCommitment(cardGroup, [cardAccount, loanAccount])).toBe(300 + 800)
+    expect(getDebtHorizon(cardGroup, [cardAccount, loanAccount])).toBe(18)
+  })
+})
+
+describe('getDebtBreakdown (HE-10)', () => {
+  it('returns an empty list when there is no open debt', () => {
+    const account = makeAccount({ type: 'RETAIL', creditMetadata: undefined })
+    expect(getDebtBreakdown([], [account])).toEqual([])
+  })
+
+  it('builds an installment item from an open CREDIT group, with the suffix stripped', () => {
+    const account = makeAccount({ id: 'acc-credit' })
+    const today = new Date().toISOString().slice(0, 10)
+    const group = makeInstallmentGroup('acc-credit', 'p1', 10, 100, today, 4)
+    group.forEach((tx) => {
+      tx.description = `Notebook Dell (${tx.installment!.currentIndex}/10)`
+    })
+
+    const [debtGroup] = getDebtBreakdown(group, [account])
+    expect(debtGroup.kind).toBe('card')
+    expect(debtGroup.accountId).toBe('acc-credit')
+    expect(debtGroup.items).toHaveLength(1)
+    const [item] = debtGroup.items
+    expect(item).toEqual({
+      kind: 'installment',
+      description: 'Notebook Dell',
+      current: 4,
+      total: 10,
+      remaining: 7,
+      monthly: 100,
+      remainingTotal: 700,
+    })
+  })
+
+  it('builds a loan item from loanMetadata', () => {
+    const loanAccount = makeAccount({
+      id: 'acc-loan',
+      name: 'Empréstimo Pessoal',
+      type: 'LOAN',
+      creditMetadata: undefined,
+      loanMetadata: { outstandingBalance: 15000, monthlyPayment: 800, remainingInstallments: 18 },
+    })
+
+    const [debtGroup] = getDebtBreakdown([], [loanAccount])
+    expect(debtGroup.kind).toBe('loan')
+    expect(debtGroup.items).toEqual([
+      {
+        kind: 'loan',
+        description: 'Empréstimo Pessoal',
+        remaining: 18,
+        monthly: 800,
+        remainingTotal: 15000,
+        interestRate: undefined,
+      },
+    ])
+  })
+
+  it('reconciles each group total with the sum of its own items', () => {
+    const account = makeAccount({ id: 'acc-credit' })
+    const today = new Date().toISOString().slice(0, 10)
+    const groupA = makeInstallmentGroup('acc-credit', 'pA', 6, 200, today, 2) // 5 remain × 200 = 1000
+    const groupB = makeInstallmentGroup('acc-credit', 'pB', 4, 150, today, 1) // 4 remain × 150 = 600
+
+    const [debtGroup] = getDebtBreakdown([...groupA, ...groupB], [account])
+    expect(debtGroup.items).toHaveLength(2)
+    expect(debtGroup.remainingTotal).toBe(debtGroup.items.reduce((s, i) => s + i.remainingTotal, 0))
+    expect(debtGroup.monthly).toBe(debtGroup.items.reduce((s, i) => s + i.monthly, 0))
+    expect(debtGroup.remainingTotal).toBe(1000 + 600)
+  })
+
+  it('excludes a CREDIT account with no open installments from the result', () => {
+    const account = makeAccount({ id: 'acc-credit' })
+    const pastTx = makeTx({
+      accountId: 'acc-credit',
+      date: '2015-01-01',
+      installment: { parentId: 'old', currentIndex: 1, total: 3 },
+    })
+    expect(getDebtBreakdown([pastTx], [account])).toEqual([])
+  })
+})
+
+// ─── Financial Health — Income Engine (HE-09) ────────────────────────────────
+
+describe('deriveMonthlyIncome (HE-09)', () => {
+  const retail = makeAccount({ id: 'acc-retail', type: 'RETAIL', creditMetadata: undefined })
+  const credit = makeAccount({ id: 'acc-credit', type: 'CREDIT' })
+  const today = new Date().toISOString().slice(0, 10)
+
+  it('returns null with 0 confidence when there is no qualified income', () => {
+    const result = deriveMonthlyIncome([], [retail])
+    expect(result).toEqual({ value: null, confidenceMonths: 0, isEstimate: false })
+  })
+
+  it('excludes INCOME on a CREDIT account (B-16 estornos) from qualified income', () => {
+    const estorno = makeTx({
+      accountId: 'acc-credit',
+      type: 'INCOME',
+      amount: 9999,
+      date: addMonths(today, -1),
+    })
+    expect(deriveMonthlyIncome([estorno], [retail, credit]).value).toBeNull()
+  })
+
+  it('excludes the current (incomplete) month from the window', () => {
+    const currentMonthIncome = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 5000,
+      date: today,
+    })
+    expect(deriveMonthlyIncome([currentMonthIncome], [retail]).value).toBeNull()
+  })
+
+  it('uses the single available month as an estimate when there is only 1 month of data', () => {
+    const tx = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 3000,
+      date: addMonths(today, -1),
+    })
+    const result = deriveMonthlyIncome([tx], [retail])
+    expect(result).toEqual({ value: 3000, confidenceMonths: 1, isEstimate: true })
+  })
+
+  it('averages 2 available months and labels it as an estimate', () => {
+    const txA = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 3000,
+      date: addMonths(today, -1),
+    })
+    const txB = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 5000,
+      date: addMonths(today, -2),
+    })
+    const result = deriveMonthlyIncome([txA, txB], [retail])
+    expect(result).toEqual({ value: 4000, confidenceMonths: 2, isEstimate: true })
+  })
+
+  it('uses the median (not the average) once the 3-month floor is met', () => {
+    const transactions = [1000, 2000, 9000].map((amount, i) =>
+      makeTx({
+        accountId: 'acc-retail',
+        type: 'INCOME',
+        amount,
+        date: addMonths(today, -(i + 1)),
+      })
+    )
+    const result = deriveMonthlyIncome(transactions, [retail])
+    expect(result).toEqual({ value: 2000, confidenceMonths: 3, isEstimate: false })
+  })
+
+  it('sums multiple qualified transactions within the same month', () => {
+    const a = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 1000,
+      date: addMonths(today, -1),
+    })
+    const b = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 500,
+      date: addMonths(today, -1),
+    })
+    const result = deriveMonthlyIncome([a, b], [retail])
+    expect(result).toEqual({ value: 1500, confidenceMonths: 1, isEstimate: true })
+  })
+
+  it('caps the lookback window at 6 complete months by default, ignoring older data', () => {
+    const tooOld = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 99999,
+      date: addMonths(today, -7),
+    })
+    const result = deriveMonthlyIncome([tooOld], [retail])
+    expect(result).toEqual({ value: null, confidenceMonths: 0, isEstimate: false })
+  })
+
+  // ─── HE-09 follow-up: configurable lookback window (workspace.incomeWindowMonths) ──
+
+  it('with windowMonths=3, ignores data from the 4th month back (outside the shorter window)', () => {
+    const withinWindow = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 4000,
+      date: addMonths(today, -2),
+    })
+    const outsideWindow = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 99999,
+      date: addMonths(today, -4),
+    })
+    const result = deriveMonthlyIncome([withinWindow, outsideWindow], [retail], 3)
+    expect(result).toEqual({ value: 4000, confidenceMonths: 1, isEstimate: true })
+  })
+
+  it('with windowMonths=3, the 3-month median floor still applies (uses all 3 months found)', () => {
+    const transactions = [1000, 2000, 9000].map((amount, i) =>
+      makeTx({
+        accountId: 'acc-retail',
+        type: 'INCOME',
+        amount,
+        date: addMonths(today, -(i + 1)),
+      })
+    )
+    const result = deriveMonthlyIncome(transactions, [retail], 3)
+    expect(result).toEqual({ value: 2000, confidenceMonths: 3, isEstimate: false })
+  })
+
+  it('with windowMonths=9, includes data from the 7th month back (excluded by the default 6-month window)', () => {
+    const tx = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 5000,
+      date: addMonths(today, -7),
+    })
+    expect(deriveMonthlyIncome([tx], [retail]).value).toBeNull()
+    const result = deriveMonthlyIncome([tx], [retail], 9)
+    expect(result).toEqual({ value: 5000, confidenceMonths: 1, isEstimate: true })
+  })
+
+  it('with windowMonths=12, includes data from the 11th month back but still ignores the 13th', () => {
+    const withinWindow = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 6000,
+      date: addMonths(today, -11),
+    })
+    const outsideWindow = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 99999,
+      date: addMonths(today, -13),
+    })
+    const result = deriveMonthlyIncome([withinWindow, outsideWindow], [retail], 12)
+    expect(result).toEqual({ value: 6000, confidenceMonths: 1, isEstimate: true })
+  })
+
+  it('ignores EXPENSE and TRANSFER transactions', () => {
+    const expense = makeTx({
+      accountId: 'acc-retail',
+      type: 'EXPENSE',
+      amount: 1000,
+      date: addMonths(today, -1),
+    })
+    const transfer = makeTx({
+      accountId: 'acc-retail',
+      type: 'TRANSFER',
+      amount: 1000,
+      date: addMonths(today, -1),
+      transferAccountId: 'acc-other',
+    })
+    expect(deriveMonthlyIncome([expense, transfer], [retail]).value).toBeNull()
   })
 })
 
