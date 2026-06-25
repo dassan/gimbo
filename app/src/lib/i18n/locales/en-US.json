@@ -460,6 +460,7 @@
     "interestRate": "Interest: {{rate}}%/mo",
     "card": "Credit card",
     "loan": "Loan",
+    "installments": "Installments",
     "adjust": "Adjust income",
     "noDebt": "No active debt",
     "insightTitle": "Understanding this number",

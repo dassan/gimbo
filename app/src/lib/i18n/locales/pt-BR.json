@@ -460,6 +460,7 @@
     "interestRate": "Juros: {{rate}}% a.m.",
     "card": "Cartão de crédito",
     "loan": "Empréstimo",
+    "installments": "Parcelamento",
     "adjust": "Ajustar renda",
     "noDebt": "Nenhuma dívida ativa",
     "insightTitle": "Entenda este número",
