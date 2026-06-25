@@ -327,7 +327,9 @@ interface OpenInstallmentGroup {
   remainingCount: number // number of still-open occurrences (≈ remaining months)
 }
 
-/** Groups open installment-purchase transactions on a CREDIT account by parentId. */
+/** Groups open installment-purchase transactions on an account by parentId. Works for any
+ * account type — credit cards and regular accounts alike (e.g. a financing booked one
+ * parcela per month on a checking account). */
 function _getOpenInstallmentGroups(
   transactions: Transaction[],
   accountId: string
@@ -359,13 +361,14 @@ function _getOpenInstallmentGroups(
 }
 
 /**
- * Total committed debt = open (today-or-future) installment purchases on CREDIT
- * accounts + outstandingBalance of LOAN accounts. Always reconciles with the sum
- * of its underlying items (installment groups + loans).
+ * Total committed debt = open (today-or-future) installment purchases on any
+ * non-LOAN account (credit cards and regular accounts alike — e.g. a financing
+ * booked parcela by parcela) + outstandingBalance of LOAN accounts. Always
+ * reconciles with the sum of its underlying items (installment groups + loans).
  */
 export function getTotalCommittedDebt(transactions: Transaction[], accounts: Account[]): number {
-  const creditTotal = accounts
-    .filter((a) => a.type === 'CREDIT')
+  const installmentTotal = accounts
+    .filter((a) => a.type !== 'LOAN')
     .reduce(
       (s, acc) =>
         s +
@@ -375,16 +378,16 @@ export function getTotalCommittedDebt(transactions: Transaction[], accounts: Acc
   const loanTotal = accounts
     .filter((a) => a.type === 'LOAN')
     .reduce((s, a) => s + getLoanLiability(a), 0)
-  return creditTotal + loanTotal
+  return installmentTotal + loanTotal
 }
 
 /**
- * Monthly commitment = the next-due occurrence of each open CREDIT installment
- * group + the monthlyPayment of each LOAN account.
+ * Monthly commitment = the next-due occurrence of each open installment group on
+ * any non-LOAN account + the monthlyPayment of each LOAN account.
  */
 export function getMonthlyCommitment(transactions: Transaction[], accounts: Account[]): number {
-  const creditMonthly = accounts
-    .filter((a) => a.type === 'CREDIT')
+  const installmentMonthly = accounts
+    .filter((a) => a.type !== 'LOAN')
     .reduce(
       (s, acc) =>
         s + _getOpenInstallmentGroups(transactions, acc.id).reduce((gs, g) => gs + g.monthly, 0),
@@ -393,17 +396,17 @@ export function getMonthlyCommitment(transactions: Transaction[], accounts: Acco
   const loanMonthly = accounts
     .filter((a) => a.type === 'LOAN')
     .reduce((s, a) => s + (a.loanMetadata?.monthlyPayment ?? 0), 0)
-  return creditMonthly + loanMonthly
+  return installmentMonthly + loanMonthly
 }
 
 /**
- * Debt horizon, in months — the longest-running open commitment across CREDIT
- * installment groups and LOAN accounts (drives the "impacts your budget for N
- * months" framing).
+ * Debt horizon, in months — the longest-running open commitment across all
+ * installment groups (any non-LOAN account) and LOAN accounts (drives the
+ * "impacts your budget for N months" framing).
  */
 export function getDebtHorizon(transactions: Transaction[], accounts: Account[]): number {
-  const creditHorizon = accounts
-    .filter((a) => a.type === 'CREDIT')
+  const installmentHorizon = accounts
+    .filter((a) => a.type !== 'LOAN')
     .reduce(
       (m, acc) =>
         Math.max(
@@ -415,7 +418,7 @@ export function getDebtHorizon(transactions: Transaction[], accounts: Account[])
   const loanHorizon = accounts
     .filter((a) => a.type === 'LOAN')
     .reduce((m, a) => Math.max(m, a.loanMetadata?.remainingInstallments ?? 0), 0)
-  return Math.max(creditHorizon, loanHorizon)
+  return Math.max(installmentHorizon, loanHorizon)
 }
 
 // ─── Financial Health — Debt Breakdown (HE-10) ───────────────────────────────
@@ -449,7 +452,7 @@ export type DebtItem = DebtInstallmentItem | DebtLoanItem
 export interface DebtGroup {
   accountId: string
   accountName: string
-  kind: 'card' | 'loan'
+  kind: 'card' | 'loan' | 'installments'
   issuerIcon?: string
   monthly: number
   remainingTotal: number
@@ -457,10 +460,14 @@ export interface DebtGroup {
   items: DebtItem[]
 }
 
-/** Per-account breakdown of open committed debt — CREDIT installment groups + LOAN balances. */
+/**
+ * Per-account breakdown of open committed debt — installment groups on any non-LOAN
+ * account (credit cards → kind 'card'; regular accounts → kind 'installments', e.g. a
+ * financing booked parcela by parcela) + LOAN balances.
+ */
 export function getDebtBreakdown(transactions: Transaction[], accounts: Account[]): DebtGroup[] {
-  const cardGroups = accounts
-    .filter((a) => a.type === 'CREDIT')
+  const installmentGroups = accounts
+    .filter((a) => a.type !== 'LOAN')
     .map((acc): DebtGroup => {
       const items: DebtInstallmentItem[] = _getOpenInstallmentGroups(transactions, acc.id).map(
         (g) => ({
@@ -476,7 +483,7 @@ export function getDebtBreakdown(transactions: Transaction[], accounts: Account[
       return {
         accountId: acc.id,
         accountName: acc.name,
-        kind: 'card',
+        kind: acc.type === 'CREDIT' ? 'card' : 'installments',
         issuerIcon: acc.issuerIcon,
         monthly: items.reduce((s, i) => s + i.monthly, 0),
         remainingTotal: items.reduce((s, i) => s + i.remainingTotal, 0),
@@ -510,7 +517,7 @@ export function getDebtBreakdown(transactions: Transaction[], accounts: Account[
       }
     })
 
-  return [...cardGroups, ...loanGroups]
+  return [...installmentGroups, ...loanGroups]
 }
 
 /**

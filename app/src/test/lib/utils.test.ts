@@ -426,6 +426,17 @@ describe('getTotalCommittedDebt / getMonthlyCommitment / getDebtHorizon (HE-08)'
     expect(getMonthlyCommitment(cardGroup, [cardAccount, loanAccount])).toBe(300 + 800)
     expect(getDebtHorizon(cardGroup, [cardAccount, loanAccount])).toBe(18)
   })
+
+  it('counts an installment series booked on a regular (non-CREDIT) account', () => {
+    // e.g. "Refinanciamento Itaú" — a financing logged parcela by parcela on a
+    // checking account, not a card and not a LOAN entity. It must count as debt.
+    const checking = makeAccount({ id: 'acc-retail', type: 'RETAIL', creditMetadata: undefined })
+    const today = new Date().toISOString().slice(0, 10)
+    const group = makeInstallmentGroup('acc-retail', 'fin', 84, 500, today, 70) // 15 remain × 500 = 7500
+    expect(getTotalCommittedDebt(group, [checking])).toBe(7500)
+    expect(getMonthlyCommitment(group, [checking])).toBe(500)
+    expect(getDebtHorizon(group, [checking])).toBe(15)
+  })
 })
 
 describe('getDebtBreakdown (HE-10)', () => {
@@ -502,6 +513,27 @@ describe('getDebtBreakdown (HE-10)', () => {
       installment: { parentId: 'old', currentIndex: 1, total: 3 },
     })
     expect(getDebtBreakdown([pastTx], [account])).toEqual([])
+  })
+
+  it("tags a regular-account installment series as kind 'installments', not 'card'", () => {
+    const checking = makeAccount({ id: 'acc-retail', type: 'RETAIL', creditMetadata: undefined })
+    const today = new Date().toISOString().slice(0, 10)
+    const group = makeInstallmentGroup('acc-retail', 'fin', 84, 500, today, 70)
+    group.forEach((tx) => {
+      tx.description = `Refinanciamento Itaú (${tx.installment!.currentIndex}/84)`
+    })
+
+    const [debtGroup] = getDebtBreakdown(group, [checking])
+    expect(debtGroup.kind).toBe('installments')
+    expect(debtGroup.accountId).toBe('acc-retail')
+    expect(debtGroup.items).toHaveLength(1)
+    expect(debtGroup.items[0]).toMatchObject({
+      kind: 'installment',
+      description: 'Refinanciamento Itaú',
+      remaining: 15,
+      monthly: 500,
+      remainingTotal: 7500,
+    })
   })
 })
 

@@ -1,6 +1,16 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CreditCard, Landmark, ChevronDown, Info, Pencil, Check, X, Umbrella } from 'lucide-react'
+import {
+  CreditCard,
+  Landmark,
+  Layers,
+  ChevronDown,
+  Info,
+  Pencil,
+  Check,
+  X,
+  Umbrella,
+} from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import {
@@ -389,11 +399,19 @@ function DebtCard({ group, sortBy }: { group: DebtGroup; sortBy: 'time' | 'value
   const badgeColor =
     group.kind === 'loan'
       ? '#92400E'
-      : group.issuerIcon
-        ? (ISSUER_COLORS[group.issuerIcon] ?? '#1F2937')
-        : '#1B4F72'
-  const kindLabel = group.kind === 'loan' ? t('health.loan') : t('health.card')
-  const Icon = group.kind === 'loan' ? Landmark : CreditCard
+      : group.kind === 'installments'
+        ? '#1F3A5F'
+        : group.issuerIcon
+          ? (ISSUER_COLORS[group.issuerIcon] ?? '#1F2937')
+          : '#1B4F72'
+  const kindLabel =
+    group.kind === 'loan'
+      ? t('health.loan')
+      : group.kind === 'installments'
+        ? t('health.installments')
+        : t('health.card')
+  const Icon =
+    group.kind === 'loan' ? Landmark : group.kind === 'installments' ? Layers : CreditCard
 
   return (
     <div className="rounded-2xl bg-surface-container-lowest shadow-card border-[0.5px] border-surface-container-high overflow-hidden">
