@@ -33,6 +33,10 @@ export interface TransactionDrawerProps {
 
 type TxType = TransactionType
 
+// CC-23: installment count options, 2-480 (matches the Organizze benchmark's range,
+// covers long financings such as mortgages).
+const INSTALLMENT_COUNT_OPTIONS = Array.from({ length: 479 }, (_, i) => i + 2)
+
 const TYPE_CONFIG: Record<TxType, { label: string; color: string; bg: string; btnClass: string }> =
   {
     EXPENSE: {
@@ -710,17 +714,23 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                     <label className="label text-on-surface/40 block mb-2">
                       {t('transactions.installmentCount')}
                     </label>
-                    <input
-                      type="number"
-                      min={2}
-                      max={36}
-                      value={installmentCount}
-                      onChange={(e) => {
-                        const v = Math.max(2, Math.min(36, parseInt(e.target.value, 10) || 2))
-                        setInstallmentCount(v)
-                      }}
-                      className="w-full rounded-xl bg-surface-container-high py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-                    />
+                    <div className="relative">
+                      <select
+                        value={installmentCount}
+                        onChange={(e) => setInstallmentCount(parseInt(e.target.value, 10))}
+                        className="w-full appearance-none rounded-xl bg-surface-container-high py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                      >
+                        {INSTALLMENT_COUNT_OPTIONS.map((n) => (
+                          <option key={n} value={n}>
+                            {n}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        size={16}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface/40 pointer-events-none"
+                      />
+                    </div>
                   </div>
                   {amount > 0 && (
                     <p className="text-xs text-on-surface/50">

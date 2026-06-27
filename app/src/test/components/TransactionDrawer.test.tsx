@@ -471,7 +471,7 @@ describe('TransactionDrawer — CC-23: installment section', () => {
     const toggle = screen.getByRole('switch', { name: 'transactions.installments' })
     await userEvent.click(toggle)
     expect(screen.getByText('transactions.installmentCount')).toBeInTheDocument()
-    expect(screen.getByRole('spinbutton')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('2')).toBeInTheDocument()
   })
 
   it('does not show installment section in edit mode', () => {
