@@ -70,31 +70,23 @@ export default function Analytics() {
     return { startDate: ref, endDate: new Date(ref.getFullYear(), ref.getMonth() + 1, 0) }
   }, [period, now])
 
-  // M-62: the rolling window (B-22) already keeps real Transaction rows materialized up to
-  // ~24 months ahead — that's real data, not a guess, and must render as such. The cutoff
-  // between "real" and "projected" is therefore the latest date actually present in
-  // data.transactions, not "today". Only beyond that point are bars/line genuinely virtual.
-  const lastRealDate = useMemo(() => {
-    if (!data || data.transactions.length === 0) return now
-    const maxDateStr = data.transactions.reduce(
-      (max, tx) => (tx.date > max ? tx.date : max),
-      data.transactions[0].date
-    )
-    return parseDateLocal(maxDateStr)
-  }, [data, now])
-
-  // When the selected period reaches past the real-data cutoff, extend the cash-flow
-  // chart's transactions with virtual occurrences of open-ended recurring series
-  // (lib/utils.ts projectRecurringOccurrences), capped at a fixed 10-year horizon.
-  // Scoped to CashFlowView only — the other sub-tabs are about historical breakdown,
-  // not trend, and stay real-data-only.
+  // M-62: when the selected period reaches into the future, extend the cash-flow chart's
+  // transactions with virtual occurrences of open-ended recurring series beyond whatever is
+  // already materialized (lib/utils.ts projectRecurringOccurrences), capped at a fixed
+  // 10-year horizon. CashFlowView itself derives which buckets are actually "projected" from
+  // the isProjected tag on these merged rows — it never has to guess from a date cutoff, so
+  // a recurring series that already has real data further out than this call's horizon (e.g.
+  // B-22's 24-month rolling window) simply gets nothing added and renders entirely as real.
+  // Scoped to CashFlowView only — the other sub-tabs are about historical breakdown, not
+  // trend, and stay real-data-only.
   const cashFlowTransactions = useMemo(() => {
     if (!data) return []
-    if (endDate <= lastRealDate) return data.transactions
+    const today = parseDateLocal(todayStr())
+    if (endDate <= today) return data.transactions
     const cap = parseDateLocal(advanceMonths(todayStr(), PROJECTION_HORIZON_YEARS * 12))
     const horizon = formatDateLocal(endDate < cap ? endDate : cap)
     return [...data.transactions, ...projectRecurringOccurrences(data.transactions, horizon)]
-  }, [data, endDate, lastRealDate])
+  }, [data, endDate])
 
   if (!data) return null
 
@@ -177,7 +169,6 @@ export default function Analytics() {
           endDate={endDate}
           includeUnpaid={includeUnpaid}
           shadowClass={shadowClass}
-          projectionCutoff={lastRealDate}
         />
       )}
 

@@ -91,6 +91,11 @@ function makeTx(overrides: Partial<Transaction> = {}): Transaction {
   }
 }
 
+/** A virtual occurrence as merged in by Analytics/index.tsx (lib/utils.ts projectRecurringOccurrences). */
+function makeProjectedTx(overrides: Partial<Transaction> = {}): Transaction {
+  return Object.assign(makeTx({ isPaid: false, ...overrides }), { isProjected: true })
+}
+
 /** April 2026 period — matches the fixed system time used in other tests. */
 const APR_START = new Date(2026, 3, 1)
 const APR_END = new Date(2026, 3, 30)
@@ -533,20 +538,17 @@ describe('CashFlowView — opening balance anchor', () => {
   })
 })
 
-// ─── M-62: projected buckets (beyond projectionCutoff) ────────────────────────
+// ─── M-62: projected buckets (driven by the isProjected tag on merged tx) ─────
 
 describe('CashFlowView — M-62: projected buckets', () => {
-  /** "Today" for projectionCutoff — independent of the global fake system time. */
-  const CUTOFF = new Date('2026-04-15')
-
-  it('flags buckets after projectionCutoff as isProjected', () => {
+  it('flags a bucket containing a projected transaction as isProjected', () => {
     const accounts = [makeRetailAccount()]
     const transactions = [
       makeTx({ id: 'tx-real', type: 'INCOME', amount: 400, date: '2026-04-10' }),
       // Simulates a virtual occurrence merged in by Analytics/index.tsx via
-      // projectRecurringOccurrences (lib/utils.ts) — content doesn't matter to
-      // CashFlowView, only its date relative to projectionCutoff does.
-      makeTx({ id: 'tx-proj', type: 'INCOME', amount: 600, date: '2026-05-10' }),
+      // projectRecurringOccurrences (lib/utils.ts) — CashFlowView reads the
+      // isProjected tag directly off the transaction, no date inference involved.
+      makeProjectedTx({ id: 'tx-proj', type: 'INCOME', amount: 600, date: '2026-05-10' }),
     ]
     render(
       <CashFlowView
@@ -556,18 +558,19 @@ describe('CashFlowView — M-62: projected buckets', () => {
         endDate={APR_MAY_END}
         includeUnpaid={true}
         shadowClass={SHADOW}
-        projectionCutoff={CUTOFF}
       />
     )
-    expect(capturedRows.data[0]?.isProjected).toBe(false) // April bucket starts before cutoff
-    expect(capturedRows.data[1]?.isProjected).toBe(true) // May bucket starts after cutoff
+    expect(capturedRows.data[0]?.isProjected).toBe(false) // April: only the real tx
+    expect(capturedRows.data[1]?.isProjected).toBe(true) // May: only the projected tx
   })
 
-  it('flags an empty bucket beyond the cutoff as isProjected too', () => {
+  it('does not flag a real-data-only period, regardless of how far in the future it sits', () => {
+    // A sparse real transaction far in the future must not make earlier empty buckets, nor
+    // itself, render as "projected" — only an actual isProjected-tagged tx does that.
     const accounts = [makeRetailAccount()]
-    // No transaction at all in May — but its bucket still starts after the cutoff.
     const transactions = [
       makeTx({ id: 'tx-real', type: 'INCOME', amount: 400, date: '2026-04-10' }),
+      makeTx({ id: 'tx-far-future', type: 'INCOME', amount: 50, date: '2026-05-20' }),
     ]
     render(
       <CashFlowView
@@ -577,18 +580,16 @@ describe('CashFlowView — M-62: projected buckets', () => {
         endDate={APR_MAY_END}
         includeUnpaid={true}
         shadowClass={SHADOW}
-        projectionCutoff={CUTOFF}
       />
     )
-    expect(capturedRows.data[0]?.isProjected).toBe(false)
-    expect(capturedRows.data[1]?.isProjected).toBe(true)
+    expect(capturedRows.data.every((r) => r.isProjected === false)).toBe(true)
   })
 
   it('shows the "(projetado)" label in the table for a projected bucket', () => {
     const accounts = [makeRetailAccount()]
     const transactions = [
       makeTx({ id: 'tx-real', type: 'INCOME', amount: 400, date: '2026-04-10' }),
-      makeTx({ id: 'tx-proj', type: 'INCOME', amount: 600, date: '2026-05-10' }),
+      makeProjectedTx({ id: 'tx-proj', type: 'INCOME', amount: 600, date: '2026-05-10' }),
     ]
     render(
       <CashFlowView
@@ -598,13 +599,12 @@ describe('CashFlowView — M-62: projected buckets', () => {
         endDate={APR_MAY_END}
         includeUnpaid={true}
         shadowClass={SHADOW}
-        projectionCutoff={CUTOFF}
       />
     )
     expect(screen.getByText('(analytics.cashflowView.projectedLabel)')).toBeInTheDocument()
   })
 
-  it('never marks any bucket as projected when projectionCutoff is omitted', () => {
+  it('never marks any bucket as projected when no transaction is tagged isProjected', () => {
     const accounts = [makeRetailAccount()]
     const transactions = [
       makeTx({ id: 'tx-real', type: 'INCOME', amount: 400, date: '2026-04-10' }),
@@ -617,8 +617,6 @@ describe('CashFlowView — M-62: projected buckets', () => {
         endDate={APR_MAY_END}
         includeUnpaid={true}
         shadowClass={SHADOW}
-        // No projectionCutoff — every other test in this file relies on this default,
-        // so a future month with no data must NOT be flagged as projected.
       />
     )
     expect(capturedRows.data.every((r) => r.isProjected === false)).toBe(true)

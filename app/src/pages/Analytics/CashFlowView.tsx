@@ -30,10 +30,6 @@ export interface CashFlowViewProps {
   includeUnpaid: boolean
   shadowClass: string
   accountId?: string
-  // M-62: buckets whose representative date falls after this are rendered as projected
-  // (dashed line / dimmed bars). Omit entirely for views with no projection concept —
-  // every bucket then renders as real, unchanged from before M-62.
-  projectionCutoff?: Date
 }
 
 interface PeriodRow {
@@ -43,8 +39,10 @@ interface PeriodRow {
   expenses: number
   result: number
   balance: number
-  // M-62: true when this bucket falls beyond the last real (non-projected) transaction —
-  // its data, if any, comes only from projectRecurringOccurrences (lib/utils.ts).
+  // M-62: true when at least one transaction aggregated into this bucket is virtual
+  // (tagged isProjected by lib/utils.ts projectRecurringOccurrences, merged in by
+  // Analytics/index.tsx) — driven by the actual transaction, not an inferred date cutoff,
+  // so a sparse far-future real entry elsewhere in the dataset can't mask genuine guesses.
   isProjected: boolean
 }
 
@@ -56,7 +54,6 @@ export default function CashFlowView({
   includeUnpaid,
   shadowClass,
   accountId,
-  projectionCutoff,
 }: CashFlowViewProps) {
   const { t } = useTranslation()
 
@@ -70,7 +67,7 @@ export default function CashFlowView({
       startDate.getMonth() === endDate.getMonth() &&
       endDate.getDate() === lastOfMonth
 
-    type Bucket = { label: string; fullLabel: string; repDate: Date; match: (d: Date) => boolean }
+    type Bucket = { label: string; fullLabel: string; match: (d: Date) => boolean }
     const buckets: Bucket[] = []
 
     if (isFullMonth) {
@@ -84,7 +81,6 @@ export default function CashFlowView({
         buckets.push({
           label: `${lo}–${hi}`,
           fullLabel: `${lo}–${hi} ${monthShort}`,
-          repDate: new Date(y, m, lo),
           match: (d) =>
             d.getFullYear() === y && d.getMonth() === m && d.getDate() >= lo && d.getDate() <= hi,
         })
@@ -100,7 +96,6 @@ export default function CashFlowView({
         buckets.push({
           label: cur.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase(),
           fullLabel,
-          repDate: new Date(y, m, 1),
           match: (d) => d.getMonth() === m && d.getFullYear() === y,
         })
         cur.setMonth(cur.getMonth() + 1)
@@ -134,7 +129,7 @@ export default function CashFlowView({
     }
 
     let cumulative = opening
-    return buckets.map(({ label, fullLabel, repDate, match }) => {
+    return buckets.map(({ label, fullLabel, match }) => {
       const txs = transactions.filter((tx) => {
         // CC-17: CREDIT_PAYMENT is liability liquidation, not income/expense
         if (tx.type === 'CREDIT_PAYMENT') return false
@@ -158,10 +153,10 @@ export default function CashFlowView({
       }
       const result = income - expenses
       cumulative += result
-      const isProjected = projectionCutoff !== undefined && repDate > projectionCutoff
+      const isProjected = txs.some((tx) => 'isProjected' in tx)
       return { label, fullLabel, income, expenses, result, balance: cumulative, isProjected }
     })
-  }, [transactions, accounts, startDate, endDate, includeUnpaid, accountId, projectionCutoff])
+  }, [transactions, accounts, startDate, endDate, includeUnpaid, accountId])
 
   const hasData = rows.some((r) => r.income !== 0 || r.expenses !== 0)
 
@@ -183,17 +178,21 @@ export default function CashFlowView({
 
   // M-62: split "balance" into a solid (real) and dashed (projected) segment that share the
   // boundary point so the line reads as continuous — Recharts doesn't bridge across series,
-  // so the boundary bucket's value is duplicated into both.
+  // so the boundary bucket's value is duplicated into both. Once a bucket contains a guessed
+  // transaction the running cumulative is itself no longer purely real, so every bucket from
+  // there on stays in the projected segment even if it has no projected tx of its own.
   const balanceLabel = t('analytics.cashflowView.balance')
   const balanceProjectedLabel = `${balanceLabel} (${t('analytics.cashflowView.projectedLabel')})`
+  const firstProjectedIdx = rows.findIndex((r) => r.isProjected)
+  const hasProjectedData = firstProjectedIdx !== -1
   const chartData = useMemo(() => {
-    const lastRealIdx = rows.reduce((acc, r, i) => (r.isProjected ? acc : i), -1)
+    const lastRealIdx = hasProjectedData ? firstProjectedIdx - 1 : rows.length - 1
     return rows.map((r, i) => ({
       ...r,
       balanceReal: i <= lastRealIdx ? r.balance : null,
       balanceProjected: i >= lastRealIdx ? r.balance : null,
     }))
-  }, [rows])
+  }, [rows, firstProjectedIdx, hasProjectedData])
 
   return (
     <div className={cn('rounded-2xl bg-surface-container p-6 space-y-6', shadowClass)}>
@@ -257,17 +256,21 @@ export default function CashFlowView({
                 activeDot={{ r: 4 }}
                 connectNulls={false}
               />
-              <Line
-                type="monotone"
-                dataKey="balanceProjected"
-                name={balanceProjectedLabel}
-                stroke="#1F4D38"
-                strokeWidth={2}
-                strokeDasharray="5 5"
-                dot={false}
-                activeDot={{ r: 4 }}
-                connectNulls={false}
-              />
+              {/* Only rendered when this view actually has projected data — otherwise the
+                  legend would promise a dashed segment that never appears (confusing). */}
+              {hasProjectedData && (
+                <Line
+                  type="monotone"
+                  dataKey="balanceProjected"
+                  name={balanceProjectedLabel}
+                  stroke="#1F4D38"
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                  connectNulls={false}
+                />
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         ) : (
