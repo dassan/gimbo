@@ -10,12 +10,11 @@ import type {
   AuditEntry,
   AuditAction,
   AuditEntity,
-  RecurrenceFrequency,
 } from '@/types'
 import { applyRetention } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
 import { loadBackupDirHandle, ensureBackupDirPermission, writeBackupToDir } from '@/lib/backupDir'
-import { uuid, now } from '@/lib/utils'
+import { uuid, now, todayStr, advanceMonths, advanceByFrequency } from '@/lib/utils'
 import { isDemoMode } from '@/lib/demo'
 import { trackAction } from '@/lib/telemetry'
 
@@ -105,6 +104,9 @@ interface DataStore {
   deleteInstallmentGroup: (parentId: string) => void
   // M-35: delete a recurring occurrence and all later ones in the same series
   deleteRecurrenceFrom: (parentId: string, fromDate: string) => void
+  // B-22: tops every open-ended recurring series back up to the rolling horizon —
+  // call once per app load so a series never silently stops generating occurrences
+  refreshRecurrenceHorizons: () => void
 
   addValuation: (valuation: Valuation) => void
   updateValuation: (valuation: Valuation) => void
@@ -305,13 +307,16 @@ export const useDataStore = create<DataStore>((set) => ({
             return
           }
 
-          // ── M-35: Recurring series creation (eager generation) ────────────
+          // ── M-35/B-22: Recurring series creation (eager generation) ───────
           if (tx.recurrence) {
             const { frequency, endDate } = tx.recurrence
             const parentId = tx.id
             const startDate = tx.date.slice(0, 10)
-            // No end date → generate up to a 12-month horizon from the first occurrence.
-            const horizonEnd = (endDate ?? advanceMonths(startDate, 12)).slice(0, 10)
+            // No end date → generate up to a rolling horizon from the first occurrence;
+            // refreshRecurrenceHorizons() keeps topping it up on every app load (B-22).
+            const horizonEnd = (
+              endDate ?? advanceMonths(startDate, RECURRENCE_ROLLING_MONTHS)
+            ).slice(0, 10)
             const MAX_OCCURRENCES = 600 // safety cap (≈11 years of weekly)
 
             for (let i = 0; i < MAX_OCCURRENCES; i++) {
@@ -439,6 +444,58 @@ export const useDataStore = create<DataStore>((set) => ({
         addAudit(d, makeEntry('DELETE', 'transaction', parentId, summary))
       })
     ),
+
+  // ── B-22: top up open-ended recurring series to the rolling horizon ────────
+  // System maintenance, not a user action — no audit entry (mirrors setRetentionLimit).
+  refreshRecurrenceHorizons: () =>
+    set((s) => {
+      if (!s.data) return {}
+      const horizonTarget = advanceMonths(todayStr(), RECURRENCE_ROLLING_MONTHS)
+
+      const byParent = new Map<string, Transaction[]>()
+      for (const tx of s.data.transactions) {
+        if (!tx.recurrence) continue
+        const arr = byParent.get(tx.recurrence.parentId)
+        if (arr) arr.push(tx)
+        else byParent.set(tx.recurrence.parentId, [tx])
+      }
+
+      const MAX_NEW_OCCURRENCES_PER_SERIES = 600 // safety cap (≈11 years of weekly)
+      const newOccurrences: Transaction[] = []
+      for (const occurrences of byParent.values()) {
+        const { frequency, parentId, endDate } = occurrences[0].recurrence!
+        if (endDate) continue // bounded series — fully generated at creation already
+
+        let maxDate = occurrences[0].date.slice(0, 10)
+        let template = occurrences[0]
+        for (const occ of occurrences) {
+          const d = occ.date.slice(0, 10)
+          if (d > maxDate) {
+            maxDate = d
+            template = occ
+          }
+        }
+        if (maxDate >= horizonTarget) continue
+
+        for (let i = 1; i <= MAX_NEW_OCCURRENCES_PER_SERIES; i++) {
+          const occDate = advanceByFrequency(maxDate, frequency, i)
+          if (occDate > horizonTarget) break
+          newOccurrences.push({
+            ...template,
+            id: uuid(),
+            date: occDate,
+            isPaid: false,
+            recurrence: { frequency, parentId },
+          })
+        }
+      }
+
+      if (newOccurrences.length === 0) return {}
+      const data = structuredClone(s.data)
+      data.transactions.push(...newOccurrences)
+      debouncedReplaceAll(data)
+      return { data }
+    }),
 
   // ── Valuations ────────────────────────────────────────────────────────────
 
@@ -582,37 +639,10 @@ function mutate(
   return { data }
 }
 
-// Advances a "YYYY-MM-DD" date string by the given number of months using local
-// date arithmetic (no UTC conversions). If the target month has fewer days than
-// the original day, the day is clamped to the last day of that month.
-function advanceMonths(dateStr: string, months: number): string {
-  if (months === 0) return dateStr
-  const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number)
-  let newMonth = m + months
-  let newYear = y
-  while (newMonth > 12) {
-    newMonth -= 12
-    newYear += 1
-  }
-  const lastDay = new Date(newYear, newMonth, 0).getDate()
-  const clampedDay = Math.min(d, lastDay)
-  return `${newYear}-${String(newMonth).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`
-}
-
-// Advances a "YYYY-MM-DD" date string by the given number of days (local arithmetic).
-function addDays(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number)
-  const dt = new Date(y, m - 1, d + days)
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
-}
-
-// M-35: advances a date by `n` recurrence periods according to the frequency.
-function advanceByFrequency(dateStr: string, frequency: RecurrenceFrequency, n: number): string {
-  if (n === 0) return dateStr.slice(0, 10)
-  if (frequency === 'weekly') return addDays(dateStr, 7 * n)
-  if (frequency === 'biweekly') return addDays(dateStr, 14 * n)
-  return advanceMonths(dateStr.slice(0, 10), n) // monthly
-}
+// B-22: rolling horizon (months) a recurring series with no endDate is kept materialized
+// to, ahead of "today". refreshRecurrenceHorizons() tops series up to this on every app
+// load, so a series never silently stops generating once the initial window is consumed.
+const RECURRENCE_ROLLING_MONTHS = 24
 
 // Strips CREDIT-only fields (creditMetadata) from non-CREDIT accounts.
 // CC-12: non-CREDIT accounts must never carry creditMetadata in the saved object.

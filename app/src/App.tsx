@@ -27,6 +27,7 @@ export default function App() {
   const initWorkspace = useWorkspaceStore((s) => s.init)
   const theme = useWorkspaceStore((s) => s.workspace.theme)
   const loadData = useDataStore((s) => s.loadData)
+  const refreshRecurrenceHorizons = useDataStore((s) => s.refreshRecurrenceHorizons)
   const data = useDataStore((s) => s.data)
   const [hydrated, setHydrated] = useState(false)
   const [initError, setInitError] = useState<string | null>(null)
@@ -58,6 +59,7 @@ export default function App() {
 
         if (isDemoMode()) {
           loadData(await loadDemoData())
+          refreshRecurrenceHorizons()
           return
         }
 
@@ -83,7 +85,10 @@ export default function App() {
         }
 
         const saved = await storage.loadDataFile()
-        if (saved) loadData(saved)
+        if (saved) {
+          loadData(saved)
+          refreshRecurrenceHorizons()
+        }
       } catch (err) {
         setInitError(err instanceof Error ? err.message : 'Erro ao carregar dados locais')
       } finally {
@@ -91,7 +96,7 @@ export default function App() {
       }
     }
     void init()
-  }, [initWorkspace, loadData])
+  }, [initWorkspace, loadData, refreshRecurrenceHorizons])
 
   if (!hydrated) return null
 

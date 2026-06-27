@@ -163,7 +163,8 @@
       "expenses": "Saídas",
       "result": "Resultado",
       "balance": "Saldo",
-      "tableTitle": "Detalhamento por Período"
+      "tableTitle": "Detalhamento por Período",
+      "projectedLabel": "Projetado"
     },
     "categorias": {
       "incomeTitle": "Receitas por Categoria",

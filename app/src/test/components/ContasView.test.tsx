@@ -15,6 +15,7 @@ vi.mock('recharts', () => ({
     <div data-testid="cashflow-chart">{children}</div>
   ),
   Bar: () => null,
+  Cell: () => null,
   Line: () => null,
   XAxis: () => null,
   YAxis: () => null,

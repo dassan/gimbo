@@ -23,6 +23,7 @@ import {
   isCashRealized,
   now,
   parseDateLocal,
+  projectRecurringOccurrences,
   sortCategoriesHierarchical,
 } from '@/lib/utils'
 import type { Account, Category, Transaction } from '@/types'
@@ -993,5 +994,63 @@ describe('filterArchivedAccounts (M-42)', () => {
   it('returns all accounts when none are archived', () => {
     const accounts = [makeAcc({ id: 'a' }), makeAcc({ id: 'b' })]
     expect(filterArchivedAccounts(accounts)).toHaveLength(2)
+  })
+})
+
+describe('projectRecurringOccurrences (M-62)', () => {
+  function makeRecurringTx(overrides: Partial<Transaction> = {}): Transaction {
+    return makeTx({
+      id: 'rec-parent',
+      type: 'INCOME',
+      amount: 1000,
+      date: '2028-01-10',
+      isPaid: true,
+      recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+      ...overrides,
+    })
+  }
+
+  it('projects monthly occurrences beyond the last materialized one, up to the horizon', () => {
+    const projected = projectRecurringOccurrences([makeRecurringTx()], '2028-04-10')
+    expect(projected.map((t) => t.date)).toEqual(['2028-02-10', '2028-03-10', '2028-04-10'])
+    expect(projected.every((t) => t.isProjected === true)).toBe(true)
+    expect(projected.every((t) => t.isPaid === false)).toBe(true)
+  })
+
+  it('never projects past an explicit endDate, even if the horizon is further out', () => {
+    const bounded = makeTx({
+      id: 'rec-bounded',
+      type: 'EXPENSE',
+      date: '2028-01-01',
+      recurrence: { frequency: 'weekly', parentId: 'rec-bounded', endDate: '2028-01-15' },
+    })
+    const projected = projectRecurringOccurrences([bounded], '2028-06-01')
+    expect(projected).toEqual([])
+  })
+
+  it('returns nothing when the last materialized occurrence already covers the horizon', () => {
+    const projected = projectRecurringOccurrences([makeRecurringTx()], '2028-01-05')
+    expect(projected).toEqual([])
+  })
+
+  it('does not mutate the input transactions array', () => {
+    const real = [makeRecurringTx()]
+    const snapshot = JSON.stringify(real)
+    projectRecurringOccurrences(real, '2029-01-10')
+    expect(JSON.stringify(real)).toBe(snapshot)
+  })
+
+  it('uses the latest occurrence of a multi-row series as the template, not the first', () => {
+    const tx1 = makeRecurringTx({ id: 'rec-parent', date: '2028-01-10' })
+    const tx2 = makeRecurringTx({ id: 'tx-2', date: '2028-02-10', isPaid: false, amount: 2000 })
+    const projected = projectRecurringOccurrences([tx1, tx2], '2028-03-10')
+    expect(projected).toHaveLength(1)
+    expect(projected[0].date).toBe('2028-03-10')
+    expect(projected[0].amount).toBe(2000) // templated off tx2 (the later occurrence)
+  })
+
+  it('ignores transactions without a recurrence', () => {
+    const projected = projectRecurringOccurrences([makeTx({ recurrence: undefined })], '2030-01-01')
+    expect(projected).toEqual([])
   })
 })

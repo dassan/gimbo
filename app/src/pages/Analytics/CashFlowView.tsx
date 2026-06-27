@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   ComposedChart,
   Bar,
+  Cell,
   Line,
   XAxis,
   YAxis,
@@ -29,6 +30,10 @@ export interface CashFlowViewProps {
   includeUnpaid: boolean
   shadowClass: string
   accountId?: string
+  // M-62: buckets whose representative date falls after this are rendered as projected
+  // (dashed line / dimmed bars). Omit entirely for views with no projection concept —
+  // every bucket then renders as real, unchanged from before M-62.
+  projectionCutoff?: Date
 }
 
 interface PeriodRow {
@@ -38,6 +43,9 @@ interface PeriodRow {
   expenses: number
   result: number
   balance: number
+  // M-62: true when this bucket falls beyond the last real (non-projected) transaction —
+  // its data, if any, comes only from projectRecurringOccurrences (lib/utils.ts).
+  isProjected: boolean
 }
 
 export default function CashFlowView({
@@ -48,6 +56,7 @@ export default function CashFlowView({
   includeUnpaid,
   shadowClass,
   accountId,
+  projectionCutoff,
 }: CashFlowViewProps) {
   const { t } = useTranslation()
 
@@ -61,7 +70,7 @@ export default function CashFlowView({
       startDate.getMonth() === endDate.getMonth() &&
       endDate.getDate() === lastOfMonth
 
-    type Bucket = { label: string; fullLabel: string; match: (d: Date) => boolean }
+    type Bucket = { label: string; fullLabel: string; repDate: Date; match: (d: Date) => boolean }
     const buckets: Bucket[] = []
 
     if (isFullMonth) {
@@ -75,6 +84,7 @@ export default function CashFlowView({
         buckets.push({
           label: `${lo}–${hi}`,
           fullLabel: `${lo}–${hi} ${monthShort}`,
+          repDate: new Date(y, m, lo),
           match: (d) =>
             d.getFullYear() === y && d.getMonth() === m && d.getDate() >= lo && d.getDate() <= hi,
         })
@@ -90,6 +100,7 @@ export default function CashFlowView({
         buckets.push({
           label: cur.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase(),
           fullLabel,
+          repDate: new Date(y, m, 1),
           match: (d) => d.getMonth() === m && d.getFullYear() === y,
         })
         cur.setMonth(cur.getMonth() + 1)
@@ -123,7 +134,7 @@ export default function CashFlowView({
     }
 
     let cumulative = opening
-    return buckets.map(({ label, fullLabel, match }) => {
+    return buckets.map(({ label, fullLabel, repDate, match }) => {
       const txs = transactions.filter((tx) => {
         // CC-17: CREDIT_PAYMENT is liability liquidation, not income/expense
         if (tx.type === 'CREDIT_PAYMENT') return false
@@ -147,9 +158,10 @@ export default function CashFlowView({
       }
       const result = income - expenses
       cumulative += result
-      return { label, fullLabel, income, expenses, result, balance: cumulative }
+      const isProjected = projectionCutoff !== undefined && repDate > projectionCutoff
+      return { label, fullLabel, income, expenses, result, balance: cumulative, isProjected }
     })
-  }, [transactions, accounts, startDate, endDate, includeUnpaid, accountId])
+  }, [transactions, accounts, startDate, endDate, includeUnpaid, accountId, projectionCutoff])
 
   const hasData = rows.some((r) => r.income !== 0 || r.expenses !== 0)
 
@@ -169,13 +181,27 @@ export default function CashFlowView({
     balance: t('analytics.cashflowView.balance'),
   }
 
+  // M-62: split "balance" into a solid (real) and dashed (projected) segment that share the
+  // boundary point so the line reads as continuous — Recharts doesn't bridge across series,
+  // so the boundary bucket's value is duplicated into both.
+  const balanceLabel = t('analytics.cashflowView.balance')
+  const balanceProjectedLabel = `${balanceLabel} (${t('analytics.cashflowView.projectedLabel')})`
+  const chartData = useMemo(() => {
+    const lastRealIdx = rows.reduce((acc, r, i) => (r.isProjected ? acc : i), -1)
+    return rows.map((r, i) => ({
+      ...r,
+      balanceReal: i <= lastRealIdx ? r.balance : null,
+      balanceProjected: i >= lastRealIdx ? r.balance : null,
+    }))
+  }, [rows])
+
   return (
     <div className={cn('rounded-2xl bg-surface-container p-6 space-y-6', shadowClass)}>
       {/* R-07: ComposedChart — bars for income/expenses + line for accumulated balance */}
       <div className="h-56">
         {hasData ? (
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={rows} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+            <ComposedChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(25,28,29,0.04)" vertical={false} />
               <XAxis
                 dataKey="fullLabel"
@@ -210,15 +236,37 @@ export default function CashFlowView({
                 wrapperStyle={{ fontSize: 12, paddingTop: 16 }}
                 formatter={(value) => tooltipLabels[String(value)] ?? String(value)}
               />
-              <Bar dataKey="income" fill="#2D6A4F" radius={[4, 4, 0, 0]} maxBarSize={32} />
-              <Bar dataKey="expenses" fill="#C0392B" radius={[4, 4, 0, 0]} maxBarSize={32} />
+              {/* M-62: projected buckets render with reduced opacity (no dash support on Bar) */}
+              <Bar dataKey="income" fill="#2D6A4F" radius={[4, 4, 0, 0]} maxBarSize={32}>
+                {chartData.map((r, i) => (
+                  <Cell key={`income-${i}`} fillOpacity={r.isProjected ? 0.35 : 1} />
+                ))}
+              </Bar>
+              <Bar dataKey="expenses" fill="#C0392B" radius={[4, 4, 0, 0]} maxBarSize={32}>
+                {chartData.map((r, i) => (
+                  <Cell key={`expenses-${i}`} fillOpacity={r.isProjected ? 0.35 : 1} />
+                ))}
+              </Bar>
               <Line
                 type="monotone"
-                dataKey="balance"
+                dataKey="balanceReal"
+                name={balanceLabel}
                 stroke="#1F4D38"
                 strokeWidth={2}
                 dot={false}
                 activeDot={{ r: 4 }}
+                connectNulls={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="balanceProjected"
+                name={balanceProjectedLabel}
+                stroke="#1F4D38"
+                strokeWidth={2}
+                strokeDasharray="5 5"
+                dot={false}
+                activeDot={{ r: 4 }}
+                connectNulls={false}
               />
             </ComposedChart>
           </ResponsiveContainer>
@@ -262,9 +310,19 @@ export default function CashFlowView({
             {rows.map((row) => (
               <div
                 key={row.fullLabel}
-                className="grid grid-cols-5 rounded-xl px-2 py-2 hover:bg-surface-container-low transition-colors"
+                className={cn(
+                  'grid grid-cols-5 rounded-xl px-2 py-2 hover:bg-surface-container-low transition-colors',
+                  row.isProjected && 'opacity-60'
+                )}
               >
-                <p className="text-xs font-medium text-on-surface">{row.fullLabel}</p>
+                <p className="text-xs font-medium text-on-surface">
+                  {row.fullLabel}
+                  {row.isProjected && (
+                    <span className="ml-1.5 text-[10px] font-normal italic text-on-surface/40">
+                      ({t('analytics.cashflowView.projectedLabel')})
+                    </span>
+                  )}
+                </p>
                 <p className="text-xs text-right text-primary font-medium tabular-nums">
                   {formatCurrency(row.income)}
                 </p>

@@ -163,7 +163,8 @@
       "expenses": "Expenses",
       "result": "Result",
       "balance": "Balance",
-      "tableTitle": "Period Breakdown"
+      "tableTitle": "Period Breakdown",
+      "projectedLabel": "Projected"
     },
     "categorias": {
       "incomeTitle": "Income by Category",

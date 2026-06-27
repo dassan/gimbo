@@ -3,7 +3,15 @@ import { useTranslation } from 'react-i18next'
 import { BarChart2 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
-import { cn, parseDateLocal } from '@/lib/utils'
+import {
+  cn,
+  parseDateLocal,
+  formatDateLocal,
+  advanceMonths,
+  todayStr,
+  projectRecurringOccurrences,
+  PROJECTION_HORIZON_YEARS,
+} from '@/lib/utils'
 import PeriodSelector from '@/components/PeriodSelector'
 import type { PeriodValue } from '@/components/PeriodSelector'
 import CashFlowView from './CashFlowView'
@@ -61,6 +69,20 @@ export default function Analytics() {
     const ref = new Date(now.getFullYear(), now.getMonth(), 1)
     return { startDate: ref, endDate: new Date(ref.getFullYear(), ref.getMonth() + 1, 0) }
   }, [period, now])
+
+  // M-62: when the selected period reaches into the future, extend the cash-flow
+  // chart's transactions with virtual occurrences of open-ended recurring series
+  // (lib/utils.ts projectRecurringOccurrences), capped at a fixed 10-year horizon.
+  // Scoped to CashFlowView only — the other sub-tabs are about historical breakdown,
+  // not trend, and stay real-data-only.
+  const cashFlowTransactions = useMemo(() => {
+    if (!data) return []
+    const today = parseDateLocal(todayStr())
+    if (endDate <= today) return data.transactions
+    const cap = parseDateLocal(advanceMonths(todayStr(), PROJECTION_HORIZON_YEARS * 12))
+    const horizon = formatDateLocal(endDate < cap ? endDate : cap)
+    return [...data.transactions, ...projectRecurringOccurrences(data.transactions, horizon)]
+  }, [data, endDate])
 
   if (!data) return null
 
@@ -137,12 +159,13 @@ export default function Analytics() {
 
       {activeTab === 'cashflow' && (
         <CashFlowView
-          transactions={data.transactions}
+          transactions={cashFlowTransactions}
           accounts={data.accounts}
           startDate={startDate}
           endDate={endDate}
           includeUnpaid={includeUnpaid}
           shadowClass={shadowClass}
+          projectionCutoff={now}
         />
       )}
 

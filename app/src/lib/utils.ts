@@ -1,4 +1,10 @@
-import type { Account, Category, IncomeWindowMonths, Transaction } from '@/types'
+import type {
+  Account,
+  Category,
+  IncomeWindowMonths,
+  RecurrenceFrequency,
+  Transaction,
+} from '@/types'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
@@ -91,8 +97,117 @@ export function parseDateLocal(dateStr: string): Date {
 
 /** Returns today's date as "YYYY-MM-DD" in local time (avoids UTC offset from toISOString). */
 export function todayStr(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return formatDateLocal(new Date())
+}
+
+/** Inverse of parseDateLocal: formats a local Date as "YYYY-MM-DD". */
+export function formatDateLocal(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+// ─── Recurrence date arithmetic (M-35 / B-22) ─────────────────────────────────
+// Shared by the store (materializing real occurrences) and the projection layer
+// (computing virtual ones) — both need the exact same date-advancing rules.
+
+/**
+ * Advances a "YYYY-MM-DD" date string by the given number of months using local
+ * date arithmetic (no UTC conversions). If the target month has fewer days than
+ * the original day, the day is clamped to the last day of that month.
+ */
+export function advanceMonths(dateStr: string, months: number): string {
+  if (months === 0) return dateStr.slice(0, 10)
+  const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number)
+  let newMonth = m + months
+  let newYear = y
+  while (newMonth > 12) {
+    newMonth -= 12
+    newYear += 1
+  }
+  const lastDay = new Date(newYear, newMonth, 0).getDate()
+  const clampedDay = Math.min(d, lastDay)
+  return `${newYear}-${String(newMonth).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`
+}
+
+/** Advances a "YYYY-MM-DD" date string by the given number of days (local arithmetic). */
+export function addDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number)
+  const dt = new Date(y, m - 1, d + days)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+}
+
+/** Advances a date by `n` recurrence periods according to the frequency. */
+export function advanceByFrequency(
+  dateStr: string,
+  frequency: RecurrenceFrequency,
+  n: number
+): string {
+  if (n === 0) return dateStr.slice(0, 10)
+  if (frequency === 'weekly') return addDays(dateStr, 7 * n)
+  if (frequency === 'biweekly') return addDays(dateStr, 14 * n)
+  return advanceMonths(dateStr.slice(0, 10), n) // monthly
+}
+
+// ─── Projection layer (M-62) ───────────────────────────────────────────────────
+// Long-range forecasting (e.g. Reports' cash-flow chart) needs to see recurring
+// series beyond whatever is currently materialized as real Transaction rows
+// (the rolling window from B-22/refreshRecurrenceHorizons). This computes those
+// future occurrences purely in memory — never persisted, never validated by the
+// DataFile schema, never touches the store. Capped at PROJECTION_HORIZON_YEARS so
+// long-range views have a fixed, predictable ceiling regardless of selected period.
+export const PROJECTION_HORIZON_YEARS = 10
+
+export type ProjectedTransaction = Transaction & { isProjected: true }
+
+/**
+ * Computes virtual future occurrences of every open-ended recurring series
+ * (no `recurrence.endDate`) beyond its last materialized occurrence, up to
+ * `horizonEnd` ("YYYY-MM-DD"). Series with an explicit `endDate` are skipped —
+ * they were already fully generated up to that date at creation/top-up time.
+ * Pure function: never mutates `transactions`, never persists anything.
+ */
+export function projectRecurringOccurrences(
+  transactions: Transaction[],
+  horizonEnd: string
+): ProjectedTransaction[] {
+  const byParent = new Map<string, Transaction[]>()
+  for (const tx of transactions) {
+    if (!tx.recurrence) continue
+    const arr = byParent.get(tx.recurrence.parentId)
+    if (arr) arr.push(tx)
+    else byParent.set(tx.recurrence.parentId, [tx])
+  }
+
+  const MAX_OCCURRENCES_PER_SERIES = 1000 // safety cap (≈19 years of weekly)
+  const projected: ProjectedTransaction[] = []
+  for (const occurrences of byParent.values()) {
+    const { frequency, parentId, endDate } = occurrences[0].recurrence!
+    if (endDate) continue // bounded series — nothing beyond what's already materialized
+
+    let maxDate = occurrences[0].date.slice(0, 10)
+    let template = occurrences[0]
+    for (const occ of occurrences) {
+      const d = occ.date.slice(0, 10)
+      if (d > maxDate) {
+        maxDate = d
+        template = occ
+      }
+    }
+    if (maxDate >= horizonEnd) continue
+
+    for (let i = 1; i <= MAX_OCCURRENCES_PER_SERIES; i++) {
+      const occDate = advanceByFrequency(maxDate, frequency, i)
+      if (occDate > horizonEnd) break
+      projected.push({
+        ...template,
+        id: uuid(),
+        date: occDate,
+        isPaid: false,
+        recurrence: { frequency, parentId },
+        isProjected: true,
+      })
+    }
+  }
+  return projected
 }
 
 // ─── Credit Card — Invoice Engine ─────────────────────────────────────────────

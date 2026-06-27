@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, beforeEach } from 'vitest'
+﻿import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '../fixtures/dataFile'
 import type {
@@ -720,12 +720,12 @@ describe('M-35: addTransaction with recurrence', () => {
     })
   })
 
-  it('generates 13 monthly occurrences over the default 12-month horizon', () => {
+  it('generates 25 monthly occurrences over the default 24-month rolling horizon (B-22)', () => {
     useDataStore
       .getState()
       .addTransaction(makeRecurring({ frequency: 'monthly', parentId: 'rec-parent' }))
     const txs = useDataStore.getState().data?.transactions ?? []
-    expect(txs).toHaveLength(13) // months 0..12 inclusive
+    expect(txs).toHaveLength(25) // months 0..24 inclusive
   })
 
   it('all occurrences share the parentId and frequency', () => {
@@ -799,7 +799,7 @@ describe('M-35: deleteRecurrenceFrom', () => {
   })
 
   it('removes the chosen occurrence and all later ones, keeping earlier ones', () => {
-    expect(useDataStore.getState().data?.transactions).toHaveLength(13)
+    expect(useDataStore.getState().data?.transactions).toHaveLength(25)
     useDataStore.getState().deleteRecurrenceFrom('rec-parent', '2026-04-10')
     const after = useDataStore.getState().data?.transactions ?? []
     expect(after).toHaveLength(3) // Jan, Feb, Mar remain
@@ -808,7 +808,101 @@ describe('M-35: deleteRecurrenceFrom', () => {
 
   it('records the removed occurrence ids as tombstones in deletedIds', () => {
     useDataStore.getState().deleteRecurrenceFrom('rec-parent', '2026-04-10')
-    expect(useDataStore.getState().data?.deletedIds).toHaveLength(10) // 13 - 3
+    expect(useDataStore.getState().data?.deletedIds).toHaveLength(22) // 25 - 3
+  })
+})
+
+// ─── B-22: refreshRecurrenceHorizons — rolling window top-up ──────────────────
+
+describe('B-22: refreshRecurrenceHorizons', () => {
+  const account = makeAccount({ id: 'acc-r' })
+  const category = makeCategory({ id: 'cat-r', type: 'INCOME' })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('extends an open-ended series once "today" approaches the materialized horizon', () => {
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account], categories: [category] }),
+    })
+    useDataStore.getState().addTransaction(
+      makeTransaction({
+        id: 'rec-parent',
+        accountId: 'acc-r',
+        categoryId: 'cat-r',
+        type: 'INCOME',
+        amount: 1000,
+        date: '2026-01-10',
+        description: 'Salário',
+        isPaid: true,
+        recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+      })
+    )
+    // 25 occurrences generated at creation: 2026-01-10 .. 2028-01-10 (24-month horizon).
+    expect(useDataStore.getState().data?.transactions).toHaveLength(25)
+
+    // Jump "today" close to the materialized horizon (2028-01-10).
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2027-12-15'))
+    useDataStore.getState().refreshRecurrenceHorizons()
+
+    const txs = useDataStore.getState().data?.transactions ?? []
+    const maxDate = txs.reduce((m, t) => (t.date > m ? t.date : m), '')
+    // New horizon: 2027-12-15 + 24 months = 2029-12-15 → 23 new monthly occurrences
+    // from 2028-02-10 through 2029-12-10 (25 + 23 = 48 total).
+    expect(txs).toHaveLength(48)
+    expect(maxDate).toBe('2029-12-10')
+    expect(txs.every((t) => t.recurrence?.parentId === 'rec-parent')).toBe(true)
+    const newOnes = txs.filter((t) => t.date > '2028-01-10')
+    expect(newOnes).toHaveLength(23)
+    expect(newOnes.every((t) => t.isPaid === false)).toBe(true)
+  })
+
+  it('does not duplicate occurrences already materialized within the horizon', () => {
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account], categories: [category] }),
+    })
+    useDataStore.getState().addTransaction(
+      makeTransaction({
+        id: 'rec-parent',
+        accountId: 'acc-r',
+        categoryId: 'cat-r',
+        type: 'INCOME',
+        amount: 1000,
+        date: '2026-01-10',
+        isPaid: true,
+        recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+      })
+    )
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-15')) // far from the horizon — no top-up needed
+    useDataStore.getState().refreshRecurrenceHorizons()
+    expect(useDataStore.getState().data?.transactions).toHaveLength(25)
+  })
+
+  it('does not extend a series that has an explicit endDate', () => {
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account], categories: [category] }),
+    })
+    useDataStore.getState().addTransaction(
+      makeTransaction({
+        id: 'rec-parent',
+        accountId: 'acc-r',
+        categoryId: 'cat-r',
+        type: 'INCOME',
+        amount: 1000,
+        date: '2026-01-01',
+        isPaid: true,
+        recurrence: { frequency: 'weekly', parentId: 'rec-parent', endDate: '2026-01-29' },
+      })
+    )
+    expect(useDataStore.getState().data?.transactions).toHaveLength(5)
+
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2027-12-31')) // far in the future — would top up an open series
+    useDataStore.getState().refreshRecurrenceHorizons()
+    expect(useDataStore.getState().data?.transactions).toHaveLength(5)
   })
 })
 

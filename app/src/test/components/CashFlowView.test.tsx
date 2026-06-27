@@ -13,6 +13,7 @@ const capturedRows = vi.hoisted(() => ({
     expenses: number
     result: number
     balance: number
+    isProjected: boolean
   }>,
 }))
 
@@ -34,12 +35,14 @@ vi.mock('recharts', () => ({
       expenses: number
       result: number
       balance: number
+      isProjected: boolean
     }>
   }) => {
     capturedRows.data = data ?? []
     return <div data-testid="cashflow-chart">{children}</div>
   },
-  Bar: () => null,
+  Bar: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  Cell: () => null,
   Line: () => null,
   XAxis: () => null,
   YAxis: () => null,
@@ -527,5 +530,97 @@ describe('CashFlowView — opening balance anchor', () => {
     // April result = 300 → April balance = 1800.
     expect(capturedRows.data[0]?.result).toBe(300)
     expect(capturedRows.data[0]?.balance).toBe(1800)
+  })
+})
+
+// ─── M-62: projected buckets (beyond projectionCutoff) ────────────────────────
+
+describe('CashFlowView — M-62: projected buckets', () => {
+  /** "Today" for projectionCutoff — independent of the global fake system time. */
+  const CUTOFF = new Date('2026-04-15')
+
+  it('flags buckets after projectionCutoff as isProjected', () => {
+    const accounts = [makeRetailAccount()]
+    const transactions = [
+      makeTx({ id: 'tx-real', type: 'INCOME', amount: 400, date: '2026-04-10' }),
+      // Simulates a virtual occurrence merged in by Analytics/index.tsx via
+      // projectRecurringOccurrences (lib/utils.ts) — content doesn't matter to
+      // CashFlowView, only its date relative to projectionCutoff does.
+      makeTx({ id: 'tx-proj', type: 'INCOME', amount: 600, date: '2026-05-10' }),
+    ]
+    render(
+      <CashFlowView
+        transactions={transactions}
+        accounts={accounts}
+        startDate={APR_MAY_START}
+        endDate={APR_MAY_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+        projectionCutoff={CUTOFF}
+      />
+    )
+    expect(capturedRows.data[0]?.isProjected).toBe(false) // April bucket starts before cutoff
+    expect(capturedRows.data[1]?.isProjected).toBe(true) // May bucket starts after cutoff
+  })
+
+  it('flags an empty bucket beyond the cutoff as isProjected too', () => {
+    const accounts = [makeRetailAccount()]
+    // No transaction at all in May — but its bucket still starts after the cutoff.
+    const transactions = [
+      makeTx({ id: 'tx-real', type: 'INCOME', amount: 400, date: '2026-04-10' }),
+    ]
+    render(
+      <CashFlowView
+        transactions={transactions}
+        accounts={accounts}
+        startDate={APR_MAY_START}
+        endDate={APR_MAY_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+        projectionCutoff={CUTOFF}
+      />
+    )
+    expect(capturedRows.data[0]?.isProjected).toBe(false)
+    expect(capturedRows.data[1]?.isProjected).toBe(true)
+  })
+
+  it('shows the "(projetado)" label in the table for a projected bucket', () => {
+    const accounts = [makeRetailAccount()]
+    const transactions = [
+      makeTx({ id: 'tx-real', type: 'INCOME', amount: 400, date: '2026-04-10' }),
+      makeTx({ id: 'tx-proj', type: 'INCOME', amount: 600, date: '2026-05-10' }),
+    ]
+    render(
+      <CashFlowView
+        transactions={transactions}
+        accounts={accounts}
+        startDate={APR_MAY_START}
+        endDate={APR_MAY_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+        projectionCutoff={CUTOFF}
+      />
+    )
+    expect(screen.getByText('(analytics.cashflowView.projectedLabel)')).toBeInTheDocument()
+  })
+
+  it('never marks any bucket as projected when projectionCutoff is omitted', () => {
+    const accounts = [makeRetailAccount()]
+    const transactions = [
+      makeTx({ id: 'tx-real', type: 'INCOME', amount: 400, date: '2026-04-10' }),
+    ]
+    render(
+      <CashFlowView
+        transactions={transactions}
+        accounts={accounts}
+        startDate={APR_MAY_START}
+        endDate={APR_MAY_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+        // No projectionCutoff — every other test in this file relies on this default,
+        // so a future month with no data must NOT be flagged as projected.
+      />
+    )
+    expect(capturedRows.data.every((r) => r.isProjected === false)).toBe(true)
   })
 })
