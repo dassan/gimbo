@@ -4,7 +4,7 @@ import { uuid, now } from '@/lib/utils'
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 10
+export const CURRENT_SCHEMA_VERSION = 11
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -92,6 +92,7 @@ const InstallmentSchema = z.object({
   parentId: z.string(),
   currentIndex: z.number().int().min(1),
   total: z.number().int().min(2),
+  purchaseDate: z.string().optional(), // M-64: original purchase date, shared by every installment in the group
 })
 
 // M-35: recurring INCOME/EXPENSE series
@@ -241,6 +242,13 @@ function migrateDataFile(data: DataFile): DataFile {
   // existing records; existing accounts only need the version bump.
   if (migrated.schemaVersion === 9) {
     migrated = { ...migrated, schemaVersion: 10 }
+  }
+
+  // v10 → v11: adds optional purchaseDate (Installment) — the original purchase date shared
+  // by every installment in the group (M-64). Optional field, no shape change for existing
+  // records; existing installments only need the version bump.
+  if (migrated.schemaVersion === 10) {
+    migrated = { ...migrated, schemaVersion: 11 }
   }
 
   return migrated

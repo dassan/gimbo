@@ -78,6 +78,7 @@ export interface Installment {
   parentId: string // UUID of the first installment in the group
   currentIndex: number // 1-based
   total: number // minimum 2
+  purchaseDate?: string // ISO date (YYYY-MM-DD) of the original purchase, shared by every installment in the group (M-64)
 }
 
 export type RecurrenceFrequency = 'weekly' | 'biweekly' | 'monthly'

@@ -286,6 +286,7 @@ export const useDataStore = create<DataStore>((set) => ({
 
             const perInstallment = Math.round((tx.amount / N) * 100) / 100
             const remainder = Math.round((tx.amount - perInstallment * N) * 100) / 100
+            const purchaseDate = tx.date.slice(0, 10)
 
             for (let i = 1; i <= N; i++) {
               const installmentAmount = i === 1 ? perInstallment + remainder : perInstallment
@@ -296,7 +297,7 @@ export const useDataStore = create<DataStore>((set) => ({
                 date: advanceMonths(tx.date, i - 1),
                 description: (tx.description + ` (${i}/${N})`).trim(),
                 isPaid: false,
-                installment: { parentId, currentIndex: i, total: N },
+                installment: { parentId, currentIndex: i, total: N, purchaseDate },
               }
               d.transactions.push(installmentTx)
             }

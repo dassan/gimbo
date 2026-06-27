@@ -488,3 +488,55 @@ describe('CreditCardPage — M-59: installment badge on invoice rows', () => {
     expect(screen.queryByText(/^\d+\/\d+$/)).not.toBeInTheDocument()
   })
 })
+
+// ─── M-64: original purchase date on invoice rows ──────────────────────────────
+
+describe('CreditCardPage — M-64: original purchase date on invoice rows', () => {
+  it('shows the original purchase date for installments past the 1st', () => {
+    const creditAccount = makeCreditAccountFixed()
+    const expense = makeTransaction({
+      description: 'Compra parcelada',
+      installment: { parentId: 'p1', currentIndex: 2, total: 3, purchaseDate: '2024-09-18' },
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [creditAccount], transactions: [expense] }),
+    })
+
+    render(<CreditCardPage />)
+
+    expect(screen.getByText('transactions.purchaseDateShort')).toBeInTheDocument()
+  })
+
+  it('omits the purchase date on the 1st installment (same as its own date)', () => {
+    const creditAccount = makeCreditAccountFixed()
+    const expense = makeTransaction({
+      description: 'Compra parcelada',
+      installment: { parentId: 'p1', currentIndex: 1, total: 3, purchaseDate: todayStr },
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [creditAccount], transactions: [expense] }),
+    })
+
+    render(<CreditCardPage />)
+
+    expect(screen.queryByText('transactions.purchaseDateShort')).not.toBeInTheDocument()
+  })
+
+  it('omits the purchase date for installments without purchaseDate (legacy data)', () => {
+    const creditAccount = makeCreditAccountFixed()
+    const expense = makeTransaction({
+      description: 'Compra parcelada',
+      installment: { parentId: 'p1', currentIndex: 2, total: 3 },
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [creditAccount], transactions: [expense] }),
+    })
+
+    render(<CreditCardPage />)
+
+    expect(screen.queryByText('transactions.purchaseDateShort')).not.toBeInTheDocument()
+  })
+})

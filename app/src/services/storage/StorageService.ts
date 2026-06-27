@@ -710,6 +710,9 @@ function rowToTransaction(row: Row): Transaction {
       parentId: row.installment_parent_id as string,
       currentIndex: row.installment_index as number,
       total: row.installment_total as number,
+      ...(row.installment_purchase_date !== null && row.installment_purchase_date !== undefined
+        ? { purchaseDate: row.installment_purchase_date as string }
+        : {}),
     } satisfies Installment
   }
   if (row.recurrence_parent_id !== null && row.recurrence_parent_id !== undefined) {

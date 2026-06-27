@@ -619,6 +619,21 @@ describe('addTransaction — installment group (CC-24/CC-25)', () => {
     expect(txs?.[2].date).toBe('2024-05-15')
   })
 
+  it('M-64: all installments share the same purchaseDate, distinct from their own date', () => {
+    useDataStore.getState().addTransaction(makeInstallmentPayload(3, 300))
+    const txs = useDataStore
+      .getState()
+      .data?.transactions.sort(
+        (a, b) => (a.installment?.currentIndex ?? 0) - (b.installment?.currentIndex ?? 0)
+      )
+    expect(txs?.map((t) => t.installment?.purchaseDate)).toEqual([
+      '2024-03-15',
+      '2024-03-15',
+      '2024-03-15',
+    ])
+    expect(txs?.[1].date).not.toBe(txs?.[1].installment?.purchaseDate)
+  })
+
   it('amount is distributed evenly (no remainder when divisible)', () => {
     useDataStore.getState().addTransaction(makeInstallmentPayload(3, 300))
     const txs = useDataStore.getState().data?.transactions ?? []

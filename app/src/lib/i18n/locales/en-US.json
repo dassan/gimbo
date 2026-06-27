@@ -83,6 +83,8 @@
     "installmentCount": "Number of installments",
     "installmentHint": "Split into {{count}}x of {{value}}",
     "installmentBadge": "Installment {{current}}/{{total}}",
+    "originalPurchaseDate": "Original purchase on {{date}}",
+    "purchaseDateShort": "Purchase: {{date}}",
     "deleteInstallmentTitle": "This is an installment transaction",
     "deleteOnlyThis": "Delete only this one ({{current}}/{{total}})",
     "deleteAllInstallments": "Delete all {{total}} installments",

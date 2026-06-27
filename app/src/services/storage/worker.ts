@@ -15,6 +15,7 @@ import v5Schema from './migrations/v5.sql?raw'
 import v6Schema from './migrations/v6.sql?raw'
 import v7Schema from './migrations/v7.sql?raw'
 import v8Schema from './migrations/v8.sql?raw'
+import v9Schema from './migrations/v9.sql?raw'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ type RawTransaction = {
   date: string
   isPaid: boolean
   tags: string[]
-  installment?: { parentId: string; currentIndex: number; total: number }
+  installment?: { parentId: string; currentIndex: number; total: number; purchaseDate?: string }
   recurrence?: { frequency: string; parentId: string; endDate?: string }
   transferAccountId?: string
   referenceMonth?: string
@@ -172,6 +173,9 @@ async function runMigrations(): Promise<void> {
   }
   if (version < 8) {
     await sqlite3.run(db, v8Schema)
+  }
+  if (version < 9) {
+    await sqlite3.run(db, v9Schema)
   }
 }
 
@@ -309,9 +313,10 @@ async function replaceAll(raw: unknown): Promise<void> {
         `INSERT INTO transactions
            (id, account_id, category_id, amount, type, description, date, is_paid,
             transfer_account_id, installment_parent_id, installment_index, installment_total,
+            installment_purchase_date,
             recurrence_parent_id, recurrence_frequency, recurrence_end_date, reference_month,
             invoice_due_date, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           tx.id,
           tx.accountId,
@@ -325,6 +330,7 @@ async function replaceAll(raw: unknown): Promise<void> {
           tx.installment?.parentId ?? null,
           tx.installment?.currentIndex ?? null,
           tx.installment?.total ?? null,
+          tx.installment?.purchaseDate ?? null,
           tx.recurrence?.parentId ?? null,
           tx.recurrence?.frequency ?? null,
           tx.recurrence?.endDate ?? null,

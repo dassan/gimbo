@@ -595,6 +595,27 @@ function InvoiceTxRow({
               {tx.installment.currentIndex}/{tx.installment.total}
             </span>
           )}
+          {/* M-64: original purchase date — only past the 1st installment (otherwise == tx.date) */}
+          {tx.installment && tx.installment.purchaseDate && tx.installment.currentIndex > 1 && (
+            <span
+              title={t('transactions.originalPurchaseDate', {
+                date: parseDateLocal(tx.installment.purchaseDate).toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: '2-digit',
+                }),
+              })}
+              className="text-[10px] text-on-surface/30"
+            >
+              {t('transactions.purchaseDateShort', {
+                date: parseDateLocal(tx.installment.purchaseDate).toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: '2-digit',
+                }),
+              })}
+            </span>
+          )}
         </div>
       </div>
 
