@@ -10,10 +10,12 @@ import type { Account, Category, Transaction } from '@/types'
 const capturedChartProps = vi.hoisted(() => ({
   data: [] as Array<{
     label: string
+    fullLabel: string
     income: number
     expenses: number
     result: number
     balance: number
+    isProjected: boolean
   }>,
 }))
 
@@ -34,10 +36,12 @@ vi.mock('recharts', () => ({
     children: React.ReactNode
     data: Array<{
       label: string
+      fullLabel: string
       income: number
       expenses: number
       result: number
       balance: number
+      isProjected: boolean
     }>
   }) => {
     capturedChartProps.data = data ?? []
@@ -110,6 +114,15 @@ function makeCategory(overrides: Partial<Category> = {}): Category {
 /** Click the "cashflow" tab so the ComposedChart is rendered */
 function switchToCashFlowTab() {
   fireEvent.click(screen.getByText('analytics.tabs.cashflow'))
+}
+
+/** Opens the period dropdown, fills the custom range, and applies it. */
+function applyCustomPeriod(start: string, end: string) {
+  fireEvent.click(screen.getByRole('button', { name: /period-selector/i }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'transactions.choosePeriod' }))
+  fireEvent.change(screen.getByLabelText('custom-start-date'), { target: { value: start } })
+  fireEvent.change(screen.getByLabelText('custom-end-date'), { target: { value: end } })
+  fireEvent.click(screen.getByText('transactions.applyPeriod'))
 }
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
@@ -455,5 +468,61 @@ describe('Analytics — M-45: saved custom periods', () => {
     fireEvent.click(screen.getByRole('button', { name: 'transactions.deletePeriod' }))
 
     expect(useDataStore.getState().data?.savedPeriods).toHaveLength(0)
+  })
+})
+
+// ─── M-62: projection cutoff is the real-data horizon, not "today" ────────────
+
+describe('Analytics — M-62: projection cutoff uses the real-data horizon', () => {
+  it('does not mark buckets within the rolling-window real data as projected', () => {
+    // Simulates B-22's rolling window: a monthly recurring series already materialized
+    // as real Transaction rows from 2026-01-10 through 2028-01-10 (25 occurrences, no
+    // endDate). "Today" is 2026-04-15 — every one of these 25 rows is real, not virtual.
+    const account = makeRetailAccount()
+    const transactions: Transaction[] = Array.from({ length: 25 }, (_, i) => {
+      const month = i % 12
+      const year = 2026 + Math.floor((0 + i) / 12)
+      return makeTransaction({
+        id: `rec-${i}`,
+        type: 'INCOME',
+        amount: 1000,
+        date: `${year}-${String(month + 1).padStart(2, '0')}-10`,
+        recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+      })
+    })
+    useDataStore.setState({ data: makeDataFile({ accounts: [account], transactions }) })
+    render(<Analytics />)
+    applyCustomPeriod('2026-01-01', '2028-01-31')
+    switchToCashFlowTab()
+
+    // The whole selected period (Jan/2026 .. Jan/2028) is covered by real materialized
+    // data — none of it should render as projected.
+    expect(capturedChartProps.data.length).toBeGreaterThan(0)
+    expect(capturedChartProps.data.every((r) => r.isProjected === false)).toBe(true)
+  })
+
+  it('marks buckets beyond the last real transaction as projected', () => {
+    const account = makeRetailAccount()
+    const transactions: Transaction[] = Array.from({ length: 25 }, (_, i) => {
+      const month = i % 12
+      const year = 2026 + Math.floor(i / 12)
+      return makeTransaction({
+        id: `rec-${i}`,
+        type: 'INCOME',
+        amount: 1000,
+        date: `${year}-${String(month + 1).padStart(2, '0')}-10`,
+        recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+      })
+    })
+    useDataStore.setState({ data: makeDataFile({ accounts: [account], transactions }) })
+    render(<Analytics />)
+    // Last real occurrence is 2028-01-10 — extend well past it.
+    applyCustomPeriod('2026-01-01', '2029-01-31')
+    switchToCashFlowTab()
+
+    const realBucket = capturedChartProps.data.find((r) => r.fullLabel === 'Janeiro de 2026')
+    const projectedBucket = capturedChartProps.data.find((r) => r.fullLabel === 'Dezembro de 2028')
+    expect(realBucket?.isProjected).toBe(false)
+    expect(projectedBucket?.isProjected).toBe(true)
   })
 })

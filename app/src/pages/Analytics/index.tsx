@@ -70,19 +70,31 @@ export default function Analytics() {
     return { startDate: ref, endDate: new Date(ref.getFullYear(), ref.getMonth() + 1, 0) }
   }, [period, now])
 
-  // M-62: when the selected period reaches into the future, extend the cash-flow
+  // M-62: the rolling window (B-22) already keeps real Transaction rows materialized up to
+  // ~24 months ahead — that's real data, not a guess, and must render as such. The cutoff
+  // between "real" and "projected" is therefore the latest date actually present in
+  // data.transactions, not "today". Only beyond that point are bars/line genuinely virtual.
+  const lastRealDate = useMemo(() => {
+    if (!data || data.transactions.length === 0) return now
+    const maxDateStr = data.transactions.reduce(
+      (max, tx) => (tx.date > max ? tx.date : max),
+      data.transactions[0].date
+    )
+    return parseDateLocal(maxDateStr)
+  }, [data, now])
+
+  // When the selected period reaches past the real-data cutoff, extend the cash-flow
   // chart's transactions with virtual occurrences of open-ended recurring series
   // (lib/utils.ts projectRecurringOccurrences), capped at a fixed 10-year horizon.
   // Scoped to CashFlowView only — the other sub-tabs are about historical breakdown,
   // not trend, and stay real-data-only.
   const cashFlowTransactions = useMemo(() => {
     if (!data) return []
-    const today = parseDateLocal(todayStr())
-    if (endDate <= today) return data.transactions
+    if (endDate <= lastRealDate) return data.transactions
     const cap = parseDateLocal(advanceMonths(todayStr(), PROJECTION_HORIZON_YEARS * 12))
     const horizon = formatDateLocal(endDate < cap ? endDate : cap)
     return [...data.transactions, ...projectRecurringOccurrences(data.transactions, horizon)]
-  }, [data, endDate])
+  }, [data, endDate, lastRealDate])
 
   if (!data) return null
 
@@ -165,7 +177,7 @@ export default function Analytics() {
           endDate={endDate}
           includeUnpaid={includeUnpaid}
           shadowClass={shadowClass}
-          projectionCutoff={now}
+          projectionCutoff={lastRealDate}
         />
       )}
 
