@@ -4,7 +4,7 @@ import { uuid, now } from '@/lib/utils'
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 11
+export const CURRENT_SCHEMA_VERSION = 12
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -51,6 +51,9 @@ const LoanMetadataSchema = z.object({
   interestRate: z.number().optional(),
 })
 
+// HE-14: marks a RETAIL/SAVINGS account as part of the emergency reserve (Account.reserveMetadata).
+const ReserveMetadataSchema = z.object({})
+
 const AccountSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -69,6 +72,7 @@ const AccountSchema = z.object({
   includeInBalance: z.boolean(),
   creditMetadata: CreditMetadataSchema.optional(),
   loanMetadata: LoanMetadataSchema.optional(), // only for LOAN accounts (HE-04)
+  reserveMetadata: ReserveMetadataSchema.optional(), // only for RETAIL/SAVINGS accounts (HE-14)
   issuerIcon: z.string().optional(), // institution key for any account type — e.g. 'nubank', 'itau', 'generic' (M-34)
   archived: z.boolean().optional(), // M-42: hidden from selectors/lists but still counted in balances/totals
 })
@@ -251,6 +255,13 @@ function migrateDataFile(data: DataFile): DataFile {
     migrated = { ...migrated, schemaVersion: 11 }
   }
 
+  // v11 → v12: adds optional reserveMetadata (Account) — marks a RETAIL/SAVINGS account as
+  // part of the emergency reserve (HE-14). Optional field, no shape change for existing
+  // records; existing accounts only need the version bump.
+  if (migrated.schemaVersion === 11) {
+    migrated = { ...migrated, schemaVersion: 12 }
+  }
+
   return migrated
 }
 
@@ -285,6 +296,7 @@ export function createDefaultWorkspace(): WorkspaceFile {
     useAmbientShadows: false,
     netWorthIncludeHidden: true,
     incomeWindowMonths: 6,
+    reserveTargetMonths: 6,
   }
 }
 

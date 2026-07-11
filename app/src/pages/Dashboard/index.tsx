@@ -15,6 +15,7 @@ import {
   Briefcase,
   MoreHorizontal,
   Banknote,
+  Umbrella,
 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
@@ -302,6 +303,7 @@ export default function Dashboard() {
                   balance={accountBalances[acc.id] ?? 0}
                   typeLabel={t(`accounts.${acc.type.toLowerCase()}`)}
                   issuerIcon={acc.issuerIcon}
+                  isReserve={acc.reserveMetadata !== undefined}
                 />
               ))}
             </div>
@@ -380,12 +382,14 @@ function AccountRow({
   balance,
   typeLabel,
   issuerIcon,
+  isReserve,
 }: {
   name: string
   type: AccountType
   balance: number
   typeLabel: string
   issuerIcon?: string
+  isReserve?: boolean
 }) {
   const isNegative = balance < 0
   // M-34: use the institution brand color when an issuer is set; otherwise the account-type color.
@@ -401,7 +405,12 @@ function AccountRow({
         {ACCOUNT_TYPE_ICONS[type]}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-on-surface truncate">{name}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-medium text-on-surface truncate">{name}</p>
+          {isReserve && (
+            <Umbrella size={12} strokeWidth={1.5} className="shrink-0 text-on-surface/30" />
+          )}
+        </div>
         <p className="text-xs text-on-surface/40 mt-0.5">{typeLabel}</p>
       </div>
       <span

@@ -238,6 +238,7 @@
     "themeLight": "Light",
     "themeDark": "Dark",
     "incomeWindowMonths": "Lookback window for average income calculation (months)",
+    "reserveTargetMonths": "Emergency reserve target (months of cost)",
     "language": "Language",
     "subcategoriesTip": "Pro Tip",
     "subcategoriesTipDesc": "Organizing by subcategories enables more granular reports.",
@@ -327,6 +328,7 @@
     "monthlyPayment": "Monthly payment",
     "remainingInstallments": "Remaining installments",
     "interestRate": "Interest rate (monthly)",
+    "markAsReserve": "This account is part of my emergency reserve",
     "active": "Active",
     "archived": "Archived",
     "archivedAccounts": "Archived accounts",
@@ -450,6 +452,9 @@
     "emergencyTitle": "Emergency Fund",
     "emergencyBalance": "Reserve Balance",
     "emergencyRecommended": "Recommended",
+    "monthlyCost": "Average monthly cost",
+    "setCostCta": "Set your monthly cost",
+    "adjustCost": "Adjust monthly cost",
     "emergencyPctSuffix": "of recommended",
     "emergencyShortfall": "{{value}} short of recommended",
     "emergencyComplete": "Fully funded",
@@ -473,8 +478,7 @@
     "confirmedByYou": "Confirmed by you",
     "recalculate": "Recalculate from history",
     "setIncomeCta": "Set your monthly income",
-    "incomePlaceholder": "$0.00",
-    "reservePlaceholder": "Coming soon"
+    "incomePlaceholder": "$0.00"
   },
   "welcome": {
     "title": "Welcome to Gimbo",

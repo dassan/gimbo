@@ -1,5 +1,5 @@
 ﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Settings from '@/pages/Settings'
 import { useDataStore } from '@/store/useDataStore'
@@ -562,26 +562,65 @@ describe('Settings — income lookback window preference', () => {
     return user
   }
 
+  function getIncomeWindowSelect() {
+    const row = screen.getByText('settings.incomeWindowMonths').closest('div')
+    return within(row as HTMLElement).getByRole('combobox')
+  }
+
   it('defaults to 6 months', async () => {
     await openPreferences()
-    expect(screen.getByDisplayValue('health.months')).toHaveValue('6')
+    expect(getIncomeWindowSelect()).toHaveValue('6')
   })
 
   it('persists the chosen window to the workspace store', async () => {
     const user = await openPreferences()
-    const select = screen.getByDisplayValue('health.months')
-
-    await user.selectOptions(select, '3')
-
+    await user.selectOptions(getIncomeWindowSelect(), '3')
     expect(useWorkspaceStore.getState().workspace.incomeWindowMonths).toBe(3)
   })
 
   it.each([3, 9, 12] as const)('accepts %i months as a valid selection', async (months) => {
     const user = await openPreferences()
-    const select = screen.getByDisplayValue('health.months')
-
-    await user.selectOptions(select, String(months))
-
+    await user.selectOptions(getIncomeWindowSelect(), String(months))
     expect(useWorkspaceStore.getState().workspace.incomeWindowMonths).toBe(months)
+  })
+})
+
+// ─── Settings — HE-16: configurable emergency reserve target ────────────────
+
+describe('Settings — emergency reserve target preference', () => {
+  async function openPreferences() {
+    const user = userEvent.setup()
+    render(<Settings />)
+    await user.click((await screen.findAllByText('settings.preferences'))[0])
+    return user
+  }
+
+  function getReserveTargetSelect() {
+    const row = screen.getByText('settings.reserveTargetMonths').closest('div')
+    return within(row as HTMLElement).getByRole('combobox')
+  }
+
+  it('defaults to 6 months', async () => {
+    await openPreferences()
+    expect(getReserveTargetSelect()).toHaveValue('6')
+  })
+
+  it('persists the chosen target to the workspace store', async () => {
+    const user = await openPreferences()
+    await user.selectOptions(getReserveTargetSelect(), '3')
+    expect(useWorkspaceStore.getState().workspace.reserveTargetMonths).toBe(3)
+  })
+
+  it.each([3, 9, 12] as const)('accepts %i months as a valid selection', async (months) => {
+    const user = await openPreferences()
+    await user.selectOptions(getReserveTargetSelect(), String(months))
+    expect(useWorkspaceStore.getState().workspace.reserveTargetMonths).toBe(months)
+  })
+
+  it('is independent from the income lookback window', async () => {
+    const user = await openPreferences()
+    await user.selectOptions(getReserveTargetSelect(), '3')
+    expect(useWorkspaceStore.getState().workspace.reserveTargetMonths).toBe(3)
+    expect(useWorkspaceStore.getState().workspace.incomeWindowMonths).toBe(6)
   })
 })

@@ -16,6 +16,7 @@ import v6Schema from './migrations/v6.sql?raw'
 import v7Schema from './migrations/v7.sql?raw'
 import v8Schema from './migrations/v8.sql?raw'
 import v9Schema from './migrations/v9.sql?raw'
+import v10Schema from './migrations/v10.sql?raw'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ type RawAccount = {
     remainingInstallments: number
     interestRate?: number
   }
+  reserveMetadata?: Record<string, never>
   issuerIcon?: string
   archived?: boolean
 }
@@ -177,6 +179,9 @@ async function runMigrations(): Promise<void> {
   if (version < 9) {
     await sqlite3.run(db, v9Schema)
   }
+  if (version < 10) {
+    await sqlite3.run(db, v10Schema)
+  }
 }
 
 // ─── Export / Import ──────────────────────────────────────────────────────────
@@ -262,8 +267,8 @@ async function replaceAll(raw: unknown): Promise<void> {
            (id, name, type, balance, include_in_balance,
             credit_limit, credit_closing_day, credit_due_day,
             loan_outstanding_balance, loan_monthly_payment, loan_remaining_installments, loan_interest_rate,
-            issuer_icon, archived, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            is_reserve, issuer_icon, archived, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           acc.id,
           acc.name,
@@ -277,6 +282,7 @@ async function replaceAll(raw: unknown): Promise<void> {
           acc.loanMetadata?.monthlyPayment ?? null,
           acc.loanMetadata?.remainingInstallments ?? null,
           acc.loanMetadata?.interestRate ?? null,
+          acc.reserveMetadata ? 1 : 0,
           acc.issuerIcon ?? null,
           acc.archived ? 1 : 0,
           ts,

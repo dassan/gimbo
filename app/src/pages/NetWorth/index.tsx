@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   RefreshCw,
   Banknote,
+  Umbrella,
 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
@@ -402,7 +403,12 @@ function AssetRow({
       </div>
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-on-surface truncate">{account.name}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-medium text-on-surface truncate">{account.name}</p>
+          {account.reserveMetadata && (
+            <Umbrella size={12} strokeWidth={1.5} className="shrink-0 text-on-surface/30" />
+          )}
+        </div>
         <p className="text-xs text-on-surface/40 mt-0.5">
           {typeLabel}
           {totalAssets > 0 && (

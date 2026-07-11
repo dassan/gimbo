@@ -1,5 +1,6 @@
 import type {
   Account,
+  AccountType,
   Category,
   IncomeWindowMonths,
   RecurrenceFrequency,
@@ -12,6 +13,11 @@ import { twMerge } from 'tailwind-merge'
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
+
+// HE-14: account types that can carry reserveMetadata — liquid, stable cash accounts only.
+// STOCKS/CRYPTO/FOREX are excluded (market volatility, not "ready" cash); ASSET is illiquid
+// and already out of F-29's scope. See plan/FINANCIAL_HEALTH.md §8 D6.
+export const RESERVE_ELIGIBLE_TYPES: AccountType[] = ['RETAIL', 'SAVINGS']
 
 /** Generate a UUID v4. */
 export function uuid(): string {
@@ -724,6 +730,94 @@ export function deriveMonthlyIncome(
   const sumsByMonth = new Map<string, number>()
   for (const tx of transactions) {
     if (tx.type !== 'INCOME' || creditAccountIds.has(tx.accountId)) continue
+    const key = _monthKey(tx.date)
+    if (key >= currentMonthKey) continue
+    sumsByMonth.set(key, (sumsByMonth.get(key) ?? 0) + tx.amount)
+  }
+
+  const monthlyValues = _monthsBefore(currentMonthKey, windowMonths)
+    .filter((key) => sumsByMonth.has(key))
+    .map((key) => sumsByMonth.get(key) as number)
+
+  if (monthlyValues.length === 0) {
+    return { value: null, confidenceMonths: 0, isEstimate: false }
+  }
+
+  return {
+    value: _median(monthlyValues),
+    confidenceMonths: monthlyValues.length,
+    isEstimate: monthlyValues.length < 3,
+  }
+}
+
+// ─── Financial Health — Reserve Balance Engine (HE-13/HE-14) ─────────────────
+//
+// Sums the derived balance of every account marked as part of the emergency reserve
+// (RESERVE_ELIGIBLE_TYPES + reserveMetadata present). Mirrors the standard non-CREDIT
+// balance formula documented in CLAUDE.md (balance + INCOME − EXPENSE − TRANSFER −
+// CREDIT_PAYMENT, invoice payment debiting the paying account via transferAccountId) —
+// RETAIL/SAVINGS are never VALUATION_ELIGIBLE, so no Valuation replay is needed here.
+
+export function getReserveBalance(transactions: Transaction[], accounts: Account[]): number {
+  const reserveAccounts = accounts.filter(
+    (a) => RESERVE_ELIGIBLE_TYPES.includes(a.type) && a.reserveMetadata
+  )
+  if (reserveAccounts.length === 0) return 0
+
+  const reserveIds = new Set(reserveAccounts.map((a) => a.id))
+  const balances = new Map<string, number>(reserveAccounts.map((a) => [a.id, a.balance]))
+
+  for (const tx of transactions) {
+    if (tx.type === 'CREDIT_PAYMENT') {
+      if (tx.transferAccountId && reserveIds.has(tx.transferAccountId)) {
+        balances.set(tx.transferAccountId, (balances.get(tx.transferAccountId) ?? 0) - tx.amount)
+      }
+      continue
+    }
+    if (!isCashRealized(tx)) continue
+    if (reserveIds.has(tx.accountId)) {
+      if (tx.type === 'INCOME')
+        balances.set(tx.accountId, (balances.get(tx.accountId) ?? 0) + tx.amount)
+      if (tx.type === 'EXPENSE')
+        balances.set(tx.accountId, (balances.get(tx.accountId) ?? 0) - tx.amount)
+      if (tx.type === 'TRANSFER')
+        balances.set(tx.accountId, (balances.get(tx.accountId) ?? 0) - tx.amount)
+    }
+    if (tx.type === 'TRANSFER' && tx.transferAccountId && reserveIds.has(tx.transferAccountId)) {
+      balances.set(tx.transferAccountId, (balances.get(tx.transferAccountId) ?? 0) + tx.amount)
+    }
+  }
+
+  return [...balances.values()].reduce((sum, v) => sum + v, 0)
+}
+
+// ─── Financial Health — Monthly Cost Engine (HE-12, D7) ──────────────────────
+//
+// Suggests the "custo mensal médio" used by the emergency reserve recommendation
+// (RESERVE_TARGET_MONTHS × cost). Mirrors deriveMonthlyIncome's cold-start behaviour
+// exactly (median, 6-month window, 3-month floor, graceful degradation), but over all
+// EXPENSE transactions instead of qualified INCOME — card installments are intentionally
+// included (they're still due if income stops) and non-recurring expenses aren't filtered
+// out (the median already resists one-off outliers). See plan/FINANCIAL_HEALTH.md §8 D7.
+
+export interface MonthlyCostEstimate {
+  /** null when there's no EXPENSE history in the lookback window — caller should prompt manual entry. */
+  value: number | null
+  /** How many of the last `windowMonths` complete calendar months had EXPENSE data. */
+  confidenceMonths: number
+  /** True when confidenceMonths is 1–2 (below the 3-month median floor) — label as an estimate to confirm. */
+  isEstimate: boolean
+}
+
+export function deriveMonthlyCost(
+  transactions: Transaction[],
+  windowMonths: IncomeWindowMonths = 6
+): MonthlyCostEstimate {
+  const currentMonthKey = _monthKey(todayStr())
+
+  const sumsByMonth = new Map<string, number>()
+  for (const tx of transactions) {
+    if (tx.type !== 'EXPENSE') continue
     const key = _monthKey(tx.date)
     if (key >= currentMonthKey) continue
     sumsByMonth.set(key, (sumsByMonth.get(key) ?? 0) + tx.amount)

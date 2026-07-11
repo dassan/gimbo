@@ -14,6 +14,8 @@ interface WorkspaceStore {
   setNetWorthIncludeHidden: (v: boolean) => void
   setMonthlyIncomeOverride: (v: number | undefined) => void
   setIncomeWindowMonths: (v: IncomeWindowMonths) => void
+  setMonthlyCostOverride: (v: number | undefined) => void
+  setReserveTargetMonths: (v: IncomeWindowMonths) => void
 }
 
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
@@ -62,6 +64,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setIncomeWindowMonths: (incomeWindowMonths) => {
     const workspace = { ...get().workspace, incomeWindowMonths }
+    set({ workspace })
+    saveWorkspace(workspace)
+  },
+
+  setMonthlyCostOverride: (monthlyCostOverride) => {
+    const workspace = { ...get().workspace, monthlyCostOverride }
+    set({ workspace })
+    saveWorkspace(workspace)
+  },
+
+  setReserveTargetMonths: (reserveTargetMonths) => {
+    const workspace = { ...get().workspace, reserveTargetMonths }
     set({ workspace })
     saveWorkspace(workspace)
   },

@@ -68,6 +68,22 @@ export function makeLoanAccount(overrides: Partial<Account> = {}): Account {
 }
 
 /**
+ * Returns a RETAIL Account marked as part of the emergency reserve (HE-14).
+ * Useful for tests that need a reserve-flagged account without building the full object.
+ */
+export function makeReserveAccount(overrides: Partial<Account> = {}): Account {
+  return {
+    id: uuid(),
+    name: 'Poupança Reserva',
+    type: 'SAVINGS',
+    balance: 0,
+    includeInBalance: true,
+    reserveMetadata: {},
+    ...overrides,
+  }
+}
+
+/**
  * Returns a Valuation snapshot for an investment account.
  * Eligible account types: STOCKS | CRYPTO | FOREX | ASSET.
  */

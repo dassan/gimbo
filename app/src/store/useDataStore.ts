@@ -14,7 +14,14 @@ import type {
 import { applyRetention } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
 import { loadBackupDirHandle, ensureBackupDirPermission, writeBackupToDir } from '@/lib/backupDir'
-import { uuid, now, todayStr, advanceMonths, advanceByFrequency } from '@/lib/utils'
+import {
+  uuid,
+  now,
+  todayStr,
+  advanceMonths,
+  advanceByFrequency,
+  RESERVE_ELIGIBLE_TYPES,
+} from '@/lib/utils'
 import { isDemoMode } from '@/lib/demo'
 import { trackAction } from '@/lib/telemetry'
 
@@ -650,6 +657,7 @@ const RECURRENCE_ROLLING_MONTHS = 24
 // M-34: issuerIcon (institution branding) is allowed on any account type and is preserved.
 // M-42: archived is allowed on any account type and is preserved.
 // HE-05/HE-06: loanMetadata is allowed only on LOAN accounts and is preserved.
+// HE-14: reserveMetadata is allowed only on RESERVE_ELIGIBLE_TYPES accounts and is preserved.
 function sanitizeAccount(account: Account): Account {
   if (account.type === 'CREDIT') return account
   return {
@@ -662,6 +670,9 @@ function sanitizeAccount(account: Account): Account {
     ...(account.archived ? { archived: account.archived } : {}),
     ...(account.type === 'LOAN' && account.loanMetadata
       ? { loanMetadata: account.loanMetadata }
+      : {}),
+    ...(RESERVE_ELIGIBLE_TYPES.includes(account.type) && account.reserveMetadata
+      ? { reserveMetadata: account.reserveMetadata }
       : {}),
   }
 }

@@ -1,9 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import Health from '@/pages/Health'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
-import { makeDataFile, makeCreditAccount, makeLoanAccount } from '@/test/fixtures/dataFile'
+import {
+  makeDataFile,
+  makeCreditAccount,
+  makeLoanAccount,
+  makeReserveAccount,
+} from '@/test/fixtures/dataFile'
 import { createDefaultWorkspace } from '@/lib/storage/schema'
 import { formatCurrency, todayStr } from '@/lib/utils'
 import type { Transaction } from '@/types'
@@ -210,5 +215,97 @@ describe('Health page', () => {
     expect(screen.getByText('Empréstimo Pessoal')).toBeInTheDocument()
     fireEvent.click(screen.getByText('Empréstimo Pessoal'))
     expect(document.body.textContent).toContain(formatCurrency(15000))
+  })
+
+  // ─── HE-12/HE-13/HE-14: emergency reserve card wired to real engines ───────
+
+  it('shows the manual entry CTA for monthly cost when there is no expense history', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    render(<Health />)
+    expect(screen.getByText('health.setCostCta')).toBeInTheDocument()
+  })
+
+  it('sums the balance of accounts marked with reserveMetadata into the reserve card', () => {
+    const reserveAccount = makeReserveAccount({ id: 'acc-reserve', balance: 12000 })
+    const otherAccount = {
+      id: 'acc-other',
+      name: 'Conta comum',
+      type: 'RETAIL' as const,
+      balance: 5000,
+      includeInBalance: true,
+    }
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [reserveAccount, otherAccount] }),
+    })
+    render(<Health />)
+    expect(document.body.textContent).toContain(formatCurrency(12000))
+  })
+
+  it('shows "based on N months" for monthly cost once 3+ months of EXPENSE history exist', () => {
+    const account = {
+      id: 'acc-retail',
+      name: 'Conta',
+      type: 'RETAIL' as const,
+      balance: 0,
+      includeInBalance: true,
+    }
+    const today = new Date()
+    const txs = [1, 2, 3].map((monthsAgo) => {
+      const d = new Date(today.getFullYear(), today.getMonth() - monthsAgo, 10)
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-10`
+      return makeIncomeTx({ id: crypto.randomUUID(), type: 'EXPENSE', date, amount: 1000 })
+    })
+    useDataStore.setState({ data: makeDataFile({ accounts: [account], transactions: txs }) })
+    render(<Health />)
+    expect(screen.getAllByText('health.basedOnMonths').length).toBeGreaterThan(0)
+  })
+
+  it('confirming the monthly cost input persists the override', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    render(<Health />)
+
+    fireEvent.click(screen.getByLabelText('health.adjustCost'))
+    const input = screen.getByPlaceholderText('health.incomePlaceholder')
+    fireEvent.change(input, { target: { value: '3500' } })
+    fireEvent.click(screen.getByLabelText('common.save'))
+
+    expect(useWorkspaceStore.getState().workspace.monthlyCostOverride).toBe(3500)
+  })
+
+  // ─── HE-16: configurable reserve target (months multiplier) ────────────────
+
+  it('uses workspace.reserveTargetMonths as the recommended-reserve multiplier (independent of the cost override)', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    useWorkspaceStore.setState({
+      workspace: {
+        ...createDefaultWorkspace(),
+        monthlyCostOverride: 1000,
+        reserveTargetMonths: 3,
+      },
+    })
+    render(<Health />)
+    // recommended = reserveTargetMonths (3) × monthlyCost (1000) = 3000, not the default 6×.
+    expect(document.body.textContent).toContain(formatCurrency(3000))
+    expect(document.body.textContent).not.toContain(formatCurrency(6000))
+  })
+
+  it('recalculates the recommended reserve when only reserveTargetMonths changes (cost unchanged)', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    useWorkspaceStore.setState({
+      workspace: { ...createDefaultWorkspace(), monthlyCostOverride: 2000 },
+    })
+    const { rerender } = render(<Health />)
+    expect(document.body.textContent).toContain(formatCurrency(12000)) // 6 × 2000 (default)
+
+    act(() => {
+      useWorkspaceStore.setState({
+        workspace: {
+          ...useWorkspaceStore.getState().workspace,
+          reserveTargetMonths: 9,
+        },
+      })
+    })
+    rerender(<Health />)
+    expect(document.body.textContent).toContain(formatCurrency(18000)) // 9 × 2000
   })
 })

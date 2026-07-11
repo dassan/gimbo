@@ -41,6 +41,7 @@ import {
   ChevronDown,
   RotateCcw,
   Banknote,
+  Umbrella,
 } from 'lucide-react'
 import {
   loadBackupDirHandle,
@@ -52,7 +53,15 @@ import {
 } from '@/lib/backupDir'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
-import { formatCurrency, cn, uuid, now, getOpenCreditBalance, isCashRealized } from '@/lib/utils'
+import {
+  formatCurrency,
+  cn,
+  uuid,
+  now,
+  getOpenCreditBalance,
+  isCashRealized,
+  RESERVE_ELIGIBLE_TYPES,
+} from '@/lib/utils'
 import { AUDIT_RETENTION_DEFAULT } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
 import Toast from '@/components/Toast'
@@ -63,6 +72,7 @@ import type {
   CategoryType,
   CreditMetadata,
   LoanMetadata,
+  ReserveMetadata,
   Tag,
   Locale,
   Theme,
@@ -220,7 +230,8 @@ export default function Settings() {
     setRetentionLimit,
   } = useDataStore()
   const loadData = useDataStore((s) => s.loadData)
-  const { workspace, setTheme, setLocale, setIncomeWindowMonths } = useWorkspaceStore()
+  const { workspace, setTheme, setLocale, setIncomeWindowMonths, setReserveTargetMonths } =
+    useWorkspaceStore()
 
   const navigate = useNavigate()
 
@@ -339,7 +350,8 @@ export default function Settings() {
     creditMetadata?: CreditMetadata,
     issuerIcon?: string,
     archived?: boolean,
-    loanMetadata?: LoanMetadata
+    loanMetadata?: LoanMetadata,
+    reserveMetadata?: ReserveMetadata
   ) {
     if (modal.open && modal.account) {
       updateAccount({
@@ -352,6 +364,7 @@ export default function Settings() {
         issuerIcon,
         archived,
         loanMetadata,
+        reserveMetadata,
       })
     } else {
       addAccount({
@@ -364,6 +377,7 @@ export default function Settings() {
         issuerIcon,
         archived,
         loanMetadata,
+        reserveMetadata,
       })
     }
     setModal({ open: false })
@@ -624,9 +638,18 @@ export default function Settings() {
                                   </span>
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-semibold text-on-surface">
-                                    {acc.name}
-                                  </p>
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="text-sm font-semibold text-on-surface truncate">
+                                      {acc.name}
+                                    </p>
+                                    {acc.reserveMetadata && (
+                                      <Umbrella
+                                        size={12}
+                                        strokeWidth={1.5}
+                                        className="shrink-0 text-on-surface/30"
+                                      />
+                                    )}
+                                  </div>
                                   <p className="text-xs text-on-surface/40">
                                     {t(`accounts.${acc.type.toLowerCase()}`)}
                                   </p>
@@ -881,6 +904,21 @@ export default function Settings() {
                       value={workspace.incomeWindowMonths}
                       onChange={(e) =>
                         setIncomeWindowMonths(Number(e.target.value) as IncomeWindowMonths)
+                      }
+                      className="appearance-none rounded-xl bg-surface-container-high px-4 py-2.5 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                    >
+                      <option value={3}>{t('health.months', { count: 3 })}</option>
+                      <option value={6}>{t('health.months', { count: 6 })}</option>
+                      <option value={9}>{t('health.months', { count: 9 })}</option>
+                      <option value={12}>{t('health.months', { count: 12 })}</option>
+                    </select>
+                  </SettingRow>
+
+                  <SettingRow label={t('settings.reserveTargetMonths')}>
+                    <select
+                      value={workspace.reserveTargetMonths}
+                      onChange={(e) =>
+                        setReserveTargetMonths(Number(e.target.value) as IncomeWindowMonths)
                       }
                       className="appearance-none rounded-xl bg-surface-container-high px-4 py-2.5 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                     >
@@ -1186,7 +1224,8 @@ function AddAccountModal({
     creditMetadata?: CreditMetadata,
     issuerIcon?: string,
     archived?: boolean,
-    loanMetadata?: LoanMetadata
+    loanMetadata?: LoanMetadata,
+    reserveMetadata?: ReserveMetadata
   ) => void
   onDelete: (id: string) => void
   onClose: () => void
@@ -1246,6 +1285,9 @@ function AddAccountModal({
       : ''
   )
 
+  // ── Reserve metadata state (HE-14) ─────────────────────────────────────────
+  const [isReserve, setIsReserve] = useState<boolean>(account?.reserveMetadata !== undefined)
+
   function handleTypeSelect(selected: AccountType) {
     setType(selected)
     // CC-11/HE-05: auto-deselect "include in balance" for CREDIT and LOAN accounts
@@ -1256,6 +1298,8 @@ function AddAccountModal({
       if (!isEdit) setIncludeInBalance(true)
       // M-34: issuerIcon (institution) applies to all types, so it is kept across type changes.
     }
+    // HE-14: reserveMetadata only makes sense for RETAIL/SAVINGS — clear it otherwise.
+    if (!RESERVE_ELIGIBLE_TYPES.includes(selected)) setIsReserve(false)
   }
 
   function handleSave() {
@@ -1302,6 +1346,10 @@ function AddAccountModal({
     // M-34: institution branding applies to every account type; 'generic' means "no institution".
     const resolvedIssuerIcon = issuerIcon !== 'generic' ? issuerIcon : undefined
 
+    // HE-14: reserveMetadata — presence is the signal, no fields in v1.
+    const reserveMetadata: ReserveMetadata | undefined =
+      RESERVE_ELIGIBLE_TYPES.includes(type) && isReserve ? {} : undefined
+
     onSave(
       trimmed,
       type,
@@ -1310,7 +1358,8 @@ function AddAccountModal({
       creditMetadata,
       resolvedIssuerIcon,
       archived,
-      loanMetadata
+      loanMetadata,
+      reserveMetadata
     )
   }
 
@@ -1575,6 +1624,30 @@ function AddAccountModal({
                   className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
+            </div>
+          )}
+
+          {/* Reserve metadata toggle (HE-14) — shown only for RETAIL/SAVINGS accounts */}
+          {RESERVE_ELIGIBLE_TYPES.includes(type) && (
+            <div className="mt-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Umbrella size={14} strokeWidth={1.5} className="text-on-surface/40" />
+                <span className="text-sm text-on-surface/70">{t('accounts.markAsReserve')}</span>
+              </div>
+              <button
+                onClick={() => setIsReserve((v) => !v)}
+                className={cn(
+                  'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200',
+                  isReserve ? 'bg-primary' : 'bg-surface-container-high'
+                )}
+              >
+                <span
+                  className={cn(
+                    'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 mt-0.5',
+                    isReserve ? 'translate-x-5' : 'translate-x-0.5'
+                  )}
+                />
+              </button>
             </div>
           )}
         </div>
@@ -2078,7 +2151,12 @@ function ArchivedAccountsSection({
                 onClick={() => onEdit(acc)}
                 className="flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
               >
-                <p className="text-sm font-semibold text-on-surface">{acc.name}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-semibold text-on-surface truncate">{acc.name}</p>
+                  {acc.reserveMetadata && (
+                    <Umbrella size={12} strokeWidth={1.5} className="shrink-0 text-on-surface/30" />
+                  )}
+                </div>
                 <p className="text-xs text-on-surface/40">
                   {t(`accounts.${acc.type.toLowerCase()}`)} ·{' '}
                   {acc.type === 'LOAN'

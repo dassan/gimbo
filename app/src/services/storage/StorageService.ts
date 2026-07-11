@@ -178,8 +178,8 @@ export class StorageService {
          (id, name, type, balance, include_in_balance,
           credit_limit, credit_closing_day, credit_due_day,
           loan_outstanding_balance, loan_monthly_payment, loan_remaining_installments, loan_interest_rate,
-          issuer_icon, archived, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          is_reserve, issuer_icon, archived, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         data.name,
@@ -193,6 +193,7 @@ export class StorageService {
         data.loanMetadata?.monthlyPayment ?? null,
         data.loanMetadata?.remainingInstallments ?? null,
         data.loanMetadata?.interestRate ?? null,
+        data.reserveMetadata ? 1 : 0,
         data.issuerIcon ?? null,
         data.archived ? 1 : 0,
         now,
@@ -212,7 +213,7 @@ export class StorageService {
          name = ?, type = ?, balance = ?, include_in_balance = ?,
          credit_limit = ?, credit_closing_day = ?, credit_due_day = ?,
          loan_outstanding_balance = ?, loan_monthly_payment = ?, loan_remaining_installments = ?, loan_interest_rate = ?,
-         issuer_icon = ?, archived = ?, updated_at = ?
+         is_reserve = ?, issuer_icon = ?, archived = ?, updated_at = ?
        WHERE id = ?`,
       [
         merged.name,
@@ -226,6 +227,7 @@ export class StorageService {
         merged.loanMetadata?.monthlyPayment ?? null,
         merged.loanMetadata?.remainingInstallments ?? null,
         merged.loanMetadata?.interestRate ?? null,
+        merged.reserveMetadata ? 1 : 0,
         merged.issuerIcon ?? null,
         merged.archived ? 1 : 0,
         new Date().toISOString(),
@@ -654,6 +656,9 @@ function rowToAccount(row: Row): Account {
         ? { interestRate: row.loan_interest_rate as number }
         : {}),
     } satisfies LoanMetadata
+  }
+  if (row.is_reserve) {
+    account.reserveMetadata = {}
   }
   if (row.issuer_icon !== null && row.issuer_icon !== undefined) {
     account.issuerIcon = row.issuer_icon as string

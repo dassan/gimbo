@@ -8,6 +8,7 @@ import type {
   Transaction,
   CreditMetadata,
   LoanMetadata,
+  ReserveMetadata,
   Valuation,
   SavedPeriod,
 } from '@/types'
@@ -386,6 +387,89 @@ describe('loanMetadata handling (HE-06)', () => {
     const saved = useDataStore.getState().data?.accounts[0]
     expect(saved?.issuerIcon).toBe('itau')
     expect(saved?.loanMetadata).toBeUndefined()
+  })
+})
+
+describe('reserveMetadata handling (HE-14)', () => {
+  const reserveMeta: ReserveMetadata = {}
+
+  it('addAccount with RETAIL type persists reserveMetadata', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    const reserveAccount = makeAccount({
+      id: 'acc-retail',
+      type: 'RETAIL',
+      reserveMetadata: reserveMeta,
+    })
+    useDataStore.getState().addAccount(reserveAccount)
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.reserveMetadata).toEqual(reserveMeta)
+  })
+
+  it('addAccount with SAVINGS type persists reserveMetadata', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    const reserveAccount = makeAccount({
+      id: 'acc-savings',
+      type: 'SAVINGS',
+      reserveMetadata: reserveMeta,
+    })
+    useDataStore.getState().addAccount(reserveAccount)
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.reserveMetadata).toEqual(reserveMeta)
+  })
+
+  it('updateAccount toggling reserveMetadata off removes it', () => {
+    const reserveAccount = makeAccount({
+      id: 'acc-1',
+      type: 'RETAIL',
+      reserveMetadata: reserveMeta,
+    })
+    useDataStore.setState({ data: makeDataFile({ accounts: [reserveAccount] }) })
+    useDataStore.getState().updateAccount({ ...reserveAccount, reserveMetadata: undefined })
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.reserveMetadata).toBeUndefined()
+  })
+
+  it('addAccount with a non-eligible type does not include reserveMetadata', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    // Simulate a stale account object that erroneously carries reserveMetadata
+    const staleAccount = makeAccount({
+      id: 'acc-loan',
+      type: 'LOAN',
+      reserveMetadata: reserveMeta,
+    })
+    useDataStore.getState().addAccount(staleAccount)
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.reserveMetadata).toBeUndefined()
+    expect(Object.prototype.hasOwnProperty.call(saved, 'reserveMetadata')).toBe(false)
+  })
+
+  it('updateAccount changing type away from RETAIL/SAVINGS strips reserveMetadata', () => {
+    const reserveAccount = makeAccount({
+      id: 'acc-1',
+      type: 'RETAIL',
+      reserveMetadata: reserveMeta,
+    })
+    useDataStore.setState({ data: makeDataFile({ accounts: [reserveAccount] }) })
+    useDataStore
+      .getState()
+      .updateAccount({ ...reserveAccount, type: 'LOAN', reserveMetadata: reserveMeta })
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.type).toBe('LOAN')
+    expect(saved?.reserveMetadata).toBeUndefined()
+  })
+
+  it('strips reserveMetadata from a non-eligible account while keeping its issuerIcon', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    const staleAccount = makeAccount({
+      id: 'acc-loan',
+      type: 'LOAN',
+      issuerIcon: 'itau',
+      reserveMetadata: reserveMeta,
+    })
+    useDataStore.getState().addAccount(staleAccount)
+    const saved = useDataStore.getState().data?.accounts[0]
+    expect(saved?.issuerIcon).toBe('itau')
+    expect(saved?.reserveMetadata).toBeUndefined()
   })
 })
 

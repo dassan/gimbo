@@ -47,6 +47,11 @@ export interface LoanMetadata {
   interestRate?: number // % a.m., optional
 }
 
+// HE-14: marks a RETAIL/SAVINGS account as part of the user's emergency reserve. An object
+// (not a boolean) by design — presence is the signal; no required fields in v1 (the target
+// in months stays global, RESERVE_TARGET_MONTHS). See plan/FINANCIAL_HEALTH.md §8 D6/D8.
+export type ReserveMetadata = Record<string, never>
+
 export interface Account {
   id: string // UUID
   name: string
@@ -55,6 +60,7 @@ export interface Account {
   includeInBalance: boolean
   creditMetadata?: CreditMetadata // only for CREDIT accounts
   loanMetadata?: LoanMetadata // only for LOAN accounts (HE-04)
+  reserveMetadata?: ReserveMetadata // only for RETAIL/SAVINGS accounts (HE-14)
   issuerIcon?: string // institution key for any account type — e.g. 'nubank', 'itau', 'generic' (M-34)
   archived?: boolean // M-42: hidden from selectors/lists but still counted in balances/totals
 }
@@ -160,4 +166,6 @@ export interface WorkspaceFile {
   netWorthIncludeHidden: boolean // D3: include accounts with includeInBalance=false (default true)
   monthlyIncomeOverride?: number // HE-09/D1: user-confirmed income; always wins over the derived suggestion
   incomeWindowMonths: IncomeWindowMonths // HE-09: lookback window for the income suggestion (default 6)
+  monthlyCostOverride?: number // HE-12/D7: user-confirmed monthly cost; always wins over the derived suggestion
+  reserveTargetMonths: IncomeWindowMonths // HE-16: target months multiplier for the recommended reserve (default 6)
 }

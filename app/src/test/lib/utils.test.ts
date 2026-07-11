@@ -17,6 +17,8 @@ import {
   getDebtHorizon,
   getDebtBreakdown,
   deriveMonthlyIncome,
+  deriveMonthlyCost,
+  getReserveBalance,
   invoicePeriodKey,
   filterArchivedAccounts,
   isCardCredit,
@@ -715,6 +717,185 @@ describe('deriveMonthlyIncome (HE-09)', () => {
       transferAccountId: 'acc-other',
     })
     expect(deriveMonthlyIncome([expense, transfer], [retail]).value).toBeNull()
+  })
+})
+
+describe('deriveMonthlyCost (HE-12, D7)', () => {
+  const today = new Date().toISOString().slice(0, 10)
+
+  it('returns null with 0 confidence when there is no expense history', () => {
+    const result = deriveMonthlyCost([])
+    expect(result).toEqual({ value: null, confidenceMonths: 0, isEstimate: false })
+  })
+
+  it('excludes the current (incomplete) month from the window', () => {
+    const currentMonthExpense = makeTx({
+      accountId: 'acc-retail',
+      type: 'EXPENSE',
+      amount: 2000,
+      date: today,
+    })
+    expect(deriveMonthlyCost([currentMonthExpense]).value).toBeNull()
+  })
+
+  it('uses the single available month as an estimate when there is only 1 month of data', () => {
+    const tx = makeTx({
+      accountId: 'acc-retail',
+      type: 'EXPENSE',
+      amount: 4000,
+      date: addMonths(today, -1),
+    })
+    const result = deriveMonthlyCost([tx])
+    expect(result).toEqual({ value: 4000, confidenceMonths: 1, isEstimate: true })
+  })
+
+  it('uses the median (not the average) once the 3-month floor is met', () => {
+    const transactions = [1000, 2000, 9000].map((amount, i) =>
+      makeTx({
+        accountId: 'acc-retail',
+        type: 'EXPENSE',
+        amount,
+        date: addMonths(today, -(i + 1)),
+      })
+    )
+    const result = deriveMonthlyCost(transactions)
+    expect(result).toEqual({ value: 2000, confidenceMonths: 3, isEstimate: false })
+  })
+
+  it('caps the lookback window at 6 complete months by default, ignoring older data', () => {
+    const tooOld = makeTx({
+      accountId: 'acc-retail',
+      type: 'EXPENSE',
+      amount: 99999,
+      date: addMonths(today, -7),
+    })
+    const result = deriveMonthlyCost([tooOld])
+    expect(result).toEqual({ value: null, confidenceMonths: 0, isEstimate: false })
+  })
+
+  it('ignores INCOME, TRANSFER and CREDIT_PAYMENT transactions', () => {
+    const income = makeTx({
+      accountId: 'acc-retail',
+      type: 'INCOME',
+      amount: 1000,
+      date: addMonths(today, -1),
+    })
+    const transfer = makeTx({
+      accountId: 'acc-retail',
+      type: 'TRANSFER',
+      amount: 1000,
+      date: addMonths(today, -1),
+      transferAccountId: 'acc-other',
+    })
+    const payment = makeTx({
+      accountId: 'acc-credit',
+      type: 'CREDIT_PAYMENT',
+      amount: 1000,
+      date: addMonths(today, -1),
+      transferAccountId: 'acc-retail',
+    })
+    expect(deriveMonthlyCost([income, transfer, payment]).value).toBeNull()
+  })
+
+  it('includes card installment EXPENSE transactions (D7 — not excluded like deriveMonthlyIncome excludes CREDIT)', () => {
+    const cardInstallment = makeTx({
+      accountId: 'acc-credit',
+      type: 'EXPENSE',
+      amount: 3000,
+      date: addMonths(today, -1),
+    })
+    const result = deriveMonthlyCost([cardInstallment])
+    expect(result).toEqual({ value: 3000, confidenceMonths: 1, isEstimate: true })
+  })
+})
+
+describe('getReserveBalance (HE-13/HE-14)', () => {
+  const reserveAccount = makeAccount({
+    id: 'acc-reserve',
+    type: 'SAVINGS',
+    balance: 1000,
+    creditMetadata: undefined,
+    reserveMetadata: {},
+  })
+  const otherRetail = makeAccount({
+    id: 'acc-retail',
+    type: 'RETAIL',
+    balance: 500,
+    creditMetadata: undefined,
+  })
+
+  it('returns 0 when no account is marked as reserve', () => {
+    expect(getReserveBalance([], [otherRetail])).toBe(0)
+  })
+
+  it('sums only the balance of accounts marked as reserve, ignoring unmarked accounts', () => {
+    expect(getReserveBalance([], [reserveAccount, otherRetail])).toBe(1000)
+  })
+
+  it('sums the balances of multiple reserve-marked accounts', () => {
+    const secondReserve = makeAccount({
+      id: 'acc-reserve-2',
+      type: 'RETAIL',
+      balance: 2000,
+      creditMetadata: undefined,
+      reserveMetadata: {},
+    })
+    expect(getReserveBalance([], [reserveAccount, secondReserve])).toBe(3000)
+  })
+
+  it('applies paid INCOME/EXPENSE and TRANSFER in/out to the reserve balance', () => {
+    const income = makeTx({
+      accountId: 'acc-reserve',
+      type: 'INCOME',
+      amount: 500,
+      isPaid: true,
+    })
+    const expense = makeTx({
+      accountId: 'acc-reserve',
+      type: 'EXPENSE',
+      amount: 200,
+      isPaid: true,
+    })
+    const transferOut = makeTx({
+      accountId: 'acc-reserve',
+      type: 'TRANSFER',
+      amount: 100,
+      transferAccountId: 'acc-retail',
+    })
+    const transferIn = makeTx({
+      accountId: 'acc-retail',
+      type: 'TRANSFER',
+      amount: 300,
+      transferAccountId: 'acc-reserve',
+    })
+    // 1000 + 500 (income) - 200 (expense) - 100 (transfer out) + 300 (transfer in) = 1500
+    const result = getReserveBalance(
+      [income, expense, transferOut, transferIn],
+      [reserveAccount, otherRetail]
+    )
+    expect(result).toBe(1500)
+  })
+
+  it('ignores unpaid INCOME/EXPENSE (B-15 — realized cash only)', () => {
+    const unpaidIncome = makeTx({
+      accountId: 'acc-reserve',
+      type: 'INCOME',
+      amount: 9999,
+      isPaid: false,
+    })
+    expect(getReserveBalance([unpaidIncome], [reserveAccount])).toBe(1000)
+  })
+
+  it('debits the reserve account when it pays a CREDIT_PAYMENT', () => {
+    const creditAccount = makeAccount({ id: 'acc-credit', type: 'CREDIT' })
+    const payment = makeTx({
+      accountId: 'acc-credit',
+      type: 'CREDIT_PAYMENT',
+      amount: 400,
+      transferAccountId: 'acc-reserve',
+    })
+    const result = getReserveBalance([payment], [reserveAccount, creditAccount])
+    expect(result).toBe(600)
   })
 })
 

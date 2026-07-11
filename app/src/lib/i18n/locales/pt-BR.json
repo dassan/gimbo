@@ -238,6 +238,7 @@
     "themeLight": "Claro",
     "themeDark": "Escuro",
     "incomeWindowMonths": "Tamanho do intervalo para cálculo da receita média (meses)",
+    "reserveTargetMonths": "Meta da reserva de emergência (meses de custo)",
     "language": "Idioma",
     "subcategoriesTip": "Dica Pro",
     "subcategoriesTipDesc": "Organizar por subcategorias permite relatórios mais granulares.",
@@ -327,6 +328,7 @@
     "monthlyPayment": "Parcela mensal",
     "remainingInstallments": "Parcelas restantes",
     "interestRate": "Juros a.m.",
+    "markAsReserve": "Esta conta faz parte da minha reserva de emergência",
     "active": "Ativa",
     "archived": "Arquivada",
     "archivedAccounts": "Contas arquivadas",
@@ -450,6 +452,9 @@
     "emergencyTitle": "Reserva de Emergência",
     "emergencyBalance": "Saldo da Reserva",
     "emergencyRecommended": "Valor Recomendado",
+    "monthlyCost": "Custo mensal médio",
+    "setCostCta": "Defina seu custo mensal",
+    "adjustCost": "Ajustar custo mensal",
     "emergencyPctSuffix": "do recomendado",
     "emergencyShortfall": "Faltam {{value}} para o recomendado",
     "emergencyComplete": "Reserva completa",
@@ -473,8 +478,7 @@
     "confirmedByYou": "Confirmado por você",
     "recalculate": "Recalcular pelo histórico",
     "setIncomeCta": "Defina sua renda mensal",
-    "incomePlaceholder": "R$ 0,00",
-    "reservePlaceholder": "Em breve"
+    "incomePlaceholder": "R$ 0,00"
   },
   "welcome": {
     "title": "Bem-vindo ao Gimbo",
