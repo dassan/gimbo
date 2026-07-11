@@ -241,6 +241,24 @@ banner de reconexão (`backupPermState === 'prompt' | 'denied'`).
 > ocorre automaticamente pelo cliente desktop instalado — sem OAuth, sem código adicional. Cobre
 > a maioria dos usuários desktop sem precisar do Nível 2. Disponível apenas em Chrome/Edge (FSA).
 
+**Como o cliente desktop de nuvem lida com o `gimbo-backup.db` (decisão 2026-07-11):**
+- O cliente (Drive/Dropbox/OneDrive) trata o arquivo como binário opaco — replica o arquivo
+  inteiro a cada mudança, sem diff de conteúdo. Não há entendimento de SQLite.
+- Isso é seguro porque cada gravação já é uma foto consistente: `storage.exportBlob()` faz WAL
+  checkpoint antes de ler (funde `-wal`/`-shm` no arquivo principal), e `writeBackupToDir` escreve
+  via `createWritable()` (File System Access API), que grava num arquivo temporário e só substitui
+  o `.db` no `close()` — atômico. O cliente de nuvem nunca observa um arquivo parcialmente escrito.
+- Efeito colateral aceito: cada mutação (debounce de 5s) reenvia o arquivo **inteiro**, não
+  incremental — para bases grandes isso significa uploads maiores e histórico de versões do
+  provedor de nuvem crescendo rápido.
+- **Não é sync multi-dispositivo.** Se o usuário apontar a mesma pasta sincronizada em dois
+  dispositivos rodando o Gimbo simultaneamente, o cliente de nuvem não faz merge de um `.db` —
+  detecta escrita concorrente como conflito e cria uma cópia duplicada (ex.: `gimbo-backup (1).db`)
+  silenciosamente. Resolver isso de verdade é escopo do Nível 2 (merge aditivo em nível de
+  aplicação, não de arquivo) — o conteúdo de `/docs/backup-local` (BK-07) deve deixar essa
+  distinção explícita para não passar a falsa impressão de que a pasta local já resolve
+  multi-dispositivo.
+
 ### Nível 2 — Cloud Sync (planejado, `CS-01..CS-12`)
 Sincronização ponta-a-ponta entre dispositivos via Google Drive ou Dropbox do próprio usuário,
 sem servidor Gimbo:

@@ -158,26 +158,26 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 
 ---
 
-## Estado Atual (2026-06-09)
+## Estado Atual (2026-07-11)
 
-**Schema v5** | Cobertura: ~97% statements
+**Schema v12** | Cobertura: ~97% statements
 
-Todas as features do PRD (F-1 a F-28 Nível 1) implementadas. Módulo de Cartão de Crédito completo (CC-01 a CC-30). Melhorias M-01 a M-33 resolvidas. Relatórios avançados R-01 a R-18 resolvidos.
+Todas as features do PRD (F-1 a F-28 Nível 1) implementadas. Módulo de Cartão de Crédito completo (CC-01 a CC-33; CC-34 aberto — refino de heurística de sync, não bloqueante). Melhorias M-01 a M-64 resolvidas (M-61 parcial — 4 vulnerabilidades altas via `esbuild`/`vite` do `vitest`, exigem bump major). Relatórios avançados R-01 a R-18 resolvidos.
 
 Features concluídas desde 2026-05-27:
 - **F-24** — Patrimônio Líquido: `/net-worth`, stat cards, breakdown por conta, gráfico AreaChart (NW-01 a NW-07)
 - **F-25** — Demo Mode: `lib/demo.ts`, dados sintéticos, banner, deploy Vercel (DM-01 a DM-05)
 - **F-26** — Bug Report System: `lib/telemetry.ts`, `BugReportDialog`, ErrorBoundary, Settings (TASK-BR-01 a BR-08)
-- **F-27** — Mobile PWA: bottom nav, layouts responsivos, bottom sheet, manifest standalone, E2E mobile (MB-01 a MB-07)
-- **F-28 Nível 1** — Backup Local: `lib/backupDir.ts`, aba "Backup & Sync", auto-backup, `WelcomeModal`, doc pages (BK-01 a BK-03, BK-05 a BK-07)
+- **F-27** — Mobile PWA: bottom nav, layouts responsivos, bottom sheet, manifest standalone, E2E mobile (MB-01 a MB-07; MB-08 aberto — Analytics responsivo)
+- **F-28 Nível 1** — Backup Local: `lib/backupDir.ts`, aba "Backup & Sync", auto-backup, `WelcomeModal`, doc pages, sync manual (BK-01 a BK-03, BK-05 a BK-08; BK-04 aberto — banner de re-permissão)
+- **F-29** — Saúde Financeira: tela `/health` **completa**, incluindo Reserva de Emergência (HE-01 a HE-16 resolvidos: entidade `LOAN`, motor de dívida total/comprometido/horizonte, renda híbrida com override editável, custo mensal médio, saldo de reserva por conta marcada, meta em meses configurável, detalhamento expansível real por cartão/`LOAN`/empréstimo em conta comum). Ver `plan/FINANCIAL_HEALTH.md` §6-8.
 - **R-17/R-18** — View "Faturas" em Analytics: `FaturasView.tsx`, aba 5 na sub-nav, 14 testes unitários
 - **B-16/M-22** — Ciclo de fatura de cartão (Opção 2): pagamento vinculado ao período (`referenceMonth`, schema v4→v5), `CREDIT_PAYMENT` debita a conta pagadora, fatura líquida de créditos + selo de status (aberta/parcial/paga), estornos como `INCOME` na conta CREDIT; sync preserva sinal e infere `referenceMonth`
-
-Em andamento:
-- **F-29** — Saúde Financeira: tela `/health` **v1 (dívida + peso no orçamento) ligada aos motores reais** (HE-01 a HE-11 resolvidos: entidade `LOAN`, motor de dívida total/comprometido/horizonte, renda híbrida com override editável, detalhamento expansível real por cartão/`LOAN`, testes de componente). Reserva de Emergência segue mockada com selo "Em breve" (épico próprio). Ver `plan/FINANCIAL_HEALTH.md` §6-7.
+- **M-62/B-22** — Camada de projeção de 10 anos no Fluxo de Caixa (Relatórios) + janela rolante de recorrências sem `endDate`
 
 Itens em aberto:
-- **HE-12 a HE-14** — Reserva de Emergência (épico posterior, fora do v1)
+- **CC-34** — Refino da correlação de parcelamentos no sync do Organizze (baixa prioridade, efetivo só no próximo snapshot)
+- **M-63** — Estender a camada de projeção (M-62) para Saúde Financeira e Patrimônio Líquido (baixa prioridade, escopo de produto próprio)
 - **MB-08** — Analytics responsivo para mobile (média prioridade)
 - **BK-04** — Banner de re-permissão da pasta de backup no startup (média prioridade)
 - **F-28 Nível 2** — Cloud Sync Google Drive/Dropbox (CS-01 a CS-12) — demand-driven

@@ -104,6 +104,28 @@ O usuário não vê esse arquivo diretamente; o app oferece Export/Import manual
 
 ---
 
+### Nota Técnica — Pasta de Backup Local Dentro de um Cliente de Sync de Nuvem (Nível 1, `BK-01..08`)
+
+**Contexto:** o usuário configura a pasta de backup automático (`BK-01..03`) apontando para dentro do
+Google Drive/Dropbox/OneDrive local. Isso **não é o Nível 2** (sem OAuth, sem API) — é só o cliente
+desktop da nuvem replicando um arquivo comum que o Gimbo já escreve na pasta.
+
+**Comportamento (decisão registrada em 2026-07-11):**
+- O cliente de nuvem trata `gimbo-backup.db` como binário opaco — replica o arquivo **inteiro** a
+  cada mudança, sem diff de conteúdo; não entende SQLite.
+- Isso é seguro: `storage.exportBlob()` faz WAL checkpoint antes de ler (o blob exportado já é uma
+  foto consistente, sem depender de `-wal`/`-shm`), e a escrita via `createWritable()` (File System
+  Access API) é atômica — grava num arquivo temporário e só substitui o `.db` no `close()`. O
+  cliente de nuvem nunca vê um arquivo parcialmente escrito.
+- Efeito colateral aceito: cada mutação (debounce de 5s) reenvia o arquivo inteiro — não incremental.
+- **Risco a comunicar ao usuário:** se a mesma pasta sincronizada for usada em dois dispositivos com
+  o Gimbo aberto simultaneamente, o cliente de nuvem não faz merge — cria uma cópia duplicada em
+  conflito (`gimbo-backup (1).db`) silenciosamente, sem avisar que os dados divergiram. Só o Nível 2
+  (merge aditivo por UUID em nível de aplicação, `S-11`) resolve isso de verdade. O conteúdo de
+  `/docs/backup-local` deve deixar essa distinção explícita.
+
+---
+
 ## Parte 2 — Sync Multi-Dispositivo Planejado (F-28)
 
 > **Status:** Planejado, não implementado. Especificação técnica a detalhar em `plan/SPEC.md` quando o épico CS for iniciado.
@@ -128,6 +150,10 @@ Mobile PWA (SQLite/OPFS) <──pull/push──>  Drive
 - **Pull ao abrir** — se o arquivo no Drive é mais recente que o local, baixar e aplicar merge.
 - **Push ao fechar / após N mutações** — enviar estado local para o Drive.
 - **Offline** — mutações acumulam localmente; sync acontece na próxima conexão disponível.
+
+> **Decisões de produto/arquitetura (2026-07-11):**
+> - **Verificação OAuth do Google é pré-requisito, não opcional.** Sem passar pela revisão do Google (tela de consentimento verificada), o usuário vê o aviso "Google não verificou este app" ao conectar — inaceitável para um app de finanças pessoais, mesmo com o escopo restrito (`drive.file`). Tratado como parte do `CS-01` em `BACKLOG.md`.
+> - **O arquivo `gimbo.db` é visível na pasta `Gimbo/` do Drive do usuário** (a API do Drive não permite ocultá-lo do Web UI do próprio usuário, mesmo com escopo `drive.file`). Isso vaza a implementação técnica (SQLite/OPFS) para uma superfície que o Gimbo não controla — o usuário pode abrir o Drive, ver um binário que não consegue abrir, e ficar em dúvida se pode apagar. Mitigação: aviso explícito na primeira conexão (S-08) + doc page (mesmo padrão de `BK-07`) explicando que o arquivo é gerenciado pelo Gimbo e não deve ser editado/movido/removido manualmente pelo usuário.
 
 ---
 
