@@ -24,6 +24,7 @@ import {
   deriveMonthlyIncome,
   deriveMonthlyCost,
   getReserveBalance,
+  getRecurringCommitment,
 } from '@/lib/utils'
 import type { DebtGroup } from '@/lib/utils'
 
@@ -62,6 +63,7 @@ export default function Health() {
     incomeEstimate,
     costEstimate,
     reserveBalance,
+    recurringCommitment,
   } = useMemo(() => {
     if (!data) {
       return {
@@ -73,6 +75,7 @@ export default function Health() {
         incomeEstimate: deriveMonthlyIncome([], [], incomeWindowMonths),
         costEstimate: deriveMonthlyCost([], incomeWindowMonths),
         reserveBalance: 0,
+        recurringCommitment: 0,
       }
     }
     return {
@@ -84,6 +87,10 @@ export default function Health() {
       incomeEstimate: deriveMonthlyIncome(data.transactions, data.accounts, incomeWindowMonths),
       costEstimate: deriveMonthlyCost(data.transactions, incomeWindowMonths),
       reserveBalance: getReserveBalance(data.transactions, data.accounts),
+      recurringCommitment: getRecurringCommitment(
+        data.transactions,
+        new Date().toISOString().slice(0, 10)
+      ),
     }
   }, [data, incomeWindowMonths])
 
@@ -301,6 +308,12 @@ export default function Health() {
                 </span>
               </p>
             </div>
+            {recurringCommitment > 0 && (
+              <p className="mt-1 text-xs text-on-surface/40">
+                {t('health.recurringCommitment')}:{' '}
+                <span className="text-on-surface/60">{formatCurrency(recurringCommitment)}</span>
+              </p>
+            )}
           </div>
         </div>
 

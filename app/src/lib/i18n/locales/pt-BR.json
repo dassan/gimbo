@@ -449,6 +449,7 @@
     "longestHorizon": "Compromisso mais longo",
     "months": "{{count}} meses",
     "installmentShareOfExpenses": "{{pct}}% das despesas deste mês são parcelas",
+    "recurringCommitment": "Comprometimento fixo recorrente",
     "emergencyTitle": "Reserva de Emergência",
     "emergencyBalance": "Saldo da Reserva",
     "emergencyRecommended": "Valor Recomendado",

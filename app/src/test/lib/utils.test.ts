@@ -26,6 +26,7 @@ import {
   now,
   parseDateLocal,
   projectRecurringOccurrences,
+  getRecurringCommitment,
   sortCategoriesHierarchical,
 } from '@/lib/utils'
 import type { Account, Category, Transaction } from '@/types'
@@ -1233,5 +1234,70 @@ describe('projectRecurringOccurrences (M-62)', () => {
   it('ignores transactions without a recurrence', () => {
     const projected = projectRecurringOccurrences([makeTx({ recurrence: undefined })], '2030-01-01')
     expect(projected).toEqual([])
+  })
+})
+
+describe('getRecurringCommitment (M-63)', () => {
+  function makeRecurringExpense(overrides: Partial<Transaction> = {}): Transaction {
+    return makeTx({
+      id: 'rec-parent',
+      type: 'EXPENSE',
+      amount: 100,
+      date: '2028-01-10',
+      isPaid: true,
+      recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+      ...overrides,
+    })
+  }
+
+  it('sums the template amount of an active monthly series', () => {
+    expect(getRecurringCommitment([makeRecurringExpense()], '2028-02-01')).toBe(100)
+  })
+
+  it('normalizes weekly and biweekly series to a monthly-equivalent', () => {
+    const weekly = makeRecurringExpense({
+      id: 'rec-weekly',
+      amount: 50,
+      recurrence: { frequency: 'weekly', parentId: 'rec-weekly' },
+    })
+    const biweekly = makeRecurringExpense({
+      id: 'rec-biweekly',
+      amount: 60,
+      recurrence: { frequency: 'biweekly', parentId: 'rec-biweekly' },
+    })
+    expect(getRecurringCommitment([weekly], '2028-02-01')).toBeCloseTo((50 * 52) / 12)
+    expect(getRecurringCommitment([biweekly], '2028-02-01')).toBeCloseTo((60 * 26) / 12)
+  })
+
+  it('excludes a series whose endDate has already passed', () => {
+    const ended = makeRecurringExpense({
+      recurrence: { frequency: 'monthly', parentId: 'rec-parent', endDate: '2028-01-31' },
+    })
+    expect(getRecurringCommitment([ended], '2028-02-01')).toBe(0)
+  })
+
+  it('includes a series whose endDate is still in the future', () => {
+    const stillActive = makeRecurringExpense({
+      recurrence: { frequency: 'monthly', parentId: 'rec-parent', endDate: '2028-12-31' },
+    })
+    expect(getRecurringCommitment([stillActive], '2028-02-01')).toBe(100)
+  })
+
+  it('ignores CREDIT_PAYMENT, TRANSFER and INCOME recurring series', () => {
+    const payment = makeRecurringExpense({ id: 'rec-payment', type: 'CREDIT_PAYMENT' })
+    const transfer = makeRecurringExpense({ id: 'rec-transfer', type: 'TRANSFER' })
+    const income = makeRecurringExpense({ id: 'rec-income', type: 'INCOME' })
+    expect(getRecurringCommitment([payment, transfer, income], '2028-02-01')).toBe(0)
+  })
+
+  it('sums multiple active series, and returns 0 with no recurrences', () => {
+    const a = makeRecurringExpense({ id: 'rec-a', amount: 100 })
+    const b = makeRecurringExpense({
+      id: 'rec-b',
+      amount: 200,
+      recurrence: { frequency: 'monthly', parentId: 'rec-b' },
+    })
+    expect(getRecurringCommitment([a, b], '2028-02-01')).toBe(300)
+    expect(getRecurringCommitment([], '2028-02-01')).toBe(0)
   })
 })

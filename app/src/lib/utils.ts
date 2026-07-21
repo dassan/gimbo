@@ -216,6 +216,45 @@ export function projectRecurringOccurrences(
   return projected
 }
 
+/**
+ * Sums the monthly-equivalent value of every active recurring EXPENSE series
+ * (M-63) — subscriptions/bills lançados via `tx.recurrence`, distinto de dívida
+ * (`tx.installment`/`LoanMetadata`, cobertos por getTotalCommittedDebt/getMonthlyCommitment).
+ * A series is active when it has no `recurrence.endDate`, or when `endDate >= referenceDate`.
+ * Non-monthly frequencies are normalized to a monthly-equivalent (weekly ×52/12,
+ * biweekly ×26/12) so series of different cadences are comparable. TRANSFER/CREDIT_PAYMENT/
+ * INCOME are excluded — this is about recurring cash outflow, not debt or transfers.
+ */
+export function getRecurringCommitment(transactions: Transaction[], referenceDate: string): number {
+  const byParent = new Map<string, Transaction[]>()
+  for (const tx of transactions) {
+    if (!tx.recurrence || tx.type !== 'EXPENSE') continue
+    const arr = byParent.get(tx.recurrence.parentId)
+    if (arr) arr.push(tx)
+    else byParent.set(tx.recurrence.parentId, [tx])
+  }
+
+  let total = 0
+  for (const occurrences of byParent.values()) {
+    const { frequency, endDate } = occurrences[0].recurrence!
+    if (endDate && endDate < referenceDate) continue // series already ended
+
+    let maxDate = occurrences[0].date.slice(0, 10)
+    let template = occurrences[0]
+    for (const occ of occurrences) {
+      const d = occ.date.slice(0, 10)
+      if (d > maxDate) {
+        maxDate = d
+        template = occ
+      }
+    }
+
+    const multiplier = frequency === 'weekly' ? 52 / 12 : frequency === 'biweekly' ? 26 / 12 : 1
+    total += template.amount * multiplier
+  }
+  return total
+}
+
 // ─── Credit Card — Invoice Engine ─────────────────────────────────────────────
 
 /**

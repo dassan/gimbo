@@ -308,4 +308,42 @@ describe('Health page', () => {
     rerender(<Health />)
     expect(document.body.textContent).toContain(formatCurrency(18000)) // 9 × 2000
   })
+
+  // ─── M-63: recurring commitment (subscriptions/bills via tx.recurrence) ────
+
+  it('shows the recurring commitment line when an active recurring EXPENSE series exists', () => {
+    const account = {
+      id: 'acc-retail',
+      name: 'Conta',
+      type: 'RETAIL' as const,
+      balance: 0,
+      includeInBalance: true,
+    }
+    const subscription: Transaction = {
+      id: 'rec-parent',
+      accountId: 'acc-retail',
+      categoryId: 'cat-1',
+      amount: 55.9,
+      type: 'EXPENSE',
+      date: '2026-01-10',
+      description: 'Netflix',
+      isPaid: true,
+      tags: [],
+      recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+    }
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account], transactions: [subscription] }),
+    })
+    render(<Health />)
+    expect(screen.getByText('health.recurringCommitment', { exact: false })).toBeInTheDocument()
+    expect(document.body.textContent).toContain(formatCurrency(55.9))
+  })
+
+  it('hides the recurring commitment line when there is no recurring expense', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    render(<Health />)
+    expect(
+      screen.queryByText('health.recurringCommitment', { exact: false })
+    ).not.toBeInTheDocument()
+  })
 })

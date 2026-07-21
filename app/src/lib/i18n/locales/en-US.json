@@ -449,6 +449,7 @@
     "longestHorizon": "Longest commitment",
     "months": "{{count}} months",
     "installmentShareOfExpenses": "{{pct}}% of this month's expenses are installments",
+    "recurringCommitment": "Fixed recurring commitment",
     "emergencyTitle": "Emergency Fund",
     "emergencyBalance": "Reserve Balance",
     "emergencyRecommended": "Recommended",
