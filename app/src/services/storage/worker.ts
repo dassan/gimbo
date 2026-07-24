@@ -126,6 +126,13 @@ let db: number // opaque database pointer returned by open_v2
 
 const DB_FILENAME = 'gimbo.db'
 
+// Highest PRAGMA user_version this build knows how to migrate. CS-15 (folderSyncService)
+// compares a peer's raw version against this before attempting to read it — a peer ahead of
+// this number was written by a newer app build and must be skipped, not partially migrated.
+// Bump this alongside every new migrations/vN.sql (same trap as data/sync_gimbo.py — see
+// CLAUDE.md "Armadilha recorrente").
+const MAX_KNOWN_DB_VERSION = 10
+
 // ─── Initialization ───────────────────────────────────────────────────────────
 
 async function init(): Promise<void> {
@@ -144,46 +151,48 @@ async function init(): Promise<void> {
   sqlite3.vfs_register(vfs, /* makeDefault */ true)
 
   db = await sqlite3.open_v2(DB_FILENAME)
-  await runMigrations()
+  await runMigrationsOn(db)
 }
 
-async function runMigrations(): Promise<void> {
+// Applies pending migrations to an arbitrary db pointer — the main `db` on every open, or a
+// scratch db opened from a peer's bytes (CS-15's readForeignDataFile, which never touches `db`).
+async function runMigrationsOn(dbPtr: number): Promise<void> {
   // WAL mode gives better read concurrency and enables clean export via checkpoint.
   // This is idempotent — safe to call on every open.
-  await sqlite3.run(db, 'PRAGMA journal_mode=WAL')
+  await sqlite3.run(dbPtr, 'PRAGMA journal_mode=WAL')
 
-  const { rows } = await sqlite3.execWithParams(db, 'PRAGMA user_version')
+  const { rows } = await sqlite3.execWithParams(dbPtr, 'PRAGMA user_version')
   const version = (rows[0]?.[0] ?? 0) as number
 
   if (version < 1) {
-    await sqlite3.run(db, v1Schema)
+    await sqlite3.run(dbPtr, v1Schema)
   }
   if (version < 2) {
-    await sqlite3.run(db, v2Schema)
+    await sqlite3.run(dbPtr, v2Schema)
   }
   if (version < 3) {
-    await sqlite3.run(db, v3Schema)
+    await sqlite3.run(dbPtr, v3Schema)
   }
   if (version < 4) {
-    await sqlite3.run(db, v4Schema)
+    await sqlite3.run(dbPtr, v4Schema)
   }
   if (version < 5) {
-    await sqlite3.run(db, v5Schema)
+    await sqlite3.run(dbPtr, v5Schema)
   }
   if (version < 6) {
-    await sqlite3.run(db, v6Schema)
+    await sqlite3.run(dbPtr, v6Schema)
   }
   if (version < 7) {
-    await sqlite3.run(db, v7Schema)
+    await sqlite3.run(dbPtr, v7Schema)
   }
   if (version < 8) {
-    await sqlite3.run(db, v8Schema)
+    await sqlite3.run(dbPtr, v8Schema)
   }
   if (version < 9) {
-    await sqlite3.run(db, v9Schema)
+    await sqlite3.run(dbPtr, v9Schema)
   }
   if (version < 10) {
-    await sqlite3.run(db, v10Schema)
+    await sqlite3.run(dbPtr, v10Schema)
   }
 }
 
@@ -223,7 +232,7 @@ async function importDb(data: ArrayBuffer): Promise<void> {
 
   // Reopen and apply any pending migrations (e.g. import from an older version).
   db = await sqlite3.open_v2(DB_FILENAME)
-  await runMigrations()
+  await runMigrationsOn(db)
 }
 
 // ─── replaceAll ───────────────────────────────────────────────────────────────
@@ -410,6 +419,268 @@ async function replaceAll(raw: unknown): Promise<void> {
   }
 }
 
+// ─── Reading a foreign .db in memory (CS-15) ───────────────────────────────────
+//
+// folderSyncService needs to read a peer's device-<id>.db bytes into a DataFile-shaped object
+// without ever touching the local gimbo.db. wa-sqlite has no pure in-memory VFS, so the closest
+// safe approximation is: write the peer's bytes to a scratch OPFS file with its own name, open a
+// *second* db pointer against it, read every table, then delete the scratch file. `db` (the
+// local database) is never opened, migrated, or written to during this process.
+
+async function queryRows(
+  dbPtr: number,
+  sql: string,
+  params?: SQLiteCompatibleType[]
+): Promise<Record<string, unknown>[]> {
+  const { rows, columns } = await sqlite3.execWithParams(dbPtr, sql, params)
+  return rows.map((row) => {
+    const obj: Record<string, unknown> = {}
+    columns.forEach((col, i) => {
+      obj[col] = row[i]
+    })
+    return obj
+  })
+}
+
+// Mirrors StorageService's rowTo* mappers, but against an arbitrary db pointer instead of the
+// message-passing `this.query()` — necessary because this runs inside the worker itself, on a
+// scratch db that StorageService (main thread) never sees.
+async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
+  const userRows = await queryRows(dbPtr, "SELECT * FROM users WHERE id = 'singleton'")
+  if (userRows.length === 0) return null
+  const settingsRows = await queryRows(dbPtr, "SELECT * FROM settings WHERE id = 'singleton'")
+  if (settingsRows.length === 0) return null
+  const u = userRows[0]
+  const s = settingsRows[0]
+
+  const accountRows = await queryRows(dbPtr, 'SELECT * FROM accounts ORDER BY name')
+  const accounts: RawAccount[] = accountRows.map((r) => {
+    const acc: RawAccount = {
+      id: r.id as string,
+      name: r.name as string,
+      type: r.type as string,
+      balance: r.balance as number,
+      includeInBalance: Boolean(r.include_in_balance),
+    }
+    if (r.credit_limit !== null && r.credit_limit !== undefined) {
+      acc.creditMetadata = {
+        limit: r.credit_limit as number,
+        closingDay: r.credit_closing_day as number,
+        dueDay: r.credit_due_day as number,
+      }
+    }
+    if (r.loan_outstanding_balance !== null && r.loan_outstanding_balance !== undefined) {
+      acc.loanMetadata = {
+        outstandingBalance: r.loan_outstanding_balance as number,
+        monthlyPayment: r.loan_monthly_payment as number,
+        remainingInstallments: r.loan_remaining_installments as number,
+        ...(r.loan_interest_rate !== null && r.loan_interest_rate !== undefined
+          ? { interestRate: r.loan_interest_rate as number }
+          : {}),
+      }
+    }
+    if (r.is_reserve) acc.reserveMetadata = {}
+    if (r.issuer_icon !== null && r.issuer_icon !== undefined)
+      acc.issuerIcon = r.issuer_icon as string
+    if (r.archived) acc.archived = true
+    if (r.updated_at !== null && r.updated_at !== undefined) acc.updatedAt = r.updated_at as string
+    return acc
+  })
+
+  const categoryRows = await queryRows(dbPtr, 'SELECT * FROM categories ORDER BY name')
+  const categories: RawCategory[] = categoryRows.map((r) => ({
+    id: r.id as string,
+    parentId: (r.parent_id as string | null) ?? null,
+    name: r.name as string,
+    icon: r.icon as string,
+    color: r.color as string,
+    type: r.type as string,
+    ...(r.updated_at !== null && r.updated_at !== undefined
+      ? { updatedAt: r.updated_at as string }
+      : {}),
+  }))
+
+  const tagRows = await queryRows(dbPtr, 'SELECT * FROM tags ORDER BY name')
+  const tags: RawTag[] = tagRows.map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    color: r.color as string,
+    ...(r.updated_at !== null && r.updated_at !== undefined
+      ? { updatedAt: r.updated_at as string }
+      : {}),
+  }))
+
+  const txRows = await queryRows(
+    dbPtr,
+    `SELECT t.*, GROUP_CONCAT(tt.tag_id) AS tag_ids
+     FROM transactions t
+     LEFT JOIN transaction_tags tt ON t.id = tt.transaction_id
+     GROUP BY t.id
+     ORDER BY t.date DESC, t.created_at DESC`
+  )
+  const transactions: RawTransaction[] = txRows.map((r) => {
+    const tagIds = r.tag_ids as string | null
+    const tx: RawTransaction = {
+      id: r.id as string,
+      accountId: r.account_id as string,
+      categoryId: (r.category_id as string | null) ?? '',
+      amount: r.amount as number,
+      type: r.type as string,
+      description: r.description as string,
+      date: r.date as string,
+      isPaid: Boolean(r.is_paid),
+      tags: tagIds ? tagIds.split(',') : [],
+    }
+    if (r.updated_at !== null && r.updated_at !== undefined) tx.updatedAt = r.updated_at as string
+    if (r.transfer_account_id !== null && r.transfer_account_id !== undefined) {
+      tx.transferAccountId = r.transfer_account_id as string
+    }
+    if (r.reference_month !== null && r.reference_month !== undefined) {
+      tx.referenceMonth = r.reference_month as string
+    }
+    if (r.invoice_due_date !== null && r.invoice_due_date !== undefined) {
+      tx.invoiceDueDate = r.invoice_due_date as string
+    }
+    if (r.installment_parent_id !== null && r.installment_parent_id !== undefined) {
+      tx.installment = {
+        parentId: r.installment_parent_id as string,
+        currentIndex: r.installment_index as number,
+        total: r.installment_total as number,
+        ...(r.installment_purchase_date !== null && r.installment_purchase_date !== undefined
+          ? { purchaseDate: r.installment_purchase_date as string }
+          : {}),
+      }
+    }
+    if (r.recurrence_parent_id !== null && r.recurrence_parent_id !== undefined) {
+      tx.recurrence = {
+        frequency: r.recurrence_frequency as string,
+        parentId: r.recurrence_parent_id as string,
+        ...(r.recurrence_end_date !== null && r.recurrence_end_date !== undefined
+          ? { endDate: r.recurrence_end_date as string }
+          : {}),
+      }
+    }
+    return tx
+  })
+
+  const valuationRows = await queryRows(
+    dbPtr,
+    'SELECT id, account_id, date, market_value FROM valuations'
+  )
+  const valuations: RawValuation[] = valuationRows.map((r) => ({
+    id: r.id as string,
+    accountId: r.account_id as string,
+    date: r.date as string,
+    marketValue: r.market_value as number,
+  }))
+
+  const savedPeriodRows = await queryRows(
+    dbPtr,
+    'SELECT id, name, start_date, end_date FROM saved_periods ORDER BY created_at'
+  )
+  const savedPeriods: RawSavedPeriod[] = savedPeriodRows.map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    start: r.start_date as string,
+    end: r.end_date as string,
+  }))
+
+  const auditRows = await queryRows(dbPtr, 'SELECT * FROM audit_log ORDER BY timestamp ASC')
+  const auditLog: RawAuditEntry[] = auditRows.map((r) => ({
+    id: r.id as string,
+    timestamp: r.timestamp as string,
+    action: r.action as string,
+    entity: r.entity as string,
+    entityId: r.entity_id as string,
+    summary: r.summary as string,
+  }))
+
+  const deletedRows = await queryRows(dbPtr, 'SELECT id FROM deleted_ids')
+  const deletedIds = deletedRows.map((r) => r.id as string)
+
+  return {
+    user: {
+      name: u.name as string,
+      email: u.email as string,
+      createdAt: u.created_at as string,
+      updatedAt: u.updated_at as string,
+    },
+    settings: {
+      fileCreatedAt: s.file_created_at as string,
+      fileUpdatedAt: s.file_updated_at as string,
+      auditLogRetentionLimit: s.audit_log_retention_limit as number | null,
+    },
+    accounts,
+    categories,
+    tags,
+    transactions,
+    valuations,
+    auditLog,
+    deletedIds,
+    savedPeriods,
+  }
+}
+
+type ReadPeerResult =
+  | { ok: true; data: RawDataFile }
+  | { ok: false; reason: 'unreadable' | 'newer-schema' }
+
+async function readForeignDataFile(buffer: ArrayBuffer): Promise<ReadPeerResult> {
+  const root = await navigator.storage.getDirectory()
+  const tempName = `peer-scratch-${crypto.randomUUID()}.db`
+
+  const cleanup = async () => {
+    for (const suffix of ['', '-wal', '-journal'] as const) {
+      try {
+        await root.removeEntry(tempName + suffix)
+      } catch {
+        // Best-effort — a missing suffix file is expected most of the time.
+      }
+    }
+  }
+
+  try {
+    const fileHandle = await root.getFileHandle(tempName, { create: true })
+    const writable = await fileHandle.createWritable()
+    await writable.write(buffer)
+    await writable.close()
+  } catch {
+    return { ok: false, reason: 'unreadable' }
+  }
+
+  let tempDb: number
+  try {
+    tempDb = await sqlite3.open_v2(tempName)
+  } catch {
+    await cleanup()
+    return { ok: false, reason: 'unreadable' }
+  }
+
+  try {
+    const { rows } = await sqlite3.execWithParams(tempDb, 'PRAGMA user_version')
+    const version = (rows[0]?.[0] ?? 0) as number
+    if (version > MAX_KNOWN_DB_VERSION) {
+      await sqlite3.close(tempDb)
+      await cleanup()
+      return { ok: false, reason: 'newer-schema' }
+    }
+
+    await runMigrationsOn(tempDb)
+    const data = await readDataFileFromDb(tempDb)
+    await sqlite3.close(tempDb)
+    await cleanup()
+    return data ? { ok: true, data } : { ok: false, reason: 'unreadable' }
+  } catch {
+    try {
+      await sqlite3.close(tempDb)
+    } catch {
+      // Already closed, or never fully opened — nothing further to release.
+    }
+    await cleanup()
+    return { ok: false, reason: 'unreadable' }
+  }
+}
+
 // ─── clearAll ─────────────────────────────────────────────────────────────────
 
 async function clearAll(): Promise<void> {
@@ -457,6 +728,8 @@ async function dispatch(method: string, args: unknown[]): Promise<unknown> {
       return replaceAll(args[0])
     case 'clearAll':
       return clearAll()
+    case 'readPeer':
+      return readForeignDataFile(args[0] as ArrayBuffer)
     default:
       throw new Error(`[storage-worker] Unknown method: ${method}`)
   }

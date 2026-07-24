@@ -27,6 +27,11 @@
     "importDropSub": "Selecione um arquivo .db exportado pelo Gimbo.",
     "createHint": "Seus dados serão armazenados com segurança no seu dispositivo.",
     "importFileError": "Arquivo inválido ou corrompido. Verifique se é um arquivo exportado pelo Gimbo.",
+    "tabFolder": "Pasta Compartilhada",
+    "folderDesc": "Se você já usa o Gimbo em outro computador com sincronização multi-dispositivo ativada, selecione a mesma pasta compartilhada para restaurar e continuar sincronizando a partir daqui.",
+    "folderButton": "Selecionar pasta e restaurar",
+    "folderNoDevices": "Nenhum computador encontrado nessa pasta. Verifique se é a pasta correta e se a sincronização multi-dispositivo já foi ativada em outro computador.",
+    "folderImportError": "Não foi possível restaurar a partir dessa pasta.",
     "footer": "The Fluid Ledger",
     "privacyPolicy": "Política de Privacidade",
     "termsOfService": "Termos de Serviço"
@@ -282,7 +287,19 @@
     "backupReconnectBanner": "A pasta de backup precisa de autorização para continuar funcionando.",
     "backupReconnect": "Reconectar",
     "backupDeniedBanner": "Acesso à pasta de backup foi negado pelo navegador.",
-    "backupClearFolder": "Remover pasta"
+    "backupClearFolder": "Remover pasta",
+    "multiDeviceSection": "Multi-dispositivo",
+    "multiDeviceToggle": "Sincronizar entre meus computadores",
+    "multiDeviceDesc": "Cada computador grava seu próprio arquivo na pasta compartilhada — sem cópias em conflito. Funciona em desktop; celular ainda não é suportado (em breve).",
+    "multiDeviceRequiresFolder": "Configure a pasta local acima antes de ativar.",
+    "multiDeviceThisDevice": "este computador",
+    "multiDeviceNoPeers": "Nenhum outro computador detectado ainda.",
+    "multiDeviceSyncNow": "Sincronizar agora",
+    "multiDeviceLastSynced": "Última sincronização:",
+    "multiDeviceRemoveDevice": "Remover este dispositivo",
+    "multiDeviceStale": "sem gravações há mais de 90 dias",
+    "multiDeviceStatusOffline": "Não foi possível acessar a pasta compartilhada.",
+    "multiDeviceStatusError": "Algo deu errado durante a sincronização."
   },
   "creditCard": {
     "invoicePeriod": "Período da Fatura",
@@ -521,18 +538,20 @@
       "section2Body": "Por razões de segurança, o navegador exige que você autorize o acesso à pasta uma vez por sessão. Ao abrir o Gimbo, se a autorização tiver expirado, um aviso aparecerá pedindo para reconectar a pasta. Isso é normal e leva apenas um clique.",
       "section3Title": "Usando com Google Drive, Dropbox ou OneDrive",
       "section3Body": "Se você escolher uma pasta sincronizada pelo Google Drive, Dropbox ou OneDrive, o app do serviço no seu computador detecta o novo arquivo e o envia para a nuvem automaticamente. Assim, seus dados ficam protegidos sem nenhuma configuração de API ou conta adicional no Gimbo.",
-      "section4Title": "Limitações",
-      "section4Body": "O backup em pasta local funciona apenas no computador onde o Gimbo está aberto. Em dispositivos móveis, o navegador não expõe o sistema de arquivos da mesma forma. Para sincronização entre múltiplos dispositivos, consulte as opções de Cloud Sync (em breve)."
+      "section4Title": "Limitações do backup simples",
+      "section4Body": "O backup em pasta local (sem o modo multi-dispositivo) grava sempre o mesmo arquivo, gimbo-backup.db. Se você usar essa mesma pasta sincronizada em dois computadores com o Gimbo aberto ao mesmo tempo, o cliente de nuvem não sabe mesclar as mudanças — ele cria uma cópia duplicada em conflito (ex.: gimbo-backup (1).db) silenciosamente, sem avisar que os dados divergiram. Em dispositivos móveis, o navegador também não expõe o sistema de arquivos da mesma forma, então esse backup funciona só no computador onde foi configurado.",
+      "section5Title": "Multi-dispositivo (Fase 1)",
+      "section5Body": "Ative \"Sincronizar entre meus computadores\" em Configurações → Backup & Sync para usar o Gimbo em mais de um computador com a mesma pasta compartilhada. Cada computador passa a gravar exclusivamente o seu próprio arquivo (device-<id>.db) — nunca o de outro — o que elimina a cópia-em-conflito por construção: nenhum arquivo tem dois escritores. Ao abrir o Gimbo, cada computador lê os arquivos dos demais e funde as mudanças automaticamente. Não edite, mova nem renomeie os arquivos device-*.db manualmente; use \"Remover este dispositivo\" em Configurações para descartar um computador aposentado. Esse modo é só para desktop — celulares ainda dependem do Cloud Sync (Fase 2, veja a página seguinte)."
     },
     "cloudSync": {
       "title": "Cloud Sync",
       "subtitle": "Sincronização nativa com Google Drive e Dropbox — em breve",
       "section1Title": "O que é o Cloud Sync",
-      "section1Body": "O Cloud Sync permitirá conectar o Gimbo diretamente à sua conta do Google Drive ou Dropbox via OAuth2. Seu cofre será sincronizado automaticamente sem precisar de um cliente desktop instalado — ideal para uso em múltiplos dispositivos, incluindo mobile.",
-      "section2Title": "Diferença para o backup em pasta local",
-      "section2Body": "O backup em pasta local depende do cliente desktop do Drive/Dropbox para enviar o arquivo à nuvem. O Cloud Sync comunica diretamente com a API do serviço, funcionando mesmo sem o app instalado e permitindo sync bidirecional entre dispositivos.",
+      "section1Body": "O Cloud Sync (Fase 2) permitirá conectar o Gimbo diretamente à sua conta do Google Drive ou Dropbox via OAuth2. Seu cofre será sincronizado automaticamente sem precisar de um cliente desktop instalado — é o que finalmente desbloqueia o uso em celular, já que o navegador mobile não tem acesso ao sistema de arquivos local.",
+      "section2Title": "Diferença para a pasta compartilhada (Fase 1)",
+      "section2Body": "Se você só precisa sincronizar entre computadores (não celular), o modo multi-dispositivo já disponível hoje (Backup & Sync → \"Sincronizar entre meus computadores\") resolve isso sem OAuth e sem esperar o Cloud Sync — veja a página de Backup em Pasta Local. O Cloud Sync comunica diretamente com a API do provedor, então funciona mesmo sem cliente desktop instalado e é a única opção que também cobre mobile.",
       "section3Title": "Disponibilidade",
-      "section3Body": "O Cloud Sync está planejado e será implementado conforme a demanda crescer. Por enquanto, configure um backup em pasta local para proteger seus dados.",
+      "section3Body": "O Cloud Sync está planejado e será implementado conforme a demanda crescer. Por enquanto, configure um backup em pasta local — com o modo multi-dispositivo, se usar mais de um computador — para proteger seus dados.",
       "cta": "Configurar pasta de backup"
     }
   },

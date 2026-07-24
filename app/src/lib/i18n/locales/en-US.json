@@ -27,6 +27,11 @@
     "importDropSub": "Select a .db file exported from Gimbo.",
     "createHint": "Your data will be stored securely on your device.",
     "importFileError": "Invalid or corrupted file. Make sure it was exported from Gimbo.",
+    "tabFolder": "Shared Folder",
+    "folderDesc": "If you already use Gimbo on another computer with multi-device sync enabled, pick that same shared folder to restore and keep syncing from here.",
+    "folderButton": "Select folder and restore",
+    "folderNoDevices": "No computers found in that folder. Make sure it's the right folder and that multi-device sync was already enabled on another computer.",
+    "folderImportError": "Couldn't restore from that folder.",
     "footer": "The Fluid Ledger",
     "privacyPolicy": "Privacy Policy",
     "termsOfService": "Terms of Service"
@@ -282,7 +287,19 @@
     "backupReconnectBanner": "The backup folder needs authorization to keep working.",
     "backupReconnect": "Reconnect",
     "backupDeniedBanner": "Access to the backup folder was denied by the browser.",
-    "backupClearFolder": "Remove folder"
+    "backupClearFolder": "Remove folder",
+    "multiDeviceSection": "Multi-Device",
+    "multiDeviceToggle": "Sync between my computers",
+    "multiDeviceDesc": "Each computer writes its own file in the shared folder — no conflict copies. Works on desktop; mobile isn't supported yet (coming soon).",
+    "multiDeviceRequiresFolder": "Set up the local folder above before turning this on.",
+    "multiDeviceThisDevice": "this computer",
+    "multiDeviceNoPeers": "No other computers detected yet.",
+    "multiDeviceSyncNow": "Sync now",
+    "multiDeviceLastSynced": "Last synced:",
+    "multiDeviceRemoveDevice": "Remove this device",
+    "multiDeviceStale": "no writes in over 90 days",
+    "multiDeviceStatusOffline": "Couldn't reach the shared folder.",
+    "multiDeviceStatusError": "Something went wrong while syncing."
   },
   "creditCard": {
     "invoicePeriod": "Invoice Period",
@@ -521,18 +538,20 @@
       "section2Body": "For security reasons, the browser requires you to authorize folder access once per session. When you open Gimbo, if the authorization has expired, a notice will appear asking you to reconnect the folder. This is normal and takes just one click.",
       "section3Title": "Using with Google Drive, Dropbox, or OneDrive",
       "section3Body": "If you choose a folder synced by Google Drive, Dropbox, or OneDrive, the service's desktop app detects the new file and uploads it to the cloud automatically. This keeps your data protected with no API configuration or additional account in Gimbo.",
-      "section4Title": "Limitations",
-      "section4Body": "Local folder backup only works on the computer where Gimbo is open. On mobile devices, the browser does not expose the file system in the same way. For multi-device sync, see the Cloud Sync options (coming soon)."
+      "section4Title": "Limitations of the simple backup",
+      "section4Body": "Local folder backup (without multi-device mode) always writes the same file, gimbo-backup.db. If you use that same synced folder on two computers with Gimbo open at the same time, the cloud client doesn't know how to merge the changes — it silently creates a duplicate conflict copy (e.g. gimbo-backup (1).db) without warning that the data diverged. On mobile devices, the browser also doesn't expose the file system the same way, so this backup only works on the computer where it was set up.",
+      "section5Title": "Multi-device mode (Fase 1)",
+      "section5Body": "Turn on \"Sync between my computers\" in Settings → Backup & Sync to use Gimbo on more than one computer with the same shared folder. Each computer then writes exclusively its own file (device-<id>.db) — never another device's file — which eliminates the conflict copy by construction: no file ever has two writers. On open, each computer reads the others' files and merges the changes automatically. Don't edit, move, or rename the device-*.db files by hand; use \"Remove this device\" in Settings to retire a computer you no longer use. This mode is desktop-only — mobile still depends on Cloud Sync (Fase 2, see the next page)."
     },
     "cloudSync": {
       "title": "Cloud Sync",
       "subtitle": "Native sync with Google Drive and Dropbox — coming soon",
       "section1Title": "What is Cloud Sync",
-      "section1Body": "Cloud Sync will allow you to connect Gimbo directly to your Google Drive or Dropbox account via OAuth2. Your vault will sync automatically without needing a desktop client installed — ideal for use across multiple devices, including mobile.",
-      "section2Title": "Difference from local folder backup",
-      "section2Body": "Local folder backup relies on the Drive/Dropbox desktop client to upload the file to the cloud. Cloud Sync communicates directly with the service's API, working even without the app installed and enabling bidirectional sync across devices.",
+      "section1Body": "Cloud Sync (Fase 2) will allow you to connect Gimbo directly to your Google Drive or Dropbox account via OAuth2. Your vault will sync automatically without needing a desktop client installed — it's what finally unlocks mobile use, since the mobile browser has no access to the local file system.",
+      "section2Title": "Difference from the shared folder (Fase 1)",
+      "section2Body": "If you only need to sync between computers (not mobile), the multi-device mode already available today (Backup & Sync → \"Sync between my computers\") covers that without OAuth and without waiting for Cloud Sync — see the Local Folder Backup page. Cloud Sync communicates directly with the provider's API, so it works even without a desktop client installed, and it's the only option that also covers mobile.",
       "section3Title": "Availability",
-      "section3Body": "Cloud Sync is planned and will be implemented as demand grows. For now, set up a local folder backup to protect your data.",
+      "section3Body": "Cloud Sync is planned and will be implemented as demand grows. For now, set up a local folder backup — with multi-device mode, if you use more than one computer — to protect your data.",
       "cta": "Set up backup folder"
     }
   },

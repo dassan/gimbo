@@ -90,6 +90,9 @@ export default function App() {
         if (saved) {
           loadData(saved)
           refreshRecurrenceHorizons()
+          // CS-15: never blocks the boot — the app hydrates from local OPFS first, sync runs
+          // after in the background (no-op when multi-device mode is off).
+          void useDataStore.getState().runPeerSync()
         }
       } catch (err) {
         setInitError(err instanceof Error ? err.message : 'Erro ao carregar dados locais')

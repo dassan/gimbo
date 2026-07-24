@@ -14,6 +14,10 @@ import type {
 import { applyRetention } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
 import { loadBackupDirHandle, ensureBackupDirPermission, writeBackupToDir } from '@/lib/backupDir'
+import { getDeviceId } from '@/lib/cloudSync/deviceId'
+import { createFolderProvider } from '@/lib/cloudSync/folderProvider'
+import { syncFromPeers } from '@/lib/cloudSync/folderSyncService'
+import { isMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
 import {
   uuid,
   now,
@@ -29,8 +33,19 @@ import { trackAction } from '@/lib/telemetry'
 
 let _sqliteTimer: ReturnType<typeof setTimeout> | null = null
 
+// CS-16: while multi-device mode is on, the debounced local backup writes this device's own
+// device-<id>.db instead of the single legacy gimbo-backup.db — the "one writer per file"
+// invariant that makes Fase 1 sync safe (S-16..S-20). The legacy file is left untouched.
 async function _triggerLocalBackup() {
   try {
+    if (isMultiDeviceEnabled()) {
+      const deviceId = await getDeviceId()
+      const blob = await storage.exportBlob()
+      await createFolderProvider(deviceId).upload(blob)
+      localStorage.setItem('gimbo_backup_last_saved', new Date().toISOString())
+      return
+    }
+
     const handle = await loadBackupDirHandle()
     if (!handle) return
     const granted = await ensureBackupDirPermission(handle)
@@ -90,8 +105,17 @@ function makeEntry(
 interface DataStore {
   data: DataFile | null
 
+  // CS-15/CS-16: multi-device sync status. Mirrors the naming the Fase 2 (Google Drive)
+  // syncService will reuse, so the sync badge in the UI doesn't need a retrofit later.
+  syncStatus: 'idle' | 'syncing' | 'error' | 'offline'
+  lastSyncedAt: string | null
+
   loadData: (data: DataFile) => void
   clearData: () => void
+  // CS-15: reads every peer device-*.db newer than the last recorded merge, folds them into
+  // the current data via mergeForSync, and persists/republishes if anything changed. No-op when
+  // multi-device mode is off. Never throws — failures land in syncStatus: 'error'/'offline'.
+  runPeerSync: () => Promise<void>
 
   addAccount: (account: Account) => void
   updateAccount: (account: Account) => void
@@ -127,11 +151,37 @@ interface DataStore {
   setRetentionLimit: (limit: number | null) => void
 }
 
-export const useDataStore = create<DataStore>((set) => ({
+export const useDataStore = create<DataStore>((set, get) => ({
   data: null,
+  syncStatus: 'idle',
+  lastSyncedAt: null,
 
   loadData: (data) => set({ data }),
   clearData: () => set({ data: null }),
+
+  runPeerSync: async () => {
+    if (!isMultiDeviceEnabled()) return
+    const { data } = get()
+    if (!data) return
+
+    set({ syncStatus: 'syncing' })
+    try {
+      const deviceId = await getDeviceId()
+      const result = await syncFromPeers(data, deviceId)
+
+      if (result.status === 'merged') {
+        const fresh = await storage.loadDataFile()
+        set({ data: fresh ?? get().data, syncStatus: 'idle', lastSyncedAt: now() })
+      } else if (result.status === 'offline') {
+        set({ syncStatus: 'offline' })
+      } else {
+        // 'synced' or 'skipped' (newer-schema, non-fatal) — still a completed attempt
+        set({ syncStatus: 'idle', lastSyncedAt: now() })
+      }
+    } catch {
+      set({ syncStatus: 'error' })
+    }
+  },
 
   // ── Accounts ──────────────────────────────────────────────────────────────
 

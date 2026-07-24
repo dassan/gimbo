@@ -51,6 +51,9 @@ import {
   ensureBackupDirPermission,
   writeBackupToDir,
 } from '@/lib/backupDir'
+import { getDeviceId } from '@/lib/cloudSync/deviceId'
+import { createFolderProvider } from '@/lib/cloudSync/folderProvider'
+import { isMultiDeviceEnabled, setMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import {
@@ -169,6 +172,13 @@ const IMPORT_ERROR_CODES = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// S-19: a device that hasn't written in over 90 days gets a discreet "stale" marker —
+// never removed automatically, just flagged so the user can decide.
+const STALE_DEVICE_MS = 90 * 24 * 60 * 60 * 1000
+function isStaleDevice(lastModified: number): boolean {
+  return Date.now() - lastModified > STALE_DEVICE_MS
+}
+
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const mins = Math.floor(diff / 60000)
@@ -228,6 +238,9 @@ export default function Settings() {
     deleteTag,
     updateUser,
     setRetentionLimit,
+    syncStatus,
+    lastSyncedAt,
+    runPeerSync,
   } = useDataStore()
   const loadData = useDataStore((s) => s.loadData)
   const { workspace, setTheme, setLocale, setIncomeWindowMonths, setReserveTargetMonths } =
@@ -246,6 +259,10 @@ export default function Settings() {
   // auto-writes on mutations, and the initial import (fresh start) happens before a folder
   // is ever configured, leaving the first backup stale until the user forces one.
   const [syncState, setSyncState] = useState<'idle' | 'syncing' | 'done' | 'error'>('idle')
+  // CS-16: Fase 1 multi-device mode — desktop only, reuses the same backupDir handle.
+  const [multiDeviceOn, setMultiDeviceOn] = useState(() => isMultiDeviceEnabled())
+  const [selfDeviceId, setSelfDeviceId] = useState<string | null>(null)
+  const [deviceList, setDeviceList] = useState<{ deviceId: string; lastModified: number }[]>([])
   const [profileName, setProfileName] = useState(data?.user.name ?? '')
   const [profileEmail, setProfileEmail] = useState(data?.user.email ?? '')
   const [modal, setModal] = useState<ModalState>({ open: false })
@@ -314,6 +331,64 @@ export default function Settings() {
       return
     }
     await handleImportDb(file)
+  }
+
+  // CS-16: refresh the "this device" id and the list of other device-*.db files seen in the
+  // shared folder. No-op (empty list) when multi-device mode is off or the folder is unreachable.
+  async function refreshDeviceList() {
+    try {
+      const id = await getDeviceId()
+      setSelfDeviceId(id)
+      if (!isMultiDeviceEnabled()) {
+        setDeviceList([])
+        return
+      }
+      const peers = await createFolderProvider(id).listPeers()
+      setDeviceList(peers.map((p) => ({ deviceId: p.deviceId, lastModified: p.lastModified })))
+    } catch {
+      setDeviceList([])
+    }
+  }
+
+  useEffect(() => {
+    // Intentional setState-in-effect to load the device list on mount (CS-16).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshDeviceList()
+  }, [])
+
+  async function handleToggleMultiDevice() {
+    if (multiDeviceOn) {
+      setMultiDeviceEnabled(false)
+      setMultiDeviceOn(false)
+      return
+    }
+    if (!backupDir) return // guarded by the disabled toggle — a folder is required first
+    setMultiDeviceEnabled(true)
+    setMultiDeviceOn(true)
+    try {
+      const id = await getDeviceId()
+      const blob = await storage.exportBlob()
+      await createFolderProvider(id).upload(blob) // S-16: publish this device's file immediately
+    } catch {
+      // non-fatal — the debounced mutation path will retry the write
+    }
+    await runPeerSync()
+    await refreshDeviceList()
+  }
+
+  async function handleMultiDeviceSyncNow() {
+    await runPeerSync()
+    await refreshDeviceList()
+  }
+
+  async function handleRemoveDevice(peerDeviceId: string) {
+    if (!selfDeviceId) return
+    try {
+      await createFolderProvider(selfDeviceId).removePeer(peerDeviceId)
+    } catch {
+      // folder unreachable — nothing to do, the list will just show it again next refresh
+    }
+    await refreshDeviceList()
   }
 
   function handleSaveProfile() {
@@ -1084,6 +1159,137 @@ export default function Settings() {
                         <ExternalLink size={12} strokeWidth={2} />
                         {t('settings.backupLearnMore')}
                       </button>
+                    </div>
+                  </div>
+
+                  {/* ── Fase 1 — Multi-dispositivo ─────────────────────────── */}
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-on-surface/40">
+                      {t('settings.multiDeviceSection')}
+                    </p>
+                    <div className="rounded-2xl bg-surface-container p-5 space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-on-surface">
+                            {t('settings.multiDeviceToggle')}
+                          </p>
+                          <p className="text-xs text-on-surface/60">
+                            {t('settings.multiDeviceDesc')}
+                          </p>
+                        </div>
+                        <button
+                          role="switch"
+                          aria-checked={multiDeviceOn}
+                          aria-label={t('settings.multiDeviceToggle')}
+                          onClick={() => void handleToggleMultiDevice()}
+                          disabled={!multiDeviceOn && !backupDir}
+                          className={cn(
+                            'relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-40',
+                            multiDeviceOn ? 'bg-primary' : 'bg-surface-container-high'
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              'absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform',
+                              multiDeviceOn ? 'translate-x-[22px]' : 'translate-x-0.5'
+                            )}
+                          />
+                        </button>
+                      </div>
+
+                      {!backupDir && !multiDeviceOn && (
+                        <p className="text-xs text-on-surface/40">
+                          {t('settings.multiDeviceRequiresFolder')}
+                        </p>
+                      )}
+
+                      {multiDeviceOn && (
+                        <div className="space-y-3">
+                          <button
+                            onClick={() => void handleMultiDeviceSyncNow()}
+                            disabled={syncStatus === 'syncing'}
+                            className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-container-low py-2.5 text-sm font-semibold text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-60"
+                          >
+                            <RefreshCw
+                              size={14}
+                              strokeWidth={2}
+                              className={cn(syncStatus === 'syncing' && 'animate-spin')}
+                            />
+                            {t('settings.multiDeviceSyncNow')}
+                          </button>
+
+                          {syncStatus === 'offline' && (
+                            <p className="text-xs text-tertiary">
+                              {t('settings.multiDeviceStatusOffline')}
+                            </p>
+                          )}
+                          {syncStatus === 'error' && (
+                            <p className="text-xs text-tertiary">
+                              {t('settings.multiDeviceStatusError')}
+                            </p>
+                          )}
+                          {lastSyncedAt && (
+                            <p className="text-xs text-on-surface/40">
+                              {t('settings.multiDeviceLastSynced')}{' '}
+                              {new Date(lastSyncedAt).toLocaleString()}
+                            </p>
+                          )}
+
+                          <div className="space-y-2">
+                            {selfDeviceId && (
+                              <div className="flex items-center gap-3 rounded-xl bg-surface-container-low px-4 py-3">
+                                <HardDrive
+                                  size={16}
+                                  strokeWidth={1.5}
+                                  className="text-primary shrink-0"
+                                />
+                                <span className="flex-1 truncate text-sm font-medium text-on-surface">
+                                  {selfDeviceId.slice(0, 6)} — {t('settings.multiDeviceThisDevice')}
+                                </span>
+                              </div>
+                            )}
+                            {deviceList.length === 0 && (
+                              <p className="text-xs text-on-surface/40">
+                                {t('settings.multiDeviceNoPeers')}
+                              </p>
+                            )}
+                            {deviceList.map((peer) => {
+                              const stale = isStaleDevice(peer.lastModified)
+                              return (
+                                <div
+                                  key={peer.deviceId}
+                                  className="flex items-center gap-3 rounded-xl bg-surface-container-low px-4 py-3"
+                                >
+                                  <HardDrive
+                                    size={16}
+                                    strokeWidth={1.5}
+                                    className="text-on-surface/40 shrink-0"
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm font-medium text-on-surface">
+                                      {peer.deviceId.slice(0, 6)}
+                                      {stale && (
+                                        <span className="ml-2 text-xs text-tertiary">
+                                          {t('settings.multiDeviceStale')}
+                                        </span>
+                                      )}
+                                    </p>
+                                    <p className="text-xs text-on-surface/40">
+                                      {new Date(peer.lastModified).toLocaleString()}
+                                    </p>
+                                  </div>
+                                  <button
+                                    onClick={() => void handleRemoveDevice(peer.deviceId)}
+                                    className="shrink-0 text-xs text-tertiary hover:underline"
+                                  >
+                                    {t('settings.multiDeviceRemoveDevice')}
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 

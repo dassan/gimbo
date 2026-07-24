@@ -543,6 +543,25 @@ export class StorageService {
     await this.call<void>('import', [buffer], [buffer])
   }
 
+  /**
+   * CS-15: reads a peer's device-<id>.db bytes into a DataFile, entirely in a worker-side
+   * scratch db — the local gimbo.db is never opened, migrated or written to. Read-only; callers
+   * (folderSyncService) are responsible for merging and persisting the result themselves.
+   */
+  async readPeerBlob(
+    blob: Blob
+  ): Promise<
+    { status: 'ok'; data: DataFile } | { status: 'skipped'; reason: 'unreadable' | 'newer-schema' }
+  > {
+    const buffer = await blob.arrayBuffer()
+    const result = await this.call<
+      | { ok: true; data: Omit<DataFile, 'schemaVersion'> }
+      | { ok: false; reason: 'unreadable' | 'newer-schema' }
+    >('readPeer', [buffer], [buffer])
+    if (!result.ok) return { status: 'skipped', reason: result.reason }
+    return { status: 'ok', data: { schemaVersion: CURRENT_SCHEMA_VERSION, ...result.data } }
+  }
+
   async getDatabaseVersion(): Promise<number> {
     const rows = await this.query('PRAGMA user_version')
     return (rows[0]?.user_version ?? 0) as number

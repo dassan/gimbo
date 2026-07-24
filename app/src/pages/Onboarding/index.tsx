@@ -1,16 +1,21 @@
 import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, Link } from 'react-router-dom'
-import { ArrowRight, FileJson } from 'lucide-react'
+import { ArrowRight, FileJson, FolderOpen } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { createEmptyDataFile } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
 import { detectBrowserLocale } from '@/lib/storage/workspace'
 import { cn } from '@/lib/utils'
+import { saveBackupDirHandle } from '@/lib/backupDir'
+import { getDeviceId } from '@/lib/cloudSync/deviceId'
+import { createFolderProvider } from '@/lib/cloudSync/folderProvider'
+import { mergeForSync } from '@/lib/cloudSync/merge'
+import { setMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
 import type { Locale } from '@/types'
 
-type Tab = 'new' | 'import'
+type Tab = 'new' | 'import' | 'folder'
 
 export default function Onboarding() {
   const { t, i18n } = useTranslation()
@@ -55,6 +60,54 @@ export default function Onboarding() {
     setDragging(false)
     const file = e.dataTransfer.files[0]
     if (file) void handleImportFile(file)
+  }
+
+  // S-17: second (or later) desktop joining a shared folder that already has a Fase 1
+  // multi-device setup. Imports the first device-*.db found, merges the rest, then adopts the
+  // folder and starts writing this device's own file — never anyone else's.
+  async function handleRestoreFromFolder() {
+    setFileError(null)
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' })
+      const syncDir = await handle.getDirectoryHandle('gimbo').catch(() => null)
+      if (!syncDir) {
+        setFileError(t('onboarding.folderNoDevices'))
+        return
+      }
+
+      const deviceFiles: FileSystemFileHandle[] = []
+      for await (const entry of syncDir.values()) {
+        if (entry.kind === 'file' && /^device-.+\.db$/.test(entry.name)) {
+          deviceFiles.push(entry)
+        }
+      }
+      if (deviceFiles.length === 0) {
+        setFileError(t('onboarding.folderNoDevices'))
+        return
+      }
+
+      const [first, ...rest] = deviceFiles
+      await storage.importBlob(await first.getFile())
+
+      for (const peerHandle of rest) {
+        const result = await storage.readPeerBlob(await peerHandle.getFile())
+        if (result.status !== 'ok') continue // unreadable/newer-schema peer — skip (S-20)
+        const current = await storage.loadDataFile()
+        if (!current) continue
+        await storage.replaceAll(mergeForSync(current, result.data))
+      }
+
+      await saveBackupDirHandle(handle)
+      setMultiDeviceEnabled(true)
+      const deviceId = await getDeviceId()
+      await createFolderProvider(deviceId).upload(await storage.exportBlob())
+
+      const imported = await storage.loadDataFile()
+      if (imported) loadData(imported)
+      void navigate('/dashboard')
+    } catch {
+      setFileError(t('onboarding.folderImportError'))
+    }
   }
 
   return (
@@ -121,6 +174,15 @@ export default function Onboarding() {
                 }}
               >
                 {t('onboarding.tabImport')}
+              </TabButton>
+              <TabButton
+                active={tab === 'folder'}
+                onClick={() => {
+                  setTab('folder')
+                  setFileError(null)
+                }}
+              >
+                {t('onboarding.tabFolder')}
               </TabButton>
             </div>
 
@@ -191,7 +253,7 @@ export default function Onboarding() {
                   <ArrowRight size={16} strokeWidth={2.5} />
                 </button>
               </div>
-            ) : (
+            ) : tab === 'import' ? (
               /* ── Import form ── */
               <div className="space-y-4">
                 {/* Drop zone */}
@@ -232,6 +294,19 @@ export default function Onboarding() {
                   />
                 </div>
 
+                {fileError && <p className="text-xs text-red-500">{fileError}</p>}
+              </div>
+            ) : (
+              /* ── S-17: restore from a shared multi-device folder ── */
+              <div className="space-y-4">
+                <p className="text-xs text-on-surface/40">{t('onboarding.folderDesc')}</p>
+                <button
+                  onClick={() => void handleRestoreFromFolder()}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-4 text-sm font-semibold text-white transition hover:brightness-110 active:scale-[0.97]"
+                >
+                  <FolderOpen size={16} strokeWidth={2} />
+                  {t('onboarding.folderButton')}
+                </button>
                 {fileError && <p className="text-xs text-red-500">{fileError}</p>}
               </div>
             )}

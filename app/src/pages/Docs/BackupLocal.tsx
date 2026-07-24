@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { cn } from '@/lib/utils'
-import { FolderOpen, KeyRound, Cloud, AlertTriangle } from 'lucide-react'
+import { FolderOpen, KeyRound, Cloud, AlertTriangle, Laptop } from 'lucide-react'
 
 export default function BackupLocal() {
   const { t } = useTranslation()
@@ -31,6 +31,11 @@ export default function BackupLocal() {
       icon: <AlertTriangle size={16} strokeWidth={1.5} className="text-amber-500" />,
       title: t('docs.backupLocal.section4Title'),
       body: t('docs.backupLocal.section4Body'),
+    },
+    {
+      icon: <Laptop size={16} strokeWidth={1.5} className="text-primary" />,
+      title: t('docs.backupLocal.section5Title'),
+      body: t('docs.backupLocal.section5Body'),
     },
   ]
 
