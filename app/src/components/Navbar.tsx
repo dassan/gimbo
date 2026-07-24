@@ -1,7 +1,19 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Settings, Bell, Home, Receipt, Plus, BarChart2 } from 'lucide-react'
+import {
+  Settings,
+  Bell,
+  Home,
+  Receipt,
+  Plus,
+  BarChart2,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useDataStore } from '@/store/useDataStore'
+import { isMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
 
 const NAV_ITEMS = [
   { to: '/dashboard', key: 'nav.dashboard' },
@@ -27,6 +39,12 @@ interface NavbarProps {
 export default function Navbar({ initials = 'U', onNewTransaction }: NavbarProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  // Usability follow-up (CS-16): discreet sync status indicator, hidden entirely when
+  // multi-device mode isn't configured. Naming (syncStatus/lastSyncedAt) is shared with the
+  // Fase 2 Google Drive syncService, so this badge doesn't need a retrofit later.
+  const syncStatus = useDataStore((s) => s.syncStatus)
+  const lastSyncedAt = useDataStore((s) => s.lastSyncedAt)
+  const multiDeviceOn = isMultiDeviceEnabled()
 
   return (
     <>
@@ -67,6 +85,33 @@ export default function Navbar({ initials = 'U', onNewTransaction }: NavbarProps
 
         {/* Actions */}
         <div className="flex items-center gap-2">
+          {multiDeviceOn && (
+            <div
+              role="status"
+              aria-label={t('settings.multiDeviceToggle')}
+              title={
+                syncStatus === 'error' || syncStatus === 'offline'
+                  ? t('settings.multiDeviceStatusOffline')
+                  : lastSyncedAt
+                    ? `${t('settings.multiDeviceLastSynced')} ${new Date(lastSyncedAt).toLocaleString()}`
+                    : undefined
+              }
+              className="hidden sm:flex h-8 w-8 items-center justify-center rounded-full"
+            >
+              {syncStatus === 'syncing' ? (
+                <RefreshCw size={16} strokeWidth={1.75} className="animate-spin text-primary" />
+              ) : syncStatus === 'error' || syncStatus === 'offline' ? (
+                <CloudOff size={16} strokeWidth={1.75} className="text-tertiary" />
+              ) : (
+                <Cloud
+                  size={16}
+                  strokeWidth={1.75}
+                  className={lastSyncedAt ? 'text-primary' : 'text-on-surface/30'}
+                />
+              )}
+            </div>
+          )}
+
           <button
             aria-label="Notificações"
             className="hidden sm:flex h-8 w-8 items-center justify-center rounded-full text-on-surface/40 hover:bg-surface-container-low hover:text-on-surface/70 transition-colors"

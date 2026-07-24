@@ -299,7 +299,11 @@
     "multiDeviceRemoveDevice": "Remover este dispositivo",
     "multiDeviceStale": "sem gravações há mais de 90 dias",
     "multiDeviceStatusOffline": "Não foi possível acessar a pasta compartilhada.",
-    "multiDeviceStatusError": "Algo deu errado durante a sincronização."
+    "multiDeviceStatusError": "Algo deu errado durante a sincronização.",
+    "multiDeviceFolderHint": "A pasta escolhida precisa estar sincronizada por um serviço de terceiros (Google Drive, OneDrive, Dropbox etc.) para que os arquivos cheguem aos seus outros computadores — o Gimbo não envia nada pela internet sozinho, apenas grava na pasta local.",
+    "multiDevicePollIntervalLabel": "Verificar outros computadores a cada",
+    "multiDeviceReconnectBanner": "A sincronização entre computadores precisa de autorização para continuar funcionando.",
+    "multiDeviceReconnect": "Reconectar"
   },
   "creditCard": {
     "invoicePeriod": "Período da Fatura",

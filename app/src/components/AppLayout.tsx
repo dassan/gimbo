@@ -6,6 +6,7 @@ import { useDataStore } from '@/store/useDataStore'
 import { isDemoMode } from '@/lib/demo'
 import { useTrackNavigation } from '@/hooks/useTrackNavigation'
 import { loadBackupDirHandle, clearBackupDirHandle } from '@/lib/backupDir'
+import { isMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
 import Navbar from '@/components/Navbar'
 import FAB from '@/components/FAB'
 import TransactionDrawer from '@/components/TransactionDrawer'
@@ -56,6 +57,20 @@ export default function AppLayout() {
     await clearBackupDirHandle()
     setBackupHandle(null)
     setBackupPermState(null)
+  }
+
+  // Usability follow-up: multi-device sync going 'offline' is almost always a lapsed folder
+  // permission (same root cause as backupPermState above) — surface the same "click to
+  // reconnect" affordance instead of leaving the user to notice a stale badge in Settings.
+  const [multiDeviceBannerDismissed, setMultiDeviceBannerDismissed] = useState(false)
+  const syncStatus = useDataStore((s) => s.syncStatus)
+  const runPeerSync = useDataStore((s) => s.runPeerSync)
+
+  async function handleReconnectMultiDeviceSync() {
+    const handle = backupHandle ?? (await loadBackupDirHandle())
+    if (!handle) return
+    const perm = await handle.requestPermission({ mode: 'readwrite' })
+    if (perm === 'granted') await runPeerSync()
   }
 
   const data = useDataStore((s) => s.data)
@@ -129,10 +144,45 @@ export default function AppLayout() {
         </div>
       )}
 
+      {/* Usability follow-up: 'offline' almost always means the shared-folder permission
+          lapsed — mutually exclusive with the banners above, which already cover that root
+          cause for the plain Nível 1 backup dir. */}
+      {!isDemoMode() &&
+        !backupPermState &&
+        isMultiDeviceEnabled() &&
+        syncStatus === 'offline' &&
+        !multiDeviceBannerDismissed && (
+          <div className="fixed top-14 left-0 right-0 z-40 flex items-center justify-center gap-3 bg-amber-400 px-4 py-2.5 text-xs font-medium text-amber-950">
+            <FolderSync size={14} strokeWidth={2} className="shrink-0" />
+            <span className="flex-1 text-center">{t('settings.multiDeviceReconnectBanner')}</span>
+            <button
+              onClick={() => void handleReconnectMultiDeviceSync()}
+              className="rounded-md bg-amber-950/15 px-2.5 py-1 font-semibold hover:bg-amber-950/25 transition-colors shrink-0"
+            >
+              {t('settings.multiDeviceReconnect')}
+            </button>
+            <button
+              onClick={() => setMultiDeviceBannerDismissed(true)}
+              className="shrink-0 hover:opacity-70"
+            >
+              <X size={14} strokeWidth={2} />
+            </button>
+          </div>
+        )}
+
       {/* max-sm: compensate for the full nav height (h-16 = 4rem + device safe area).
           On desktop (sm+) the bottom nav is hidden, so no padding needed. */}
       <main
-        className={`flex-1 max-sm:pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0 ${isDemoMode() || backupPermState ? 'pt-24' : 'pt-14'}`}
+        className={`flex-1 max-sm:pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0 ${
+          isDemoMode() ||
+          backupPermState ||
+          (!backupPermState &&
+            isMultiDeviceEnabled() &&
+            syncStatus === 'offline' &&
+            !multiDeviceBannerDismissed)
+            ? 'pt-24'
+            : 'pt-14'
+        }`}
       >
         <ErrorBoundary fallback="card">
           <Outlet context={{ openTransactionDrawer } satisfies AppLayoutContext} />

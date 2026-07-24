@@ -299,7 +299,11 @@
     "multiDeviceRemoveDevice": "Remove this device",
     "multiDeviceStale": "no writes in over 90 days",
     "multiDeviceStatusOffline": "Couldn't reach the shared folder.",
-    "multiDeviceStatusError": "Something went wrong while syncing."
+    "multiDeviceStatusError": "Something went wrong while syncing.",
+    "multiDeviceFolderHint": "The folder you pick needs to be synced by a third-party service (Google Drive, OneDrive, Dropbox, etc.) for the files to reach your other computers — Gimbo doesn't send anything over the internet by itself, it only writes to the local folder.",
+    "multiDevicePollIntervalLabel": "Check other computers every",
+    "multiDeviceReconnectBanner": "Sync between computers needs authorization to keep working.",
+    "multiDeviceReconnect": "Reconnect"
   },
   "creditCard": {
     "invoicePeriod": "Invoice Period",

@@ -7,6 +7,7 @@ import { storage } from '@/services/storage'
 import { validateDataFile } from '@/lib/storage/schema'
 import { isDemoMode, loadDemoData } from '@/lib/demo'
 import { clearBackupDirHandle } from '@/lib/backupDir'
+import { startSyncPolling } from '@/lib/cloudSync/syncScheduler'
 import AppLayout from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import Onboarding from '@/pages/Onboarding'
@@ -93,6 +94,9 @@ export default function App() {
           // CS-15: never blocks the boot — the app hydrates from local OPFS first, sync runs
           // after in the background (no-op when multi-device mode is off).
           void useDataStore.getState().runPeerSync()
+          // Usability follow-up: keep polling for peer changes while the app stays open —
+          // otherwise two machines with long-lived sessions would only ever sync once, at boot.
+          startSyncPolling()
         }
       } catch (err) {
         setInitError(err instanceof Error ? err.message : 'Erro ao carregar dados locais')

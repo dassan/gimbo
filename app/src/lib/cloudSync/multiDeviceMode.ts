@@ -15,3 +15,25 @@ export function setMultiDeviceEnabled(enabled: boolean): void {
     localStorage.removeItem(KEY)
   }
 }
+
+// Background polling cadence (usability follow-up, 2026-07-24): there is no way to be notified
+// when a peer's file changes on disk, so periodic polling is the only available mechanism while
+// the app is open. Default 1h balances "two machines with open sessions" (common) against
+// needless wake-ups; the user can tighten or loosen it in Settings.
+export const SYNC_POLL_INTERVAL_OPTIONS_MINUTES = [10, 30, 60, 120, 480] as const
+export type SyncPollIntervalMinutes = (typeof SYNC_POLL_INTERVAL_OPTIONS_MINUTES)[number]
+
+const POLL_INTERVAL_KEY = 'gimbo_sync_poll_interval_minutes'
+const DEFAULT_POLL_INTERVAL_MINUTES: SyncPollIntervalMinutes = 60
+
+export function getSyncPollIntervalMinutes(): SyncPollIntervalMinutes {
+  const raw = localStorage.getItem(POLL_INTERVAL_KEY)
+  const parsed = raw ? Number(raw) : NaN
+  return (SYNC_POLL_INTERVAL_OPTIONS_MINUTES as readonly number[]).includes(parsed)
+    ? (parsed as SyncPollIntervalMinutes)
+    : DEFAULT_POLL_INTERVAL_MINUTES
+}
+
+export function setSyncPollIntervalMinutes(minutes: SyncPollIntervalMinutes): void {
+  localStorage.setItem(POLL_INTERVAL_KEY, String(minutes))
+}

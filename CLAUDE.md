@@ -186,7 +186,7 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 ## Estado Atual (2026-07-24)
 
 **Schema em memória v13** | **Schema físico SQLite v10** (`migrations/v1..v10.sql`) | Cobertura: ~97% statements
-**706 testes unitários** (26 arquivos) + **23 testes E2E** (5 specs, perfis `chromium` e `mobile-chrome`)
+**712 testes unitários** (26 arquivos) + **23 testes E2E** (5 specs, perfis `chromium` e `mobile-chrome`)
 
 > Os dois números de schema são independentes e **não coincidem**: `CURRENT_SCHEMA_VERSION` (v13,
 > em `lib/storage/schema.ts`) versiona o `DataFile` em memória; `PRAGMA user_version` (v10)

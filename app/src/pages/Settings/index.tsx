@@ -53,7 +53,15 @@ import {
 } from '@/lib/backupDir'
 import { getDeviceId } from '@/lib/cloudSync/deviceId'
 import { createFolderProvider } from '@/lib/cloudSync/folderProvider'
-import { isMultiDeviceEnabled, setMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
+import {
+  isMultiDeviceEnabled,
+  setMultiDeviceEnabled,
+  getSyncPollIntervalMinutes,
+  setSyncPollIntervalMinutes,
+  SYNC_POLL_INTERVAL_OPTIONS_MINUTES,
+  type SyncPollIntervalMinutes,
+} from '@/lib/cloudSync/multiDeviceMode'
+import { rescheduleSyncPolling } from '@/lib/cloudSync/syncScheduler'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import {
@@ -179,6 +187,12 @@ function isStaleDevice(lastModified: number): boolean {
   return Date.now() - lastModified > STALE_DEVICE_MS
 }
 
+// "min"/"h" abbreviations are identical in pt-BR and en-US, so this skips i18n rather than
+// adding a translation key per option.
+function formatPollInterval(minutes: number): string {
+  return minutes < 60 ? `${minutes} min` : `${minutes / 60}h`
+}
+
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const mins = Math.floor(diff / 60000)
@@ -263,6 +277,7 @@ export default function Settings() {
   const [multiDeviceOn, setMultiDeviceOn] = useState(() => isMultiDeviceEnabled())
   const [selfDeviceId, setSelfDeviceId] = useState<string | null>(null)
   const [deviceList, setDeviceList] = useState<{ deviceId: string; lastModified: number }[]>([])
+  const [pollIntervalMinutes, setPollIntervalMinutes] = useState(() => getSyncPollIntervalMinutes())
   const [profileName, setProfileName] = useState(data?.user.name ?? '')
   const [profileEmail, setProfileEmail] = useState(data?.user.email ?? '')
   const [modal, setModal] = useState<ModalState>({ open: false })
@@ -360,6 +375,10 @@ export default function Settings() {
     if (multiDeviceOn) {
       setMultiDeviceEnabled(false)
       setMultiDeviceOn(false)
+      // Clear any stale status/badge from before the toggle-off — otherwise the navbar badge
+      // and the offline reconnect banner (AppLayout) would keep showing a sync state for a
+      // feature that's now off.
+      useDataStore.setState({ syncStatus: 'idle', lastSyncedAt: null })
       return
     }
     if (!backupDir) return // guarded by the disabled toggle — a folder is required first
@@ -379,6 +398,12 @@ export default function Settings() {
   async function handleMultiDeviceSyncNow() {
     await runPeerSync()
     await refreshDeviceList()
+  }
+
+  function handlePollIntervalChange(minutes: SyncPollIntervalMinutes) {
+    setSyncPollIntervalMinutes(minutes)
+    setPollIntervalMinutes(minutes)
+    rescheduleSyncPolling()
   }
 
   async function handleRemoveDevice(peerDeviceId: string) {
@@ -1197,6 +1222,10 @@ export default function Settings() {
                         </button>
                       </div>
 
+                      <p className="text-xs text-on-surface/40">
+                        {t('settings.multiDeviceFolderHint')}
+                      </p>
+
                       {!backupDir && !multiDeviceOn && (
                         <p className="text-xs text-on-surface/40">
                           {t('settings.multiDeviceRequiresFolder')}
@@ -1217,6 +1246,31 @@ export default function Settings() {
                             />
                             {t('settings.multiDeviceSyncNow')}
                           </button>
+
+                          <div className="flex items-center justify-between gap-3">
+                            <label
+                              htmlFor="multiDevicePollInterval"
+                              className="text-xs text-on-surface/60"
+                            >
+                              {t('settings.multiDevicePollIntervalLabel')}
+                            </label>
+                            <select
+                              id="multiDevicePollInterval"
+                              value={pollIntervalMinutes}
+                              onChange={(e) =>
+                                handlePollIntervalChange(
+                                  Number(e.target.value) as SyncPollIntervalMinutes
+                                )
+                              }
+                              className="rounded-lg bg-surface-container-low px-2.5 py-1.5 text-xs font-medium text-on-surface outline-none"
+                            >
+                              {SYNC_POLL_INTERVAL_OPTIONS_MINUTES.map((minutes) => (
+                                <option key={minutes} value={minutes}>
+                                  {formatPollInterval(minutes)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
 
                           {syncStatus === 'offline' && (
                             <p className="text-xs text-tertiary">

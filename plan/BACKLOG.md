@@ -451,6 +451,23 @@ Decisão estratégica central: **o motor de merge é único e o transporte é pl
 > - **Chaves i18n ficaram `settings.multiDeviceX`, não `settings.multiDevice.X`** — todas as outras chaves da tela de Backup & Sync já são flat (`backupSync`, `backupLocalSection`, `backupSyncNow`...), então `multiDevice.*` aninhado teria sido a única exceção no arquivo.
 > - **`isMultiDeviceEnabled`/`setMultiDeviceEnabled` (`multiDeviceMode.ts`) não estavam explícitos em nenhuma task**, mas são necessários para o toggle do CS-16 e para `_triggerLocalBackup()` (`useDataStore.ts`) saber se deve gravar `device-<id>.db` ou o `gimbo-backup.db` legado a cada mutação — é a mesma preferência local (localStorage, não dado financeiro) que `backupDir.ts` já usa para o handle da pasta.
 
+#### Follow-up de usabilidade da Fase 1 (2026-07-24, revisão pós-entrega)
+
+Após a entrega inicial (CS-13 a CS-17), revisão de usabilidade com o humano identificou 4 lacunas,
+todas endereçadas na sequência — nenhuma tinha ID de backlog próprio antes desta revisão:
+
+| Lacuna | Resolução |
+|--------|-----------|
+| Nenhum indicador de sync fora de Settings | Badge discreto de nuvem em `Navbar.tsx` (cinza idle, girando durante sync, vermelho em erro/offline), oculto quando o modo multi-dispositivo está desligado. Reusa `syncStatus`/`lastSyncedAt` do `useDataStore` — os mesmos nomes que o CS-09 (Fase 2) já previa. |
+| Merge só roda no boot ou por clique manual — duas máquinas com sessão aberta o dia todo nunca voltam a sincronizar sozinhas | `src/lib/cloudSync/syncScheduler.ts`: polling em background com intervalo configurável (`multiDeviceMode.ts`: `SYNC_POLL_INTERVAL_OPTIONS_MINUTES = [10, 30, 60, 120, 480]`, padrão 60 min — decisão do humano). Pula o tick se a aba estiver oculta (`document.visibilityState`). Seletor em Settings; mudar o valor chama `rescheduleSyncPolling()` para aplicar na hora, sem esperar o intervalo antigo terminar. |
+| Falha de permissão da pasta em sync multi-dispositivo era silenciosa (só `syncStatus: 'offline'`, sem instrução) | Banner "clique para reconectar" em `AppLayout.tsx`, mesmo padrão do banner de reconexão do Nível 1 (`backupPermState`) — mutuamente exclusivos entre si para não empilhar dois banners pela mesma causa raiz. |
+| Usuário podia ligar o toggle apontando para uma pasta comum não sincronizada por nenhum cliente de nuvem, sem aviso | Texto educativo fixo na seção multi-dispositivo de Settings (`settings.multiDeviceFolderHint`) explicando que a pasta precisa estar sincronizada por Google Drive/OneDrive/Dropbox — o Gimbo só grava localmente, não envia nada pela rede. Mitigação de UX, não técnica (não há como detectar programaticamente se uma pasta está de fato sob um cliente de nuvem). |
+
+Novos arquivos: `src/lib/cloudSync/syncScheduler.ts` (+ `syncScheduler.test.ts`, 6 testes). `multiDeviceMode.ts`
+ganhou `getSyncPollIntervalMinutes`/`setSyncPollIntervalMinutes`. Ao desligar o toggle, `Settings.tsx`
+agora reseta `syncStatus`/`lastSyncedAt` para `idle`/`null` via `useDataStore.setState()` — sem isso, o
+badge da navbar e o banner de reconexão ficariam mostrando um estado órfão do modo já desligado.
+
 ### Fase 2 — Google Drive (desbloqueia mobile)
 
 | ID | Descrição | Prioridade | Status |
