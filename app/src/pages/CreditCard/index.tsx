@@ -36,6 +36,13 @@ function getIssuerColor(issuerIcon?: string): string {
   return CREDIT_ISSUER_COLORS[issuerIcon] ?? '#1F2937'
 }
 
+// M-64: for parceled purchases, tx.date is the invoice-charge date of that installment —
+// sort by the original purchase date instead so all installments of a purchase stay grouped
+// by when it actually happened, not by which invoice they landed on.
+function purchaseSortDate(tx: Transaction): string {
+  return tx.installment?.purchaseDate ?? tx.date
+}
+
 // Months labels in pt-BR for the invoice period heading
 const MONTH_NAMES_PT = [
   'Janeiro',
@@ -132,7 +139,7 @@ export default function CreditCardPage() {
         const period = getTxInvoicePeriod(tx, account)
         return period.year === resolvedPeriod.year && period.month === resolvedPeriod.month
       })
-      .sort((a, b) => b.date.localeCompare(a.date))
+      .sort((a, b) => purchaseSortDate(b).localeCompare(purchaseSortDate(a)))
   }, [data, account, resolvedPeriod])
 
   // Category totals for the spending summary — charges only (EXPENSE).
