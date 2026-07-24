@@ -63,6 +63,7 @@ export interface Account {
   reserveMetadata?: ReserveMetadata // only for RETAIL/SAVINGS accounts (HE-14)
   issuerIcon?: string // institution key for any account type — e.g. 'nubank', 'itau', 'generic' (M-34)
   archived?: boolean // M-42: hidden from selectors/lists but still counted in balances/totals
+  updatedAt?: string // ISO 8601 — last-write-wins timestamp for the cloud-sync merge engine (CS-04)
 }
 
 export interface Category {
@@ -72,12 +73,14 @@ export interface Category {
   icon: string
   color: string
   type: CategoryType
+  updatedAt?: string // ISO 8601 — last-write-wins timestamp for the cloud-sync merge engine (CS-04)
 }
 
 export interface Tag {
   id: string // UUID
   name: string
   color: string
+  updatedAt?: string // ISO 8601 — last-write-wins timestamp for the cloud-sync merge engine (CS-04)
 }
 
 export interface Installment {
@@ -110,6 +113,7 @@ export interface Transaction {
   transferAccountId?: string // only for CREDIT_PAYMENT: the account that funds the payment
   referenceMonth?: string // CREDIT-account txs: the invoice period this entry is bound to, "YYYY-MM". For CREDIT_PAYMENT, the invoice being paid; for charges/credits, the invoice they post to (overrides the date-derived default) (B-18)
   invoiceDueDate?: string // CREDIT charges/credits: authoritative due date of the bound invoice, "YYYY-MM-DD", captured from the source. Used by getEffectiveCashFlowDate so historical invoices stay anchored even if the card's closing/due day later changes (CC-33)
+  updatedAt?: string // ISO 8601 — last-write-wins timestamp for the cloud-sync merge engine (CS-04)
 }
 
 export interface Valuation {

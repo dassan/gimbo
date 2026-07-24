@@ -259,9 +259,26 @@ banner de reconexão (`backupPermState === 'prompt' | 'denied'`).
   distinção explícita para não passar a falsa impressão de que a pasta local já resolve
   multi-dispositivo.
 
-### Nível 2 — Cloud Sync (planejado, `CS-01..CS-12`)
-Sincronização ponta-a-ponta entre dispositivos via Google Drive ou Dropbox do próprio usuário,
-sem servidor Gimbo:
+### Nível 2 — Sync Multi-Dispositivo (planejado, `CS-01..CS-20`)
+
+> **Roadmap em fases (decidido em 2026-07-24 — ver `FABLE-BRAINSTORM.md`, `SYNC_SCENARIOS.md`
+> Partes 2 e 3, e `SPEC.md` Fase 16):** o motor de merge é **único** e o transporte é **plugável**.
+>
+> | Fase | Transporte | Entrega |
+> |------|-----------|---------|
+> | **0** | — | Motor de merge (`updatedAt` + `merge.ts` + testes) |
+> | **1** | Pasta compartilhada, **um `.db` por dispositivo** | Multi-desktop, sem OAuth |
+> | **2** | Google Drive API (OAuth2 PKCE) | **Desbloqueia mobile** |
+> | **3** | Dropbox | 2º provider |
+>
+> **Fase 1 (`CS-13..CS-17`)** — cada dispositivo escreve exclusivamente
+> `<pasta>/gimbo/device-<uuid>.db`; o merge acontece em nível de aplicação ao ler os arquivos
+> dos outros. **Um escritor por arquivo** elimina a cópia-em-conflito do Nível 1 por construção.
+> `deviceId` persistido no OPFS; snapshot `.db` completo (não oplog); escopo desktop apenas
+> (File System Access API). Cenários `S-16` a `S-20`.
+
+**Fase 2/3** — sincronização ponta-a-ponta entre dispositivos via Google Drive ou Dropbox do
+próprio usuário, sem servidor Gimbo:
 
 ```
 Google Drive do usuário

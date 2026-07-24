@@ -1030,6 +1030,249 @@ Adicionar em `locales/pt-BR.json` e `locales/en-US.json`:
 
 ---
 
+## Fase 16 — Sync Multi-Dispositivo: Fases 0 e 1 (F-28 Nível 2)
+
+> Especificação derivada de `plan/FABLE-BRAINSTORM.md` (análise de alternativas),
+> `plan/SYNC_SCENARIOS.md` (cenários `S-16` a `S-20`) e do épico `CS` em `plan/BACKLOG.md`.
+> **Cobre apenas as Fases 0 e 1.** A Fase 2 (Google Drive) e a Fase 3 (Dropbox) serão
+> especificadas quando iniciadas — dependem de `CS-01`, que é ação externa do mantenedor.
+
+### Princípio de desenho
+
+**Motor de merge único, transporte plugável.** O merge (`merge.ts`) é idêntico em todas as
+fases; só o `CloudProvider` muda. Por isso a Fase 0 é construída primeiro e não é descartada
+ao trocar de transporte.
+
+O invariante que faz a Fase 1 funcionar: **um escritor por arquivo**. Cada dispositivo grava
+exclusivamente o seu `device-<id>.db`; nenhum dispositivo escreve no arquivo de outro. É o que
+elimina, por construção, a cópia-em-conflito que o Nível 1 produz hoje quando dois desktops
+compartilham a mesma pasta.
+
+---
+
+### TASK-CS-01 (CS-19): `src/lib/cloudSync/provider.ts` — interface de transporte
+
+```typescript
+export interface CloudProvider {
+  upload(blob: Blob): Promise<void>
+  download(): Promise<ArrayBuffer>
+  getMetadata(): Promise<{ modifiedTime: string }>
+  isConnected(): boolean
+}
+
+export type SyncResult =
+  | { status: 'synced' }                                  // nada a fazer
+  | { status: 'merged'; peersMerged: number }             // houve merge
+  | { status: 'skipped'; reason: 'unreadable' | 'newer-schema' }
+  | { status: 'offline' }
+  | { status: 'error'; message: string }
+```
+
+Interface deliberadamente fina (só I/O), sem lógica de domínio. Nenhum arquivo de merge ou
+orquestração pode importar `folderProvider`/`googleDrive` diretamente — apenas `CloudProvider`.
+
+---
+
+### TASK-CS-02 (CS-04): `updatedAt` nas entidades mutáveis
+
+**`src/types/index.ts`** — adicionar `updatedAt: string` (ISO 8601) a `Transaction`, `Account`,
+`Category`, `Tag`.
+
+**`src/lib/storage/schema.ts`** — campo nos schemas Zod correspondentes; bump de
+`CURRENT_SCHEMA_VERSION` a partir do valor vigente (**11** em 2026-07-24) + migração no-op:
+entidades sem o campo recebem `new Date(0).toISOString()` (nunca vence um valor real no LWW).
+
+**`src/store/useDataStore.ts`** — todo `update*` seta `updatedAt: now()` dentro do `mutate()`.
+Os `add*` também setam (na criação, `updatedAt === createdAt` conceitualmente).
+
+**Persistência física:**
+- Nova migração `services/storage/migrations/vN.sql`: `ALTER TABLE ... ADD COLUMN updated_at TEXT`
+  nas 4 tabelas (`transactions`, `accounts`, `categories`, `tags`).
+- Propagar em `worker.ts` (import/migração/`replaceAll`) e `StorageService.ts`
+  (`rowToTransaction` e equivalentes).
+
+> **Armadilha conhecida — `data/sync_gimbo.py`.** O `SCHEMA_DDL` do script de benchmark precisa
+> acompanhar o bump de `PRAGMA user_version`, senão o `runMigrations()` do app pula o
+> `ALTER TABLE` ao importar. Mesma pegadinha já vivida em `M-51` e `M-64`.
+
+---
+
+### TASK-CS-03 (CS-05): `src/lib/cloudSync/merge.ts`
+
+```typescript
+export function mergeForSync(local: DataFile, remote: DataFile): DataFile
+```
+
+Função **pura** — recebe dois `DataFile` em memória, não conhece transporte, não toca storage.
+
+| Campo | Regra |
+|-------|-------|
+| `accounts`, `categories`, `tags`, `transactions` | Union por `id`; em colisão vence o maior `updatedAt` (LWW) |
+| `deletedIds` | Union dos dois lados — deleção nunca é revertida |
+| `valuations`, `savedPeriods` | Union por `id` (sem `updatedAt`: local vence em colisão) |
+| `auditLog` | Union por `id`, ordenado por `timestamp` asc, `applyRetention()` aplicado |
+| `settings.fileUpdatedAt` | `max` dos dois lados |
+| `settings` (demais campos), `user` | `local` vence (dispositivo ativo) |
+| `schemaVersion` | `local` (o caller garante que `remote.schemaVersion <= local`) |
+
+**Filtro de tombstones:** entidades cujo `id` esteja em `deletedIds` (de qualquer lado) são
+removidas do resultado — senão uma deleção feita no dispositivo A reapareceria vinda de B.
+
+**Requisito de idempotência (crítico):** `mergeForSync(mergeForSync(a, b), b)` deve ser igual a
+`mergeForSync(a, b)`. É essa propriedade que torna seguro pular um arquivo ilegível e retentar
+no boot seguinte (S-20).
+
+---
+
+### TASK-CS-04 (CS-13): `src/lib/cloudSync/deviceId.ts`
+
+```typescript
+export async function getDeviceId(): Promise<string>       // uuid persistido
+export async function getShortDeviceId(): Promise<string>  // 6 primeiros chars, para UI
+```
+
+Lê/grava o arquivo `device-id` no **OPFS**, ao lado do `gimbo.db`.
+
+> **Por que OPFS e não `localStorage`:** o OPFS sobrevive a limpezas parciais de dados do
+> browser. Com `localStorage`, cada limpeza geraria um `deviceId` novo — e, com ele, um novo
+> `device-*.db` na pasta do usuário, acumulando órfãos indefinidamente.
+
+---
+
+### TASK-CS-05 (CS-14): `src/lib/cloudSync/folderProvider.ts`
+
+Primeira implementação real de `CloudProvider`, sobre o `FileSystemDirectoryHandle` já
+persistido por `lib/backupDir.ts` (BK-01..08).
+
+```typescript
+export interface PeerFile {
+  deviceId: string
+  lastModified: number
+  handle: FileSystemFileHandle
+}
+
+export function createFolderProvider(deviceId: string): CloudProvider & {
+  listPeers(): Promise<PeerFile[]>       // exclui o próprio arquivo
+  removePeer(deviceId: string): Promise<void>
+}
+```
+
+- **Layout:** `<pasta escolhida>/gimbo/device-<id>.db`. Subpasta `gimbo/` para não poluir a
+  raiz escolhida pelo usuário e para tornar `listPeers()` trivial.
+- **Escrita atômica:** `createWritable()` → grava em temporário → substitui no `close()`.
+  Mecanismo já validado no Nível 1; garante que outro dispositivo nunca leia arquivo parcial.
+- **`upload()` escreve exclusivamente o próprio arquivo.** Não existe caminho de código que
+  escreva num `device-*.db` alheio — o invariante de escritor único é estrutural, não
+  convencional.
+- Reusar `ensureBackupDirPermission()` para revalidação de permissão (mesmo banner de
+  reconexão do `AppLayout`).
+
+---
+
+### TASK-CS-06 (CS-15): `src/lib/cloudSync/folderSyncService.ts`
+
+```typescript
+export async function syncFromPeers(): Promise<SyncResult>
+```
+
+**Algoritmo:**
+
+```
+1. peers = await provider.listPeers()
+2. para cada peer com lastModified > lastMergedAt[peer.deviceId]:
+     a. blob  = await peer.handle.getFile()
+     b. remote = parse do SQLite em memória → DataFile     ← NUNCA toca o OPFS local
+     c. se remote.schemaVersion > local.schemaVersion → pula + sinaliza banner
+     d. se parse/validação falhar                    → pula (telemetria, sem nome de arquivo)
+     e. merged = mergeForSync(merged, remote)
+3. se houve mudança:
+     storage.replaceAll(merged)  +  provider.upload(exportBlob())
+4. persistir lastMergedAt por deviceId (localStorage — é cache, não dado financeiro)
+```
+
+**Regras não negociáveis:**
+- **Nunca bloqueia o boot.** O app hidrata do OPFS local primeiro; `syncFromPeers()` roda em
+  background depois (mesmo padrão do `CS-07`).
+- **Falha de peer é sempre não-fatal** — pular e retentar no próximo boot é seguro porque o
+  merge é idempotente.
+- **Leitura de peer é somente leitura.**
+
+**Integração no `useDataStore`:**
+- Startup: após `loadData()`, se o modo multi-dispositivo estiver ativo, `syncFromPeers()` em
+  background.
+- Mutação: o debounce existente de `_triggerLocalBackup()` passa a gravar `device-<id>.db`
+  quando o modo está ativo (em vez do `gimbo-backup.db` único).
+- Estado: `syncStatus: 'idle' | 'syncing' | 'error' | 'offline'`, `lastSyncedAt: string | null`
+  (mesmos nomes do `CS-07`, para a Fase 2 reusar a UI sem retrofit).
+
+---
+
+### TASK-CS-07 (CS-16): UI — Settings, Onboarding e gestão de dispositivos
+
+**`pages/Settings/index.tsx` → aba "Backup & Sync":**
+- Toggle **"Sincronizar entre meus computadores"**. Ao ligar: exige pasta configurada, exibe
+  aviso ("escolha uma pasta sincronizada; não edite nem remova os arquivos manualmente") e
+  passa a gravar `device-<id>.db`. O `gimbo-backup.db` legado **não é apagado**.
+- **Lista de dispositivos:** id abreviado + data da última escrita + marcação "este computador";
+  ação "Remover este dispositivo" (apaga o arquivo). Dispositivos sem escrita há **> 90 dias**
+  recebem marcação visual discreta.
+- **Nunca remover automaticamente** (S-19) — apagar arquivo do usuário sem pedir é inaceitável
+  num app de finanças.
+
+**`pages/Onboarding/`:** nova opção **"Restaurar de uma pasta"** (S-17) — seleciona a pasta,
+importa o 1º `device-*.db` encontrado e funde os demais via `mergeForSync`.
+
+**i18n:** chaves `settings.multiDevice.*` em `pt-BR` e `en-US`.
+
+**Escopo — desktop apenas.** A UI do modo multi-dispositivo só aparece onde há File System
+Access API. Nenhuma superfície pode sugerir que a Fase 1 sincroniza com celular (isso é Fase 2).
+
+---
+
+### TASK-CS-08 (CS-10a): Testes
+
+**`src/test/lib/cloudSync/merge.test.ts`** (Fase 0 — o mais importante do épico):
+- Nova entidade em `remote` sobrevive; nova em `local` sobrevive
+- Colisão: maior `updatedAt` vence, nos dois sentidos
+- `updatedAt` legado (`new Date(0)`) nunca vence sobre valor real
+- Deleção respeitada via `deletedIds` (union), nos dois sentidos
+- Entidade em `deletedIds` é removida do resultado mesmo estando presente no outro lado
+- Duplicatas offline (mesmo conteúdo, `id` diferente): **ambas** sobrevivem
+- `auditLog`: deduplicação por `id`, ordenação, `applyRetention` aplicado
+- **Idempotência:** `merge(merge(a,b), b) === merge(a,b)`
+
+**`src/test/lib/cloudSync/deviceId.test.ts`:** gera e persiste na 1ª chamada; mesmo valor nas
+seguintes; estável entre reloads simulados.
+
+**`src/test/lib/cloudSync/folderSyncService.test.ts`** (com `folderProvider` mockado):
+peer mais recente é mesclado; peer não modificado é ignorado; peer ilegível é pulado sem
+lançar; peer com `schemaVersion` maior é pulado e sinalizado; nenhum peer → `status: 'synced'`.
+
+**E2E (`app/e2e/`):** cenário multi-dispositivo com dois `device-*.db` semeados numa pasta
+mockada — o app funde ambos no boot e exibe os lançamentos dos dois.
+
+> **Regra de teste herdada (`CLAUDE.md`):** nunca substituir o mock de FSA dos testes E2E por
+> mocks em memória.
+
+---
+
+### Decisões técnicas registradas
+
+| Decisão | Escolha | Motivo |
+|---------|---------|--------|
+| Ordem das fases: pasta (1) antes de Drive (2) | Fase 1 primeiro | Custo baixo (reusa BK-01..08 inteiro), zero gatekeeper externo, e corrige o pior footgun atual (cópia-em-conflito silenciosa). A Fase 2 depende de processo externo (Google Cloud Console) — não faz sentido bloquear entrega nisso |
+| Um arquivo por dispositivo vs. arquivo compartilhado | Um por dispositivo | Elimina escrita concorrente **por construção**, não por coordenação. Sem locking, sem heurística, sem cópia-em-conflito |
+| Snapshot `.db` completo vs. oplog `.jsonl` | Snapshot | Reusa `exportBlob()` sem nenhuma máquina de compactação/GC de log. O custo de reescrita total já é aceito e praticado no Nível 1 |
+| `deviceId` no OPFS vs. `localStorage` | OPFS | Sobrevive a limpezas parciais do browser; `localStorage` geraria um id novo por limpeza e acumularia arquivos órfãos na pasta do usuário |
+| Interface `CloudProvider` na Fase 0 (CS-19) e não junto do Drive | Antecipada | `folderProvider` é a 1ª implementação real — a interface precisa existir antes dela. De quebra, duas implementações reais validam o formato antes do Dropbox, dissolvendo o risco de abstração especulativa |
+| Merge idempotente como requisito explícito | Obrigatório | É o que torna "pular arquivo problemático e retentar depois" uma estratégia segura em vez de uma aposta |
+| Peer ilegível: pular vs. abortar o sync | Pular, não-fatal | Um arquivo em replicação pelo cliente de nuvem é uma condição **normal**, não um erro. Abortar o boot por isso seria desproporcional |
+| Remoção de dispositivo órfão | Sempre manual | Apagar arquivo do usuário sem confirmação é inaceitável num app de finanças; o app apenas sinaliza inatividade > 90 dias |
+| Cifragem client-side | Opcional, off por padrão | Ligada por padrão quebraria a portabilidade do `.db` (importável manualmente hoje) e criaria risco de perda por passphrase esquecida. Vive na fronteira do `CloudProvider` — implementada uma vez, vale para todos os transportes (CS-18) |
+| Modo multi-dispositivo restrito a desktop | Sim, explicitamente | Sem File System Access API não há Fase 1 possível no mobile. Prometer isso na UI geraria expectativa falsa — mobile é a promessa da Fase 2 |
+
+---
+
 ## Fora do Escopo (alinhado ao PRD)
 
 - `X-1` Criptografia do `data.json`

@@ -140,7 +140,7 @@ export const useDataStore = create<DataStore>((set) => ({
       mutate(
         s,
         (d) => {
-          d.accounts.push(sanitizeAccount(account))
+          d.accounts.push(sanitizeAccount({ ...account, updatedAt: now() }))
           addAudit(
             d,
             makeEntry(
@@ -161,7 +161,7 @@ export const useDataStore = create<DataStore>((set) => ({
         s,
         (d) => {
           const i = d.accounts.findIndex((a) => a.id === account.id)
-          if (i !== -1) d.accounts[i] = sanitizeAccount(account)
+          if (i !== -1) d.accounts[i] = sanitizeAccount({ ...account, updatedAt: now() })
           addAudit(
             d,
             makeEntry(
@@ -197,7 +197,7 @@ export const useDataStore = create<DataStore>((set) => ({
       mutate(
         s,
         (d) => {
-          d.categories.push(category)
+          d.categories.push({ ...category, updatedAt: now() })
           addAudit(
             d,
             makeEntry(
@@ -216,7 +216,7 @@ export const useDataStore = create<DataStore>((set) => ({
     set((s) =>
       mutate(s, (d) => {
         const i = d.categories.findIndex((c) => c.id === category.id)
-        if (i !== -1) d.categories[i] = category
+        if (i !== -1) d.categories[i] = { ...category, updatedAt: now() }
         addAudit(
           d,
           makeEntry(
@@ -246,7 +246,7 @@ export const useDataStore = create<DataStore>((set) => ({
       mutate(
         s,
         (d) => {
-          d.tags.push(tag)
+          d.tags.push({ ...tag, updatedAt: now() })
           addAudit(
             d,
             makeEntry('CREATE', 'tag', tag.id, buildSummary('CREATE', 'tag', `#${tag.name}`))
@@ -260,7 +260,7 @@ export const useDataStore = create<DataStore>((set) => ({
     set((s) =>
       mutate(s, (d) => {
         const i = d.tags.findIndex((t) => t.id === tag.id)
-        if (i !== -1) d.tags[i] = tag
+        if (i !== -1) d.tags[i] = { ...tag, updatedAt: now() }
         addAudit(
           d,
           makeEntry('UPDATE', 'tag', tag.id, buildSummary('UPDATE', 'tag', `#${tag.name}`))
@@ -305,6 +305,7 @@ export const useDataStore = create<DataStore>((set) => ({
                 description: (tx.description + ` (${i}/${N})`).trim(),
                 isPaid: false,
                 installment: { parentId, currentIndex: i, total: N, purchaseDate },
+                updatedAt: now(),
               }
               d.transactions.push(installmentTx)
             }
@@ -337,6 +338,7 @@ export const useDataStore = create<DataStore>((set) => ({
                 // Only the first occurrence keeps the form's paid status; future ones are unpaid.
                 isPaid: i === 0 ? tx.isPaid : false,
                 recurrence: { frequency, parentId, ...(endDate ? { endDate } : {}) },
+                updatedAt: now(),
               }
               d.transactions.push(occurrence)
             }
@@ -352,7 +354,7 @@ export const useDataStore = create<DataStore>((set) => ({
           }
 
           // ── Standard single transaction ──────────────────────────────────
-          d.transactions.push(tx)
+          d.transactions.push({ ...tx, updatedAt: now() })
           let summary: string
           if (tx.type === 'CREDIT_PAYMENT') {
             const creditAccName =
@@ -379,7 +381,7 @@ export const useDataStore = create<DataStore>((set) => ({
         s,
         (d) => {
           const i = d.transactions.findIndex((t) => t.id === tx.id)
-          if (i !== -1) d.transactions[i] = tx
+          if (i !== -1) d.transactions[i] = { ...tx, updatedAt: now() }
           const catName = d.categories.find((c) => c.id === tx.categoryId)?.name ?? ''
           addAudit(
             d,
@@ -666,6 +668,7 @@ function sanitizeAccount(account: Account): Account {
     type: account.type,
     balance: account.balance,
     includeInBalance: account.includeInBalance,
+    updatedAt: account.updatedAt,
     ...(account.issuerIcon ? { issuerIcon: account.issuerIcon } : {}),
     ...(account.archived ? { archived: account.archived } : {}),
     ...(account.type === 'LOAN' && account.loanMetadata

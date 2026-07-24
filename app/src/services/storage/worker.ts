@@ -56,6 +56,7 @@ type RawAccount = {
   reserveMetadata?: Record<string, never>
   issuerIcon?: string
   archived?: boolean
+  updatedAt?: string
 }
 type RawCategory = {
   id: string
@@ -64,8 +65,9 @@ type RawCategory = {
   icon: string
   color: string
   type: string
+  updatedAt?: string
 }
-type RawTag = { id: string; name: string; color: string }
+type RawTag = { id: string; name: string; color: string; updatedAt?: string }
 type RawTransaction = {
   id: string
   accountId: string
@@ -81,6 +83,7 @@ type RawTransaction = {
   transferAccountId?: string
   referenceMonth?: string
   invoiceDueDate?: string
+  updatedAt?: string
 }
 type RawAuditEntry = {
   id: string
@@ -286,7 +289,7 @@ async function replaceAll(raw: unknown): Promise<void> {
           acc.issuerIcon ?? null,
           acc.archived ? 1 : 0,
           ts,
-          ts,
+          acc.updatedAt ?? ts,
         ]
       )
     }
@@ -299,7 +302,16 @@ async function replaceAll(raw: unknown): Promise<void> {
         db,
         `INSERT INTO categories (id, parent_id, name, icon, color, type, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [cat.id, cat.parentId ?? null, cat.name, cat.icon, cat.color, cat.type, ts, ts]
+        [
+          cat.id,
+          cat.parentId ?? null,
+          cat.name,
+          cat.icon,
+          cat.color,
+          cat.type,
+          ts,
+          cat.updatedAt ?? ts,
+        ]
       )
     }
 
@@ -308,7 +320,7 @@ async function replaceAll(raw: unknown): Promise<void> {
       await sqlite3.run(
         db,
         'INSERT INTO tags (id, name, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-        [tag.id, tag.name, tag.color, ts, ts]
+        [tag.id, tag.name, tag.color, ts, tag.updatedAt ?? ts]
       )
     }
 
@@ -343,7 +355,7 @@ async function replaceAll(raw: unknown): Promise<void> {
           tx.referenceMonth ?? null,
           tx.invoiceDueDate ?? null,
           ts,
-          ts,
+          tx.updatedAt ?? ts,
         ]
       )
       for (const tagId of tx.tags) {

@@ -9,8 +9,13 @@
 ## Identidade do Projeto
 
 **Gimbo** — app web de finanças pessoais **local-first**, instalável como PWA.
-Toda a informação reside em um `data.json` controlado pelo usuário, sem servidor, sem nuvem.
+Toda a informação reside em um banco **SQLite** (`gimbo.db`, via `wa-sqlite` + OPFS) no próprio
+browser do usuário, exportável como arquivo `.db` que ele controla — sem servidor, sem nuvem.
 Workflow de desenvolvimento IA + humano definido em `plan/RULES.md`.
+
+> A camada `data.json` + File System Access API foi **substituída** por SQLite/OPFS em
+> 2026-05-26 (ver `plan/STORAGE.md`). Referências a `data.json` em documentos antigos são
+> históricas — o formato canônico atual é o `.db`.
 
 ---
 
@@ -19,12 +24,15 @@ Workflow de desenvolvimento IA + humano definido em `plan/RULES.md`.
 | Documento | Caminho | Conteúdo |
 |-----------|---------|---------|
 | Arquitetura | `plan/ARCHITECTURE.md` | Stack, estrutura de diretórios, modelo de dados, APIs, fluxos de persistência, testes |
-| Requisitos de produto | `plan/PRD.md` | Features F-1 a F-26, critérios de aceite |
-| Backlog | `plan/BACKLOG.md` | Bugs (B-XX), melhorias (M-XX), relatórios (R-XX) com status |
+| Requisitos de produto | `plan/PRD.md` | Features F-1 a F-29, critérios de aceite |
+| Backlog | `plan/BACKLOG.md` | Bugs (B-XX), melhorias (M-XX), cartão (CC-XX), relatórios (R-XX), backup (BK-XX), sync (CS-XX) |
+| Especificação técnica | `plan/SPEC.md` | Tasks de implementação por fase (TASK-XX); Fase 16 = sync multi-dispositivo |
 | Cartão de crédito | `plan/CREDIT_CARD.md` | Decisões de produto e desafios técnicos do módulo CC |
-| Cenários de sync | `plan/SYNC_SCENARIOS.md` | 14 cenários de sincronização e recuperação |
+| Cenários de sync | `plan/SYNC_SCENARIOS.md` | 20 cenários: SQLite atual (S-01..07), multi-desktop por pasta (S-16..20), nuvem (S-08..15) |
+| Brainstorm de sync | `plan/FABLE-BRAINSTORM.md` | Análise das 7 alternativas de sync multi-dispositivo, matriz de trade-offs, roadmap faseado e decisões |
+| Histórico de storage | `plan/STORAGE.md` | Decisão e migração JSON/FSA → SQLite/OPFS |
 | Telemetria e bug report | `plan/METRICS.md` | Decisões de privacidade, arquitetura do F-26 (Bug Report System), tasks TASK-BR-01 a BR-08 |
-| Relatórios avançados | `plan/REPORTS.md` | Épico do módulo analítico (4 views) |
+| Relatórios avançados | `plan/REPORTS.md` | Épico do módulo analítico (5 views) |
 | Saúde Financeira | `plan/FINANCIAL_HEALTH.md` | Decisões de produto/design da tela `/health` (F-29), conceitos, fórmulas e pontos em aberto |
 | Sistema de design | `design/DESIGN.md` | Cores, tipografia, espaçamento, sombras, componentes (fonte única) |
 | Workflow | `plan/RULES.md` | SDLC, cerimônias, divisão de responsabilidades |
@@ -58,10 +66,22 @@ de lançamentos futuros, onde "atual+futuras" estourava o limite.
 ### Tradução de tipos de conta
 Sempre `t(\`accounts.${type.toLowerCase()}\`)`. Nunca exibir enum bruto.
 
-### Dois caminhos de persistência
-- `importFileToIdb(file)` — onboarding/import (replace total)
-- `syncToFile(local, diskSnapshot)` — sync recorrente (merge por UUID)
-**Nunca misturar os dois caminhos.**
+### Caminhos de persistência (SQLite/OPFS)
+
+> Corrigido em 2026-07-24: as funções `importFileToIdb()`/`syncToFile()` descritas aqui
+> anteriormente **não existem mais no código** — pertenciam à camada IndexedDB/FSA removida em
+> 2026-05-26. Os caminhos reais são:
+
+| Caminho | Função | Quando |
+|---------|--------|--------|
+| Mutação normal | `storage.replaceAll(data)` | Toda mutação, via `debouncedReplaceAll()` (300ms) dentro de `mutate()` |
+| Import de backup | `storage.importBlob(blob)` | Onboarding/Settings — **replace total**: fecha o DB, escreve os bytes no OPFS, reabre e roda `runMigrations()` |
+| Export / backup | `storage.exportBlob()` | Botão "Exportar" e backup automático em pasta (WAL checkpoint antes de ler) |
+| Backup em pasta | `writeBackupToDir(handle, blob)` | Após `replaceAll()`, se houver pasta configurada (`lib/backupDir.ts`) |
+
+**Nunca misturar os caminhos:** `importBlob()` é replace destrutivo e nunca deve ser usado num
+fluxo recorrente; `replaceAll()` nunca deve ser chamado fora de `mutate()`/`debouncedReplaceAll()`.
+Falha de backup em pasta jamais interrompe o fluxo principal.
 
 ---
 
@@ -94,7 +114,7 @@ Sempre `t(\`accounts.${type.toLowerCase()}\`)`. Nunca exibir enum bruto.
 ```
 
 Tipos: `feat:` | `fix:` | `test:` | `style:` | `refactor:` | `docs:` | `chore:`
-Referência obrigatória ao ID (M-XX, B-XX, CC-XX, R-XX) quando aplicável.
+Referência obrigatória ao ID (M-XX, B-XX, CC-XX, R-XX, BK-XX, HE-XX, CS-XX, MB-XX) quando aplicável.
 Uma feature por commit/PR. CI verde obrigatório. Nenhum `TODO` no código.
 
 ---
@@ -116,9 +136,11 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 ### Código
 - **Nunca** usar `as SomeType` para contornar validação Zod
 - **Nunca** mutar estado Zustand diretamente — sempre via `mutate()`
-- **Nunca** chamar `syncToFile()`/`saveDataFile()` fora de `persist()`
-- **Nunca** chamar `importFileToIdb()` no fluxo de sync recorrente
-- **Nunca** incrementar `unsyncedCount` manualmente
+- **Nunca** chamar `storage.replaceAll()` fora de `mutate()`/`debouncedReplaceAll()`
+- **Nunca** chamar `storage.importBlob()` em fluxo recorrente — é replace destrutivo (só import/onboarding)
+- **Nunca** exibir `acc.balance` diretamente — o saldo é derivado das transações
+- **Nunca** usar `new Date(tx.date)` para extrair mês/ano — sempre `parseDateLocal()`
+- **Nunca** deixar falha de backup em pasta interromper o fluxo principal
 - **Nunca** adicionar `TODO` no código — vai para `BACKLOG.md`
 - **Nunca** usar `console.log` em produção
 
@@ -143,8 +165,11 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 2. Ler `plan/BACKLOG.md` para estado atual de bugs e melhorias
 3. Ler `plan/PRD.md` se a tarefa envolver produto/features novas
 4. Ler `plan/ARCHITECTURE.md` se a tarefa envolver arquitetura/persistência/sync
-5. Ler os arquivos-fonte relevantes **antes** de propor mudanças
-6. Confirmar escopo da sessão com o humano (1–3 itens, no máximo)
+5. Se a tarefa for do épico **CS (sync multi-dispositivo)**: ler também `plan/SPEC.md` (Fase 16),
+   `plan/SYNC_SCENARIOS.md` e `plan/FABLE-BRAINSTORM.md` — as decisões já foram tomadas, não
+   reabrir o leque de alternativas sem motivo novo
+6. Ler os arquivos-fonte relevantes **antes** de propor mudanças
+7. Confirmar escopo da sessão com o humano (1–3 itens, no máximo)
 
 ---
 
@@ -158,11 +183,19 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 
 ---
 
-## Estado Atual (2026-07-11)
+## Estado Atual (2026-07-24)
 
-**Schema v12** | Cobertura: ~97% statements
+**Schema em memória v13** | **Schema físico SQLite v10** (`migrations/v1..v10.sql`) | Cobertura: ~97% statements
+**693 testes unitários** (24 arquivos) + **23 testes E2E** (5 specs, perfis `chromium` e `mobile-chrome`)
 
-Todas as features do PRD (F-1 a F-28 Nível 1) implementadas. Módulo de Cartão de Crédito completo (CC-01 a CC-33; CC-34 aberto — refino de heurística de sync, não bloqueante). Melhorias M-01 a M-64 resolvidas (M-61 parcial — 4 vulnerabilidades altas via `esbuild`/`vite` do `vitest`, exigem bump major). Relatórios avançados R-01 a R-18 resolvidos.
+> Os dois números de schema são independentes e **não coincidem**: `CURRENT_SCHEMA_VERSION` (v13,
+> em `lib/storage/schema.ts`) versiona o `DataFile` em memória; `PRAGMA user_version` (v10)
+> versiona o DDL físico. Bumps de campos opcionais não exigem DDL novo — por isso o schema em
+> memória está três à frente. O bump v12→v13 (`updatedAt` em `Account`/`Category`/`Tag`/`Transaction`,
+> CS-04) é um caso extremo desse padrão: as colunas `updated_at` já existiam fisicamente desde
+> `v1.sql` (só não eram lidas/preservadas), então nem precisou de `.sql` novo.
+
+Todas as features do PRD (F-1 a F-29, com F-28 no Nível 1) implementadas. Módulo de Cartão de Crédito completo (CC-01 a CC-34 — CC-34 resolvido junto do M-64, via `created_at` do Organizze como chave de agrupamento). Melhorias M-01 a M-64 resolvidas (M-61 parcial — 4 vulnerabilidades altas via `esbuild`/`vite` do `vitest`, exigem bump major); M-65 registrado como futuro. Relatórios avançados R-01 a R-18 resolvidos.
 
 Features concluídas desde 2026-05-27:
 - **F-24** — Patrimônio Líquido: `/net-worth`, stat cards, breakdown por conta, gráfico AreaChart (NW-01 a NW-07)
@@ -174,19 +207,54 @@ Features concluídas desde 2026-05-27:
 - **R-17/R-18** — View "Faturas" em Analytics: `FaturasView.tsx`, aba 5 na sub-nav, 14 testes unitários
 - **B-16/M-22** — Ciclo de fatura de cartão (Opção 2): pagamento vinculado ao período (`referenceMonth`, schema v4→v5), `CREDIT_PAYMENT` debita a conta pagadora, fatura líquida de créditos + selo de status (aberta/parcial/paga), estornos como `INCOME` na conta CREDIT; sync preserva sinal e infere `referenceMonth`
 - **M-62/B-22** — Camada de projeção de 10 anos no Fluxo de Caixa (Relatórios) + janela rolante de recorrências sem `endDate`
+- **M-64/CC-34** — `Installment.purchaseDate` (data de compra original em todas as parcelas, schema v10→v11) + correção definitiva do agrupamento de parcelas no sync do Organizze via `created_at` como chave de série
 
 Itens em aberto:
-- **CC-34** — Refino da correlação de parcelamentos no sync do Organizze (baixa prioridade, efetivo só no próximo snapshot)
-- **M-63** — Estender a camada de projeção (M-62) para Saúde Financeira e Patrimônio Líquido (baixa prioridade, escopo de produto próprio)
 - **MB-08** — Analytics responsivo para mobile (média prioridade)
 - **BK-04** — Banner de re-permissão da pasta de backup no startup (média prioridade)
-- **F-28 Nível 2** — Cloud Sync Google Drive/Dropbox (CS-01 a CS-12) — demand-driven
+- **BK-09** — Documentar o risco de cópia-em-conflito do Nível 1 em `/docs/backup-local` (baixa)
+- **M-63b** — Gráfico de tendência (passado real + futuro projetado) no Patrimônio Líquido (baixa; a fatia de Saúde Financeira do M-63 já foi resolvida)
+- **M-61** — 4 vulnerabilidades altas via `esbuild`/`vite` do `vitest`; exigem bump major do `vitest` (parcial)
+- **M-65** — WebDAV como transporte de sync adicional (baixa, demand-driven — adiado em 2026-07-24)
+- **F-28 Nível 2** — Sync multi-dispositivo (CS-01 a CS-20) — demand-driven, ver roadmap abaixo. **Fase 0 (motor de merge) resolvida em 2026-07-24** (CS-19, CS-04, CS-05, CS-10a); Fase 1 (multi-desktop, CS-13 a CS-17) é o próximo passo.
+- **B-21** — Fronteira do dia de fechamento de fatura: marcado como *won't fix* (aceito)
+
+### Roadmap de Sync Multi-Dispositivo (F-28 Nível 2) — decidido em 2026-07-24
+
+Princípio central: **motor de merge único, transporte plugável.** Análise completa das
+alternativas em `plan/FABLE-BRAINSTORM.md`; cenários em `SYNC_SCENARIOS.md`; spec técnica na
+Fase 16 de `SPEC.md`.
+
+| Fase | Transporte | Entrega | Itens |
+|------|-----------|---------|-------|
+| **0** ✅ | — | Motor de merge (`updatedAt` + `merge.ts` + testes) — **resolvido 2026-07-24** | CS-19, CS-04, CS-05, CS-10a |
+| **1** | Pasta compartilhada, **um `.db` por dispositivo** | Multi-desktop, sem OAuth | CS-13 a CS-17 |
+| **2** | Google Drive API (OAuth2 PKCE) | **Desbloqueia mobile** | CS-01..03, CS-06..09, CS-10b |
+| **3** | Dropbox | 2º provider | CS-11, CS-12 |
+| — | Transversal | Cifragem opcional, telemetria de sync | CS-18, CS-20 |
+
+Decisões que qualquer IA deve respeitar ao implementar:
+- **Um escritor por arquivo** (Fase 1): cada dispositivo grava só o seu `device-<uuid>.db`. É o
+  que elimina a cópia-em-conflito do Nível 1 **por construção** — nunca escrever no arquivo alheio.
+- **Merge idempotente** é requisito, não detalhe: é o que torna seguro pular um arquivo ilegível
+  e retentar no boot seguinte.
+- **Falha de peer é sempre não-fatal** — nunca bloquear o boot; o app hidrata do OPFS local primeiro.
+- `deviceId` no **OPFS** (não `localStorage`); snapshot `.db` completo (não oplog); cifragem
+  client-side **opcional e off por padrão**.
+- Fase 1 é **desktop apenas** (File System Access API) — nenhuma superfície de UI pode sugerir
+  sync com celular antes da Fase 2.
+- **Verificação OAuth do Google (CS-01):** `drive.file` é escopo **não-sensível** → não exige a
+  revisão completa. O necessário é publicar em *publishing status* "Production" (a premissa
+  anterior, de que a verificação era um bloqueio duro, foi revisada em 2026-07-24).
 
 Decisões arquiteturais (2026-05-27, mantidas):
 - Estratégia mobile = PWA responsiva (não app nativo). X-3 do PRD atualizado.
-- Sync multi-dispositivo = Google Drive/Dropbox do usuário como camada de sync (sem servidor Gimbo).
-- Política de conflito = merge aditivo; duplicatas offline sobrevivem, usuário remove manualmente.
-- `SYNC_SCENARIOS.md` cobre SQLite atual (S-01 a S-07) e sync futuro (S-08 a S-15).
+- Política de conflito = merge aditivo por UUID + LWW por `updatedAt`; duplicatas offline sobrevivem, usuário remove manualmente; deleções protegidas por `deletedIds`.
+- Nenhum servidor Gimbo em nenhuma fase — a camada de sync é sempre infraestrutura do próprio usuário.
 
-Ferramentas de desenvolvimento (2026-06-08):
-- **Sync Organizze → Gimbo** (`data/sync_gimbo.py`): script de benchmark que lê a API do Organizze por demanda e gera um `gimbo.db` (schema v3) para importar. IDs determinísticos (`uuid5`), saldos iniciais zerados (preenchidos à mão), janela `--start`/`--end` (com `--end` futuro para lançamentos não pagos). **Dois modos**: snapshot (`--start`, replace total, `--base` preserva só saldos) e incremental (`--window-months N`, busca só os últimos N meses e funde transações por id no `--base` — para run 1x/dia, ~7 chamadas de API). Documentação completa em `ARCHITECTURE.md` → "Ferramenta de Benchmark: Sync Organizze → Gimbo".
+Ferramentas de desenvolvimento (2026-06-08, atualizado em 2026-07-24):
+- **Sync Organizze → Gimbo** (`data/sync_gimbo.py`): script de benchmark que lê a API do Organizze por demanda e gera um `gimbo.db` (`PRAGMA user_version = 9`) para importar. IDs determinísticos (`uuid5`), saldos iniciais zerados (preenchidos à mão), janela `--start`/`--end` (com `--end` futuro para lançamentos não pagos). **Dois modos**: snapshot (`--start`, replace total, `--base` preserva só saldos) e incremental (`--window-months N`, busca só os últimos N meses e funde transações por id no `--base` — para run 1x/dia, ~7 chamadas de API). Documentação completa em `ARCHITECTURE.md` → "Ferramenta de Benchmark: Sync Organizze → Gimbo".
+
+> **Armadilha recorrente:** todo bump de schema físico do app exige atualizar o `SCHEMA_DDL` e o
+> `PRAGMA user_version` do `sync_gimbo.py` **junto**. Senão o `runMigrations()` do app pula o
+> `ALTER TABLE` ao importar o `.db` gerado. Já aconteceu em M-51 e M-64 — e vai voltar no CS-04.

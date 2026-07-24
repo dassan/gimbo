@@ -207,7 +207,8 @@ export class StorageService {
   async updateAccount(id: string, data: UpdateAccountData): Promise<Account> {
     const rows = await this.query('SELECT * FROM accounts WHERE id = ?', [id])
     if (rows.length === 0) throw new Error(`Account not found: ${id}`)
-    const merged: Account = { ...rowToAccount(rows[0]), ...data }
+    const ts = data.updatedAt ?? new Date().toISOString()
+    const merged: Account = { ...rowToAccount(rows[0]), ...data, updatedAt: ts }
     await this.run(
       `UPDATE accounts SET
          name = ?, type = ?, balance = ?, include_in_balance = ?,
@@ -230,7 +231,7 @@ export class StorageService {
         merged.reserveMetadata ? 1 : 0,
         merged.issuerIcon ?? null,
         merged.archived ? 1 : 0,
-        new Date().toISOString(),
+        ts,
         id,
       ]
     )
@@ -264,20 +265,13 @@ export class StorageService {
   async updateCategory(id: string, data: UpdateCategoryData): Promise<Category> {
     const rows = await this.query('SELECT * FROM categories WHERE id = ?', [id])
     if (rows.length === 0) throw new Error(`Category not found: ${id}`)
-    const merged: Category = { ...rowToCategory(rows[0]), ...data }
+    const ts = data.updatedAt ?? new Date().toISOString()
+    const merged: Category = { ...rowToCategory(rows[0]), ...data, updatedAt: ts }
     await this.run(
       `UPDATE categories
        SET parent_id = ?, name = ?, icon = ?, color = ?, type = ?, updated_at = ?
        WHERE id = ?`,
-      [
-        merged.parentId ?? null,
-        merged.name,
-        merged.icon,
-        merged.color,
-        merged.type,
-        new Date().toISOString(),
-        id,
-      ]
+      [merged.parentId ?? null, merged.name, merged.icon, merged.color, merged.type, ts, id]
     )
     return merged
   }
@@ -308,11 +302,12 @@ export class StorageService {
   async updateTag(id: string, data: UpdateTagData): Promise<Tag> {
     const rows = await this.query('SELECT * FROM tags WHERE id = ?', [id])
     if (rows.length === 0) throw new Error(`Tag not found: ${id}`)
-    const merged: Tag = { ...rowToTag(rows[0]), ...data }
+    const ts = data.updatedAt ?? new Date().toISOString()
+    const merged: Tag = { ...rowToTag(rows[0]), ...data, updatedAt: ts }
     await this.run('UPDATE tags SET name = ?, color = ?, updated_at = ? WHERE id = ?', [
       merged.name,
       merged.color,
-      new Date().toISOString(),
+      ts,
       id,
     ])
     return merged
@@ -423,7 +418,8 @@ export class StorageService {
       [id]
     )
     if (rows.length === 0) throw new Error(`Transaction not found: ${id}`)
-    const merged: Transaction = { ...rowToTransaction(rows[0]), ...data }
+    const ts = data.updatedAt ?? new Date().toISOString()
+    const merged: Transaction = { ...rowToTransaction(rows[0]), ...data, updatedAt: ts }
     await this.run(
       `UPDATE transactions SET
          account_id = ?, category_id = ?, amount = ?, type = ?,
@@ -443,7 +439,7 @@ export class StorageService {
         merged.installment?.parentId ?? null,
         merged.installment?.currentIndex ?? null,
         merged.installment?.total ?? null,
-        new Date().toISOString(),
+        ts,
         id,
       ]
     )
@@ -666,6 +662,9 @@ function rowToAccount(row: Row): Account {
   if (row.archived) {
     account.archived = true
   }
+  if (row.updated_at !== null && row.updated_at !== undefined) {
+    account.updatedAt = row.updated_at as string
+  }
   return account
 }
 
@@ -677,6 +676,9 @@ function rowToCategory(row: Row): Category {
     icon: row.icon as string,
     color: row.color as string,
     type: row.type as CategoryType,
+    ...(row.updated_at !== null && row.updated_at !== undefined
+      ? { updatedAt: row.updated_at as string }
+      : {}),
   }
 }
 
@@ -685,6 +687,9 @@ function rowToTag(row: Row): Tag {
     id: row.id as string,
     name: row.name as string,
     color: row.color as string,
+    ...(row.updated_at !== null && row.updated_at !== undefined
+      ? { updatedAt: row.updated_at as string }
+      : {}),
   }
 }
 
@@ -700,6 +705,9 @@ function rowToTransaction(row: Row): Transaction {
     date: row.date as string,
     isPaid: Boolean(row.is_paid),
     tags: tagIds ? tagIds.split(',') : [],
+  }
+  if (row.updated_at !== null && row.updated_at !== undefined) {
+    tx.updatedAt = row.updated_at as string
   }
   if (row.transfer_account_id !== null && row.transfer_account_id !== undefined) {
     tx.transferAccountId = row.transfer_account_id as string

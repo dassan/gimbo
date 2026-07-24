@@ -5,7 +5,7 @@ import { detectBrowserLocale } from '@/lib/storage/workspace'
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 12
+export const CURRENT_SCHEMA_VERSION = 13
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -76,6 +76,7 @@ const AccountSchema = z.object({
   reserveMetadata: ReserveMetadataSchema.optional(), // only for RETAIL/SAVINGS accounts (HE-14)
   issuerIcon: z.string().optional(), // institution key for any account type — e.g. 'nubank', 'itau', 'generic' (M-34)
   archived: z.boolean().optional(), // M-42: hidden from selectors/lists but still counted in balances/totals
+  updatedAt: z.string().optional(), // CS-04: last-write-wins timestamp for the cloud-sync merge engine
 })
 
 const CategorySchema = z.object({
@@ -85,12 +86,14 @@ const CategorySchema = z.object({
   icon: z.string(),
   color: z.string(),
   type: z.enum(['INCOME', 'EXPENSE']),
+  updatedAt: z.string().optional(), // CS-04: last-write-wins timestamp for the cloud-sync merge engine
 })
 
 const TagSchema = z.object({
   id: z.string(),
   name: z.string(),
   color: z.string(),
+  updatedAt: z.string().optional(), // CS-04: last-write-wins timestamp for the cloud-sync merge engine
 })
 
 const InstallmentSchema = z.object({
@@ -122,6 +125,7 @@ const TransactionSchema = z.object({
   transferAccountId: z.string().optional(), // only for CREDIT_PAYMENT
   referenceMonth: z.string().optional(), // CREDIT-account txs: invoice period this entry is bound to, "YYYY-MM" (B-18)
   invoiceDueDate: z.string().optional(), // CREDIT charges/credits: authoritative invoice due date "YYYY-MM-DD" from the source (CC-33)
+  updatedAt: z.string().optional(), // CS-04: last-write-wins timestamp for the cloud-sync merge engine
 })
 
 const ValuationSchema = z.object({
@@ -261,6 +265,21 @@ function migrateDataFile(data: DataFile): DataFile {
   // records; existing accounts only need the version bump.
   if (migrated.schemaVersion === 11) {
     migrated = { ...migrated, schemaVersion: 12 }
+  }
+
+  // v12 → v13: adds optional updatedAt (Account, Category, Tag, Transaction) — last-write-wins
+  // timestamp consumed by the cloud-sync merge engine (CS-04, Fase 0 of F-28 Nível 2). Entities
+  // that predate this version receive the epoch, so they never outrank a real timestamp in LWW.
+  if (migrated.schemaVersion === 12) {
+    const epoch = new Date(0).toISOString()
+    migrated = {
+      ...migrated,
+      schemaVersion: 13,
+      accounts: migrated.accounts.map((a) => ({ ...a, updatedAt: a.updatedAt ?? epoch })),
+      categories: migrated.categories.map((c) => ({ ...c, updatedAt: c.updatedAt ?? epoch })),
+      tags: migrated.tags.map((t) => ({ ...t, updatedAt: t.updatedAt ?? epoch })),
+      transactions: migrated.transactions.map((t) => ({ ...t, updatedAt: t.updatedAt ?? epoch })),
+    }
   }
 
   return migrated
