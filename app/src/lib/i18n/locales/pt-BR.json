@@ -166,7 +166,10 @@
       "result": "Resultado",
       "balance": "Saldo",
       "tableTitle": "Detalhamento por Período",
-      "projectedLabel": "Projetado"
+      "projectedLabel": "Projetado",
+      "viewMode": "Modo de visualização",
+      "viewModeMonthly": "Mensal",
+      "viewModeYearly": "Anual"
     },
     "categorias": {
       "incomeTitle": "Receitas por Categoria",

@@ -166,7 +166,10 @@
       "result": "Result",
       "balance": "Balance",
       "tableTitle": "Period Breakdown",
-      "projectedLabel": "Projected"
+      "projectedLabel": "Projected",
+      "viewMode": "View mode",
+      "viewModeMonthly": "Monthly",
+      "viewModeYearly": "Yearly"
     },
     "categorias": {
       "incomeTitle": "Income by Category",

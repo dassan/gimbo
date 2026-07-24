@@ -1,5 +1,6 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ChevronDown } from 'lucide-react'
 import {
   ComposedChart,
   Bar,
@@ -57,16 +58,23 @@ export default function CashFlowView({
 }: CashFlowViewProps) {
   const { t } = useTranslation()
 
+  // R-21: lets the user switch the chart/table granularity from monthly to yearly for periods
+  // spanning more than one month. Meaningless for the single-full-month case (M-38 already
+  // breaks that into weekly buckets), so the selector itself is hidden there — see isFullMonth
+  // below, computed ahead of the aggregation memo so both the bucketing and the header can use it.
+  const [viewMode, setViewMode] = useState<'monthly' | 'yearly'>('monthly')
+
+  const lastOfMonth = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0).getDate()
+  const isFullMonth =
+    startDate.getDate() === 1 &&
+    startDate.getFullYear() === endDate.getFullYear() &&
+    startDate.getMonth() === endDate.getMonth() &&
+    endDate.getDate() === lastOfMonth
+
   const rows = useMemo((): PeriodRow[] => {
     // M-38: when the selected period is exactly one full calendar month, break the axis into
-    // weekly buckets (1–7, 8–14, …) for a richer view; otherwise keep one bucket per month.
-    const lastOfMonth = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0).getDate()
-    const isFullMonth =
-      startDate.getDate() === 1 &&
-      startDate.getFullYear() === endDate.getFullYear() &&
-      startDate.getMonth() === endDate.getMonth() &&
-      endDate.getDate() === lastOfMonth
-
+    // weekly buckets (1–7, 8–14, …) for a richer view; otherwise keep one bucket per month
+    // (or, when viewMode is 'yearly', one bucket per calendar year — R-21).
     type Bucket = { label: string; fullLabel: string; match: (d: Date) => boolean }
     const buckets: Bucket[] = []
 
@@ -84,6 +92,19 @@ export default function CashFlowView({
           match: (d) =>
             d.getFullYear() === y && d.getMonth() === m && d.getDate() >= lo && d.getDate() <= hi,
         })
+      }
+    } else if (viewMode === 'yearly') {
+      const cur = new Date(startDate.getFullYear(), 0, 1)
+      while (cur.getFullYear() <= endDate.getFullYear()) {
+        const y = cur.getFullYear()
+        buckets.push({
+          label: String(y),
+          fullLabel: String(y),
+          // Bound by the selected range, not just the calendar year — a custom period like
+          // Jan–Aug must not pull in Sep–Dec of the same year into the "2026" bucket.
+          match: (d) => d.getFullYear() === y && d >= startDate && d <= endDate,
+        })
+        cur.setFullYear(cur.getFullYear() + 1)
       }
     } else {
       const cur = new Date(startDate)
@@ -156,7 +177,17 @@ export default function CashFlowView({
       const isProjected = txs.some((tx) => 'isProjected' in tx)
       return { label, fullLabel, income, expenses, result, balance: cumulative, isProjected }
     })
-  }, [transactions, accounts, startDate, endDate, includeUnpaid, accountId])
+  }, [
+    transactions,
+    accounts,
+    startDate,
+    endDate,
+    includeUnpaid,
+    accountId,
+    isFullMonth,
+    lastOfMonth,
+    viewMode,
+  ])
 
   const hasData = rows.some((r) => r.income !== 0 || r.expenses !== 0)
 
@@ -196,6 +227,28 @@ export default function CashFlowView({
 
   return (
     <div className={cn('rounded-2xl bg-surface-container p-6 space-y-6', shadowClass)}>
+      {/* R-21: monthly/yearly aggregation toggle — hidden for the single-full-month case (M-38
+          weekly buckets), where the distinction is meaningless. */}
+      {!isFullMonth && (
+        <div className="flex justify-end">
+          <div className="relative">
+            <select
+              value={viewMode}
+              onChange={(e) => setViewMode(e.target.value as 'monthly' | 'yearly')}
+              aria-label={t('analytics.cashflowView.viewMode')}
+              className="appearance-none rounded-xl bg-surface-container-low py-1.5 pl-3 pr-7 text-xs font-medium text-on-surface/70 hover:text-on-surface focus:outline-none"
+            >
+              <option value="monthly">{t('analytics.cashflowView.viewModeMonthly')}</option>
+              <option value="yearly">{t('analytics.cashflowView.viewModeYearly')}</option>
+            </select>
+            <ChevronDown
+              size={14}
+              className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-on-surface/40"
+            />
+          </div>
+        </div>
+      )}
+
       {/* R-07: ComposedChart — bars for income/expenses + line for accumulated balance */}
       <div className="h-56">
         {hasData ? (

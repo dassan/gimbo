@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import CashFlowView from '@/pages/Analytics/CashFlowView'
 import type { Account, Transaction } from '@/types'
 
@@ -620,5 +620,116 @@ describe('CashFlowView — M-62: projected buckets', () => {
       />
     )
     expect(capturedRows.data.every((r) => r.isProjected === false)).toBe(true)
+  })
+})
+
+// ─── R-21: monthly/yearly view mode selector ──────────────────────────────────
+
+describe('CashFlowView — R-21: monthly/yearly view mode', () => {
+  it('hides the view-mode selector for a single full month (M-38 weekly buckets)', () => {
+    render(
+      <CashFlowView
+        transactions={[]}
+        accounts={[makeRetailAccount()]}
+        startDate={APR_START}
+        endDate={APR_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+      />
+    )
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('shows the view-mode selector defaulting to monthly for a multi-month period', () => {
+    const transactions = [
+      makeTx({ id: 'tx-apr', type: 'INCOME', amount: 400, date: '2026-04-10' }),
+      makeTx({ id: 'tx-may', type: 'INCOME', amount: 600, date: '2026-05-10' }),
+    ]
+    render(
+      <CashFlowView
+        transactions={transactions}
+        accounts={[makeRetailAccount()]}
+        startDate={APR_MAY_START}
+        endDate={APR_MAY_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+      />
+    )
+    const select = screen.getByRole<HTMLSelectElement>('combobox')
+    expect(select.value).toBe('monthly')
+    expect(capturedRows.data).toHaveLength(2) // one bucket per month, unchanged default behavior
+  })
+
+  it('switches to one bucket per calendar year and aggregates totals when yearly is selected', () => {
+    const transactions = [
+      makeTx({ id: 'tx-jan-2026', type: 'INCOME', amount: 100, date: '2026-01-10' }),
+      makeTx({ id: 'tx-jun-2026', type: 'EXPENSE', amount: 40, date: '2026-06-10' }),
+      makeTx({ id: 'tx-feb-2027', type: 'INCOME', amount: 300, date: '2027-02-10' }),
+    ]
+    render(
+      <CashFlowView
+        transactions={transactions}
+        accounts={[makeRetailAccount()]}
+        startDate={MULTI_YEAR_START}
+        endDate={MULTI_YEAR_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+      />
+    )
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'yearly' } })
+    expect(capturedRows.data).toHaveLength(2) // 2026, 2027
+    expect(capturedRows.data[0]?.label).toBe('2026')
+    expect(capturedRows.data[0]?.income).toBe(100)
+    expect(capturedRows.data[0]?.expenses).toBe(40)
+    expect(capturedRows.data[1]?.label).toBe('2027')
+    expect(capturedRows.data[1]?.income).toBe(300)
+    // Accumulated balance carries across years too
+    expect(capturedRows.data[1]?.balance).toBe(100 - 40 + 300)
+  })
+
+  it('flags a yearly bucket as projected when it contains a projected transaction', () => {
+    const transactions = [
+      makeTx({ id: 'tx-real-2026', type: 'INCOME', amount: 100, date: '2026-01-10' }),
+      makeProjectedTx({ id: 'tx-proj-2027', type: 'INCOME', amount: 300, date: '2027-02-10' }),
+    ]
+    render(
+      <CashFlowView
+        transactions={transactions}
+        accounts={[makeRetailAccount()]}
+        startDate={MULTI_YEAR_START}
+        endDate={MULTI_YEAR_END}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+      />
+    )
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'yearly' } })
+    expect(capturedRows.data[0]?.isProjected).toBe(false)
+    expect(capturedRows.data[1]?.isProjected).toBe(true)
+  })
+
+  it('excludes months outside the selected range from the yearly bucket of the same calendar year', () => {
+    // Selected range is Jan–Aug/2026 (custom period, not a full calendar year). A transaction
+    // in Dec/2026 — same calendar year, but outside the selected range — must not leak into
+    // the "2026" bucket just because the bucket key is year-based.
+    const inRange = new Date(2026, 0, 1)
+    const endOfAugust = new Date(2026, 7, 31)
+    const transactions = [
+      makeTx({ id: 'tx-aug', type: 'INCOME', amount: 100, date: '2026-08-10' }),
+      makeTx({ id: 'tx-dec-out-of-range', type: 'INCOME', amount: 900, date: '2026-12-10' }),
+    ]
+    render(
+      <CashFlowView
+        transactions={transactions}
+        accounts={[makeRetailAccount()]}
+        startDate={inRange}
+        endDate={endOfAugust}
+        includeUnpaid={true}
+        shadowClass={SHADOW}
+      />
+    )
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'yearly' } })
+    expect(capturedRows.data).toHaveLength(1)
+    expect(capturedRows.data[0]?.label).toBe('2026')
+    expect(capturedRows.data[0]?.income).toBe(100)
   })
 })
