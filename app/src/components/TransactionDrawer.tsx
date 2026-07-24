@@ -422,7 +422,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-6">
+        <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pb-6 space-y-6">
           {/* Amount */}
           <div className="text-center">
             <p className="label text-on-surface/40 mb-1">R$</p>
