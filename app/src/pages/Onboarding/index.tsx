@@ -6,6 +6,7 @@ import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { createEmptyDataFile } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
+import { detectBrowserLocale } from '@/lib/storage/workspace'
 import { cn } from '@/lib/utils'
 import type { Locale } from '@/types'
 
@@ -20,7 +21,7 @@ export default function Onboarding() {
   const [tab, setTab] = useState<Tab>('new')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [locale, setLocaleState] = useState<Locale>('pt-BR')
+  const [locale, setLocaleState] = useState<Locale>(() => detectBrowserLocale())
   const [dragging, setDragging] = useState(false)
   const [fileError, setFileError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)

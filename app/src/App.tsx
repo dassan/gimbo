@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import i18n from '@/lib/i18n'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { useDataStore } from '@/store/useDataStore'
 import { storage } from '@/services/storage'
@@ -56,6 +57,7 @@ export default function App() {
     async function init() {
       try {
         initWorkspace()
+        void i18n.changeLanguage(useWorkspaceStore.getState().workspace.locale)
 
         if (isDemoMode()) {
           loadData(await loadDemoData())

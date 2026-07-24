@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { DataFile, WorkspaceFile } from '@/types'
 import { uuid, now } from '@/lib/utils'
+import { detectBrowserLocale } from '@/lib/storage/workspace'
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
@@ -291,7 +292,7 @@ export function createEmptyDataFile(name: string, email: string): DataFile {
 export function createDefaultWorkspace(): WorkspaceFile {
   return {
     theme: 'system',
-    locale: 'pt-BR',
+    locale: detectBrowserLocale(),
     defaultView: 'dashboard',
     useAmbientShadows: false,
     netWorthIncludeHidden: true,
