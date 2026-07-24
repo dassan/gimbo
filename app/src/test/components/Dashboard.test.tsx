@@ -114,8 +114,6 @@ describe('Dashboard — CC-13: accountBalances bifurcation', () => {
 
     render(<Dashboard />)
 
-    // Credit account without creditMetadata: available limit = 0
-    // Multiple 0,00 values exist (stat cards + invoice + available limit)
     expect(screen.getByText('dashboard.myCards')).toBeInTheDocument()
     // Verify the account name appears in the Meus Cartões section
     expect(screen.getByText('Nexus Visa Gold')).toBeInTheDocument()
@@ -187,30 +185,6 @@ describe('Dashboard — CC-14: Meus Cartões section', () => {
     expect(screen.getByText('dashboard.noCards')).toBeInTheDocument()
   })
 
-  it('shows accounts.availableLimit i18n label for credit accounts', () => {
-    const creditAccount = makeCreditAccount()
-
-    useDataStore.setState({
-      data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-    })
-
-    render(<Dashboard />)
-
-    expect(screen.getByText('accounts.availableLimit')).toBeInTheDocument()
-  })
-
-  it('shows invoice label (dashboard.invoice) for credit accounts', () => {
-    const creditAccount = makeCreditAccount()
-
-    useDataStore.setState({
-      data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-    })
-
-    render(<Dashboard />)
-
-    expect(screen.getByText('dashboard.invoice')).toBeInTheDocument()
-  })
-
   it('renders Minhas Contas section only for non-CREDIT accounts with includeInBalance', () => {
     const retailAccount = makeRetailAccount({ includeInBalance: true })
     const creditAccount = makeCreditAccount({ includeInBalance: false })
@@ -242,23 +216,6 @@ describe('Dashboard — CC-14: Meus Cartões section', () => {
     expect(screen.getByText('dashboard.totalBalance')).toBeInTheDocument()
     // 1000 + 234.50 = 1234.50 — sum is shown once (totalBalance), each account once (rows)
     expect(screen.getAllByText(/1\.234,50/)).toHaveLength(1)
-  })
-
-  it('shows full available limit for CREDIT account with creditMetadata and no expenses', () => {
-    const creditAccount = makeCreditAccount({
-      id: 'acc-credit',
-      // Use a unique limit value (15001) that won't appear in stat cards
-      creditMetadata: { limit: 15001, closingDay: 20, dueDay: 10 },
-    })
-
-    useDataStore.setState({
-      data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
-    })
-
-    render(<Dashboard />)
-
-    // With no expenses: available limit = limit = 15001 (unique value)
-    expect(screen.getByText(/15\.001,00/)).toBeInTheDocument()
   })
 
   it('renders total invoice summary in Meus Cartões section when cards exist', () => {

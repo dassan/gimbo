@@ -275,7 +275,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-on-surface">{t('dashboard.myAccounts')}</h3>
             {visibleAccounts.length > 0 && (
-              <div className="text-right">
+              <div className="text-right pr-3">
                 <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium leading-none mb-0.5">
                   {t('dashboard.totalBalance')}
                 </p>
@@ -315,7 +315,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-on-surface">{t('dashboard.myCards')}</h3>
             {creditAccounts.length > 0 && (
-              <div className="text-right">
+              <div className="text-right pr-3">
                 <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium leading-none mb-0.5">
                   {t('dashboard.totalInvoices', { month: currentMonthName })}
                 </p>
@@ -335,17 +335,14 @@ export default function Dashboard() {
           {creditAccounts.length === 0 ? (
             <p className="py-8 text-center text-sm text-on-surface/40">{t('dashboard.noCards')}</p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-1">
               {creditAccounts.map((acc) => (
                 <CreditCardRow
                   key={acc.id}
                   account={acc}
-                  availableLimit={accountBalances[acc.id] ?? 0}
                   invoiceBalance={
                     acc.creditMetadata ? getCurrentInvoiceBalance(data.transactions, acc) : 0
                   }
-                  invoiceLabel={t('dashboard.invoice')}
-                  availableLimitLabel={t('accounts.availableLimit')}
                   onDetails={() => void navigate(`/credit-card/${acc.id}`)}
                 />
               ))}
@@ -427,23 +424,13 @@ function AccountRow({
 
 function CreditCardRow({
   account,
-  availableLimit,
   invoiceBalance,
-  invoiceLabel,
-  availableLimitLabel,
   onDetails,
 }: {
   account: Account
-  availableLimit: number
   invoiceBalance: number
-  invoiceLabel: string
-  availableLimitLabel: string
   onDetails?: () => void
 }) {
-  const limit = account.creditMetadata?.limit ?? 0
-  const utilizationPct = limit > 0 ? Math.min((invoiceBalance / limit) * 100, 100) : 0
-  const isOverLimit = availableLimit < 0
-
   return (
     <div
       role={onDetails ? 'button' : undefined}
@@ -451,62 +438,21 @@ function CreditCardRow({
       onClick={onDetails}
       onKeyDown={onDetails ? (e) => e.key === 'Enter' && onDetails() : undefined}
       className={cn(
-        'rounded-xl border border-surface-container-low px-4 py-3 space-y-2',
-        onDetails && 'cursor-pointer hover:bg-surface-container-low transition-colors'
+        'flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors',
+        onDetails && 'cursor-pointer hover:bg-surface-container-low'
       )}
     >
-      {/* Card name + icon — M-23: color reflects issuer branding */}
-      <div className="flex items-center gap-3">
-        <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white"
-          style={{ backgroundColor: getIssuerColor(account.issuerIcon) }}
-        >
-          <CreditCard size={18} strokeWidth={1.5} />
-        </div>
-        <p className="text-sm font-medium text-on-surface truncate flex-1">{account.name}</p>
+      {/* Card icon — M-23: color reflects issuer branding */}
+      <div
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white"
+        style={{ backgroundColor: getIssuerColor(account.issuerIcon) }}
+      >
+        <CreditCard size={18} strokeWidth={1.5} />
       </div>
-
-      {/* Invoice + available limit */}
-      <div className="flex items-end justify-between">
-        <div>
-          <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
-            {invoiceLabel}
-          </p>
-          <p className="text-base font-bold tabular-nums text-on-surface">
-            {formatCurrency(invoiceBalance)}
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
-            {availableLimitLabel}
-          </p>
-          <p
-            className={cn(
-              'text-sm font-semibold tabular-nums',
-              isOverLimit ? 'text-tertiary' : 'text-primary'
-            )}
-          >
-            {formatCurrency(availableLimit)}
-          </p>
-        </div>
-      </div>
-
-      {/* Utilization progress bar */}
-      {limit > 0 && (
-        <div className="h-1.5 w-full rounded-full bg-surface-container-low overflow-hidden">
-          <div
-            className={cn(
-              'h-full rounded-full transition-all',
-              utilizationPct >= 90
-                ? 'bg-tertiary'
-                : utilizationPct >= 70
-                  ? 'bg-amber-400'
-                  : 'bg-primary'
-            )}
-            style={{ width: `${utilizationPct}%` }}
-          />
-        </div>
-      )}
+      <p className="text-sm font-medium text-on-surface truncate flex-1">{account.name}</p>
+      <span className="text-sm font-semibold shrink-0 tabular-nums text-on-surface">
+        {formatCurrency(invoiceBalance)}
+      </span>
     </div>
   )
 }
