@@ -1,11 +1,13 @@
-// F-28 Nível 2, Fase 1 — usability follow-up (2026-07-24): periodic background sync.
+// F-28 Nível 2 — usability follow-up (2026-07-24), extended for Fase 2 (Google Drive): periodic
+// background sync.
 //
-// syncFromPeers() only ever runs at boot or on manual "Sincronizar agora" — with no way to be
-// notified when a peer writes a new file, two machines that both stay open all day would
-// otherwise never see each other's changes again after their first load. This module adds the
-// only mechanism available: polling, at a user-configurable interval (multiDeviceMode.ts).
+// Neither transport can be notified when a peer/Drive file changes — with no push mechanism,
+// two machines (or a desktop + the Drive web UI) that both stay "open" all day would otherwise
+// only ever sync once, at boot. This module adds the only mechanism available: polling, at a
+// user-configurable interval (multiDeviceMode.ts) shared by both transports.
 
 import { useDataStore } from '@/store/useDataStore'
+import { isGoogleConnected } from './googleAuth'
 import { getSyncPollIntervalMinutes, isMultiDeviceEnabled } from './multiDeviceMode'
 
 let timer: ReturnType<typeof setTimeout> | null = null
@@ -13,7 +15,8 @@ let timer: ReturnType<typeof setTimeout> | null = null
 async function tick(): Promise<void> {
   // Skip a background/hidden tab — no point paying the I/O cost for a session the user isn't
   // looking at; it'll catch up next time it's foregrounded or on the next tick after that.
-  if (isMultiDeviceEnabled() && document.visibilityState === 'visible') {
+  const transportConfigured = isGoogleConnected() || isMultiDeviceEnabled()
+  if (transportConfigured && document.visibilityState === 'visible') {
     await useDataStore.getState().runPeerSync()
   }
   scheduleNext()

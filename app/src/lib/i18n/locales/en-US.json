@@ -303,7 +303,17 @@
     "multiDeviceFolderHint": "The folder you pick needs to be synced by a third-party service (Google Drive, OneDrive, Dropbox, etc.) for the files to reach your other computers — Gimbo doesn't send anything over the internet by itself, it only writes to the local folder.",
     "multiDevicePollIntervalLabel": "Check other computers every",
     "multiDeviceReconnectBanner": "Sync between computers needs authorization to keep working.",
-    "multiDeviceReconnect": "Reconnect"
+    "multiDeviceReconnect": "Reconnect",
+    "googleConnect": "Connect Google Drive",
+    "googleConnected": "Connected to Google Drive",
+    "googleDisconnect": "Disconnect",
+    "googleConnectError": "Couldn't complete the Google Drive connection. Please try again.",
+    "googleStatusOffline": "Couldn't reach Google Drive.",
+    "googleStatusError": "Something went wrong while syncing with Google Drive.",
+    "googleReconnectBanner": "Your Google Drive connection expired and needs to be renewed.",
+    "googleReconnect": "Reconnect",
+    "syncBadgeLabel": "Sync",
+    "syncStatusOfflineGeneric": "Couldn't sync."
   },
   "creditCard": {
     "invoicePeriod": "Invoice Period",
@@ -549,13 +559,13 @@
     },
     "cloudSync": {
       "title": "Cloud Sync",
-      "subtitle": "Native sync with Google Drive and Dropbox — coming soon",
-      "section1Title": "What is Cloud Sync",
-      "section1Body": "Cloud Sync (Fase 2) will allow you to connect Gimbo directly to your Google Drive or Dropbox account via OAuth2. Your vault will sync automatically without needing a desktop client installed — it's what finally unlocks mobile use, since the mobile browser has no access to the local file system.",
+      "subtitle": "Sync with Google Drive — Dropbox not available yet",
+      "section1Title": "How it works",
+      "section1Body": "In Settings → Backup & Sync, connect your Google Drive account (two clicks, OAuth2 — Gimbo never sees your password, and only ever touches a file it creates itself). The app keeps a \"Gimbo\" folder in your Drive with a single gimbo.db file synced against your local vault. This is what finally unlocks mobile use: the mobile browser has no access to the local file system the way Fase 1's multi-device mode requires.",
       "section2Title": "Difference from the shared folder (Fase 1)",
-      "section2Body": "If you only need to sync between computers (not mobile), the multi-device mode already available today (Backup & Sync → \"Sync between my computers\") covers that without OAuth and without waiting for Cloud Sync — see the Local Folder Backup page. Cloud Sync communicates directly with the provider's API, so it works even without a desktop client installed, and it's the only option that also covers mobile.",
+      "section2Body": "If you only sync between computers (not mobile), multi-device mode (Backup & Sync → \"Sync between my computers\") covers that without OAuth — see the Local Folder Backup page. Cloud Sync talks directly to Google's API, so it works even without the Google Drive desktop client installed, and it's the only option that also covers mobile.",
       "section3Title": "Availability",
-      "section3Body": "Cloud Sync is planned and will be implemented as demand grows. For now, set up a local folder backup — with multi-device mode, if you use more than one computer — to protect your data.",
+      "section3Body": "Cloud Sync via Google Drive is already implemented, but it only shows up in Settings if this Gimbo installation has the Google connection configured (a one-time setup done by the project maintainer, not by you). If the \"Connect Google Drive\" button isn't there, use multi-device mode (Fase 1) or manual backup in the meantime. Dropbox (Fase 3) hasn't been implemented yet.",
       "cta": "Set up backup folder"
     }
   },

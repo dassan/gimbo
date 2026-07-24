@@ -303,7 +303,17 @@
     "multiDeviceFolderHint": "A pasta escolhida precisa estar sincronizada por um serviço de terceiros (Google Drive, OneDrive, Dropbox etc.) para que os arquivos cheguem aos seus outros computadores — o Gimbo não envia nada pela internet sozinho, apenas grava na pasta local.",
     "multiDevicePollIntervalLabel": "Verificar outros computadores a cada",
     "multiDeviceReconnectBanner": "A sincronização entre computadores precisa de autorização para continuar funcionando.",
-    "multiDeviceReconnect": "Reconectar"
+    "multiDeviceReconnect": "Reconectar",
+    "googleConnect": "Conectar Google Drive",
+    "googleConnected": "Conectado ao Google Drive",
+    "googleDisconnect": "Desconectar",
+    "googleConnectError": "Não foi possível concluir a conexão com o Google Drive. Tente novamente.",
+    "googleStatusOffline": "Não foi possível acessar o Google Drive.",
+    "googleStatusError": "Algo deu errado durante a sincronização com o Google Drive.",
+    "googleReconnectBanner": "A conexão com o Google Drive expirou e precisa ser renovada.",
+    "googleReconnect": "Reconectar",
+    "syncBadgeLabel": "Sincronização",
+    "syncStatusOfflineGeneric": "Não foi possível sincronizar."
   },
   "creditCard": {
     "invoicePeriod": "Período da Fatura",
@@ -549,13 +559,13 @@
     },
     "cloudSync": {
       "title": "Cloud Sync",
-      "subtitle": "Sincronização nativa com Google Drive e Dropbox — em breve",
-      "section1Title": "O que é o Cloud Sync",
-      "section1Body": "O Cloud Sync (Fase 2) permitirá conectar o Gimbo diretamente à sua conta do Google Drive ou Dropbox via OAuth2. Seu cofre será sincronizado automaticamente sem precisar de um cliente desktop instalado — é o que finalmente desbloqueia o uso em celular, já que o navegador mobile não tem acesso ao sistema de arquivos local.",
+      "subtitle": "Sincronização com Google Drive — Dropbox ainda não disponível",
+      "section1Title": "Como funciona",
+      "section1Body": "Em Configurações → Backup & Sync, conecte sua conta do Google Drive (dois cliques, OAuth2 — o Gimbo nunca vê sua senha, só acessa um arquivo que ele mesmo cria). O app mantém uma pasta \"Gimbo\" no seu Drive com um único arquivo gimbo.db sincronizado com o cofre local. É o que finalmente desbloqueia o uso em celular: o navegador mobile não tem acesso ao sistema de arquivos local como o modo multi-dispositivo da Fase 1 exige.",
       "section2Title": "Diferença para a pasta compartilhada (Fase 1)",
-      "section2Body": "Se você só precisa sincronizar entre computadores (não celular), o modo multi-dispositivo já disponível hoje (Backup & Sync → \"Sincronizar entre meus computadores\") resolve isso sem OAuth e sem esperar o Cloud Sync — veja a página de Backup em Pasta Local. O Cloud Sync comunica diretamente com a API do provedor, então funciona mesmo sem cliente desktop instalado e é a única opção que também cobre mobile.",
+      "section2Body": "Se você só sincroniza entre computadores (não celular), o modo multi-dispositivo (Backup & Sync → \"Sincronizar entre meus computadores\") resolve isso sem OAuth — veja a página de Backup em Pasta Local. O Cloud Sync comunica diretamente com a API do Google, então funciona mesmo sem o Google Drive instalado no computador e é a única opção que também cobre mobile.",
       "section3Title": "Disponibilidade",
-      "section3Body": "O Cloud Sync está planejado e será implementado conforme a demanda crescer. Por enquanto, configure um backup em pasta local — com o modo multi-dispositivo, se usar mais de um computador — para proteger seus dados.",
+      "section3Body": "O Cloud Sync via Google Drive já está implementado, mas só aparece em Configurações se esta instalação do Gimbo tiver a conexão com o Google configurada (feito uma única vez pelo mantenedor do projeto, não por você). Se o botão \"Conectar Google Drive\" não aparecer, use o modo multi-dispositivo (Fase 1) ou o backup manual enquanto isso. Dropbox (Fase 3) ainda não foi implementado.",
       "cta": "Configurar pasta de backup"
     }
   },

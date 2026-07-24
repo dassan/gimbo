@@ -62,6 +62,14 @@ import {
   type SyncPollIntervalMinutes,
 } from '@/lib/cloudSync/multiDeviceMode'
 import { rescheduleSyncPolling } from '@/lib/cloudSync/syncScheduler'
+import {
+  initiateGoogleAuth,
+  handleGoogleCallback,
+  revokeGoogleAuth,
+  isGoogleConnected,
+  isGoogleSyncConfigured,
+} from '@/lib/cloudSync/googleAuth'
+import { clearGoogleDriveCache } from '@/lib/cloudSync/googleDrive'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import {
@@ -278,6 +286,9 @@ export default function Settings() {
   const [selfDeviceId, setSelfDeviceId] = useState<string | null>(null)
   const [deviceList, setDeviceList] = useState<{ deviceId: string; lastModified: number }[]>([])
   const [pollIntervalMinutes, setPollIntervalMinutes] = useState(() => getSyncPollIntervalMinutes())
+  // F-28 Nível 2, Fase 2 (CS-08) — Google Drive
+  const [googleConnected, setGoogleConnected] = useState(() => isGoogleConnected())
+  const [googleOAuthError, setGoogleOAuthError] = useState<string | null>(null)
   const [profileName, setProfileName] = useState(data?.user.name ?? '')
   const [profileEmail, setProfileEmail] = useState(data?.user.email ?? '')
   const [modal, setModal] = useState<ModalState>({ open: false })
@@ -366,10 +377,45 @@ export default function Settings() {
   }
 
   useEffect(() => {
-    // Intentional setState-in-effect to load the device list on mount (CS-16).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshDeviceList()
   }, [])
+
+  // CS-08: no dedicated callback route — redirect_uri points straight back at /settings, so this
+  // detects the ?code=&state= Google appends and finishes the PKCE exchange right here on mount.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    const state = params.get('state')
+    if (!code || !state) return
+    window.history.replaceState(null, '', window.location.pathname)
+    setActiveSection('backup')
+    handleGoogleCallback(code, state)
+      .then(async () => {
+        setGoogleConnected(true)
+        await runPeerSync()
+      })
+      .catch(() => {
+        setGoogleOAuthError(t('settings.googleConnectError'))
+      })
+    // Runs once on mount to consume the redirect — t()/runPeerSync() intentionally excluded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function handleConnectGoogle() {
+    setGoogleOAuthError(null)
+    await initiateGoogleAuth() // navigates away to Google; resumes above on redirect back
+  }
+
+  async function handleDisconnectGoogle() {
+    await revokeGoogleAuth()
+    clearGoogleDriveCache()
+    setGoogleConnected(false)
+    useDataStore.setState({ syncStatus: 'idle', lastSyncedAt: null })
+  }
+
+  async function handleGoogleSyncNow() {
+    await runPeerSync()
+  }
 
   async function handleToggleMultiDevice() {
     if (multiDeviceOn) {
@@ -1347,22 +1393,80 @@ export default function Settings() {
                     </div>
                   </div>
 
-                  {/* ── Nível 2 — Nuvem (em breve) ────────────────────────── */}
+                  {/* ── Fase 2 — Google Drive ───────────────────────────────── */}
                   <div>
                     <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-on-surface/40">
                       {t('settings.backupCloudSection')}
                     </p>
                     <div className="rounded-2xl bg-surface-container p-5 space-y-4">
-                      <div className="flex items-center gap-3">
-                        <Cloud
-                          size={16}
-                          strokeWidth={1.5}
-                          className="text-on-surface/30 shrink-0"
-                        />
-                        <p className="text-sm text-on-surface/40">
-                          {t('settings.backupCloudComingSoon')}
-                        </p>
-                      </div>
+                      {!isGoogleSyncConfigured() ? (
+                        <div className="flex items-center gap-3">
+                          <Cloud
+                            size={16}
+                            strokeWidth={1.5}
+                            className="text-on-surface/30 shrink-0"
+                          />
+                          <p className="text-sm text-on-surface/40">
+                            {t('settings.backupCloudComingSoon')}
+                          </p>
+                        </div>
+                      ) : googleConnected ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-3 rounded-xl bg-surface-container-low px-4 py-3">
+                            <Cloud size={16} strokeWidth={1.5} className="text-primary shrink-0" />
+                            <span className="flex-1 text-sm font-medium text-on-surface">
+                              {t('settings.googleConnected')}
+                            </span>
+                            <button
+                              onClick={() => void handleDisconnectGoogle()}
+                              className="text-xs text-tertiary hover:underline shrink-0"
+                            >
+                              {t('settings.googleDisconnect')}
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => void handleGoogleSyncNow()}
+                            disabled={syncStatus === 'syncing'}
+                            className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-container-low py-2.5 text-sm font-semibold text-on-surface hover:bg-surface-container-high transition-colors disabled:opacity-60"
+                          >
+                            <RefreshCw
+                              size={14}
+                              strokeWidth={2}
+                              className={cn(syncStatus === 'syncing' && 'animate-spin')}
+                            />
+                            {t('settings.multiDeviceSyncNow')}
+                          </button>
+                          {syncStatus === 'offline' && (
+                            <p className="text-xs text-tertiary">
+                              {t('settings.googleStatusOffline')}
+                            </p>
+                          )}
+                          {syncStatus === 'error' && (
+                            <p className="text-xs text-tertiary">
+                              {t('settings.googleStatusError')}
+                            </p>
+                          )}
+                          {lastSyncedAt && (
+                            <p className="text-xs text-on-surface/40">
+                              {t('settings.multiDeviceLastSynced')}{' '}
+                              {new Date(lastSyncedAt).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <button
+                            onClick={() => void handleConnectGoogle()}
+                            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-on-primary hover:opacity-90 transition-opacity"
+                          >
+                            <Cloud size={15} strokeWidth={2} />
+                            {t('settings.googleConnect')}
+                          </button>
+                          {googleOAuthError && (
+                            <p className="text-xs text-tertiary">{googleOAuthError}</p>
+                          )}
+                        </div>
+                      )}
                       <button
                         onClick={() => void navigate('/docs/cloud-sync')}
                         className="flex items-center gap-1.5 text-xs text-primary hover:underline"

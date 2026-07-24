@@ -14,6 +14,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useDataStore } from '@/store/useDataStore'
 import { isMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
+import { isGoogleConnected } from '@/lib/cloudSync/googleAuth'
 
 const NAV_ITEMS = [
   { to: '/dashboard', key: 'nav.dashboard' },
@@ -39,12 +40,12 @@ interface NavbarProps {
 export default function Navbar({ initials = 'U', onNewTransaction }: NavbarProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  // Usability follow-up (CS-16): discreet sync status indicator, hidden entirely when
-  // multi-device mode isn't configured. Naming (syncStatus/lastSyncedAt) is shared with the
-  // Fase 2 Google Drive syncService, so this badge doesn't need a retrofit later.
+  // Usability follow-up (CS-16), generalized for CS-09: discreet sync status indicator, hidden
+  // entirely when no transport is configured. syncStatus/lastSyncedAt are shared by both the
+  // Fase 1 folder transport and the Fase 2 Google Drive syncService — same badge, no retrofit.
   const syncStatus = useDataStore((s) => s.syncStatus)
   const lastSyncedAt = useDataStore((s) => s.lastSyncedAt)
-  const multiDeviceOn = isMultiDeviceEnabled()
+  const syncConfigured = isMultiDeviceEnabled() || isGoogleConnected()
 
   return (
     <>
@@ -85,13 +86,13 @@ export default function Navbar({ initials = 'U', onNewTransaction }: NavbarProps
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-          {multiDeviceOn && (
+          {syncConfigured && (
             <div
               role="status"
-              aria-label={t('settings.multiDeviceToggle')}
+              aria-label={t('settings.syncBadgeLabel')}
               title={
                 syncStatus === 'error' || syncStatus === 'offline'
-                  ? t('settings.multiDeviceStatusOffline')
+                  ? t('settings.syncStatusOfflineGeneric')
                   : lastSyncedAt
                     ? `${t('settings.multiDeviceLastSynced')} ${new Date(lastSyncedAt).toLocaleString()}`
                     : undefined

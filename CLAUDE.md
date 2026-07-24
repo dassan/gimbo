@@ -186,7 +186,7 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 ## Estado Atual (2026-07-24)
 
 **Schema em memória v13** | **Schema físico SQLite v10** (`migrations/v1..v10.sql`) | Cobertura: ~97% statements
-**712 testes unitários** (26 arquivos) + **23 testes E2E** (5 specs, perfis `chromium` e `mobile-chrome`)
+**745 testes unitários** (29 arquivos) + **23 testes E2E** (5 specs, perfis `chromium` e `mobile-chrome`)
 
 > Os dois números de schema são independentes e **não coincidem**: `CURRENT_SCHEMA_VERSION` (v13,
 > em `lib/storage/schema.ts`) versiona o `DataFile` em memória; `PRAGMA user_version` (v10)
@@ -215,7 +215,7 @@ Itens em aberto:
 - **M-63b** — Gráfico de tendência (passado real + futuro projetado) no Patrimônio Líquido (baixa; a fatia de Saúde Financeira do M-63 já foi resolvida)
 - **M-61** — 4 vulnerabilidades altas via `esbuild`/`vite` do `vitest`; exigem bump major do `vitest` (parcial)
 - **M-65** — WebDAV como transporte de sync adicional (baixa, demand-driven — adiado em 2026-07-24)
-- **F-28 Nível 2** — Sync multi-dispositivo (CS-01 a CS-20) — demand-driven, ver roadmap abaixo. **Fases 0 e 1 resolvidas em 2026-07-24** (motor de merge + multi-desktop via pasta compartilhada, CS-19/CS-04/CS-05/CS-10a e CS-13 a CS-17); Fase 2 (Google Drive, desbloqueia mobile) é o próximo passo, condicionada a `CS-01` (ação externa do mantenedor no Google Cloud Console).
+- **F-28 Nível 2** — Sync multi-dispositivo (CS-01 a CS-20) — demand-driven, ver roadmap abaixo. **Fases 0 e 1 resolvidas em 2026-07-24** (motor de merge + multi-desktop via pasta compartilhada, CS-19/CS-04/CS-05/CS-10a e CS-13 a CS-17). **Fase 2 (Google Drive) com código completo em 2026-07-24** (CS-02, CS-03, CS-06 a CS-09) — mas **`CS-01` segue aberto**: sem um `VITE_GOOGLE_CLIENT_ID` real (ação exclusiva do mantenedor no Google Cloud Console), o fluxo OAuth nunca rodou contra a API de verdade, só contra mocks. A seção Google Drive em Settings fica oculta em qualquer build sem essa variável (`isGoogleSyncConfigured()`).
 
 > `BK-09` (aviso de cópia-em-conflito do Nível 1 em `/docs/backup-local`) foi absorvido pelo `CS-17` acima e está resolvido — o modo multi-dispositivo elimina o conflito por construção, e a doc page agora explica os dois cenários.
 - **B-21** — Fronteira do dia de fechamento de fatura: marcado como *won't fix* (aceito)
@@ -230,7 +230,7 @@ Fase 16 de `SPEC.md`.
 |------|-----------|---------|-------|
 | **0** ✅ | — | Motor de merge (`updatedAt` + `merge.ts` + testes) — **resolvido 2026-07-24** | CS-19, CS-04, CS-05, CS-10a |
 | **1** ✅ | Pasta compartilhada, **um `.db` por dispositivo** | Multi-desktop, sem OAuth — **resolvido 2026-07-24** | CS-13 a CS-17 |
-| **2** | Google Drive API (OAuth2 PKCE) | **Desbloqueia mobile** | CS-01..03, CS-06..09, CS-10b |
+| **2** ⚠️ | Google Drive API (OAuth2 PKCE) | **Desbloqueia mobile** — código completo 2026-07-24, `CS-01` (registro no Google Cloud Console) segue aberto | CS-01..03, CS-06..09, CS-10b |
 | **3** | Dropbox | 2º provider | CS-11, CS-12 |
 | — | Transversal | Cifragem opcional, telemetria de sync | CS-18, CS-20 |
 

@@ -7,6 +7,11 @@ import { isDemoMode } from '@/lib/demo'
 import { useTrackNavigation } from '@/hooks/useTrackNavigation'
 import { loadBackupDirHandle, clearBackupDirHandle } from '@/lib/backupDir'
 import { isMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
+import {
+  initiateGoogleAuth,
+  isGoogleConnected,
+  googleNeedsReconnect,
+} from '@/lib/cloudSync/googleAuth'
 import Navbar from '@/components/Navbar'
 import FAB from '@/components/FAB'
 import TransactionDrawer from '@/components/TransactionDrawer'
@@ -73,7 +78,30 @@ export default function AppLayout() {
     if (perm === 'granted') await runPeerSync()
   }
 
+  // CS-09: Google's refresh token can fail (revoked elsewhere, expired — S-15). googleAuth.ts
+  // keeps the connection "configured" in that case and flags needsReconnect instead of silently
+  // dropping it, so this banner can offer a one-click reconnect via the OAuth flow.
+  const [googleBannerDismissed, setGoogleBannerDismissed] = useState(false)
+  const googleReconnectNeeded = isGoogleConnected() && googleNeedsReconnect()
+
   const data = useDataStore((s) => s.data)
+
+  // Exactly one reconnect banner shows at a time — they all share the same root-cause slot
+  // (fixed top-14) and would otherwise stack when multiple transports degrade simultaneously.
+  // Google takes priority since it's the transport CS-07 prefers when both are configured.
+  const showGoogleBanner =
+    !isDemoMode() && !backupPermState && googleReconnectNeeded && !googleBannerDismissed
+  const showMultiDeviceBanner =
+    !isDemoMode() &&
+    !backupPermState &&
+    !showGoogleBanner &&
+    isMultiDeviceEnabled() &&
+    syncStatus === 'offline' &&
+    !multiDeviceBannerDismissed
+
+  async function handleReconnectGoogle() {
+    await initiateGoogleAuth() // navigates away; Settings resumes the flow on redirect back
+  }
 
   const showFAB = !NO_FAB_ROUTES.some((r) => location.pathname.startsWith(r))
 
@@ -147,39 +175,50 @@ export default function AppLayout() {
       {/* Usability follow-up: 'offline' almost always means the shared-folder permission
           lapsed — mutually exclusive with the banners above, which already cover that root
           cause for the plain Nível 1 backup dir. */}
-      {!isDemoMode() &&
-        !backupPermState &&
-        isMultiDeviceEnabled() &&
-        syncStatus === 'offline' &&
-        !multiDeviceBannerDismissed && (
-          <div className="fixed top-14 left-0 right-0 z-40 flex items-center justify-center gap-3 bg-amber-400 px-4 py-2.5 text-xs font-medium text-amber-950">
-            <FolderSync size={14} strokeWidth={2} className="shrink-0" />
-            <span className="flex-1 text-center">{t('settings.multiDeviceReconnectBanner')}</span>
-            <button
-              onClick={() => void handleReconnectMultiDeviceSync()}
-              className="rounded-md bg-amber-950/15 px-2.5 py-1 font-semibold hover:bg-amber-950/25 transition-colors shrink-0"
-            >
-              {t('settings.multiDeviceReconnect')}
-            </button>
-            <button
-              onClick={() => setMultiDeviceBannerDismissed(true)}
-              className="shrink-0 hover:opacity-70"
-            >
-              <X size={14} strokeWidth={2} />
-            </button>
-          </div>
-        )}
+      {showMultiDeviceBanner && (
+        <div className="fixed top-14 left-0 right-0 z-40 flex items-center justify-center gap-3 bg-amber-400 px-4 py-2.5 text-xs font-medium text-amber-950">
+          <FolderSync size={14} strokeWidth={2} className="shrink-0" />
+          <span className="flex-1 text-center">{t('settings.multiDeviceReconnectBanner')}</span>
+          <button
+            onClick={() => void handleReconnectMultiDeviceSync()}
+            className="rounded-md bg-amber-950/15 px-2.5 py-1 font-semibold hover:bg-amber-950/25 transition-colors shrink-0"
+          >
+            {t('settings.multiDeviceReconnect')}
+          </button>
+          <button
+            onClick={() => setMultiDeviceBannerDismissed(true)}
+            className="shrink-0 hover:opacity-70"
+          >
+            <X size={14} strokeWidth={2} />
+          </button>
+        </div>
+      )}
+
+      {/* CS-09: Google refresh-token failure (S-15) — same "click to reconnect" affordance. */}
+      {showGoogleBanner && (
+        <div className="fixed top-14 left-0 right-0 z-40 flex items-center justify-center gap-3 bg-amber-400 px-4 py-2.5 text-xs font-medium text-amber-950">
+          <FolderSync size={14} strokeWidth={2} className="shrink-0" />
+          <span className="flex-1 text-center">{t('settings.googleReconnectBanner')}</span>
+          <button
+            onClick={() => void handleReconnectGoogle()}
+            className="rounded-md bg-amber-950/15 px-2.5 py-1 font-semibold hover:bg-amber-950/25 transition-colors shrink-0"
+          >
+            {t('settings.googleReconnect')}
+          </button>
+          <button
+            onClick={() => setGoogleBannerDismissed(true)}
+            className="shrink-0 hover:opacity-70"
+          >
+            <X size={14} strokeWidth={2} />
+          </button>
+        </div>
+      )}
 
       {/* max-sm: compensate for the full nav height (h-16 = 4rem + device safe area).
           On desktop (sm+) the bottom nav is hidden, so no padding needed. */}
       <main
         className={`flex-1 max-sm:pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0 ${
-          isDemoMode() ||
-          backupPermState ||
-          (!backupPermState &&
-            isMultiDeviceEnabled() &&
-            syncStatus === 'offline' &&
-            !multiDeviceBannerDismissed)
+          isDemoMode() || backupPermState || showMultiDeviceBanner || showGoogleBanner
             ? 'pt-24'
             : 'pt-14'
         }`}

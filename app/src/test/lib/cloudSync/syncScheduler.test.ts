@@ -16,6 +16,9 @@ vi.mock('@/lib/cloudSync/multiDeviceMode', () => ({
   getSyncPollIntervalMinutes: getSyncPollIntervalMinutesMock,
 }))
 
+const { isGoogleConnectedMock } = vi.hoisted(() => ({ isGoogleConnectedMock: vi.fn() }))
+vi.mock('@/lib/cloudSync/googleAuth', () => ({ isGoogleConnected: isGoogleConnectedMock }))
+
 const { startSyncPolling, rescheduleSyncPolling, stopSyncPolling } =
   await import('@/lib/cloudSync/syncScheduler')
 
@@ -27,6 +30,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   runPeerSyncMock.mockReset().mockResolvedValue(undefined)
   isMultiDeviceEnabledMock.mockReset().mockReturnValue(true)
+  isGoogleConnectedMock.mockReset().mockReturnValue(false)
   getSyncPollIntervalMinutesMock.mockReset().mockReturnValue(60)
   setVisibility('visible')
 })
@@ -56,11 +60,19 @@ describe('syncScheduler', () => {
     expect(runPeerSyncMock).toHaveBeenCalledTimes(2)
   })
 
-  it('skips the sync call when multi-device mode is off', async () => {
+  it('skips the sync call when neither transport is configured', async () => {
     isMultiDeviceEnabledMock.mockReturnValue(false)
     startSyncPolling()
     await vi.advanceTimersByTimeAsync(60 * 60_000)
     expect(runPeerSyncMock).not.toHaveBeenCalled()
+  })
+
+  it('polls when Google Drive is connected, even with folder mode off', async () => {
+    isMultiDeviceEnabledMock.mockReturnValue(false)
+    isGoogleConnectedMock.mockReturnValue(true)
+    startSyncPolling()
+    await vi.advanceTimersByTimeAsync(60 * 60_000)
+    expect(runPeerSyncMock).toHaveBeenCalledTimes(1)
   })
 
   it('skips the sync call when the tab is hidden', async () => {

@@ -396,7 +396,7 @@ Decisão estratégica central: **o motor de merge é único e o transporte é pl
 |------|--------|---------|-------|
 | **0** | Motor de merge (`updatedAt` + `merge.ts` + testes). Nenhum transporte. | Pré-requisito universal — nada aqui é descartável | CS-04, CS-05, CS-10 |
 | **1** ✅ | Pasta compartilhada + **um `.db` por dispositivo** (`device-<uuid>.db`) | **Multi-desktop** funcionando, sem OAuth e sem gatekeeper; elimina a cópia-em-conflito do Nível 1 — **resolvido 2026-07-24** | CS-13 a CS-17 |
-| **2** | Google Drive API (OAuth2 PKCE) | **Desbloqueia mobile** (sem FSA, só resta rede) | CS-01 a CS-03, CS-06 a CS-09 |
+| **2** ⚠️ | Google Drive API (OAuth2 PKCE) | **Desbloqueia mobile** (sem FSA, só resta rede) — código completo em 2026-07-24, **CS-01 (registro no Google Cloud Console) segue aberto**, ação do mantenedor | CS-01 a CS-03, CS-06 a CS-09 |
 | **3** | Dropbox como 2º provider | Redundância de provider | CS-11, CS-12 |
 
 > **Por que a Fase 1 antes da Fase 2:** custo baixíssimo (reusa `backupDir.ts`/BK-01..08 inteiro), zero dependência de terceiros, e corrige o pior footgun documentado hoje — o Nível 1 usado em dois desktops gera `gimbo-backup (1).db` silenciosamente. Entrega valor real enquanto a Fase 2 depende de processo externo (Google Cloud Console).
@@ -473,13 +473,53 @@ badge da navbar e o banner de reconexão ficariam mostrando um estado órfão do
 | ID | Descrição | Prioridade | Status |
 |----|-----------|------------|--------|
 | CS-01 | **Registrar app no Google Cloud Console e publicar em "Production".** Criar projeto GCP, habilitar Drive API, configurar OAuth2 com escopo `https://www.googleapis.com/auth/drive.file` (acesso apenas a arquivos criados pelo app). Definir redirect URI para `localhost` (dev) e domínio de produção. Documentar client_id como variável de ambiente `VITE_GOOGLE_CLIENT_ID`. Sem backend — fluxo PKCE puro. **Escopo revisado em 2026-07-24:** `drive.file` é escopo **não-sensível** → **não exige** a verificação OAuth completa (tela de consentimento revisada, vídeo de demonstração) nem avaliação de segurança anual (essa vale só para escopos **restritos**, como `drive` completo). O que **é** necessário: (a) mudar o *publishing status* de "Testing" para **"Production"** — em "Testing" o aviso "app não verificado" aparece e há teto de usuários de teste; (b) *brand verification* (processo leve) se quisermos exibir logo/nome próprios na tela de consentimento; (c) política de privacidade pública (já existe: rota `/privacy`); (d) **validar na prática com um client_id de teste** antes de dar este item por resolvido — a documentação do Google muda, e a premissa de "não-sensível" precisa ser confirmada empiricamente no fluxo real. Ação exclusiva do usuário/mantenedor do projeto (requer conta Google própria) — não delegável à IA. | crítica | aberto |
-| CS-02 | **`src/lib/cloudSync/googleAuth.ts` — Implementar OAuth2 PKCE para Google Drive.** Funções: `initiateGoogleAuth()` (gera code_verifier/challenge, redireciona para Google); `handleGoogleCallback(code)` (troca code por tokens, armazena `access_token` + `refresh_token` + `expires_at` em `localStorage`); `refreshGoogleToken()` (usa refresh_token para renovar access_token quando expirado); `revokeGoogleAuth()` (limpa tokens do localStorage); `isGoogleConnected(): boolean`. Nunca armazenar dados financeiros junto aos tokens. | crítica | aberto |
-| CS-03 | **`src/lib/cloudSync/googleDrive.ts` — Implementar operações de arquivo no Drive, atrás da interface `CloudProvider`.** Implementa a interface já definida em **CS-19** (Fase 0) por cima de `findGimboFile`/`createGimboFolder`/`uploadDb`/`downloadDb`/`getFileMetadata` (detalhes específicos do Drive, incl. criação da pasta `Gimbo/`). Tratar erros HTTP 401 chamando `refreshGoogleToken()` e retentando uma vez. `merge.ts`/`syncService.ts` (CS-05/CS-06) dependem só de `CloudProvider`, nunca de `googleDrive.ts` diretamente. | crítica | aberto |
-| CS-06 | **`src/lib/cloudSync/syncService.ts` — Orquestrar pull/push.** Funções: `pullAndMerge(): SyncResult` — baixa remote via `downloadDb()`, importa em memória, aplica `mergeForSync(local, remote)`, salva merged no OPFS via `storage.replaceAll()`, faz push do merged para o Drive; `pushIfNeeded(): void` — compara `settings.fileUpdatedAt` local com `getFileMetadata().modifiedTime`; se local é mais recente, faz upload. `SyncResult = { status: 'synced' | 'merged' | 'offline' | 'error'; message?: string }`. | crítica | aberto |
-| CS-07 | **`store/useDataStore.ts` — Integrar sync automático.** No startup (`init()`): após `loadData()`, se `isGoogleConnected()`, chamar `pullAndMerge()` em background (não bloqueia UI). Após mutações (debounce 5s): chamar `pushIfNeeded()`. Estado no store: `syncStatus: 'idle' | 'syncing' | 'error' | 'offline'`; `lastSyncedAt: string \| null`. | alta | aberto |
-| CS-08 | **`pages/Settings/index.tsx` — Nova aba "Backup & Sync".** Seção Google Drive: botão "Conectar Google Drive" (se desconectado) ou chip com email do usuário + "Desconectar" (se conectado); status da última sincronização (`lastSyncedAt`); botão "Sincronizar agora" (dispara `pullAndMerge()` manualmente). Seção Export manual: botão "Exportar backup `.db`" (existente, mantido). Adicionar chaves i18n `settings.sync.*` em ambos os locales. | alta | aberto |
-| CS-09 | **`components/Navbar.tsx` (ou `AppLayout.tsx`) — Indicador de status de sync.** Ícone discreto de nuvem na navbar: cinza (idle/desconectado), animado (syncing), verde (synced), vermelho (error/offline). Tooltip com `lastSyncedAt`. Oculto se sync não estiver configurado. | média | aberto |
-| CS-10b | **Testes unitários de `syncService.ts` (fatia Fase 2 do antigo CS-10).** Mockar o `CloudProvider` (não `googleDrive.ts` diretamente — o serviço só conhece a interface). Cobrir: pull com remote mais recente, push com local mais recente, offline retorna `status: 'offline'`, erro 401 aciona refresh e retry único. Os testes de `merge.ts` vivem em `CS-10a` (Fase 0). | alta | aberto |
+| CS-02 | **`src/lib/cloudSync/googleAuth.ts` — Implementar OAuth2 PKCE para Google Drive.** Funções: `initiateGoogleAuth()` (gera code_verifier/challenge, redireciona para Google); `handleGoogleCallback(code)` (troca code por tokens, armazena `access_token` + `refresh_token` + `expires_at` em `localStorage`); `refreshGoogleToken()` (usa refresh_token para renovar access_token quando expirado); `revokeGoogleAuth()` (limpa tokens do localStorage); `isGoogleConnected(): boolean`. Nunca armazenar dados financeiros junto aos tokens. | crítica | resolvido |
+| CS-03 | **`src/lib/cloudSync/googleDrive.ts` — Implementar operações de arquivo no Drive, atrás da interface `CloudProvider`.** Implementa a interface já definida em **CS-19** (Fase 0) por cima de `findGimboFile`/`createGimboFolder`/`uploadDb`/`downloadDb`/`getFileMetadata` (detalhes específicos do Drive, incl. criação da pasta `Gimbo/`). Tratar erros HTTP 401 chamando `refreshGoogleToken()` e retentando uma vez. `merge.ts`/`syncService.ts` (CS-05/CS-06) dependem só de `CloudProvider`, nunca de `googleDrive.ts` diretamente. | crítica | resolvido |
+| CS-06 | **`src/lib/cloudSync/syncService.ts` — Orquestrar pull/push.** Funções: `pullAndMerge(): SyncResult` — baixa remote via `downloadDb()`, importa em memória, aplica `mergeForSync(local, remote)`, salva merged no OPFS via `storage.replaceAll()`, faz push do merged para o Drive; `pushIfNeeded(): void` — compara `settings.fileUpdatedAt` local com `getFileMetadata().modifiedTime`; se local é mais recente, faz upload. `SyncResult = { status: 'synced' | 'merged' | 'offline' | 'error'; message?: string }`. | crítica | resolvido |
+| CS-07 | **`store/useDataStore.ts` — Integrar sync automático.** No startup (`init()`): após `loadData()`, se `isGoogleConnected()`, chamar `pullAndMerge()` em background (não bloqueia UI). Após mutações (debounce 5s): chamar `pushIfNeeded()`. Estado no store: `syncStatus: 'idle' | 'syncing' | 'error' | 'offline'`; `lastSyncedAt: string \| null`. | alta | resolvido |
+| CS-08 | **`pages/Settings/index.tsx` — Nova aba "Backup & Sync".** Seção Google Drive: botão "Conectar Google Drive" (se desconectado) ou chip com email do usuário + "Desconectar" (se conectado); status da última sincronização (`lastSyncedAt`); botão "Sincronizar agora" (dispara `pullAndMerge()` manualmente). Seção Export manual: botão "Exportar backup `.db`" (existente, mantido). Adicionar chaves i18n `settings.sync.*` em ambos os locales. | alta | resolvido |
+| CS-09 | **`components/Navbar.tsx` (ou `AppLayout.tsx`) — Indicador de status de sync.** Ícone discreto de nuvem na navbar: cinza (idle/desconectado), animado (syncing), verde (synced), vermelho (error/offline). Tooltip com `lastSyncedAt`. Oculto se sync não estiver configurado. | média | resolvido |
+
+> **Notas de implementação da Fase 2 (2026-07-24):**
+> - **Código completo, mas não validado ponta-a-ponta.** `CS-01` (registrar o app no Google Cloud
+>   Console) permanece **aberto** — é ação exclusiva do mantenedor, não delegável. Sem um
+>   `VITE_GOOGLE_CLIENT_ID` real, o fluxo OAuth nunca foi exercitado contra a API de verdade;
+>   toda a cobertura de teste usa `fetch`/`googleAuth`/`googleDrive` mockados. **Antes de dar
+>   CS-01 por resolvido**, validar na prática: troca de code→tokens, refresh, e o comportamento
+>   real do escopo `drive.file` (a premissa de "não-sensível" descrita no próprio CS-01).
+> - **`isGoogleSyncConfigured()`** (`googleAuth.ts`) esconde a seção Google Drive em Settings
+>   quando `VITE_GOOGLE_CLIENT_ID` não está definido — nenhuma instalação sem client_id vê um
+>   botão "Conectar" quebrado. Variável documentada em `.env.example` (novo arquivo).
+> - **`pullAndMerge`/`pushIfNeeded` recebem `local: DataFile` como parâmetro**, mesma escolha já
+>   registrada para `syncFromPeers` (Fase 1) — evita um round-trip redundante por `storage.loadDataFile()`
+>   quando o `useDataStore` já tem `data` em memória.
+> - **`runPeerSync`/`_triggerLocalBackup` (`useDataStore.ts`) ganharam precedência de transporte:
+>   Google Drive > pasta compartilhada (Fase 1) > backup único legado (Nível 1).** Aplica a regra
+>   "um transporte ativo por vez" (planejada para `CS-12`/Fase 3) um passo mais cedo — evita dois
+>   transportes competindo pela mesma mutação/tick de polling caso ambos estejam configurados.
+> - **`settings.fileUpdatedAt` agora é atualizado em toda mutação** (`mutate()` em
+>   `useDataStore.ts`, antes só era setado na criação do arquivo) — é o timestamp que
+>   `pullAndMerge`/`pushIfNeeded` comparam contra o `modifiedTime` do Drive para decidir se há
+>   algo novo para puxar/empurrar (S-09). Sem isso a comparação sempre usaria a data de criação
+>   do cofre, nunca refletindo mutações reais.
+> - **`syncScheduler.ts` (polling, follow-up de usabilidade da Fase 1) passou a cobrir os dois
+>   transportes** — `isGoogleConnected() || isMultiDeviceEnabled()` — sem precisar de um segundo
+>   scheduler.
+> - **Banner de reconexão do Google (`AppLayout.tsx`) usa um sinal próprio, `googleNeedsReconnect()`**,
+>   em vez de reaproveitar `syncStatus === 'offline'` como o banner da Fase 1 — porque um refresh
+>   de token falho (S-15) é uma causa raiz diferente de uma pasta local inacessível, e a ação de
+>   reconexão também é diferente (reabrir o fluxo OAuth vs. reconceder permissão de pasta). Os
+>   dois banners (mais os do Nível 1) são mutuamente exclusivos — nunca empilham.
+> - **Sem endpoint de callback dedicado.** `redirect_uri` aponta direto para `/settings`; a própria
+>   tela detecta `?code=&state=` no `useEffect` de montagem e completa a troca PKCE ali mesmo,
+>   evitando uma rota nova só para isso.
+| CS-10b | **Testes unitários de `syncService.ts` (fatia Fase 2 do antigo CS-10).** Mockar o `CloudProvider` (não `googleDrive.ts` diretamente — o serviço só conhece a interface). Cobrir: pull com remote mais recente, push com local mais recente, offline retorna `status: 'offline'`, erro 401 aciona refresh e retry único. Os testes de `merge.ts` vivem em `CS-10a` (Fase 0). | alta | resolvido |
+
+> **Nota (2026-07-24):** o teste de "401 aciona refresh e retry único" vive em `googleDrive.test.ts`,
+> não em `syncService.test.ts` — é `googleDrive.ts` (via `authorizedFetch`) que implementa o
+> retry, não `syncService.ts`, que só conhece `CloudProvider` e nunca vê status HTTP. `syncService.test.ts`
+> mocka `createGoogleDriveProvider()` inteiro (11 casos: first-connect, local mais novo, remote
+> mais novo, skipped por schema futuro/ilegível, offline em qualquer falha do provider).
 
 ### Fase 3 — Dropbox (opcional, pós-Google Drive estável)
 

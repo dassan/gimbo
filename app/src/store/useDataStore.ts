@@ -18,6 +18,8 @@ import { getDeviceId } from '@/lib/cloudSync/deviceId'
 import { createFolderProvider } from '@/lib/cloudSync/folderProvider'
 import { syncFromPeers } from '@/lib/cloudSync/folderSyncService'
 import { isMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
+import { isGoogleConnected } from '@/lib/cloudSync/googleAuth'
+import { pullAndMerge, pushIfNeeded } from '@/lib/cloudSync/syncService'
 import {
   uuid,
   now,
@@ -33,11 +35,18 @@ import { trackAction } from '@/lib/telemetry'
 
 let _sqliteTimer: ReturnType<typeof setTimeout> | null = null
 
-// CS-16: while multi-device mode is on, the debounced local backup writes this device's own
-// device-<id>.db instead of the single legacy gimbo-backup.db — the "one writer per file"
-// invariant that makes Fase 1 sync safe (S-16..S-20). The legacy file is left untouched.
-async function _triggerLocalBackup() {
+// CS-07: Google Drive (Fase 2) takes precedence over the Fase 1 shared-folder mode, which takes
+// precedence over the Nível 1 legacy single-file backup — only one transport pushes per mutation.
+// This mirrors the "um transporte ativo por vez" rule already planned for CS-12 (Fase 3);
+// applying it here now avoids two transports racing to write/merge the same mutation.
+async function _triggerLocalBackup(data: DataFile) {
   try {
+    if (isGoogleConnected()) {
+      await pushIfNeeded(data)
+      localStorage.setItem('gimbo_backup_last_saved', new Date().toISOString())
+      return
+    }
+
     if (isMultiDeviceEnabled()) {
       const deviceId = await getDeviceId()
       const blob = await storage.exportBlob()
@@ -62,7 +71,7 @@ function debouncedReplaceAll(data: DataFile) {
   if (isDemoMode()) return
   if (_sqliteTimer) clearTimeout(_sqliteTimer)
   _sqliteTimer = setTimeout(() => {
-    void storage.replaceAll(data).then(() => void _triggerLocalBackup())
+    void storage.replaceAll(data).then(() => void _triggerLocalBackup(data))
   }, 300)
 }
 
@@ -160,14 +169,18 @@ export const useDataStore = create<DataStore>((set, get) => ({
   clearData: () => set({ data: null }),
 
   runPeerSync: async () => {
-    if (!isMultiDeviceEnabled()) return
+    // CS-07: Google Drive (Fase 2) takes precedence over the Fase 1 shared-folder mode when
+    // both happen to be configured — same "one transport at a time" rule as _triggerLocalBackup.
+    const googleOn = isGoogleConnected()
+    if (!googleOn && !isMultiDeviceEnabled()) return
     const { data } = get()
     if (!data) return
 
     set({ syncStatus: 'syncing' })
     try {
-      const deviceId = await getDeviceId()
-      const result = await syncFromPeers(data, deviceId)
+      const result = googleOn
+        ? await pullAndMerge(data)
+        : await syncFromPeers(data, await getDeviceId())
 
       if (result.status === 'merged') {
         const fresh = await storage.loadDataFile()
@@ -553,6 +566,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
       if (newOccurrences.length === 0) return {}
       const data = structuredClone(s.data)
       data.transactions.push(...newOccurrences)
+      data.settings.fileUpdatedAt = now()
       debouncedReplaceAll(data)
       return { data }
     }),
@@ -674,6 +688,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
       const data = structuredClone(s.data)
       data.settings.auditLogRetentionLimit = limit
       data.auditLog = applyRetention(data.auditLog, limit)
+      data.settings.fileUpdatedAt = now()
       debouncedReplaceAll(data)
       return { data }
     }),
@@ -694,6 +709,9 @@ function mutate(
   if (!state.data) return {}
   const data = structuredClone(state.data)
   fn(data)
+  // CS-06: syncService (Fase 2) compares this against the Drive file's modifiedTime to decide
+  // whether a push is needed — it must reflect every mutation, not just file creation/import.
+  data.settings.fileUpdatedAt = now()
   debouncedReplaceAll(data)
   if (actionName) trackAction(actionName)
   return { data }
