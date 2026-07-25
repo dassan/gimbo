@@ -515,6 +515,21 @@ badge da navbar e o banner de reconexão ficariam mostrando um estado órfão do
 >   `googleAuth.ts` lê `{error, error_description}` do corpo da resposta do Google). Antes disso
 >   o app só mostrava "400 Bad Request" genérico — foi o que tornou o diagnóstico do achado #3
 >   possível na prática; sem o corpo do erro, o `client_secret is missing` teria ficado invisível.
+> - **Bug de corrida encontrado no teste em produção (2026-07-25): duas `gimbo.db` criadas na
+>   mesma pasta `Gimbo/`.** `findFolderId`/`findFileId` fazem "procura, se não achar cria" sem
+>   nenhuma trava — duas chamadas de sync próximas o suficiente (ex.: `runPeerSync()` disparado
+>   ao conectar e outro sync quase simultâneo) podiam ambas ver "arquivo não existe" e ambas
+>   criar um. **Corrigido** em `googleDrive.ts` com uma fila de execução sequencial (`enqueue()`,
+>   mesmo padrão já usado em `worker.ts` para serializar operações do SQLite) — toda operação do
+>   provider (`upload`/`download`/`getMetadata`/`fileExists`) passa pela fila, então a segunda
+>   chamada sempre enxerga o id cacheado pela primeira. **Não cobre duas abas/dispositivos
+>   diferentes conectando exatamente ao mesmo tempo** (janela real, mas bem mais rara que o caso
+>   de aba única que de fato ocorreu — fechar isso exigiria atomicidade do lado do servidor que a
+>   API do Drive não oferece). Como rede de segurança adicional, `findFileId` agora ordena por
+>   `modifiedTime desc` e loga um aviso (`console.warn`) se achar mais de um arquivo — escolhe o
+>   mais recente de forma determinística em vez de alternar entre ids a cada sync, mas não apaga
+>   os extras (limpeza manual no Drive). Teste de regressão em `googleDrive.test.ts` (`Promise.all`
+>   com dois `upload()` concorrentes → só um `POST` multipart, o segundo vira `PATCH`).
 > - **`pullAndMerge`/`pushIfNeeded` recebem `local: DataFile` como parâmetro**, mesma escolha já
 >   registrada para `syncFromPeers` (Fase 1) — evita um round-trip redundante por `storage.loadDataFile()`
 >   quando o `useDataStore` já tem `data` em memória.

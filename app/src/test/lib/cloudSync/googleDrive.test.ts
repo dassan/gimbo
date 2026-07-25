@@ -120,6 +120,33 @@ describe('createGoogleDriveProvider', () => {
     expect(meta.modifiedTime).toBe('2026-07-24T00:00:00Z')
   })
 
+  it('serializes concurrent uploads so only one creates the file (race found in production)', async () => {
+    const fetchMock = vi
+      .fn()
+      // 1st upload(): findFolderId (no cache) — list empty, then create
+      .mockResolvedValueOnce(jsonResponse({ files: [] }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'folder-1' }))
+      // 1st upload(): findFileId (no cache) — list empty
+      .mockResolvedValueOnce(jsonResponse({ files: [] }))
+      // 1st upload(): no file yet — multipart create
+      .mockResolvedValueOnce(jsonResponse({ id: 'file-1' }))
+      // 2nd upload(): folder/file ids are now cached from the 1st call, so this is a PATCH
+      .mockResolvedValueOnce(jsonResponse({}))
+    global.fetch = fetchMock
+
+    const provider = createGoogleDriveProvider()
+    await Promise.all([provider.upload(new Blob(['a'])), provider.upload(new Blob(['b']))])
+
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+    const createCalls = fetchMock.mock.calls.filter((call) =>
+      (call[0] as string).includes('uploadType=multipart')
+    )
+    expect(createCalls).toHaveLength(1) // never two multipart creates for the same file
+    const lastCall = fetchMock.mock.calls[4] as [string, RequestInit]
+    expect(lastCall[0]).toContain('uploadType=media')
+    expect(lastCall[1].method).toBe('PATCH')
+  })
+
   it('retries once after a 401 by refreshing the token', async () => {
     localStorage.setItem('gimbo_google_drive_folder_id', 'folder-1')
     localStorage.setItem('gimbo_google_drive_file_id', 'file-1')
