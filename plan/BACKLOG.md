@@ -472,7 +472,29 @@ badge da navbar e o banner de reconexão ficariam mostrando um estado órfão do
 
 | ID | Descrição | Prioridade | Status |
 |----|-----------|------------|--------|
-| CS-01 | **Registrar app no Google Cloud Console e publicar em "Production".** Criar projeto GCP, habilitar Drive API, configurar OAuth2 com escopo `https://www.googleapis.com/auth/drive.file` (acesso apenas a arquivos criados pelo app). Definir redirect URI para `localhost` (dev) e domínio de produção. Documentar client_id como variável de ambiente `VITE_GOOGLE_CLIENT_ID`. Sem backend — fluxo PKCE puro. **Escopo revisado em 2026-07-24:** `drive.file` é escopo **não-sensível** → **não exige** a verificação OAuth completa (tela de consentimento revisada, vídeo de demonstração) nem avaliação de segurança anual (essa vale só para escopos **restritos**, como `drive` completo). O que **é** necessário: (a) mudar o *publishing status* de "Testing" para **"Production"** — em "Testing" o aviso "app não verificado" aparece e há teto de usuários de teste; (b) *brand verification* (processo leve) se quisermos exibir logo/nome próprios na tela de consentimento; (c) política de privacidade pública (já existe: rota `/privacy`); (d) **validar na prática com um client_id de teste** antes de dar este item por resolvido — a documentação do Google muda, e a premissa de "não-sensível" precisa ser confirmada empiricamente no fluxo real. Ação exclusiva do usuário/mantenedor do projeto (requer conta Google própria) — não delegável à IA. | crítica | aberto |
+| CS-01 | **Registrar app no Google Cloud Console e publicar em "Production".** Criar projeto GCP, habilitar Drive API, configurar OAuth2 com escopo `https://www.googleapis.com/auth/drive.file` (acesso apenas a arquivos criados pelo app). Definir redirect URI para `localhost` (dev) e domínio de produção. Documentar client_id como variável de ambiente `VITE_GOOGLE_CLIENT_ID`. Sem backend — fluxo PKCE puro. **Escopo revisado em 2026-07-24:** `drive.file` é escopo **não-sensível** → **não exige** a verificação OAuth completa (tela de consentimento revisada, vídeo de demonstração) nem avaliação de segurança anual (essa vale só para escopos **restritos**, como `drive` completo). O que **é** necessário: (a) mudar o *publishing status* de "Testing" para **"Production"** — em "Testing" o aviso "app não verificado" aparece e há teto de usuários de teste; (b) *brand verification* (processo leve) se quisermos exibir logo/nome próprios na tela de consentimento; (c) política de privacidade pública (já existe: rota `/privacy`); (d) **validar na prática com um client_id de teste** antes de dar este item por resolvido — a documentação do Google muda, e a premissa de "não-sensível" precisa ser confirmada empiricamente no fluxo real. Ação exclusiva do usuário/mantenedor do projeto (requer conta Google própria) — não delegável à IA. | crítica | resolvido |
+
+> **Validação empírica (2026-07-25):** o mantenedor executou o passo a passo e testou o fluxo real
+> contra a API do Google. Três achados que corrigem premissas do desenho original:
+> 1. **`redirect_uri` precisa estar na lista "URIs de redirecionamento autorizados"**, um campo
+>    separado de "Origens JavaScript autorizadas" — colocar só na segunda gera `Error 400:
+>    redirect_uri_mismatch`. Erro fácil de cometer porque os dois campos ficam próximos no Console.
+> 2. **"Publicar em Production" não é automático** — o app nasce em status "Testing" mesmo depois
+>    de preencher a tela de consentimento, e nesse status só e-mails cadastrados manualmente em
+>    "Usuários de teste" conseguem autenticar (`Error 403: access_denied`, "has not completed the
+>    Google verification process"). É preciso clicar explicitamente em "Publicar app" — o texto do
+>    item já mencionava isso, mas o clique é um passo à parte, fácil de pular.
+> 3. **Achado mais importante — invalida a premissa "PKCE puro, sem client secret" do CS-02:**
+>    clientes OAuth do tipo **"Aplicativo da Web"** são tratados pelo Google como confidenciais
+>    mesmo com PKCE — o endpoint de token responde `400 invalid_request: client_secret is
+>    missing`. O PKCE do Google só dispensa o secret para tipos de cliente "público" (iOS/Android/
+>    Desktop/UWP), nenhum dos quais aceita um `redirect_uri` HTTPS arbitrário de domínio de
+>    produção (Desktop só aceita loopback `http://localhost`). **Decisão:** manter o tipo "Aplicativo
+>    da Web" e embutir o `client_secret` no bundle público (nova variável `VITE_GOOGLE_CLIENT_SECRET`),
+>    documentado em `googleAuth.ts` como não sendo um segredo real nesse contexto — a superfície de
+>    segurança continua sendo o `redirect_uri` cadastrado + PKCE + o código de uso único, exatamente
+>    como um client verdadeiramente público. Ver comentário de topo em `googleAuth.ts` para o
+>    raciocínio completo.
 | CS-02 | **`src/lib/cloudSync/googleAuth.ts` — Implementar OAuth2 PKCE para Google Drive.** Funções: `initiateGoogleAuth()` (gera code_verifier/challenge, redireciona para Google); `handleGoogleCallback(code)` (troca code por tokens, armazena `access_token` + `refresh_token` + `expires_at` em `localStorage`); `refreshGoogleToken()` (usa refresh_token para renovar access_token quando expirado); `revokeGoogleAuth()` (limpa tokens do localStorage); `isGoogleConnected(): boolean`. Nunca armazenar dados financeiros junto aos tokens. | crítica | resolvido |
 | CS-03 | **`src/lib/cloudSync/googleDrive.ts` — Implementar operações de arquivo no Drive, atrás da interface `CloudProvider`.** Implementa a interface já definida em **CS-19** (Fase 0) por cima de `findGimboFile`/`createGimboFolder`/`uploadDb`/`downloadDb`/`getFileMetadata` (detalhes específicos do Drive, incl. criação da pasta `Gimbo/`). Tratar erros HTTP 401 chamando `refreshGoogleToken()` e retentando uma vez. `merge.ts`/`syncService.ts` (CS-05/CS-06) dependem só de `CloudProvider`, nunca de `googleDrive.ts` diretamente. | crítica | resolvido |
 | CS-06 | **`src/lib/cloudSync/syncService.ts` — Orquestrar pull/push.** Funções: `pullAndMerge(): SyncResult` — baixa remote via `downloadDb()`, importa em memória, aplica `mergeForSync(local, remote)`, salva merged no OPFS via `storage.replaceAll()`, faz push do merged para o Drive; `pushIfNeeded(): void` — compara `settings.fileUpdatedAt` local com `getFileMetadata().modifiedTime`; se local é mais recente, faz upload. `SyncResult = { status: 'synced' | 'merged' | 'offline' | 'error'; message?: string }`. | crítica | resolvido |
@@ -480,16 +502,19 @@ badge da navbar e o banner de reconexão ficariam mostrando um estado órfão do
 | CS-08 | **`pages/Settings/index.tsx` — Nova aba "Backup & Sync".** Seção Google Drive: botão "Conectar Google Drive" (se desconectado) ou chip com email do usuário + "Desconectar" (se conectado); status da última sincronização (`lastSyncedAt`); botão "Sincronizar agora" (dispara `pullAndMerge()` manualmente). Seção Export manual: botão "Exportar backup `.db`" (existente, mantido). Adicionar chaves i18n `settings.sync.*` em ambos os locales. | alta | resolvido |
 | CS-09 | **`components/Navbar.tsx` (ou `AppLayout.tsx`) — Indicador de status de sync.** Ícone discreto de nuvem na navbar: cinza (idle/desconectado), animado (syncing), verde (synced), vermelho (error/offline). Tooltip com `lastSyncedAt`. Oculto se sync não estiver configurado. | média | resolvido |
 
-> **Notas de implementação da Fase 2 (2026-07-24):**
-> - **Código completo, mas não validado ponta-a-ponta.** `CS-01` (registrar o app no Google Cloud
->   Console) permanece **aberto** — é ação exclusiva do mantenedor, não delegável. Sem um
->   `VITE_GOOGLE_CLIENT_ID` real, o fluxo OAuth nunca foi exercitado contra a API de verdade;
->   toda a cobertura de teste usa `fetch`/`googleAuth`/`googleDrive` mockados. **Antes de dar
->   CS-01 por resolvido**, validar na prática: troca de code→tokens, refresh, e o comportamento
->   real do escopo `drive.file` (a premissa de "não-sensível" descrita no próprio CS-01).
-> - **`isGoogleSyncConfigured()`** (`googleAuth.ts`) esconde a seção Google Drive em Settings
->   quando `VITE_GOOGLE_CLIENT_ID` não está definido — nenhuma instalação sem client_id vê um
->   botão "Conectar" quebrado. Variável documentada em `.env.example` (novo arquivo).
+> **Notas de implementação da Fase 2 (2026-07-24, validada em produção em 2026-07-25):**
+> - **Validado ponta-a-ponta em 2026-07-25** — ver achados detalhados na nota de `CS-01` acima
+>   (redirect URI no campo certo, publicar em Production, e o achado principal: clientes "Aplicativo
+>   da Web" exigem `client_secret` mesmo com PKCE). O design original ("PKCE puro, sem secret")
+>   não sobreviveu ao teste real e foi corrigido em `googleAuth.ts`.
+> - **`isGoogleSyncConfigured()`** (`googleAuth.ts`) esconde a seção Google Drive em Settings a
+>   menos que **ambas** `VITE_GOOGLE_CLIENT_ID` e `VITE_GOOGLE_CLIENT_SECRET` estejam definidas —
+>   nenhuma instalação incompleta vê um botão "Conectar" quebrado. Variáveis documentadas em
+>   `.env.example`.
+> - **Erros do endpoint de token passaram a ser propagados até a UI** (`describeError()` em
+>   `googleAuth.ts` lê `{error, error_description}` do corpo da resposta do Google). Antes disso
+>   o app só mostrava "400 Bad Request" genérico — foi o que tornou o diagnóstico do achado #3
+>   possível na prática; sem o corpo do erro, o `client_secret is missing` teria ficado invisível.
 > - **`pullAndMerge`/`pushIfNeeded` recebem `local: DataFile` como parâmetro**, mesma escolha já
 >   registrada para `syncFromPeers` (Fase 1) — evita um round-trip redundante por `storage.loadDataFile()`
 >   quando o `useDataStore` já tem `data` em memória.

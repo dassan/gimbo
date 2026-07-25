@@ -1,9 +1,21 @@
-// F-28 Nível 2, Fase 2 — CS-02: OAuth2 PKCE against Google Drive. No backend, no client
-// secret — the PKCE code_verifier/code_challenge pair is what makes a public client safe.
+// F-28 Nível 2, Fase 2 — CS-02: OAuth2 PKCE against Google Drive. No backend.
 //
 // Scope is `drive.file` (non-sensitive): the app only ever sees files it created itself. Tokens
 // are never bundled with financial data — they live in a separate localStorage key from the
 // DataFile, and `revokeGoogleAuth()` never touches the user's local vault.
+//
+// **Empirically confirmed 2026-07-25 (CS-01 validation):** unlike the original PKCE-only design,
+// Google's token endpoint rejects a code/refresh-token exchange from a "Web application" OAuth
+// client with `invalid_request: client_secret is missing` even when the request includes a valid
+// PKCE code_verifier. Google only treats PKCE as sufficient for the "public client" categories
+// (iOS/Android/Desktop/UWP) — a "Web application" client is always confidential from Google's
+// point of view, secret or not. There's no client type that both (a) accepts an arbitrary HTTPS
+// redirect_uri for a hosted SPA and (b) skips the secret — "Desktop app" clients skip it but only
+// allow http://localhost loopback redirects, unusable for a deployed web app. So `clientSecret()`
+// below is bundled into the public JS build. This is the pattern Google's own docs acknowledge for
+// browser-only apps: the string doesn't provide real confidentiality (anyone can read it from the
+// bundle), so it isn't a secret in the security sense — redirect_uri whitelisting + PKCE + the
+// single-use authorization code are what actually gate access, exactly as for a client with none.
 
 const AUTH_KEY = 'gimbo_google_auth'
 const STATE_KEY = 'gimbo_google_oauth_state' // sessionStorage — CSRF guard, single redirect round-trip
@@ -28,9 +40,13 @@ function clientId(): string {
   return import.meta.env.VITE_GOOGLE_CLIENT_ID ?? ''
 }
 
+function clientSecret(): string {
+  return import.meta.env.VITE_GOOGLE_CLIENT_SECRET ?? ''
+}
+
 /** False when the maintainer hasn't configured a Google Cloud project (CS-01) yet. */
 export function isGoogleSyncConfigured(): boolean {
-  return clientId().length > 0
+  return clientId().length > 0 && clientSecret().length > 0
 }
 
 function redirectUri(): string {
@@ -74,6 +90,18 @@ async function sha256(input: string): Promise<Uint8Array> {
   return new Uint8Array(digest)
 }
 
+// Google's token endpoint always returns a JSON body describing the failure (e.g.
+// { error: 'invalid_grant', error_description: '...' }) — surfacing it beats a bare "400 Bad
+// Request" when diagnosing OAuth client misconfiguration (wrong client type, reused code...).
+async function describeError(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: string; error_description?: string }
+    return [body.error, body.error_description].filter(Boolean).join(' — ') || `HTTP ${res.status}`
+  } catch {
+    return `HTTP ${res.status}`
+  }
+}
+
 /** Kicks off the PKCE flow: generates verifier/challenge + CSRF state, then redirects to Google. */
 export async function initiateGoogleAuth(): Promise<void> {
   const verifier = randomUrlSafeString(64)
@@ -114,13 +142,14 @@ export async function handleGoogleCallback(code: string, state: string): Promise
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       client_id: clientId(),
+      client_secret: clientSecret(),
       code,
       code_verifier: verifier,
       grant_type: 'authorization_code',
       redirect_uri: redirectUri(),
     }),
   })
-  if (!res.ok) throw new Error('Google token exchange failed')
+  if (!res.ok) throw new Error(`Google token exchange failed: ${await describeError(res)}`)
 
   const json = (await res.json()) as {
     access_token: string
@@ -149,6 +178,7 @@ export async function refreshGoogleToken(): Promise<string> {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       client_id: clientId(),
+      client_secret: clientSecret(),
       refresh_token: state.refreshToken,
       grant_type: 'refresh_token',
     }),
@@ -156,8 +186,9 @@ export async function refreshGoogleToken(): Promise<string> {
   if (!res.ok) {
     // S-15: refresh failed (revoked elsewhere, expired refresh token...). Keep the connection
     // "configured" so the UI can offer a one-click reconnect instead of silently losing state.
+    const message = await describeError(res)
     saveAuthState({ ...state, needsReconnect: true })
-    throw new Error('Google token refresh failed')
+    throw new Error(`Google token refresh failed: ${message}`)
   }
 
   const json = (await res.json()) as { access_token: string; expires_in: number }

@@ -394,8 +394,11 @@ export default function Settings() {
         setGoogleConnected(true)
         await runPeerSync()
       })
-      .catch(() => {
-        setGoogleOAuthError(t('settings.googleConnectError'))
+      .catch((err: unknown) => {
+        // The OAuth error code/description (e.g. "invalid_grant") isn't sensitive — surfacing it
+        // is what makes a misconfigured client (CS-01) diagnosable instead of a dead end.
+        const detail = err instanceof Error ? err.message : String(err)
+        setGoogleOAuthError(`${t('settings.googleConnectError')} (${detail})`)
       })
     // Runs once on mount to consume the redirect — t()/runPeerSync() intentionally excluded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
