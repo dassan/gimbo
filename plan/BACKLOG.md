@@ -542,6 +542,26 @@ badge da navbar e o banner de reconexão ficariam mostrando um estado órfão do
 >   — pequeno ajuste de clareza depois que o usuário reportou o toggle "sem reagir"; o
 >   comportamento (desabilitado até configurar a pasta local) já estava correto, só a affordance
 >   visual era fraca.
+> - **Redesenho da aba Backup & Sync (2026-07-25) — decisão de produto.** Depois de validar em
+>   produção que os três mecanismos (pasta local Nível 1, pasta compartilhada Fase 1, Google
+>   Drive Fase 2) podiam parecer simultaneamente "ativos" na UI mesmo só um valendo de verdade em
+>   runtime (Google Drive sempre vence), o humano pediu uma interface que deixasse esse modelo
+>   explícito. Decisões tomadas em conversa:
+>   - **Backup de pasta local (Nível 1) continua mutuamente exclusivo com os transportes de sync**
+>     (não vira uma cópia sempre-ativa independente) — avaliado e descartado deliberadamente,
+>     mantendo o comportamento já implementado no CS-07.
+>   - **Nível 2 virou um seletor de escolha única (radio-card)**, não dois toggles
+>     independentes — reflete de verdade a regra de precedência que já existia em código
+>     (`useDataStore.runPeerSync`/`_triggerLocalBackup`), tornando estruturalmente impossível
+>     reproduzir a confusão original.
+>   - Trocar de "Google Drive" para qualquer outro método **exige confirmação explícita**
+>     (`confirmSwitchTarget` em `Settings.tsx`) porque é uma ação com efeito real — revoga o
+>     token OAuth. Trocar para "Google Drive" a partir de "pasta compartilhada" não exige
+>     confirmação — só desliga um flag local, reversível sem custo.
+>   - Hierarquia visual com **selo "Nível N"** (`LevelHeader`) em vez dos rótulos uppercase
+>     genéricos de antes — Nível 1 é a base; Nível 2 é onde a escolha excludente acontece.
+>   - Componentes novos, só neste arquivo por ora (não extraídos para `components/` — específicos
+>     demais desta tela): `LevelHeader`, `SyncModeCard`.
 > - **`pullAndMerge`/`pushIfNeeded` recebem `local: DataFile` como parâmetro**, mesma escolha já
 >   registrada para `syncFromPeers` (Fase 1) — evita um round-trip redundante por `storage.loadDataFile()`
 >   quando o `useDataStore` já tem `data` em memória.

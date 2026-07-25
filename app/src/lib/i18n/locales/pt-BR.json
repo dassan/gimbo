@@ -313,7 +313,21 @@
     "googleReconnectBanner": "A conexão com o Google Drive expirou e precisa ser renovada.",
     "googleReconnect": "Reconectar",
     "syncBadgeLabel": "Sincronização",
-    "syncStatusOfflineGeneric": "Não foi possível sincronizar."
+    "syncStatusOfflineGeneric": "Não foi possível sincronizar.",
+    "level1Title": "Nível 1 — Backup neste computador",
+    "level1Subtitle": "A base para os dois modos de sincronização abaixo",
+    "level2Title": "Nível 2 — Sincronizar entre dispositivos",
+    "level2Subtitle": "Escolha um método — só um fica ativo por vez",
+    "syncModeNoneTitle": "Apenas este computador",
+    "syncModeNoneDesc": "Sem sincronização — usa só o backup automático da pasta local (Nível 1).",
+    "syncModeFolderTitle": "Pasta compartilhada",
+    "syncModeFolderDesc": "Vários computadores, sem conta Google — usa a pasta local configurada acima.",
+    "syncModeGoogleDesc": "Sincroniza direto com sua conta Google — funciona também no celular.",
+    "syncModeBadgeDesktop": "Desktop",
+    "syncModeBadgeMobile": "Desktop + celular",
+    "syncModeConfirmSwitchFromGoogle": "Trocar de método desconecta seu Google Drive. Confirmar?",
+    "syncModeConfirmButton": "Confirmar troca",
+    "syncModeCancelButton": "Cancelar"
   },
   "creditCard": {
     "invoicePeriod": "Período da Fatura",

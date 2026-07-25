@@ -36,6 +36,7 @@ import {
   HardDrive,
   FolderOpen,
   Cloud,
+  Laptop,
   ExternalLink,
   RefreshCw,
   ChevronDown,
@@ -457,6 +458,52 @@ export default function Settings() {
     setSyncPollIntervalMinutes(minutes)
     setPollIntervalMinutes(minutes)
     rescheduleSyncPolling()
+  }
+
+  // Product decision (2026-07-25): Nível 2 is a single-choice pick, not two independent
+  // switches — this dispatcher is the only place that changes which transport is active.
+  // Derived, not stored: `activeSyncMode` always reflects the same precedence the store itself
+  // applies (runPeerSync/_triggerLocalBackup — Google Drive wins if both were ever active).
+  const activeSyncMode: 'none' | 'folder' | 'google' = googleConnected
+    ? 'google'
+    : multiDeviceOn
+      ? 'folder'
+      : 'none'
+  const [confirmSwitchTarget, setConfirmSwitchTarget] = useState<'none' | 'folder' | null>(null)
+
+  async function handleSelectSyncMode(target: 'none' | 'folder' | 'google') {
+    if (target === activeSyncMode) return
+
+    if (activeSyncMode === 'google') {
+      if (target === 'google') return // unreachable — target === activeSyncMode is handled above
+      // Leaving Google Drive revokes access — never silent, always a confirm step first.
+      if (confirmSwitchTarget !== target) {
+        setConfirmSwitchTarget(target)
+        return
+      }
+      setConfirmSwitchTarget(null)
+      await handleDisconnectGoogle()
+      if (target === 'folder') {
+        if (!backupDir) return
+        await handleToggleMultiDevice() // was off (Google was active) — turns it on
+      }
+      return
+    }
+
+    if (target === 'google') {
+      if (multiDeviceOn) await handleToggleMultiDevice() // turn off folder mode first — non-destructive
+      await handleConnectGoogle() // navigates away; resumes via the OAuth-callback effect above
+      return
+    }
+
+    if (target === 'folder') {
+      if (!backupDir) return
+      await handleToggleMultiDevice() // activeSyncMode was 'none' here — turns it on
+      return
+    }
+
+    // target === 'none', activeSyncMode === 'folder'
+    await handleToggleMultiDevice() // turns it off
   }
 
   async function handleRemoveDevice(peerDeviceId: string) {
@@ -1142,12 +1189,14 @@ export default function Settings() {
             {/* Backup & Sync */}
             {activeSection === 'backup' && (
               <Section title={t('settings.backupSync')}>
-                <div className="space-y-4">
-                  {/* ── Nível 1 — Pasta Local ─────────────────────────────── */}
+                <div className="space-y-6">
+                  {/* ── Nível 1 — Backup neste computador ───────────────────── */}
                   <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-on-surface/40">
-                      {t('settings.backupLocalSection')}
-                    </p>
+                    <LevelHeader
+                      n={1}
+                      title={t('settings.level1Title')}
+                      subtitle={t('settings.level1Subtitle')}
+                    />
                     <div className="rounded-2xl bg-surface-container p-5 space-y-4">
                       <p className="text-sm text-on-surface/60">{t('settings.backupLocalDesc')}</p>
 
@@ -1240,53 +1289,45 @@ export default function Settings() {
                     </div>
                   </div>
 
-                  {/* ── Fase 1 — Multi-dispositivo ─────────────────────────── */}
+                  {/* ── Nível 2 — Sincronizar entre dispositivos ────────────── */}
                   <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-on-surface/40">
-                      {t('settings.multiDeviceSection')}
-                    </p>
-                    <div className="rounded-2xl bg-surface-container p-5 space-y-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-on-surface">
-                            {t('settings.multiDeviceToggle')}
-                          </p>
-                          <p className="text-xs text-on-surface/60">
-                            {t('settings.multiDeviceDesc')}
-                          </p>
-                        </div>
-                        <button
-                          role="switch"
-                          aria-checked={multiDeviceOn}
-                          aria-label={t('settings.multiDeviceToggle')}
-                          onClick={() => void handleToggleMultiDevice()}
-                          disabled={!multiDeviceOn && !backupDir}
-                          className={cn(
-                            'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed',
-                            multiDeviceOn ? 'bg-primary' : 'bg-surface-container-high'
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 mt-0.5',
-                              multiDeviceOn ? 'translate-x-5' : 'translate-x-0.5'
-                            )}
-                          />
-                        </button>
-                      </div>
+                    <LevelHeader
+                      n={2}
+                      title={t('settings.level2Title')}
+                      subtitle={t('settings.level2Subtitle')}
+                    />
+                    <div
+                      role="radiogroup"
+                      aria-label={t('settings.level2Title')}
+                      className="space-y-3"
+                    >
+                      <SyncModeCard
+                        selected={activeSyncMode === 'none'}
+                        icon={<Laptop size={16} strokeWidth={1.5} className="text-on-surface/50" />}
+                        title={t('settings.syncModeNoneTitle')}
+                        description={t('settings.syncModeNoneDesc')}
+                        onClick={() => void handleSelectSyncMode('none')}
+                      />
 
-                      <p className="text-xs text-on-surface/40">
-                        {t('settings.multiDeviceFolderHint')}
-                      </p>
-
-                      {!backupDir && !multiDeviceOn && (
-                        <p className="text-xs text-on-surface/40">
-                          {t('settings.multiDeviceRequiresFolder')}
-                        </p>
-                      )}
-
-                      {multiDeviceOn && (
+                      <SyncModeCard
+                        selected={activeSyncMode === 'folder'}
+                        disabled={activeSyncMode !== 'folder' && !backupDir}
+                        icon={
+                          <HardDrive size={16} strokeWidth={1.5} className="text-on-surface/50" />
+                        }
+                        title={t('settings.syncModeFolderTitle')}
+                        description={
+                          activeSyncMode !== 'folder' && !backupDir
+                            ? t('settings.multiDeviceRequiresFolder')
+                            : t('settings.syncModeFolderDesc')
+                        }
+                        badge={t('settings.syncModeBadgeDesktop')}
+                        onClick={() => void handleSelectSyncMode('folder')}
+                      >
                         <div className="space-y-3">
+                          <p className="text-xs text-on-surface/40">
+                            {t('settings.multiDeviceFolderHint')}
+                          </p>
                           <button
                             onClick={() => void handleMultiDeviceSyncNow()}
                             disabled={syncStatus === 'syncing'}
@@ -1396,28 +1437,23 @@ export default function Settings() {
                             })}
                           </div>
                         </div>
-                      )}
-                    </div>
-                  </div>
+                      </SyncModeCard>
 
-                  {/* ── Fase 2 — Google Drive ───────────────────────────────── */}
-                  <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-on-surface/40">
-                      {t('settings.backupCloudSection')}
-                    </p>
-                    <div className="rounded-2xl bg-surface-container p-5 space-y-4">
-                      {!isGoogleSyncConfigured() ? (
-                        <div className="flex items-center gap-3">
-                          <Cloud
-                            size={16}
-                            strokeWidth={1.5}
-                            className="text-on-surface/30 shrink-0"
-                          />
-                          <p className="text-sm text-on-surface/40">
-                            {t('settings.backupCloudComingSoon')}
-                          </p>
-                        </div>
-                      ) : googleConnected ? (
+                      <SyncModeCard
+                        selected={activeSyncMode === 'google'}
+                        disabled={!isGoogleSyncConfigured()}
+                        icon={<Cloud size={16} strokeWidth={1.5} className="text-on-surface/50" />}
+                        title="Google Drive"
+                        description={
+                          !isGoogleSyncConfigured()
+                            ? t('settings.backupCloudComingSoon')
+                            : t('settings.syncModeGoogleDesc')
+                        }
+                        badge={
+                          isGoogleSyncConfigured() ? t('settings.syncModeBadgeMobile') : undefined
+                        }
+                        onClick={() => void handleSelectSyncMode('google')}
+                      >
                         <div className="space-y-3">
                           <div className="flex items-center gap-3 rounded-xl bg-surface-container-low px-4 py-3">
                             <Cloud size={16} strokeWidth={1.5} className="text-primary shrink-0" />
@@ -1461,20 +1497,31 @@ export default function Settings() {
                             </p>
                           )}
                         </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <button
-                            onClick={() => void handleConnectGoogle()}
-                            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-on-primary hover:opacity-90 transition-opacity"
-                          >
-                            <Cloud size={15} strokeWidth={2} />
-                            {t('settings.googleConnect')}
-                          </button>
-                          {googleOAuthError && (
-                            <p className="text-xs text-tertiary">{googleOAuthError}</p>
-                          )}
+                      </SyncModeCard>
+
+                      {confirmSwitchTarget && (
+                        <div className="flex items-center justify-between gap-3 rounded-xl bg-tertiary/10 px-4 py-3 text-xs text-tertiary">
+                          <span>{t('settings.syncModeConfirmSwitchFromGoogle')}</span>
+                          <div className="flex shrink-0 gap-2">
+                            <button
+                              onClick={() => void handleSelectSyncMode(confirmSwitchTarget)}
+                              className="rounded-md bg-tertiary/15 px-2.5 py-1 font-semibold hover:bg-tertiary/25 transition-colors"
+                            >
+                              {t('settings.syncModeConfirmButton')}
+                            </button>
+                            <button
+                              onClick={() => setConfirmSwitchTarget(null)}
+                              className="rounded-md px-2.5 py-1 font-semibold hover:bg-tertiary/10 transition-colors"
+                            >
+                              {t('settings.syncModeCancelButton')}
+                            </button>
+                          </div>
                         </div>
                       )}
+                      {googleOAuthError && (
+                        <p className="text-xs text-tertiary">{googleOAuthError}</p>
+                      )}
+
                       <button
                         onClick={() => void navigate('/docs/cloud-sync')}
                         className="flex items-center gap-1.5 text-xs text-primary hover:underline"
@@ -2629,6 +2676,87 @@ function SettingRow({ label, children }: { label: string; children: React.ReactN
     <div className="flex items-center justify-between rounded-2xl bg-surface-container px-5 py-4">
       <span className="text-sm text-on-surface">{label}</span>
       {children}
+    </div>
+  )
+}
+
+// Backup & Sync (CS-16/CS-08 redesign, 2026-07-25): "Nível N" headers make the two-tier product
+// model explicit — Nível 1 (backup neste computador) is the base everything else builds on;
+// Nível 2 (sincronizar entre dispositivos) is a single-choice pick, never both at once.
+function LevelHeader({ n, title, subtitle }: { n: number; title: string; subtitle: string }) {
+  return (
+    <div className="mb-3 flex items-start gap-2.5">
+      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-bold text-primary">
+        {n}
+      </span>
+      <div>
+        <p className="text-sm font-semibold text-on-surface">{title}</p>
+        <p className="text-xs text-on-surface/40">{subtitle}</p>
+      </div>
+    </div>
+  )
+}
+
+interface SyncModeCardProps {
+  selected: boolean
+  disabled?: boolean
+  icon: React.ReactNode
+  title: string
+  description: string
+  badge?: string
+  onClick: () => void
+  children?: React.ReactNode
+}
+
+// Radio-card, not a plain toggle: CS-16/CS-08 are mutually exclusive transports at runtime
+// (Google Drive always wins if both were somehow active), so the UI now makes that structurally
+// impossible to misread instead of showing two independent switches that could both look "on".
+function SyncModeCard({
+  selected,
+  disabled,
+  icon,
+  title,
+  description,
+  badge,
+  onClick,
+  children,
+}: SyncModeCardProps) {
+  return (
+    <div
+      className={cn(
+        'rounded-2xl border-2 p-4 transition-colors',
+        selected ? 'border-primary bg-primary/5' : 'border-transparent bg-surface-container'
+      )}
+    >
+      <button
+        role="radio"
+        aria-checked={selected}
+        onClick={onClick}
+        disabled={disabled}
+        className="flex w-full items-start gap-3 text-left disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <span
+          className={cn(
+            'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+            selected ? 'border-primary' : 'border-outline-variant'
+          )}
+        >
+          {selected && <span className="h-2.5 w-2.5 rounded-full bg-primary" />}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-2">
+            {icon}
+            <span className="text-sm font-medium text-on-surface">{title}</span>
+            {badge && (
+              <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-on-surface/50">
+                {badge}
+              </span>
+            )}
+          </span>
+          <span className="mt-0.5 block text-xs text-on-surface/50">{description}</span>
+        </span>
+      </button>
+      {selected && children && <div className="mt-4 pl-8">{children}</div>}
     </div>
   )
 }
