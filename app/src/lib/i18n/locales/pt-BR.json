@@ -115,6 +115,8 @@
     "filterTags": "Tags",
     "filterType": "Tipo",
     "today": "Hoje",
+    "yesterday": "Ontem",
+    "searchPlaceholder": "Buscar...",
     "thisWeek": "Esta semana",
     "thisMonth": "Este mês",
     "custom": "Personalizado",

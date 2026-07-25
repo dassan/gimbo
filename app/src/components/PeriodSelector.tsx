@@ -33,7 +33,7 @@ export default function PeriodSelector({
   onSavePeriod,
   onDeletePeriod,
 }: PeriodSelectorProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
 
   const [showMenu, setShowMenu] = useState(false)
   const [showCustomPicker, setShowCustomPicker] = useState(false)
@@ -71,13 +71,13 @@ export default function PeriodSelector({
   const periodLabel = (() => {
     if (value.mode === 'month') {
       const ref = new Date(now.getFullYear(), now.getMonth() + value.monthOffset, 1)
-      const raw = ref.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+      const raw = ref.toLocaleDateString(i18n.language, { month: 'long', year: 'numeric' })
       return raw.charAt(0).toUpperCase() + raw.slice(1)
     }
     // custom
     if (value.customStart && value.customEnd) {
       const fmt = (s: string) =>
-        parseDateLocal(s).toLocaleDateString('pt-BR', {
+        parseDateLocal(s).toLocaleDateString(i18n.language, {
           day: '2-digit',
           month: '2-digit',
           year: 'numeric',

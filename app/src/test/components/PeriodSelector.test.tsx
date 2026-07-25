@@ -6,7 +6,7 @@ import type { PeriodValue } from '@/components/PeriodSelector'
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'pt-BR' } }),
 }))
 
 // ─── Fixed system time ────────────────────────────────────────────────────────

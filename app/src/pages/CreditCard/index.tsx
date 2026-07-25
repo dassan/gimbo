@@ -43,24 +43,15 @@ function purchaseSortDate(tx: Transaction): string {
   return tx.installment?.purchaseDate ?? tx.date
 }
 
-// Months labels in pt-BR for the invoice period heading
-const MONTH_NAMES_PT = [
-  'Janeiro',
-  'Fevereiro',
-  'Março',
-  'Abril',
-  'Maio',
-  'Junho',
-  'Julho',
-  'Agosto',
-  'Setembro',
-  'Outubro',
-  'Novembro',
-  'Dezembro',
-]
+// Localized month name for the invoice period heading (capitalized to match the
+// pt-BR/en-US visual convention — Intl returns lowercase for pt-BR, e.g. "julho").
+function monthName(locale: string, month: number): string {
+  const raw = new Date(2000, month, 1).toLocaleDateString(locale, { month: 'long' })
+  return raw.charAt(0).toUpperCase() + raw.slice(1)
+}
 
 export default function CreditCardPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const { accountId } = useParams<{ accountId: string }>()
   const data = useDataStore((s) => s.data)
@@ -215,7 +206,7 @@ export default function CreditCardPage() {
     )
   }
 
-  const monthLabel = MONTH_NAMES_PT[(resolvedPeriod.month - 1 + 12) % 12]
+  const monthLabel = monthName(i18n.language, (resolvedPeriod.month - 1 + 12) % 12)
 
   // M-30: handle payment confirmation — creates a CREDIT_PAYMENT bound to the displayed
   // invoice period via referenceMonth (Option 2), so the payment settles that statement.
@@ -294,7 +285,7 @@ export default function CreditCardPage() {
                     {t('creditCard.closingDate')}
                   </p>
                   <p className="text-xs font-semibold text-on-surface">
-                    {parseDateLocal(closingDateStr).toLocaleDateString('pt-BR', {
+                    {parseDateLocal(closingDateStr).toLocaleDateString(i18n.language, {
                       day: '2-digit',
                       month: 'short',
                       year: 'numeric',
@@ -306,7 +297,7 @@ export default function CreditCardPage() {
                     {t('creditCard.dueDate')}
                   </p>
                   <p className="text-xs font-semibold text-tertiary">
-                    {parseDateLocal(dueDateStr).toLocaleDateString('pt-BR', {
+                    {parseDateLocal(dueDateStr).toLocaleDateString(i18n.language, {
                       day: '2-digit',
                       month: 'short',
                       year: 'numeric',
@@ -544,7 +535,7 @@ function InvoiceTxRow({
   isLast: boolean
   onEdit: (tx: Transaction) => void
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const cat = data.categories.find((c) => c.id === tx.categoryId)
   const isPayment = tx.type === 'CREDIT_PAYMENT'
   const isCredit = tx.type === 'INCOME'
@@ -606,20 +597,26 @@ function InvoiceTxRow({
           {tx.installment && tx.installment.purchaseDate && tx.installment.currentIndex > 1 && (
             <span
               title={t('transactions.originalPurchaseDate', {
-                date: parseDateLocal(tx.installment.purchaseDate).toLocaleDateString('pt-BR', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: '2-digit',
-                }),
+                date: parseDateLocal(tx.installment.purchaseDate).toLocaleDateString(
+                  i18n.language,
+                  {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: '2-digit',
+                  }
+                ),
               })}
               className="text-[10px] text-on-surface/30"
             >
               {t('transactions.purchaseDateShort', {
-                date: parseDateLocal(tx.installment.purchaseDate).toLocaleDateString('pt-BR', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: '2-digit',
-                }),
+                date: parseDateLocal(tx.installment.purchaseDate).toLocaleDateString(
+                  i18n.language,
+                  {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: '2-digit',
+                  }
+                ),
               })}
             </span>
           )}
@@ -630,7 +627,10 @@ function InvoiceTxRow({
       <div className="text-right shrink-0">
         <p className={cn('text-sm font-bold tabular-nums', amountCls)}>{amountText}</p>
         <p className="text-[10px] text-on-surface/30 mt-0.5">
-          {parseDateLocal(tx.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+          {parseDateLocal(tx.date).toLocaleDateString(i18n.language, {
+            day: '2-digit',
+            month: 'short',
+          })}
         </p>
       </div>
     </div>

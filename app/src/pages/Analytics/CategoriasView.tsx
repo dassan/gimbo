@@ -92,9 +92,9 @@ function accountIcon(type: string): React.ReactNode {
 
 // ─── Period label for drill-down modal title ──────────────────────────────────
 
-function formatPeriodLabel(start: Date, end: Date): string {
+function formatPeriodLabel(start: Date, end: Date, locale: string): string {
   const fmt = (d: Date) =>
-    d.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }).replace('.', '')
+    d.toLocaleDateString(locale, { month: 'short', year: 'numeric' }).replace('.', '')
   const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()
   return sameMonth ? fmt(start) : `${fmt(start)} – ${fmt(end)}`
 }
@@ -135,7 +135,7 @@ export default function CategoriasView({
   includeUnpaid,
   shadowClass,
 }: CategoriasViewProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [drilldown, setDrilldown] = useState<DrilldownState | null>(null)
 
   const { incomeRoots, expenseRoots } = useMemo(() => {
@@ -240,7 +240,7 @@ export default function CategoriasView({
     return { incomeRoots: build('INCOME'), expenseRoots: build('EXPENSE') }
   }, [transactions, categories, startDate, endDate, includeUnpaid])
 
-  const periodLabel = formatPeriodLabel(startDate, endDate)
+  const periodLabel = formatPeriodLabel(startDate, endDate, i18n.language)
 
   const openDrilldown = (bucket: CategoryBucket, type: 'INCOME' | 'EXPENSE') => {
     if (bucket.catIds.length === 0) return // uncategorized "Outros" — nothing to drill into
@@ -465,7 +465,7 @@ function DrilldownModal({
   drilldownTitle,
   onClose,
 }: DrilldownModalProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
 
   const filtered = useMemo(() => {
     const idSet = new Set(categoryIds)
@@ -538,7 +538,7 @@ function DrilldownModal({
                         {tx.description}
                       </p>
                       <p className="text-[10px] text-on-surface/40">
-                        {parseDateLocal(tx.date).toLocaleDateString('pt-BR')}
+                        {parseDateLocal(tx.date).toLocaleDateString(i18n.language)}
                       </p>
                     </div>
 

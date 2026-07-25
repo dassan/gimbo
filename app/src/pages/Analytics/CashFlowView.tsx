@@ -56,7 +56,7 @@ export default function CashFlowView({
   shadowClass,
   accountId,
 }: CashFlowViewProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
 
   // R-21: lets the user switch the chart/table granularity from monthly to yearly for periods
   // spanning more than one month. Meaningless for the single-full-month case (M-38 already
@@ -82,7 +82,7 @@ export default function CashFlowView({
       const y = startDate.getFullYear()
       const m = startDate.getMonth()
       const monthShort = new Date(y, m, 1)
-        .toLocaleDateString('pt-BR', { month: 'short' })
+        .toLocaleDateString(i18n.language, { month: 'short' })
         .replace('.', '')
       for (let lo = 1; lo <= lastOfMonth; lo += 7) {
         const hi = Math.min(lo + 6, lastOfMonth)
@@ -112,10 +112,13 @@ export default function CashFlowView({
         const y = cur.getFullYear()
         const m = cur.getMonth()
         const fullLabel = cur
-          .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+          .toLocaleDateString(i18n.language, { month: 'long', year: 'numeric' })
           .replace(/^(.)/, (c) => c.toUpperCase())
         buckets.push({
-          label: cur.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase(),
+          label: cur
+            .toLocaleDateString(i18n.language, { month: 'short' })
+            .replace('.', '')
+            .toUpperCase(),
           fullLabel,
           match: (d) => d.getMonth() === m && d.getFullYear() === y,
         })
@@ -187,6 +190,7 @@ export default function CashFlowView({
     isFullMonth,
     lastOfMonth,
     viewMode,
+    i18n.language,
   ])
 
   const hasData = rows.some((r) => r.income !== 0 || r.expenses !== 0)

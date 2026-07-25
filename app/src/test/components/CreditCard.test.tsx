@@ -9,7 +9,7 @@ import type { Account, Transaction } from '@/types'
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'pt-BR' } }),
 }))
 
 const mockNavigate = vi.fn()

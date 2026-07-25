@@ -43,7 +43,7 @@ export default function FaturasView({
   endDate,
   shadowClass,
 }: FaturasViewProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
 
   const creditAccounts = useMemo(() => accounts.filter((a) => a.type === 'CREDIT'), [accounts])
 
@@ -52,10 +52,13 @@ export default function FaturasView({
     const cur = new Date(startDate)
     while (cur <= endDate) {
       const fullLabel = cur
-        .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+        .toLocaleDateString(i18n.language, { month: 'long', year: 'numeric' })
         .replace(/^(.)/, (c) => c.toUpperCase())
       months.push({
-        label: cur.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').toUpperCase(),
+        label: cur
+          .toLocaleDateString(i18n.language, { month: 'short' })
+          .replace('.', '')
+          .toUpperCase(),
         fullLabel,
         m: cur.getMonth(),
         y: cur.getFullYear(),
@@ -96,7 +99,7 @@ export default function FaturasView({
     }
 
     return { chartData: chart, gridRows: rows }
-  }, [transactions, creditAccounts, startDate, endDate, t])
+  }, [transactions, creditAccounts, startDate, endDate, t, i18n.language])
 
   const hasData = chartData.some((row) => creditAccounts.some((a) => (row[a.id] as number) > 0))
 

@@ -115,6 +115,8 @@
     "filterTags": "Tags",
     "filterType": "Type",
     "today": "Today",
+    "yesterday": "Yesterday",
+    "searchPlaceholder": "Search...",
     "thisWeek": "This week",
     "thisMonth": "This month",
     "custom": "Custom",

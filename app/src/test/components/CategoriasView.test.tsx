@@ -6,7 +6,7 @@ import type { Account, Category, Transaction } from '@/types'
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'pt-BR' } }),
 }))
 
 // Pie mock: renders each entry as a clickable element with data-testid
