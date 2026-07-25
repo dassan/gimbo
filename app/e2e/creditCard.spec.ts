@@ -31,10 +31,10 @@ async function seedSqlite(page: import('@playwright/test').Page, data: Record<st
   }, data)
 }
 
-// ─── (a) Dashboard: CREDIT account shows "Limite disponível" ─────────────────
+// ─── (a) Dashboard: CREDIT account row shows invoice balance ────────────────
 
 // @desktop-only — "Meus Cartões" section is hidden on mobile (MB-03)
-test('credit dashboard: CREDIT account shows "Limite disponível" in Meus Cartões @desktop-only', async ({
+test('credit dashboard: CREDIT account row shows its invoice balance in Meus Cartões @desktop-only', async ({
   page,
 }) => {
   await seedSqlite(page, baseFixture)
@@ -48,13 +48,10 @@ test('credit dashboard: CREDIT account shows "Limite disponível" in Meus Cartõ
   // We use getByRole to avoid matching the hidden <option> inside the drawer.
   await expect(page.getByRole('button', { name: /Cartão E2E/ })).toBeVisible()
 
-  // The "Limite disponível" label must appear
-  await expect(page.getByText('Limite disponível')).toBeVisible()
-
-  // With no expenses, available limit = full limit = R$ 5.000,00
-  // Use nth(0) to avoid strict-mode violation — the value appears in the
-  // credit card row AND in the Minhas Contas row (Conta E2E balance from fixture).
-  await expect(page.getByText('R$ 5.000,00').first()).toBeVisible()
+  // 704632e simplified the row to just the current invoice balance (the "Limite disponível"
+  // label was dropped from Dashboard — it still lives on Settings/CreditCard detail).
+  // With no CREDIT transactions in the fixture, the open invoice is R$ 0,00.
+  await expect(page.getByRole('button', { name: /Cartão E2E/ }).getByText('R$ 0,00')).toBeVisible()
 })
 
 // ─── (b) Analytics: EXPENSE on CREDIT projected to due-date month ─────────────

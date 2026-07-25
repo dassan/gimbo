@@ -11,6 +11,9 @@ export default defineConfig({
     baseURL: 'https://localhost:5173',
     ignoreHTTPSErrors: true,
     trace: 'on-first-retry',
+    // Since 9ef2e59 (browser-language detection) the app's default locale follows
+    // navigator.languages; CI runners default to en-US, breaking every pt-BR assertion here.
+    locale: 'pt-BR',
   },
   projects: [
     // Desktop — runs all specs
