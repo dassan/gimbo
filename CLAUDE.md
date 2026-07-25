@@ -183,17 +183,19 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 
 ---
 
-## Estado Atual (2026-07-24)
+## Estado Atual (2026-07-25)
 
-**Schema em memória v13** | **Schema físico SQLite v10** (`migrations/v1..v10.sql`) | Cobertura: ~97% statements
-**745 testes unitários** (29 arquivos) + **23 testes E2E** (5 specs, perfis `chromium` e `mobile-chrome`)
+**Schema em memória v14** | **Schema físico SQLite v10** (`migrations/v1..v10.sql`) | Cobertura: ~97% statements
+**750 testes unitários** (29 arquivos) + **23 testes E2E** (5 specs, perfis `chromium` e `mobile-chrome`)
 
-> Os dois números de schema são independentes e **não coincidem**: `CURRENT_SCHEMA_VERSION` (v13,
+> Os dois números de schema são independentes e **não coincidem**: `CURRENT_SCHEMA_VERSION` (v14,
 > em `lib/storage/schema.ts`) versiona o `DataFile` em memória; `PRAGMA user_version` (v10)
 > versiona o DDL físico. Bumps de campos opcionais não exigem DDL novo — por isso o schema em
-> memória está três à frente. O bump v12→v13 (`updatedAt` em `Account`/`Category`/`Tag`/`Transaction`,
-> CS-04) é um caso extremo desse padrão: as colunas `updated_at` já existiam fisicamente desde
-> `v1.sql` (só não eram lidas/preservadas), então nem precisou de `.sql` novo.
+> memória está à frente. O bump v12→v13 (`updatedAt` em `Account`/`Category`/`Tag`/`Transaction`,
+> CS-04) e o bump v13→v14 (`createdAt` em `Transaction`, B-24) são casos extremos desse padrão: as
+> colunas `updated_at`/`created_at` já existiam fisicamente desde `v1.sql` (só não eram lidas ou
+> eram sempre sobrescritas com um valor constante, no caso de `created_at`), então nenhum dos dois
+> precisou de `.sql` novo.
 
 Todas as features do PRD (F-1 a F-29, com F-28 no Nível 1) implementadas. Módulo de Cartão de Crédito completo (CC-01 a CC-34 — CC-34 resolvido junto do M-64, via `created_at` do Organizze como chave de agrupamento). Melhorias M-01 a M-64 resolvidas (M-61 parcial — 4 vulnerabilidades altas via `esbuild`/`vite` do `vitest`, exigem bump major); M-65 registrado como futuro. Relatórios avançados R-01 a R-18 resolvidos.
 

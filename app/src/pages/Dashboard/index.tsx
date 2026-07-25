@@ -117,9 +117,15 @@ export default function Dashboard() {
     }
     // M-25: for installment groups, show only the first installment (currentIndex === 1)
     // to prevent a single purchase split into N parts from flooding the list.
+    // B-24: sorted by createdAt (when the entry was actually added), not by tx.date (which
+    // the user can backdate/postdate) — the newest addition belongs on top regardless of
+    // the date it was recorded for.
     const recentTxs = [...data.transactions]
       .filter((tx) => !tx.installment || tx.installment.currentIndex === 1)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt ?? b.date).getTime() - new Date(a.createdAt ?? a.date).getTime()
+      )
       .slice(0, 5)
     return { income, expenses, balance: income - expenses, recentTxs }
   }, [data, now])

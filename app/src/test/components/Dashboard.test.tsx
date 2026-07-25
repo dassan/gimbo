@@ -304,6 +304,37 @@ describe('Dashboard — M-25: recent transactions show only first installment', 
   })
 })
 
+// ─── B-24: Últimos Lançamentos ordered by createdAt, not tx.date ──────────────
+
+describe('Dashboard — B-24: recent transactions ordered by createdAt', () => {
+  it('shows the most recently created transaction first, even if its date is older', () => {
+    const account = makeRetailAccount()
+    // Backdated entry (older date) added last — should still show up on top.
+    const backdated = makeTransaction({
+      id: 'tx-backdated',
+      description: 'Lançamento retroativo',
+      date: '2020-01-01',
+      createdAt: '2026-01-03T00:00:00',
+    })
+    // Recent-dated entry added first — should now show up second, despite the newer date.
+    const olderCreation = makeTransaction({
+      id: 'tx-older-creation',
+      description: 'Lançamento antigo',
+      date: '2026-01-02',
+      createdAt: '2026-01-01T00:00:00',
+    })
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account], transactions: [olderCreation, backdated] }),
+    })
+
+    render(<Dashboard />)
+
+    const items = screen.getAllByText(/Lançamento/)
+    expect(items[0]).toHaveTextContent('Lançamento retroativo')
+    expect(items[1]).toHaveTextContent('Lançamento antigo')
+  })
+})
+
 // ─── CC-22: CREDIT_PAYMENT excluded from income/expense totals ────────────────
 
 describe('Dashboard — CC-22: CREDIT_PAYMENT excluded from totals', () => {

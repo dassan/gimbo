@@ -280,6 +280,10 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
       ...(isEditMode && transaction.referenceMonth
         ? { referenceMonth: transaction.referenceMonth }
         : {}),
+      // B-24: preserve the original creation timestamp across edits — updateTransaction
+      // replaces the whole record, so without this an edit would wipe it and break
+      // "recently added" ordering in Dashboard.
+      ...(isEditMode && transaction.createdAt ? { createdAt: transaction.createdAt } : {}),
       ...(isEditMode && transaction.installment ? { installment: transaction.installment } : {}),
       ...(hasInstallments
         ? { installment: { parentId, currentIndex: 1, total: installmentCount } }

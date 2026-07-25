@@ -5,7 +5,7 @@ import { detectBrowserLocale } from '@/lib/storage/workspace'
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 13
+export const CURRENT_SCHEMA_VERSION = 14
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -126,6 +126,7 @@ const TransactionSchema = z.object({
   referenceMonth: z.string().optional(), // CREDIT-account txs: invoice period this entry is bound to, "YYYY-MM" (B-18)
   invoiceDueDate: z.string().optional(), // CREDIT charges/credits: authoritative invoice due date "YYYY-MM-DD" from the source (CC-33)
   updatedAt: z.string().optional(), // CS-04: last-write-wins timestamp for the cloud-sync merge engine
+  createdAt: z.string().optional(), // B-24: when the entry was added, distinct from `date`
 })
 
 const ValuationSchema = z.object({
@@ -279,6 +280,19 @@ function migrateDataFile(data: DataFile): DataFile {
       categories: migrated.categories.map((c) => ({ ...c, updatedAt: c.updatedAt ?? epoch })),
       tags: migrated.tags.map((t) => ({ ...t, updatedAt: t.updatedAt ?? epoch })),
       transactions: migrated.transactions.map((t) => ({ ...t, updatedAt: t.updatedAt ?? epoch })),
+    }
+  }
+
+  // v13 → v14: adds optional createdAt (Transaction) — when the entry was actually added,
+  // distinct from `date` (which the user can back/postdate), driving "recently added" ordering
+  // in Dashboard (B-24). Transactions that predate this version fall back to their own `date`
+  // (best available approximation) rather than "now", so a bulk-imported/synced history doesn't
+  // suddenly all look like it was created today.
+  if (migrated.schemaVersion === 13) {
+    migrated = {
+      ...migrated,
+      schemaVersion: 14,
+      transactions: migrated.transactions.map((t) => ({ ...t, createdAt: t.createdAt ?? t.date })),
     }
   }
 

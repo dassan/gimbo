@@ -131,48 +131,52 @@ describe('pullAndMerge', () => {
 describe('pushIfNeeded', () => {
   it('does nothing when not connected', async () => {
     isGoogleConnectedMock.mockReturnValue(false)
-    await pushIfNeeded(makeDataFile())
+    await expect(pushIfNeeded(makeDataFile())).resolves.toBe(false)
     expect(uploadMock).not.toHaveBeenCalled()
   })
 
   it('uploads when no file exists on Drive yet', async () => {
     fileExistsMock.mockResolvedValue(false)
-    await pushIfNeeded(makeDataFile())
+    await expect(pushIfNeeded(makeDataFile())).resolves.toBe(true)
     expect(uploadMock).toHaveBeenCalledTimes(1)
   })
 
   it('uploads when local is newer than the Drive file', async () => {
     fileExistsMock.mockResolvedValue(true)
     getMetadataMock.mockResolvedValue({ modifiedTime: '2026-01-01T00:00:00.000Z' })
-    await pushIfNeeded(
-      makeDataFile({
-        settings: {
-          fileCreatedAt: '',
-          fileUpdatedAt: '2026-02-01T00:00:00.000Z',
-          auditLogRetentionLimit: 200,
-        },
-      })
-    )
+    await expect(
+      pushIfNeeded(
+        makeDataFile({
+          settings: {
+            fileCreatedAt: '',
+            fileUpdatedAt: '2026-02-01T00:00:00.000Z',
+            auditLogRetentionLimit: 200,
+          },
+        })
+      )
+    ).resolves.toBe(true)
     expect(uploadMock).toHaveBeenCalledTimes(1)
   })
 
-  it('does not upload when local is not newer than the Drive file', async () => {
+  it('does not upload when local is not newer than the Drive file, but reports in sync', async () => {
     fileExistsMock.mockResolvedValue(true)
     getMetadataMock.mockResolvedValue({ modifiedTime: '2026-05-01T00:00:00.000Z' })
-    await pushIfNeeded(
-      makeDataFile({
-        settings: {
-          fileCreatedAt: '',
-          fileUpdatedAt: '2026-01-01T00:00:00.000Z',
-          auditLogRetentionLimit: 200,
-        },
-      })
-    )
+    await expect(
+      pushIfNeeded(
+        makeDataFile({
+          settings: {
+            fileCreatedAt: '',
+            fileUpdatedAt: '2026-01-01T00:00:00.000Z',
+            auditLogRetentionLimit: 200,
+          },
+        })
+      )
+    ).resolves.toBe(true)
     expect(uploadMock).not.toHaveBeenCalled()
   })
 
-  it('swallows provider errors', async () => {
+  it('reports failure (not swallows-as-success) on provider errors (B-23)', async () => {
     fileExistsMock.mockRejectedValue(new Error('offline'))
-    await expect(pushIfNeeded(makeDataFile())).resolves.toBeUndefined()
+    await expect(pushIfNeeded(makeDataFile())).resolves.toBe(false)
   })
 })

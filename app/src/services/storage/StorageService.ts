@@ -728,6 +728,9 @@ function rowToTransaction(row: Row): Transaction {
   if (row.updated_at !== null && row.updated_at !== undefined) {
     tx.updatedAt = row.updated_at as string
   }
+  if (row.created_at !== null && row.created_at !== undefined) {
+    tx.createdAt = row.created_at as string
+  }
   if (row.transfer_account_id !== null && row.transfer_account_id !== undefined) {
     tx.transferAccountId = row.transfer_account_id as string
   }

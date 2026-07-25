@@ -47,22 +47,29 @@ export async function pullAndMerge(local: DataFile): Promise<SyncResult> {
   }
 }
 
-/** Uploads the local vault to Drive if it changed since the last known Drive state. */
-export async function pushIfNeeded(local: DataFile): Promise<void> {
-  if (!isGoogleConnected()) return
+/**
+ * Uploads the local vault to Drive if it changed since the last known Drive state.
+ * Returns whether Drive is now confirmed in sync (true) or the attempt failed and will be
+ * retried later (false, B-23) — callers use this to know whether "last synced" truly advanced,
+ * since a network/API failure here is swallowed (non-fatal) rather than thrown.
+ */
+export async function pushIfNeeded(local: DataFile): Promise<boolean> {
+  if (!isGoogleConnected()) return false
   const provider = createGoogleDriveProvider()
 
   try {
     const exists = await provider.fileExists()
     if (!exists) {
       await provider.upload(await storage.exportBlob())
-      return
+      return true
     }
     const meta = await provider.getMetadata()
     if (local.settings.fileUpdatedAt > meta.modifiedTime) {
       await provider.upload(await storage.exportBlob())
     }
+    return true
   } catch {
     // non-fatal — retried on the next mutation debounce or poll tick
+    return false
   }
 }

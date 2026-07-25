@@ -84,6 +84,7 @@ type RawTransaction = {
   referenceMonth?: string
   invoiceDueDate?: string
   updatedAt?: string
+  createdAt?: string
 }
 type RawAuditEntry = {
   id: string
@@ -363,7 +364,7 @@ async function replaceAll(raw: unknown): Promise<void> {
           tx.recurrence?.endDate ?? null,
           tx.referenceMonth ?? null,
           tx.invoiceDueDate ?? null,
-          ts,
+          tx.createdAt ?? ts,
           tx.updatedAt ?? ts,
         ]
       )
@@ -532,6 +533,7 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       tags: tagIds ? tagIds.split(',') : [],
     }
     if (r.updated_at !== null && r.updated_at !== undefined) tx.updatedAt = r.updated_at as string
+    if (r.created_at !== null && r.created_at !== undefined) tx.createdAt = r.created_at as string
     if (r.transfer_account_id !== null && r.transfer_account_id !== undefined) {
       tx.transferAccountId = r.transfer_account_id as string
     }

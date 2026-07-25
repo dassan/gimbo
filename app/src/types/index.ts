@@ -114,6 +114,7 @@ export interface Transaction {
   referenceMonth?: string // CREDIT-account txs: the invoice period this entry is bound to, "YYYY-MM". For CREDIT_PAYMENT, the invoice being paid; for charges/credits, the invoice they post to (overrides the date-derived default) (B-18)
   invoiceDueDate?: string // CREDIT charges/credits: authoritative due date of the bound invoice, "YYYY-MM-DD", captured from the source. Used by getEffectiveCashFlowDate so historical invoices stay anchored even if the card's closing/due day later changes (CC-33)
   updatedAt?: string // ISO 8601 — last-write-wins timestamp for the cloud-sync merge engine (CS-04)
+  createdAt?: string // ISO 8601 — when the entry was added, distinct from `date` (which the user can back/postdate). Drives "recently added" ordering (B-24)
 }
 
 export interface Valuation {

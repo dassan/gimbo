@@ -42,8 +42,14 @@ let _sqliteTimer: ReturnType<typeof setTimeout> | null = null
 async function _triggerLocalBackup(data: DataFile) {
   try {
     if (isGoogleConnected()) {
-      await pushIfNeeded(data)
+      const synced = await pushIfNeeded(data)
       localStorage.setItem('gimbo_backup_last_saved', new Date().toISOString())
+      // B-23: this runs on every mutation (debounced), not just the manual "Sincronizar agora"
+      // button — lastSyncedAt must reflect it, or the Settings badge shows a stale timestamp
+      // while a real sync just happened in the background. Only stamped when pushIfNeeded
+      // actually confirmed Drive is in sync — it swallows its own network/API failures, so a
+      // silent failure must not be reported as a successful sync.
+      if (synced) useDataStore.setState({ lastSyncedAt: now() })
       return
     }
 
@@ -52,6 +58,7 @@ async function _triggerLocalBackup(data: DataFile) {
       const blob = await storage.exportBlob()
       await createFolderProvider(deviceId).upload(blob)
       localStorage.setItem('gimbo_backup_last_saved', new Date().toISOString())
+      useDataStore.setState({ lastSyncedAt: now() }) // B-23: same reasoning, shared-folder mode
       return
     }
 
@@ -369,6 +376,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
                 isPaid: false,
                 installment: { parentId, currentIndex: i, total: N, purchaseDate },
                 updatedAt: now(),
+                createdAt: now(),
               }
               d.transactions.push(installmentTx)
             }
@@ -402,6 +410,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
                 isPaid: i === 0 ? tx.isPaid : false,
                 recurrence: { frequency, parentId, ...(endDate ? { endDate } : {}) },
                 updatedAt: now(),
+                createdAt: now(),
               }
               d.transactions.push(occurrence)
             }
@@ -417,7 +426,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
           }
 
           // ── Standard single transaction ──────────────────────────────────
-          d.transactions.push({ ...tx, updatedAt: now() })
+          d.transactions.push({ ...tx, updatedAt: now(), createdAt: now() })
           let summary: string
           if (tx.type === 'CREDIT_PAYMENT') {
             const creditAccName =
