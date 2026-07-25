@@ -463,28 +463,25 @@ function LiabilityRow({
   const pct = totalLiabilities > 0 ? Math.round((totalCommitted / totalLiabilities) * 100) : 0
 
   return (
-    <div className="rounded-xl border border-surface-container-low px-4 py-3 space-y-2">
-      {/* Card name */}
-      <div className="flex items-center gap-3">
-        <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white"
-          style={{ backgroundColor: getIssuerColor(account.issuerIcon) }}
-        >
-          <CreditCard size={18} strokeWidth={1.5} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-on-surface truncate">{account.name}</p>
-          {totalLiabilities > 0 && (
-            <p className="text-xs text-on-surface/30 mt-0.5">
-              {pct}% {ofTotalLabel}
-            </p>
-          )}
-        </div>
+    <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-surface-container-low transition-colors">
+      <div
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white"
+        style={{ backgroundColor: getIssuerColor(account.issuerIcon) }}
+      >
+        <CreditCard size={18} strokeWidth={1.5} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-on-surface truncate">{account.name}</p>
+        {totalLiabilities > 0 && (
+          <p className="text-xs text-on-surface/40 mt-0.5">
+            {pct}% {ofTotalLabel}
+          </p>
+        )}
       </div>
 
-      {/* Two numbers */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
+      {/* M-67: current invoice + total committed inline, next to the name */}
+      <div className="flex items-center gap-4 shrink-0">
+        <div className="text-right">
           <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
             {currentInvoiceLabel}
           </p>
@@ -492,14 +489,13 @@ function LiabilityRow({
             {formatCurrency(currentInvoice)}
           </p>
         </div>
-        <div>
+        <div className="text-right" title={totalCommittedHint}>
           <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
             {totalCommittedLabel}
           </p>
           <p className="text-sm font-bold tabular-nums text-tertiary">
             {formatCurrency(totalCommitted)}
           </p>
-          <p className="text-[10px] text-on-surface/30 mt-0.5">{totalCommittedHint}</p>
         </div>
       </div>
     </div>

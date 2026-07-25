@@ -261,7 +261,7 @@ export default function Transactions() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('transactions.searchPlaceholder')}
-                className="w-full rounded-xl bg-surface-container-low py-2 pl-8 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
+                className="w-full rounded-xl border border-outline-variant bg-surface-container-low py-2 pl-8 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
               />
             </div>
           </div>
