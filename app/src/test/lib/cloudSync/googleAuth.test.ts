@@ -8,6 +8,7 @@ import {
   isGoogleConnected,
   isGoogleSyncConfigured,
   googleNeedsReconnect,
+  getGoogleAccountEmail,
 } from '@/lib/cloudSync/googleAuth'
 
 function mockFetchOk(body: unknown) {
@@ -19,6 +20,12 @@ function mockFetchOk(body: unknown) {
 
 function mockFetchFail() {
   return vi.fn().mockResolvedValue({ ok: false, json: () => Promise.resolve({}) } as Response)
+}
+
+function makeIdToken(email: string): string {
+  const base64Url = (obj: unknown) =>
+    btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return `${base64Url({ alg: 'RS256' })}.${base64Url({ email })}.fake-signature`
 }
 
 const originalLocation = window.location
@@ -67,7 +74,7 @@ describe('initiateGoogleAuth', () => {
     expect(url.origin + url.pathname).toBe('https://accounts.google.com/o/oauth2/v2/auth')
     expect(url.searchParams.get('response_type')).toBe('code')
     expect(url.searchParams.get('code_challenge_method')).toBe('S256')
-    expect(url.searchParams.get('scope')).toBe('https://www.googleapis.com/auth/drive.file')
+    expect(url.searchParams.get('scope')).toContain('https://www.googleapis.com/auth/drive.file')
     expect(url.searchParams.get('state')).toBe(sessionStorage.getItem('gimbo_google_oauth_state'))
   })
 })
@@ -88,6 +95,26 @@ describe('handleGoogleCallback', () => {
     expect(isGoogleConnected()).toBe(true)
     // one-time-use: verifier/state are consumed
     expect(sessionStorage.getItem('gimbo_google_oauth_verifier')).toBeNull()
+  })
+
+  it('decodes the email from id_token and exposes it via getGoogleAccountEmail', async () => {
+    await initiateGoogleAuth()
+    const state = sessionStorage.getItem('gimbo_google_oauth_state')!
+
+    global.fetch = mockFetchOk({
+      access_token: 'access-1',
+      refresh_token: 'refresh-1',
+      expires_in: 3600,
+      id_token: makeIdToken('ana@example.com'),
+    })
+
+    await handleGoogleCallback('auth-code', state)
+
+    expect(getGoogleAccountEmail()).toBe('ana@example.com')
+  })
+
+  it('getGoogleAccountEmail is null when not connected', () => {
+    expect(getGoogleAccountEmail()).toBeNull()
   })
 
   it('throws on a state mismatch and does not connect', async () => {

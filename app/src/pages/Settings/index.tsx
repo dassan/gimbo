@@ -68,6 +68,7 @@ import {
   revokeGoogleAuth,
   isGoogleConnected,
   isGoogleSyncConfigured,
+  getGoogleAccountEmail,
 } from '@/lib/cloudSync/googleAuth'
 import { clearGoogleDriveCache } from '@/lib/cloudSync/googleDrive'
 import { useDataStore } from '@/store/useDataStore'
@@ -288,6 +289,7 @@ export default function Settings() {
   const [pollIntervalMinutes, setPollIntervalMinutes] = useState(() => getSyncPollIntervalMinutes())
   // F-28 Nível 2, Fase 2 (CS-08) — Google Drive
   const [googleConnected, setGoogleConnected] = useState(() => isGoogleConnected())
+  const [googleEmail, setGoogleEmail] = useState(() => getGoogleAccountEmail())
   const [googleOAuthError, setGoogleOAuthError] = useState<string | null>(null)
   const [profileName, setProfileName] = useState(data?.user.name ?? '')
   const [profileEmail, setProfileEmail] = useState(data?.user.email ?? '')
@@ -392,6 +394,7 @@ export default function Settings() {
     handleGoogleCallback(code, state)
       .then(async () => {
         setGoogleConnected(true)
+        setGoogleEmail(getGoogleAccountEmail())
         await runPeerSync()
       })
       .catch((err: unknown) => {
@@ -413,6 +416,7 @@ export default function Settings() {
     await revokeGoogleAuth()
     clearGoogleDriveCache()
     setGoogleConnected(false)
+    setGoogleEmail(null)
     useDataStore.setState({ syncStatus: 'idle', lastSyncedAt: null })
   }
 
@@ -1258,7 +1262,7 @@ export default function Settings() {
                           onClick={() => void handleToggleMultiDevice()}
                           disabled={!multiDeviceOn && !backupDir}
                           className={cn(
-                            'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200 disabled:opacity-40',
+                            'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed',
                             multiDeviceOn ? 'bg-primary' : 'bg-surface-container-high'
                           )}
                         >
@@ -1417,8 +1421,9 @@ export default function Settings() {
                         <div className="space-y-3">
                           <div className="flex items-center gap-3 rounded-xl bg-surface-container-low px-4 py-3">
                             <Cloud size={16} strokeWidth={1.5} className="text-primary shrink-0" />
-                            <span className="flex-1 text-sm font-medium text-on-surface">
+                            <span className="flex-1 truncate text-sm font-medium text-on-surface">
                               {t('settings.googleConnected')}
+                              {googleEmail && ` (${googleEmail})`}
                             </span>
                             <button
                               onClick={() => void handleDisconnectGoogle()}

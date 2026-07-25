@@ -530,6 +530,18 @@ badge da navbar e o banner de reconexão ficariam mostrando um estado órfão do
 >   mais recente de forma determinística em vez de alternar entre ids a cada sync, mas não apaga
 >   os extras (limpeza manual no Drive). Teste de regressão em `googleDrive.test.ts` (`Promise.all`
 >   com dois `upload()` concorrentes → só um `POST` multipart, o segundo vira `PATCH`).
+> - **Feedback de usabilidade (2026-07-25): chip "Conectado ao Google Drive" agora mostra o
+>   e-mail da conta** (`(email@exemplo.com)`), pedido depois do teste em produção. Escopo OAuth
+>   ganhou `openid` + `https://www.googleapis.com/auth/userinfo.email` (ambos não-sensíveis, não
+>   exigem reconfigurar a tela de consentimento) — o `id_token` já vem na mesma resposta da troca
+>   de código, então o e-mail é lido decodificando o JWT localmente (`decodeEmailFromIdToken` em
+>   `googleAuth.ts`), sem round-trip extra ao endpoint `userinfo`. **Conexões feitas antes dessa
+>   mudança não têm e-mail salvo** — o chip simplesmente omite o parêntese até o usuário
+>   desconectar e reconectar (novo `id_token` com o escopo novo).
+> - **Toggle "Sincronizar entre meus computadores" (Fase 1) ganhou `disabled:cursor-not-allowed`**
+>   — pequeno ajuste de clareza depois que o usuário reportou o toggle "sem reagir"; o
+>   comportamento (desabilitado até configurar a pasta local) já estava correto, só a affordance
+>   visual era fraca.
 > - **`pullAndMerge`/`pushIfNeeded` recebem `local: DataFile` como parâmetro**, mesma escolha já
 >   registrada para `syncFromPeers` (Fase 1) — evita um round-trip redundante por `storage.loadDataFile()`
 >   quando o `useDataStore` já tem `data` em memória.

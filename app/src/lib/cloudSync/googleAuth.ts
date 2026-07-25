@@ -24,7 +24,10 @@ const VERIFIER_KEY = 'gimbo_google_oauth_verifier' // sessionStorage — PKCE pr
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
 const REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke'
 const AUTHORIZE_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth'
-const SCOPE = 'https://www.googleapis.com/auth/drive.file'
+// openid + userinfo.email are non-sensitive too — added only so Settings can show which Google
+// account is connected (id_token comes back on the same request, no extra round-trip needed).
+const SCOPE =
+  'https://www.googleapis.com/auth/drive.file openid https://www.googleapis.com/auth/userinfo.email'
 
 // Refresh a bit before actual expiry so a request never races an in-flight expiration.
 const EXPIRY_SAFETY_MARGIN_MS = 60_000
@@ -34,6 +37,7 @@ interface GoogleAuthState {
   refreshToken: string
   expiresAt: number // epoch ms
   needsReconnect?: boolean // set when a refresh attempt fails (S-15); cleared on next success
+  email?: string // decoded from id_token at connect time — display only, never used for auth
 }
 
 function clientId(): string {
@@ -77,6 +81,18 @@ function base64UrlEncode(bytes: Uint8Array): string {
   let binary = ''
   for (const byte of bytes) binary += String.fromCharCode(byte)
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+// Reads the `email` claim out of the id_token JWT (openid scope) — display only, so a decode
+// failure is never fatal to the connect flow, just leaves the account chip without an email.
+function decodeEmailFromIdToken(idToken: string): string | undefined {
+  try {
+    const payload = idToken.split('.')[1]
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+    return (JSON.parse(json) as { email?: string }).email
+  } catch {
+    return undefined
+  }
 }
 
 function randomUrlSafeString(byteLength: number): string {
@@ -155,16 +171,20 @@ export async function handleGoogleCallback(code: string, state: string): Promise
     access_token: string
     refresh_token?: string
     expires_in: number
+    id_token?: string
   }
   // Google only sends refresh_token when consent is (re-)granted — prompt=consent above
   // guarantees that on every connect, but fall back to a prior one just in case.
   const refreshToken = json.refresh_token ?? loadAuthState()?.refreshToken
   if (!refreshToken) throw new Error('Google did not return a refresh token')
 
+  const email = json.id_token ? decodeEmailFromIdToken(json.id_token) : undefined
+
   saveAuthState({
     accessToken: json.access_token,
     refreshToken,
     expiresAt: Date.now() + json.expires_in * 1000,
+    email: email ?? loadAuthState()?.email,
   })
 }
 
@@ -226,6 +246,14 @@ export async function revokeGoogleAuth(): Promise<void> {
 
 export function isGoogleConnected(): boolean {
   return loadAuthState() !== null
+}
+
+/**
+ * The connected Google account's email, for display in Settings — null if not connected, or if
+ * this connection predates the `openid`/`userinfo.email` scopes (reconnect to pick it up).
+ */
+export function getGoogleAccountEmail(): string | null {
+  return loadAuthState()?.email ?? null
 }
 
 /** True once a refresh attempt has failed (S-15) — surfaced as a reconnect banner. */
