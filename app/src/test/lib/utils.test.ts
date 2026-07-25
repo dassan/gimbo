@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   formatCurrency,
+  setCurrencyDefaults,
   getCurrentInvoiceBalance,
   getOpenCreditBalance,
   getEffectiveCashFlowDate,
@@ -33,13 +34,13 @@ import type { Account, Category, Transaction } from '@/types'
 
 describe('formatCurrency', () => {
   it('formats BRL with comma decimal separator', () => {
-    const result = formatCurrency(1500.5, 'pt-BR')
+    const result = formatCurrency(1500.5, 'BRL', 'pt-BR')
     expect(result).toContain('1.500')
     expect(result).toContain(',50')
   })
 
   it('formats USD with period decimal separator', () => {
-    const result = formatCurrency(1500.5, 'en-US')
+    const result = formatCurrency(1500.5, 'USD', 'en-US')
     expect(result).toContain('1,500')
     expect(result).toContain('.50')
   })
@@ -47,6 +48,15 @@ describe('formatCurrency', () => {
   it('formats zero correctly', () => {
     const result = formatCurrency(0)
     expect(result).toContain('0')
+  })
+
+  // B-25: defaults follow the active workspace (kept in sync via setCurrencyDefaults),
+  // independent of locale — a pt-BR user can pick USD and vice versa.
+  it('defaults to the currency set via setCurrencyDefaults, regardless of locale', () => {
+    setCurrencyDefaults('pt-BR', 'USD')
+    const result = formatCurrency(10)
+    expect(result).toContain('$')
+    setCurrencyDefaults('pt-BR', 'BRL') // restore for other tests
   })
 
   it('formats large values without overflow', () => {

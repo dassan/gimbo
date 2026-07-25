@@ -96,6 +96,7 @@ import type {
   ReserveMetadata,
   Tag,
   Locale,
+  Currency,
   Theme,
   AuditAction,
   IncomeWindowMonths,
@@ -267,8 +268,14 @@ export default function Settings() {
     runPeerSync,
   } = useDataStore()
   const loadData = useDataStore((s) => s.loadData)
-  const { workspace, setTheme, setLocale, setIncomeWindowMonths, setReserveTargetMonths } =
-    useWorkspaceStore()
+  const {
+    workspace,
+    setTheme,
+    setLocale,
+    setCurrency,
+    setIncomeWindowMonths,
+    setReserveTargetMonths,
+  } = useWorkspaceStore()
 
   const navigate = useNavigate()
 
@@ -1084,6 +1091,17 @@ export default function Settings() {
                     >
                       <option value="pt-BR">Português (Brasil)</option>
                       <option value="en-US">English (US)</option>
+                    </select>
+                  </SettingRow>
+
+                  <SettingRow label={t('settings.currency')}>
+                    <select
+                      value={workspace.currency}
+                      onChange={(e) => setCurrency(e.target.value as Currency)}
+                      className="appearance-none rounded-xl bg-surface-container-high px-4 py-2.5 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                    >
+                      <option value="BRL">{t('settings.currencyBRL')}</option>
+                      <option value="USD">{t('settings.currencyUSD')}</option>
                     </select>
                   </SettingRow>
 

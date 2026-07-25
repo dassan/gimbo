@@ -1,5 +1,14 @@
 import '@testing-library/jest-dom'
 
+// jsdom defaults navigator.language/languages to 'en-US', but every component test in this
+// suite assumes the app's real default target locale (pt-BR) — same mismatch that broke the
+// Playwright E2E suite when browser-language detection (9ef2e59) started reading the real
+// browser locale instead of a hardcoded 'pt-BR' (see playwright.config.ts `locale: 'pt-BR'`).
+// Without this, detectBrowserLocale()/defaultCurrencyForLocale() would silently default every
+// test to en-US/USD instead of pt-BR/BRL (B-25).
+Object.defineProperty(window.navigator, 'language', { value: 'pt-BR', configurable: true })
+Object.defineProperty(window.navigator, 'languages', { value: ['pt-BR'], configurable: true })
+
 // jsdom does not implement window.matchMedia — polyfill for all tests.
 // Simulates a desktop viewport (1280px wide): min-width queries up to 1280px match,
 // max-width queries below 1280px do not match.

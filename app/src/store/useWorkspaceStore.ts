@@ -1,7 +1,8 @@
 import { create } from 'zustand'
-import type { WorkspaceFile, Theme, Locale, IncomeWindowMonths } from '@/types'
-import { loadWorkspace, saveWorkspace } from '@/lib/storage/workspace'
+import type { WorkspaceFile, Theme, Locale, Currency, IncomeWindowMonths } from '@/types'
+import { loadWorkspace, saveWorkspace, defaultCurrencyForLocale } from '@/lib/storage/workspace'
 import { createDefaultWorkspace } from '@/lib/storage/schema'
+import { setCurrencyDefaults } from '@/lib/utils'
 
 interface WorkspaceStore {
   workspace: WorkspaceFile
@@ -9,6 +10,7 @@ interface WorkspaceStore {
   init: () => void
   setTheme: (theme: Theme) => void
   setLocale: (locale: Locale) => void
+  setCurrency: (currency: Currency) => void
   setDefaultView: (view: string) => void
   setAmbientShadows: (v: boolean) => void
   setNetWorthIncludeHidden: (v: boolean) => void
@@ -18,12 +20,26 @@ interface WorkspaceStore {
   setReserveTargetMonths: (v: IncomeWindowMonths) => void
 }
 
+const _initialWorkspace = createDefaultWorkspace()
+setCurrencyDefaults(_initialWorkspace.locale, _initialWorkspace.currency)
+
 export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
-  workspace: createDefaultWorkspace(),
+  workspace: _initialWorkspace,
 
   init: () => {
     const saved = loadWorkspace()
-    if (saved) set({ workspace: { ...createDefaultWorkspace(), ...saved } })
+    if (!saved) return
+    const merged = { ...createDefaultWorkspace(), ...saved }
+    // B-25: workspaces saved before the currency preference existed have no `currency` key at
+    // all, so the spread above silently falls back to createDefaultWorkspace()'s *current*
+    // browser-detected locale — which can disagree with the user's actually saved `locale`
+    // (e.g. they explicitly switched to en-US, but the browser itself still reports pt-BR).
+    // Backfilling from the resolved `merged.locale` instead keeps the default correct.
+    if (!('currency' in saved)) {
+      merged.currency = defaultCurrencyForLocale(merged.locale)
+    }
+    set({ workspace: merged })
+    setCurrencyDefaults(merged.locale, merged.currency)
   },
 
   setTheme: (theme) => {
@@ -36,6 +52,14 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     const workspace = { ...get().workspace, locale }
     set({ workspace })
     saveWorkspace(workspace)
+    setCurrencyDefaults(workspace.locale, workspace.currency)
+  },
+
+  setCurrency: (currency) => {
+    const workspace = { ...get().workspace, currency }
+    set({ workspace })
+    saveWorkspace(workspace)
+    setCurrencyDefaults(workspace.locale, workspace.currency)
   },
 
   setDefaultView: (defaultView) => {

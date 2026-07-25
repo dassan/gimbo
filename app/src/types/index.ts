@@ -161,11 +161,13 @@ export interface DataFile {
 
 export type Theme = 'light' | 'dark' | 'system'
 export type Locale = 'pt-BR' | 'en-US'
+export type Currency = 'BRL' | 'USD'
 export type IncomeWindowMonths = 3 | 6 | 9 | 12
 
 export interface WorkspaceFile {
   theme: Theme
   locale: Locale
+  currency: Currency // B-25: independent from locale — defaults per-locale but user-overridable
   defaultView: string
   useAmbientShadows: boolean
   netWorthIncludeHidden: boolean // D3: include accounts with includeInBalance=false (default true)

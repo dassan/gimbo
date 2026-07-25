@@ -2,6 +2,7 @@ import type {
   Account,
   AccountType,
   Category,
+  Currency,
   IncomeWindowMonths,
   RecurrenceFrequency,
   Transaction,
@@ -50,11 +51,24 @@ export function isCashRealized(tx: Transaction): boolean {
   return tx.type === 'TRANSFER' || tx.type === 'CREDIT_PAYMENT' || tx.isPaid
 }
 
-/** Format a number as currency. */
-export function formatCurrency(value: number, locale: string = 'pt-BR'): string {
-  return new Intl.NumberFormat(locale, {
+// B-25: default locale/currency for formatCurrency, kept in sync with the workspace store via
+// setCurrencyDefaults() (called from useWorkspaceStore). Not read directly from the store here —
+// useWorkspaceStore → lib/storage/schema.ts → lib/utils.ts (uuid/now) already forms a chain, and
+// importing the store back from this file would close it into a circular import.
+let _defaultLocale = 'pt-BR'
+let _defaultCurrency: Currency = 'BRL'
+
+/** Keeps formatCurrency's defaults in sync with the active workspace locale/currency. */
+export function setCurrencyDefaults(locale: string, currency: Currency): void {
+  _defaultLocale = locale
+  _defaultCurrency = currency
+}
+
+/** Format a number as currency. Defaults to the active workspace's locale/currency (B-25). */
+export function formatCurrency(value: number, currency?: Currency, locale?: string): string {
+  return new Intl.NumberFormat(locale ?? _defaultLocale, {
     style: 'currency',
-    currency: locale === 'pt-BR' ? 'BRL' : 'USD',
+    currency: currency ?? _defaultCurrency,
   }).format(value)
 }
 

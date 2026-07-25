@@ -1,4 +1,4 @@
-import type { Locale, WorkspaceFile } from '@/types'
+import type { Currency, Locale, WorkspaceFile } from '@/types'
 
 const WORKSPACE_KEY = 'nexus_workspace'
 const SUPPORTED_LOCALES: Locale[] = ['pt-BR', 'en-US']
@@ -15,6 +15,12 @@ export function detectBrowserLocale(): Locale {
     if (byPrefix) return byPrefix
   }
   return 'pt-BR'
+}
+
+// B-25: only used to seed the default/backfilled currency before the user has made an explicit
+// choice — once `setCurrency` persists a value, that saved value always wins over this default.
+export function defaultCurrencyForLocale(locale: Locale): Currency {
+  return locale === 'pt-BR' ? 'BRL' : 'USD'
 }
 
 export function loadWorkspace(): WorkspaceFile | null {

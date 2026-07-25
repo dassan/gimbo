@@ -624,3 +624,37 @@ describe('Settings — emergency reserve target preference', () => {
     expect(useWorkspaceStore.getState().workspace.incomeWindowMonths).toBe(6)
   })
 })
+
+// ─── Settings — B-25: currency preference, independent from locale ──────────
+
+describe('Settings — currency preference', () => {
+  async function openPreferences() {
+    const user = userEvent.setup()
+    render(<Settings />)
+    await user.click((await screen.findAllByText('settings.preferences'))[0])
+    return user
+  }
+
+  function getCurrencySelect() {
+    const row = screen.getByText('settings.currency').closest('div')
+    return within(row as HTMLElement).getByRole('combobox')
+  }
+
+  it('defaults to BRL for a pt-BR workspace', async () => {
+    await openPreferences()
+    expect(getCurrencySelect()).toHaveValue('BRL')
+  })
+
+  it('persists the chosen currency to the workspace store', async () => {
+    const user = await openPreferences()
+    await user.selectOptions(getCurrencySelect(), 'USD')
+    expect(useWorkspaceStore.getState().workspace.currency).toBe('USD')
+  })
+
+  it('is independent from locale — switching currency does not change the language', async () => {
+    const user = await openPreferences()
+    await user.selectOptions(getCurrencySelect(), 'USD')
+    expect(useWorkspaceStore.getState().workspace.currency).toBe('USD')
+    expect(useWorkspaceStore.getState().workspace.locale).toBe('pt-BR')
+  })
+})
