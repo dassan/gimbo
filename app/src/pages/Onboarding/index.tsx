@@ -130,19 +130,6 @@ export default function Onboarding() {
               {t('onboarding.subtitle')}
             </p>
           </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-between text-xs text-on-surface/30">
-            <span className="font-semibold">{t('onboarding.footer')}</span>
-            <div className="flex gap-4">
-              <Link to="/privacy" className="hover:text-on-surface/50 transition-colors">
-                {t('onboarding.privacyPolicy')}
-              </Link>
-              <Link to="/terms" className="hover:text-on-surface/50 transition-colors">
-                {t('onboarding.termsOfService')}
-              </Link>
-            </div>
-          </div>
         </div>
 
         {/* ── Right form panel ── */}
@@ -311,6 +298,19 @@ export default function Onboarding() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Global footer */}
+      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-6 py-6 text-xs text-on-surface/30">
+        <span className="font-semibold">{t('onboarding.footer')}</span>
+        <div className="flex gap-4">
+          <Link to="/privacy" className="hover:text-on-surface/50 transition-colors">
+            {t('onboarding.privacyPolicy')}
+          </Link>
+          <Link to="/terms" className="hover:text-on-surface/50 transition-colors">
+            {t('onboarding.termsOfService')}
+          </Link>
         </div>
       </div>
     </div>
