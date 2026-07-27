@@ -53,7 +53,7 @@ export default function Navbar({ initials = 'U', onNewTransaction }: NavbarProps
       <header className="fixed top-0 left-0 right-0 z-50 flex h-14 items-center justify-between bg-surface-container-low/80 px-6 backdrop-blur-[24px] border-b border-outline-variant/50">
         {/* Logo + nav */}
         <div className="flex items-center gap-8">
-          <span className="text-sm font-semibold tracking-tight">
+          <span className="text-xl font-semibold tracking-tight">
             <span className="text-primary">Gim</span>
             <span style={{ color: '#D4A017' }}>bo</span>
           </span>
