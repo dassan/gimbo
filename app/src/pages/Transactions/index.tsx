@@ -243,27 +243,12 @@ export default function Transactions() {
   return (
     <>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-6 sm:pt-8 pb-24 lg:pb-8">
-        {/* ── Period selector + Search ─────────────────────────────────────── */}
-        {/* Mobile/tablet: stacked. Desktop (lg): matches the list/sidebar grid below —
-            period centered over the list column, search sized to the sidebar column. */}
-        <div className="flex flex-col lg:grid lg:grid-cols-[1fr_280px] gap-3 lg:gap-6 mb-4 sm:mb-6">
-          <div className="flex justify-center">
-            <PeriodSelector value={period} onChange={setPeriod} />
-          </div>
-
-          <div className="relative">
-            <Search
-              size={15}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
-            />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('transactions.searchPlaceholder')}
-              className="w-full rounded-xl border border-outline-variant bg-surface-container-low py-2 pl-8 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
+        {/* ── Period selector ───────────────────────────────────────────────── */}
+        {/* Search moved below the "include unpaid" toggle in the summary panel, freeing up this
+            row. sm:-ml-2 compensates the chevron button's own hit-area padding so the arrow tip
+            lines up with the list content's left edge below, instead of the button's box edge. */}
+        <div className="mb-4 sm:mb-6 sm:-ml-2">
+          <PeriodSelector value={period} onChange={setPeriod} />
         </div>
 
         {/* ── Filter bar — wraps on mobile ─────────────────────────────────── */}
@@ -340,9 +325,11 @@ export default function Transactions() {
           </div>
 
           {/* ── Summary: fixed footer on mobile/tablet, sticky sidebar on lg (M-48) ── */}
-          {filtered.length > 0 && (
-            <div className="fixed bottom-6 left-0 right-0 z-30 pointer-events-none lg:static">
-              <div className="mx-auto max-w-7xl px-6 lg:mx-0 lg:max-w-none lg:px-0 lg:sticky lg:top-6 lg:mt-6 pointer-events-auto space-y-3">
+          {/* bottom-24 (not bottom-6) on mobile/tablet: clears the fixed bottom nav bar (h-16 +
+              safe-area-inset) now that Search is a 3rd stacked child sitting below the toggle. */}
+          <div className="fixed bottom-24 left-0 right-0 z-30 pointer-events-none lg:static">
+            <div className="mx-auto max-w-7xl px-6 lg:mx-0 lg:max-w-none lg:px-0 lg:sticky lg:top-6 lg:mt-6 pointer-events-auto space-y-3">
+              {filtered.length > 0 && (
                 <div
                   className={cn(
                     'flex items-center justify-between rounded-2xl bg-surface-container px-6 py-4',
@@ -421,37 +408,52 @@ export default function Transactions() {
                     </div>
                   </div>
                 </div>
+              )}
 
-                {/* B-15: include unpaid entries in the summary totals (off = realized cash only) */}
-                <button
-                  role="switch"
-                  aria-checked={includeUnpaid}
-                  onClick={() => setIncludeUnpaid((v) => !v)}
+              {/* B-15: include unpaid entries in the summary totals (off = realized cash only) */}
+              <button
+                role="switch"
+                aria-checked={includeUnpaid}
+                onClick={() => setIncludeUnpaid((v) => !v)}
+                className={cn(
+                  'flex w-full items-center justify-between rounded-2xl bg-surface-container px-5 py-4',
+                  shadowClass
+                )}
+              >
+                <span className="text-sm font-medium text-on-surface">
+                  {t('analytics.includeUnpaid')}
+                </span>
+                <span
                   className={cn(
-                    'flex w-full items-center justify-between rounded-2xl bg-surface-container px-5 py-4',
-                    shadowClass
+                    'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+                    includeUnpaid ? 'bg-primary' : 'bg-on-surface/20'
                   )}
                 >
-                  <span className="text-sm font-medium text-on-surface">
-                    {t('analytics.includeUnpaid')}
-                  </span>
                   <span
                     className={cn(
-                      'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
-                      includeUnpaid ? 'bg-primary' : 'bg-on-surface/20'
+                      'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                      includeUnpaid ? 'translate-x-6' : 'translate-x-1'
                     )}
-                  >
-                    <span
-                      className={cn(
-                        'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                        includeUnpaid ? 'translate-x-6' : 'translate-x-1'
-                      )}
-                    />
-                  </span>
-                </button>
+                  />
+                </span>
+              </button>
+
+              {/* Search — moved below the toggle to free up the header row above the list */}
+              <div className="relative">
+                <Search
+                  size={15}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
+                />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t('transactions.searchPlaceholder')}
+                  className="w-full rounded-xl border border-outline-variant bg-surface-container-low py-2 pl-8 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
+                />
               </div>
             </div>
-          )}
+          </div>
         </div>
       </div>
     </>
