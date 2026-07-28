@@ -244,26 +244,25 @@ export default function Transactions() {
     <>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-6 sm:pt-8 pb-24 lg:pb-8">
         {/* ── Period selector + Search ─────────────────────────────────────── */}
-        {/* Mobile: stacked. Desktop: 3-col grid (period 2/3, search 1/3). */}
-        <div className="flex flex-col sm:grid sm:grid-cols-3 gap-3 sm:gap-6 mb-4 sm:mb-6">
-          <div className="sm:col-span-2">
+        {/* Mobile/tablet: stacked. Desktop (lg): matches the list/sidebar grid below —
+            period centered over the list column, search sized to the sidebar column. */}
+        <div className="flex flex-col lg:grid lg:grid-cols-[1fr_280px] gap-3 lg:gap-6 mb-4 sm:mb-6">
+          <div className="flex justify-center">
             <PeriodSelector value={period} onChange={setPeriod} />
           </div>
 
-          <div className="sm:col-span-1">
-            <div className="relative">
-              <Search
-                size={15}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
-              />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t('transactions.searchPlaceholder')}
-                className="w-full rounded-xl border border-outline-variant bg-surface-container-low py-2 pl-8 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
+          <div className="relative">
+            <Search
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('transactions.searchPlaceholder')}
+              className="w-full rounded-xl border border-outline-variant bg-surface-container-low py-2 pl-8 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
+            />
           </div>
         </div>
 
