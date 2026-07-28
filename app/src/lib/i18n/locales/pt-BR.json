@@ -34,7 +34,8 @@
     "folderImportError": "Não foi possível restaurar a partir dessa pasta.",
     "footer": "The Fluid Ledger",
     "privacyPolicy": "Política de Privacidade",
-    "termsOfService": "Termos de Serviço"
+    "termsOfService": "Termos de Serviço",
+    "aboutName": "Sobre o Nome"
   },
   "dashboard": {
     "income": "Receitas Previstas",
@@ -623,6 +624,18 @@
       "s6Body": "Estes termos podem ser atualizados sem aviso prévio. A versão vigente estará sempre disponível em /terms.",
       "s7Title": "Contato",
       "s7Body": "Dúvidas podem ser enviadas para fabiodassan@gmail.com."
+    },
+    "origin": {
+      "title": "O que é Gimbo?",
+      "intro": "\"Gimbo\" é uma palavra do português brasileiro, de raiz africana banta, historicamente usada como sinônimo de dinheiro. O nome do app é uma homenagem a essa herança linguística — e a uma canção clássica da música brasileira.",
+      "s1Title": "Origem da palavra",
+      "s1Body": "Segundo o Dicio (Dicionário Online de Português), \"gimbo\" é um substantivo masculino, de uso informal e regional, que significa dinheiro. A palavra chegou ao português falado no Brasil através das línguas bantas trazidas pelos povos africanos escravizados durante o período colonial.",
+      "s2Title": "Jimbo, zimbo e a moeda no Brasil colonial",
+      "s2Body": "O \"zimbo\" (também grafado \"jimbo\") era uma moeda-concha usada em trocas comerciais na costa africana, adotada como referência de valor também no Brasil colonial ao lado de moedas metálicas como o florim. \"Gimbo\" é uma variação dessa mesma raiz, e com o tempo passou a designar dinheiro de forma mais ampla no vocabulário popular brasileiro.",
+      "videoTitle": "Gimbo na música",
+      "sourcesTitle": "Fontes",
+      "source1Label": "Dicio — Dicionário Online de Português: gimbo",
+      "source2Label": "Campo Grande News — Jimbo e florim: a aventura do dinheiro no Brasil"
     }
   },
   "bugReport": {

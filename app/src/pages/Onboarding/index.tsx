@@ -311,6 +311,9 @@ export default function Onboarding() {
           <Link to="/terms" className="hover:text-on-surface/50 transition-colors">
             {t('onboarding.termsOfService')}
           </Link>
+          <Link to="/origin" className="hover:text-on-surface/50 transition-colors">
+            {t('onboarding.aboutName')}
+          </Link>
         </div>
       </div>
     </div>

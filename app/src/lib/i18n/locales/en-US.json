@@ -34,7 +34,8 @@
     "folderImportError": "Couldn't restore from that folder.",
     "footer": "The Fluid Ledger",
     "privacyPolicy": "Privacy Policy",
-    "termsOfService": "Terms of Service"
+    "termsOfService": "Terms of Service",
+    "aboutName": "About the Name"
   },
   "dashboard": {
     "income": "Projected Income",
@@ -623,6 +624,18 @@
       "s6Body": "These terms may be updated without prior notice. The current version will always be available at /terms.",
       "s7Title": "Contact",
       "s7Body": "Questions can be sent to fabiodassan@gmail.com."
+    },
+    "origin": {
+      "title": "What is Gimbo?",
+      "intro": "\"Gimbo\" is a word from Brazilian Portuguese, with roots in Bantu languages, historically used as a synonym for money. The app's name is a nod to that linguistic heritage — and to a classic Brazilian song.",
+      "s1Title": "Origin of the word",
+      "s1Body": "According to Dicio (Dicionário Online de Português), \"gimbo\" is a masculine noun, used informally and regionally in Brazil, meaning money. The word entered Brazilian Portuguese through the Bantu languages brought by enslaved African peoples during the colonial period.",
+      "s2Title": "Jimbo, zimbo, and currency in colonial Brazil",
+      "s2Body": "The \"zimbo\" (also spelled \"jimbo\") was a shell currency used in trade along the African coast, and it was also adopted as a unit of value in colonial Brazil alongside metal coins such as the florin. \"Gimbo\" is a variant of that same root, and over time it came to broadly mean money in popular Brazilian vocabulary.",
+      "videoTitle": "Gimbo in music",
+      "sourcesTitle": "Sources",
+      "source1Label": "Dicio — Dicionário Online de Português: gimbo",
+      "source2Label": "Campo Grande News — Jimbo e florim: a aventura do dinheiro no Brasil"
     }
   },
   "bugReport": {
