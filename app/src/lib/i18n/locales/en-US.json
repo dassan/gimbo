@@ -333,6 +333,7 @@
     "googleReconnect": "Reconnect",
     "syncBadgeLabel": "Sync",
     "syncStatusOfflineGeneric": "Couldn't sync.",
+    "localBackupBadgeLabel": "Local backup active",
     "level1Title": "Level 1 — Backup on this computer",
     "level1Subtitle": "The base for both sync modes below",
     "level2Title": "Level 2 — Sync between devices",

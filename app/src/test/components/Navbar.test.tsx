@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Navbar from '@/components/Navbar'
+import { loadBackupDirHandle } from '@/lib/backupDir'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -19,6 +20,10 @@ vi.mock('react-router-dom', () => ({
     return <a href={to}>{content}</a>
   },
   useNavigate: () => vi.fn(),
+}))
+
+vi.mock('@/lib/backupDir', () => ({
+  loadBackupDirHandle: vi.fn().mockResolvedValue(null),
 }))
 
 describe('Navbar', () => {
@@ -48,5 +53,17 @@ describe('Navbar', () => {
     expect(settingsBtns.length).toBeGreaterThanOrEqual(1)
     // Clicking the first one should not throw
     await userEvent.click(settingsBtns[0])
+  })
+
+  it('does not show the local-backup badge when no backup folder is configured', async () => {
+    render(<Navbar initials="AB" />)
+    await waitFor(() => expect(loadBackupDirHandle).toHaveBeenCalled())
+    expect(screen.queryByLabelText('settings.localBackupBadgeLabel')).not.toBeInTheDocument()
+  })
+
+  it('shows the local-backup badge (Nível 1) once a backup folder is configured', async () => {
+    vi.mocked(loadBackupDirHandle).mockResolvedValueOnce({} as FileSystemDirectoryHandle)
+    render(<Navbar initials="AB" />)
+    expect(await screen.findByLabelText('settings.localBackupBadgeLabel')).toBeInTheDocument()
   })
 })

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -9,12 +10,14 @@ import {
   BarChart2,
   Cloud,
   CloudOff,
+  DatabaseBackup,
   RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useDataStore } from '@/store/useDataStore'
 import { isMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
 import { isGoogleConnected } from '@/lib/cloudSync/googleAuth'
+import { loadBackupDirHandle } from '@/lib/backupDir'
 
 const NAV_ITEMS = [
   { to: '/dashboard', key: 'nav.dashboard' },
@@ -46,6 +49,15 @@ export default function Navbar({ initials = 'U', onNewTransaction }: NavbarProps
   const syncStatus = useDataStore((s) => s.syncStatus)
   const lastSyncedAt = useDataStore((s) => s.lastSyncedAt)
   const syncConfigured = isMultiDeviceEnabled() || isGoogleConnected()
+
+  // Nível 1 (local-folder backup, no sync) has no entry in the sync badge above — it's a plain
+  // presence indicator (no syncing/error states, unlike Nível 2's syncStatus), so it only shows
+  // when Nível 2 isn't already occupying the slot.
+  const [hasLocalBackupDir, setHasLocalBackupDir] = useState(false)
+  useEffect(() => {
+    void loadBackupDirHandle().then((handle) => setHasLocalBackupDir(handle !== null))
+  }, [])
+  const backupLastSaved = localStorage.getItem('gimbo_backup_last_saved')
 
   return (
     <>
@@ -110,6 +122,21 @@ export default function Navbar({ initials = 'U', onNewTransaction }: NavbarProps
                   className={lastSyncedAt ? 'text-primary' : 'text-on-surface/30'}
                 />
               )}
+            </div>
+          )}
+
+          {!syncConfigured && hasLocalBackupDir && (
+            <div
+              role="status"
+              aria-label={t('settings.localBackupBadgeLabel')}
+              title={
+                backupLastSaved
+                  ? `${t('settings.backupLastSaved')} ${new Date(backupLastSaved).toLocaleString()}`
+                  : undefined
+              }
+              className="hidden sm:flex h-8 w-8 items-center justify-center rounded-full"
+            >
+              <DatabaseBackup size={16} strokeWidth={1.75} className="text-primary" />
             </div>
           )}
 
