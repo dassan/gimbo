@@ -105,9 +105,10 @@ export default function Analytics() {
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8 space-y-6">
-      {/* ── Header controls ──────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3">
-        {/* Period selector */}
+      {/* ── Period selector ─────────────────────────────────────────────── */}
+      {/* Same treatment as Transactions: sm:-ml-2 compensates the chevron button's own
+          hit-area padding so the arrow tip lines up with the content below. */}
+      <div className="sm:-ml-2">
         <PeriodSelector
           value={period}
           onChange={setPeriod}
@@ -115,12 +116,31 @@ export default function Analytics() {
           onSavePeriod={addSavedPeriod}
           onDeletePeriod={deleteSavedPeriod}
         />
+      </div>
 
-        {/* Include unpaid toggle */}
+      {/* ── Sub-navigation tabs + include-unpaid toggle ──────────────────── */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex gap-1">
+          {TABS.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                'rounded-full px-4 py-1.5 text-xs font-medium transition-all',
+                activeTab === tab
+                  ? 'bg-primary text-white'
+                  : 'bg-surface-container-low text-on-surface/50 hover:text-on-surface/70'
+              )}
+            >
+              {t(`analytics.tabs.${tab}`)}
+            </button>
+          ))}
+        </div>
+
         <button
           onClick={() => setIncludeUnpaid((v) => !v)}
           className={cn(
-            'rounded-full px-3 py-1.5 text-xs font-medium transition-all',
+            'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-all',
             includeUnpaid
               ? 'bg-on-surface text-white'
               : 'bg-surface-container-low text-on-surface/50 hover:text-on-surface/70'
@@ -128,24 +148,6 @@ export default function Analytics() {
         >
           {t('analytics.includeUnpaid')}
         </button>
-      </div>
-
-      {/* ── Sub-navigation tabs ──────────────────────────────────────────── */}
-      <div className="flex gap-1">
-        {TABS.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={cn(
-              'rounded-full px-4 py-1.5 text-xs font-medium transition-all',
-              activeTab === tab
-                ? 'bg-primary text-white'
-                : 'bg-surface-container-low text-on-surface/50 hover:text-on-surface/70'
-            )}
-          >
-            {t(`analytics.tabs.${tab}`)}
-          </button>
-        ))}
       </div>
 
       {/* ── Active view ──────────────────────────────────────────────────── */}

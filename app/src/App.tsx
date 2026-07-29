@@ -24,6 +24,7 @@ import BackupLocal from '@/pages/Docs/BackupLocal'
 import CloudSync from '@/pages/Docs/CloudSync'
 import PrivacyPolicy from '@/pages/Legal/PrivacyPolicy'
 import TermsOfService from '@/pages/Legal/TermsOfService'
+import NameOrigin from '@/pages/Legal/NameOrigin'
 
 export default function App() {
   const initWorkspace = useWorkspaceStore((s) => s.init)
@@ -129,6 +130,7 @@ export default function App() {
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<TermsOfService />} />
+          <Route path="/origin" element={<NameOrigin />} />
 
           {isLoaded ? (
             <Route element={<AppLayout />}>

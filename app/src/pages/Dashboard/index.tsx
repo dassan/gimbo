@@ -29,6 +29,7 @@ import {
   isCashRealized,
   isCardCredit,
 } from '@/lib/utils'
+import StatCard from '@/components/StatCard'
 import type { Account, Transaction, AccountType } from '@/types'
 
 // ─── Account type config ──────────────────────────────────────────────────────
@@ -268,7 +269,8 @@ export default function Dashboard() {
         <StatCard
           label={t('dashboard.balance')}
           value={formatCurrency(balance)}
-          variant="balance"
+          variant="highlight"
+          isNegative={balance < 0}
           shadowClass={shadowClass}
         />
       </div>
@@ -459,59 +461,6 @@ function CreditCardRow({
       <span className="text-sm font-semibold shrink-0 tabular-nums text-on-surface">
         {formatCurrency(invoiceBalance)}
       </span>
-    </div>
-  )
-}
-
-function StatCard({
-  label,
-  value,
-  icon,
-  variant,
-  shadowClass,
-}: {
-  label: string
-  value: string
-  icon?: React.ReactNode
-  variant: 'income' | 'expense' | 'balance'
-  shadowClass: string
-}) {
-  const isBalance = variant === 'balance'
-  return (
-    <div
-      className={cn(
-        'rounded-2xl p-5',
-        isBalance ? 'bg-primary text-white' : 'bg-surface-container',
-        !isBalance && shadowClass
-      )}
-    >
-      <div className="flex items-center justify-between mb-3">
-        <span className={cn('label', isBalance ? 'text-white/60' : 'text-on-surface/40')}>
-          {label}
-        </span>
-        {icon && (
-          <span
-            className={cn(
-              'flex h-7 w-7 items-center justify-center rounded-full',
-              variant === 'income'
-                ? 'bg-primary/10 text-primary'
-                : variant === 'expense'
-                  ? 'bg-tertiary/10 text-tertiary'
-                  : 'bg-white/20 text-white'
-            )}
-          >
-            {icon}
-          </span>
-        )}
-      </div>
-      <p
-        className={cn(
-          'text-2xl font-bold tabular-nums',
-          isBalance ? 'text-white' : variant === 'income' ? 'text-primary' : 'text-tertiary'
-        )}
-      >
-        {value}
-      </p>
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   TrendingUp,
+  TrendingDown,
   Landmark,
   PiggyBank,
   CreditCard,
@@ -24,6 +25,7 @@ import {
   getLoanLiability,
   isCashRealized,
 } from '@/lib/utils'
+import StatCard from '@/components/StatCard'
 import type { Account, AccountType, Transaction, Valuation } from '@/types'
 
 // ─── Account type config (reused from Dashboard) ──────────────────────────────
@@ -230,8 +232,6 @@ export default function NetWorth() {
 
   if (!data) return null
 
-  const isPositive = netWorth >= 0
-
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
       {/* ── Page header + toggle ──────────────────────────────────────────── */}
@@ -259,35 +259,29 @@ export default function NetWorth() {
         </label>
       </div>
 
-      {/* ── Hero: Net Worth + mini Ativos/Passivos ────────────────────────── */}
-      <div className="space-y-3">
-        {/* Primary hero card — full-width */}
-        <div className="rounded-2xl bg-primary p-6 text-white">
-          <p className="text-xs font-medium text-white/60 mb-1">{t('netWorth.netWorth')}</p>
-          <p className="text-3xl font-bold tabular-nums">
-            {isPositive ? '' : '- '}
-            {formatCurrency(Math.abs(netWorth))}
-          </p>
-        </div>
-
-        {/* Mini stat cards row */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className={cn('rounded-2xl bg-surface-container p-4', shadowClass)}>
-            <p className="text-xs font-medium text-on-surface/40 mb-1">{t('netWorth.assets')}</p>
-            <p className="text-lg font-bold tabular-nums text-primary">
-              {formatCurrency(totalAssets)}
-            </p>
-          </div>
-          <div className={cn('rounded-2xl bg-surface-container p-4', shadowClass)}>
-            <p className="text-xs font-medium text-on-surface/40 mb-1">
-              {t('netWorth.liabilities')}
-            </p>
-            <p className="text-lg font-bold tabular-nums text-tertiary">
-              {totalLiabilities > 0 ? '- ' : ''}
-              {formatCurrency(totalLiabilities)}
-            </p>
-          </div>
-        </div>
+      {/* ── Stat cards — Ativos / Passivos / Patrimônio Líquido ────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+        <StatCard
+          label={t('netWorth.assets')}
+          value={formatCurrency(totalAssets)}
+          icon={<TrendingUp size={16} strokeWidth={1.5} />}
+          variant="income"
+          shadowClass={shadowClass}
+        />
+        <StatCard
+          label={t('netWorth.liabilities')}
+          value={formatCurrency(totalLiabilities)}
+          icon={<TrendingDown size={16} strokeWidth={1.5} />}
+          variant="expense"
+          shadowClass={shadowClass}
+        />
+        <StatCard
+          label={t('netWorth.netWorth')}
+          value={formatCurrency(netWorth)}
+          variant="highlight"
+          isNegative={netWorth < 0}
+          shadowClass={shadowClass}
+        />
       </div>
 
       {/* ── Breakdown ─────────────────────────────────────────────────────── */}

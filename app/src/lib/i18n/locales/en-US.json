@@ -14,8 +14,20 @@
   "onboarding": {
     "headline": "Your Ledger,\nYour Freedom.",
     "subtitle": "Privacy first. Gimbo transforms your financial management into a silent, secure editorial experience.",
+    "introTitle": "Your data lives only here",
+    "introBody": "Before you start, it's worth understanding what makes Gimbo different from the finance apps you've used before.",
+    "introPoint1Title": "Everything stays in your browser",
+    "introPoint1Body": "Your transactions are saved locally, in a database inside your own browser — not on a cloud server.",
+    "introPoint2Title": "You control the file",
+    "introPoint2Body": "That data can be exported as a .db file, like a spreadsheet: you decide where to keep it and where to take it.",
+    "introPoint3Title": "No account, no tracking",
+    "introPoint3Body": "We don't ask for a login or send anything off your device. If you clear your browser data without exporting first, it's gone — that's why backups matter.",
+    "introCta": "Got it, let's start",
+    "introBack": "Back to the explainer",
     "tabNew": "New Profile",
     "tabImport": "Import Data",
+    "newDesc": "Creates a new, empty data vault, saved locally in this browser.",
+    "importDesc": "Restores from a .db file you already exported as a backup at some point.",
     "name": "Full Name",
     "namePlaceholder": "e.g. Arthur Dent",
     "email": "Recovery Email",
@@ -25,6 +37,7 @@
     "import": "Import & Start",
     "importDrop": "Drag or attach your backup file",
     "importDropSub": "Select a .db file exported from Gimbo.",
+    "importing": "Reading file…",
     "createHint": "Your data will be stored securely on your device.",
     "importFileError": "Invalid or corrupted file. Make sure it was exported from Gimbo.",
     "tabFolder": "Shared Folder",
@@ -34,7 +47,8 @@
     "folderImportError": "Couldn't restore from that folder.",
     "footer": "The Fluid Ledger",
     "privacyPolicy": "Privacy Policy",
-    "termsOfService": "Terms of Service"
+    "termsOfService": "Terms of Service",
+    "aboutName": "About the Name"
   },
   "dashboard": {
     "income": "Projected Income",
@@ -319,6 +333,7 @@
     "googleReconnect": "Reconnect",
     "syncBadgeLabel": "Sync",
     "syncStatusOfflineGeneric": "Couldn't sync.",
+    "localBackupBadgeLabel": "Local backup active",
     "level1Title": "Level 1 — Backup on this computer",
     "level1Subtitle": "The base for both sync modes below",
     "level2Title": "Level 2 — Sync between devices",
@@ -623,6 +638,18 @@
       "s6Body": "These terms may be updated without prior notice. The current version will always be available at /terms.",
       "s7Title": "Contact",
       "s7Body": "Questions can be sent to fabiodassan@gmail.com."
+    },
+    "origin": {
+      "title": "What is Gimbo?",
+      "intro": "\"Gimbo\" is a word from Brazilian Portuguese, with roots in Bantu languages, historically used as a synonym for money. The app's name is a nod to that linguistic heritage — and to a classic Brazilian song.",
+      "s1Title": "Origin of the word",
+      "s1Body": "According to Dicio (Dicionário Online de Português), \"gimbo\" is a masculine noun, used informally and regionally in Brazil, meaning money. The word entered Brazilian Portuguese through the Bantu languages brought by enslaved African peoples during the colonial period.",
+      "s2Title": "Jimbo, zimbo, and currency in colonial Brazil",
+      "s2Body": "The \"zimbo\" (also spelled \"jimbo\") was a shell currency used in trade along the African coast, and it was also adopted as a unit of value in colonial Brazil alongside metal coins such as the florin. \"Gimbo\" is a variant of that same root, and over time it came to broadly mean money in popular Brazilian vocabulary.",
+      "videoTitle": "Gimbo in music",
+      "sourcesTitle": "Sources",
+      "source1Label": "Dicio — Dicionário Online de Português: gimbo",
+      "source2Label": "Campo Grande News — Jimbo e florim: a aventura do dinheiro no Brasil"
     }
   },
   "bugReport": {
