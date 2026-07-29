@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, Link } from 'react-router-dom'
-import { ArrowRight, ArrowLeft, FileJson, FolderOpen, HardDrive, Lock } from 'lucide-react'
+import { ArrowRight, ArrowLeft, FileJson, FolderOpen, HardDrive, Loader2, Lock } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { createEmptyDataFile } from '@/lib/storage/schema'
@@ -31,6 +31,9 @@ export default function Onboarding() {
   const [locale, setLocaleState] = useState<Locale>(() => detectBrowserLocale())
   const [dragging, setDragging] = useState(false)
   const [fileError, setFileError] = useState<string | null>(null)
+  // Reading/parsing a multi-MB .db file (SQLite decode + migrations) can take a few seconds —
+  // surface a spinner so the import doesn't read as a frozen UI.
+  const [isImporting, setIsImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function handleCreate() {
@@ -47,6 +50,7 @@ export default function Onboarding() {
 
   async function handleImportFile(file: File) {
     setFileError(null)
+    setIsImporting(true)
     try {
       await storage.importBlob(file)
       const imported = await storage.loadDataFile()
@@ -54,12 +58,14 @@ export default function Onboarding() {
       void navigate('/dashboard')
     } catch {
       setFileError(t('onboarding.importFileError'))
+      setIsImporting(false)
     }
   }
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault()
     setDragging(false)
+    if (isImporting) return
     const file = e.dataTransfer.files[0]
     if (file) void handleImportFile(file)
   }
@@ -71,9 +77,11 @@ export default function Onboarding() {
     setFileError(null)
     try {
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' })
+      setIsImporting(true)
       const syncDir = await handle.getDirectoryHandle('gimbo').catch(() => null)
       if (!syncDir) {
         setFileError(t('onboarding.folderNoDevices'))
+        setIsImporting(false)
         return
       }
 
@@ -85,6 +93,7 @@ export default function Onboarding() {
       }
       if (deviceFiles.length === 0) {
         setFileError(t('onboarding.folderNoDevices'))
+        setIsImporting(false)
         return
       }
 
@@ -109,6 +118,7 @@ export default function Onboarding() {
       void navigate('/dashboard')
     } catch {
       setFileError(t('onboarding.folderImportError'))
+      setIsImporting(false)
     }
   }
 
@@ -321,33 +331,42 @@ export default function Onboarding() {
                     <div
                       onDragOver={(e) => {
                         e.preventDefault()
-                        setDragging(true)
+                        if (!isImporting) setDragging(true)
                       }}
                       onDragLeave={() => setDragging(false)}
                       onDrop={handleDrop}
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => !isImporting && fileInputRef.current?.click()}
                       className={cn(
-                        'flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed py-12 transition-colors',
-                        dragging
-                          ? 'border-primary bg-primary/5'
-                          : 'border-outline-variant bg-surface hover:border-primary/50 hover:bg-surface-container-low'
+                        'flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed py-12 transition-colors',
+                        isImporting && 'cursor-default border-outline-variant bg-surface',
+                        !isImporting && dragging && 'cursor-pointer border-primary bg-primary/5',
+                        !isImporting &&
+                          !dragging &&
+                          'cursor-pointer border-outline-variant bg-surface hover:border-primary/50 hover:bg-surface-container-low'
                       )}
                     >
                       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
-                        <FileJson size={24} className="text-primary" strokeWidth={1.5} />
+                        {isImporting ? (
+                          <Loader2 size={24} className="text-primary animate-spin" />
+                        ) : (
+                          <FileJson size={24} className="text-primary" strokeWidth={1.5} />
+                        )}
                       </div>
                       <div className="text-center">
                         <p className="text-sm font-medium text-on-surface">
-                          {t('onboarding.importDrop')}
+                          {isImporting ? t('onboarding.importing') : t('onboarding.importDrop')}
                         </p>
-                        <p className="mt-1 text-xs text-on-surface/40">
-                          {t('onboarding.importDropSub')}
-                        </p>
+                        {!isImporting && (
+                          <p className="mt-1 text-xs text-on-surface/40">
+                            {t('onboarding.importDropSub')}
+                          </p>
+                        )}
                       </div>
                       <input
                         ref={fileInputRef}
                         type="file"
                         accept=".db"
+                        disabled={isImporting}
                         className="hidden"
                         onChange={(e) => {
                           if (e.target.files?.[0]) void handleImportFile(e.target.files[0])
@@ -363,10 +382,15 @@ export default function Onboarding() {
                     <p className="text-xs text-on-surface/40">{t('onboarding.folderDesc')}</p>
                     <button
                       onClick={() => void handleRestoreFromFolder()}
-                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-4 text-sm font-semibold text-white transition hover:brightness-110 active:scale-[0.97]"
+                      disabled={isImporting}
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-4 text-sm font-semibold text-white transition hover:brightness-110 active:scale-[0.97] disabled:opacity-60"
                     >
-                      <FolderOpen size={16} strokeWidth={2} />
-                      {t('onboarding.folderButton')}
+                      {isImporting ? (
+                        <Loader2 size={16} strokeWidth={2} className="animate-spin" />
+                      ) : (
+                        <FolderOpen size={16} strokeWidth={2} />
+                      )}
+                      {isImporting ? t('onboarding.importing') : t('onboarding.folderButton')}
                     </button>
                     {fileError && <p className="text-xs text-red-500">{fileError}</p>}
                   </div>

@@ -37,6 +37,7 @@
     "import": "Import & Start",
     "importDrop": "Drag or attach your backup file",
     "importDropSub": "Select a .db file exported from Gimbo.",
+    "importing": "Reading file…",
     "createHint": "Your data will be stored securely on your device.",
     "importFileError": "Invalid or corrupted file. Make sure it was exported from Gimbo.",
     "tabFolder": "Shared Folder",

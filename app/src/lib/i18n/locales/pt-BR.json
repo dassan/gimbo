@@ -37,6 +37,7 @@
     "import": "Importar e Iniciar",
     "importDrop": "Arraste ou anexe seu arquivo de backup",
     "importDropSub": "Selecione um arquivo .db exportado pelo Gimbo.",
+    "importing": "Lendo arquivo…",
     "createHint": "Seus dados serão armazenados com segurança no seu dispositivo.",
     "importFileError": "Arquivo inválido ou corrompido. Verifique se é um arquivo exportado pelo Gimbo.",
     "tabFolder": "Pasta Compartilhada",
