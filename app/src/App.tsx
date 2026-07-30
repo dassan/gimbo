@@ -13,6 +13,8 @@ import { ErrorBoundary } from '@/components/ErrorBoundary'
 import Onboarding from '@/pages/Onboarding'
 import Dashboard from '@/pages/Dashboard'
 import Transactions from '@/pages/Transactions'
+import Budgets from '@/pages/Budgets'
+import BudgetDetail from '@/pages/Budgets/BudgetDetail'
 import Analytics from '@/pages/Analytics'
 import Settings from '@/pages/Settings'
 import CreditCardPage from '@/pages/CreditCard'
@@ -136,6 +138,8 @@ export default function App() {
             <Route element={<AppLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/transactions" element={<Transactions />} />
+              <Route path="/budgets" element={<Budgets />} />
+              <Route path="/budgets/:budgetId" element={<BudgetDetail />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/net-worth" element={<NetWorth />} />

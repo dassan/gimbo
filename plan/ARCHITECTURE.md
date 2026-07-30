@@ -4,6 +4,7 @@
 > Para decisões de cartão de crédito, veja `CREDIT_CARD.md`. Para cenários de sync, veja `SYNC_SCENARIOS.md`.
 > Para o módulo de relatórios, veja `REPORTS.md`. Para o histórico da migração de storage, veja `STORAGE.md`.
 > Para telemetria local e sistema de reporte de bugs, veja `METRICS.md`.
+> Para o protótipo de Caixinhas (budgets), veja `BUDGETS.md`.
 
 ---
 
@@ -56,7 +57,8 @@ MyFinanceApp/
 │   ├── REPORTS.md               # Épico do módulo analítico avançado (Analytics)
 │   ├── METRICS.md               # Telemetria local e Bug Report System (F-26)
 │   ├── STORAGE.md               # Histórico da decisão JSON/FSA → SQLite/OPFS
-│   └── NET_WORTH.md             # Handoff de implementação do Patrimônio Líquido (F-24)
+│   ├── NET_WORTH.md             # Handoff de implementação do Patrimônio Líquido (F-24)
+│   └── BUDGETS.md               # Caixinhas (F-30) — protótipo visual, decisões e pendências
 ├── design/
 │   ├── DESIGN.md                 # Sistema de design "Fluid Ledger" (fonte única)
 │   └── *.png                     # Mockups de telas
@@ -102,6 +104,7 @@ MyFinanceApp/
 │   │   │   ├── Dashboard/       # Cards mensais + Minhas Contas + Meus Cartões + donut + recentes
 │   │   │   ├── Transactions/    # Extrato de caixa (sem cartões) + resumo de gastos
 │   │   │   ├── Analytics/       # Shell com 5 views: index.tsx + CategoriasView, CashFlowView, ContasView, TagsView, FaturasView
+│   │   │   ├── Budgets/         # Caixinhas (F-30) — PROTÓTIPO mockado: lista, detalhe, modal (mock.ts)
 │   │   │   ├── CreditCard/      # Detalhe de fatura: período, lançamentos, filtro/busca, "Pagar Agora"
 │   │   │   ├── NetWorth/        # Patrimônio líquido: ativos − passivos, valuations
 │   │   │   ├── Settings/        # Contas e Cartões, Categorias, Tags, Perfil, Preferências, Backup & Sync, Histórico
@@ -636,6 +639,23 @@ global "Incluir não pagos":
 
 > No mobile, Analytics exibe um placeholder "em breve" (`MB-08`, aberto) — os 5 gráficos ainda
 > não são responsivos para telas pequenas.
+
+### Budgets — Caixinhas (`/budgets`, `/budgets/:budgetId`, F-30)
+
+> ⚠️ **Protótipo visual, não feature.** Toda a tela lê de `pages/Budgets/mock.ts` — não há
+> entidade nova no `DataFile`, nenhuma mutação, nenhum teste, nenhuma migração de schema.
+> Decisões, anatomia e pendências completas em `BUDGETS.md`. Branch `dassan/caixinhas`.
+
+- **Lista** — grade responsiva (1/2/4 colunas) de cards clicáveis: nome, selo de status, meta,
+  medidor e a frase `X% da meta (<valor atual>)`; item "Caixinhas" na navbar desktop entre
+  "Lançamentos" e "Relatórios" (fora do bottom nav mobile, como Patrimônio e Saúde)
+- **Detalhe** — cabeçalho no molde da fatura de cartão (4 figuras + medidor), lista de lançamentos
+  associados e resumo por categoria sticky
+- **Modal** (`BudgetFormModal`) — criação e edição no mesmo componente; no modo edição, tipo e
+  emoji ficam ocultos e o rodapé ganha a zona de exclusão com confirmação in-place
+- Derivações puras em `mock.ts` (`budgetCurrent`, `budgetDelta`, `budgetProgress`) e a régua de
+  status em `helpers.ts` (`getBudgetStatus`) — é a lógica que migra para `lib/utils.ts` quando a
+  feature for aprovada
 
 ### CreditCard (`/credit-card/:accountId`)
 

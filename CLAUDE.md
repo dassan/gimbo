@@ -34,6 +34,7 @@ Workflow de desenvolvimento IA + humano definido em `plan/RULES.md`.
 | Telemetria e bug report | `plan/METRICS.md` | Decisões de privacidade, arquitetura do F-26 (Bug Report System), tasks TASK-BR-01 a BR-08 |
 | Relatórios avançados | `plan/REPORTS.md` | Épico do módulo analítico (5 views) |
 | Saúde Financeira | `plan/FINANCIAL_HEALTH.md` | Decisões de produto/design da tela `/health` (F-29), conceitos, fórmulas e pontos em aberto |
+| Caixinhas (budgets) | `plan/BUDGETS.md` | Protótipo visual de `/budgets` (F-30): anatomia, decisões tomadas e pendências P/U/T a revisar |
 | Sistema de design | `design/DESIGN.md` | Cores, tipografia, espaçamento, sombras, componentes (fonte única) |
 | Workflow | `plan/RULES.md` | SDLC, cerimônias, divisão de responsabilidades |
 
@@ -212,6 +213,12 @@ Features concluídas desde 2026-05-27:
 - **M-64/CC-34** — `Installment.purchaseDate` (data de compra original em todas as parcelas, schema v10→v11) + correção definitiva do agrupamento de parcelas no sync do Organizze via `created_at` como chave de série
 
 Itens em aberto:
+- **F-30 — Caixinhas (budgets):** existe apenas como **protótipo visual mockado** na branch
+  `dassan/caixinhas` (rotas `/budgets` e `/budgets/:budgetId`, dados em `pages/Budgets/mock.ts`).
+  Nenhuma entidade no `DataFile`, nenhuma mutação, nenhum teste. **Sete decisões de produto (P-1 a
+  P-7) ainda dependem do humano** — em especial como o lançamento entra na caixinha, se existe
+  caixinha recorrente e como parcelas de cartão contam. Não implementar a camada de dados antes
+  dessas respostas: ver `plan/BUDGETS.md` §6.
 - **MB-08** — Analytics responsivo para mobile (média prioridade)
 - **BK-04** — Banner de re-permissão da pasta de backup no startup (média prioridade)
 - **M-63b** — Gráfico de tendência (passado real + futuro projetado) no Patrimônio Líquido (baixa; a fatia de Saúde Financeira do M-63 já foi resolvida)
