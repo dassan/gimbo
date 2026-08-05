@@ -66,18 +66,10 @@ function BudgetCard({ budget }: { budget: MockBudget }) {
       to={`/budgets/${budget.id}`}
       className="group flex h-full flex-col rounded-2xl bg-surface-container-lowest p-5 shadow-card border-[0.5px] border-surface-container-high transition-colors hover:bg-surface-container-low"
     >
-      {/* Nome + selo de status */}
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-on-surface transition-colors group-hover:text-primary">
-          {budget.name}
-        </h3>
-        <span
-          className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold"
-          style={{ backgroundColor: `${color}1F`, color }}
-        >
-          {t(`budgets.status.${status}`)}
-        </span>
-      </div>
+      {/* Nome */}
+      <h3 className="min-w-0 truncate text-base font-semibold text-on-surface transition-colors group-hover:text-primary">
+        {budget.name}
+      </h3>
 
       <p className="mt-0.5 text-[11px] text-on-surface/40">
         {t(budget.kind === 'income' ? 'budgets.kindIncome' : 'budgets.kindExpense')} ·{' '}
