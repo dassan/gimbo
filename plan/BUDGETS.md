@@ -3,8 +3,8 @@
 > Histórico de produto e design da feature **Caixinhas** (rotas `/budgets` e `/budgets/:budgetId`).
 > Estado atual: **protótipo visual mockado** — nenhuma entidade nova no `DataFile`, nenhuma
 > mutação de dados, nenhum teste. Toda a tela lê de `app/src/pages/Budgets/mock.ts`.
-> Branch: `dassan/caixinhas` (um único commit, ainda **não publicada**).
-> Última atualização: 2026-08-01.
+> Branch: `dassan/caixinhas` (2 commits, ainda **não publicada**).
+> Última atualização: 2026-08-05.
 
 ---
 
@@ -185,6 +185,99 @@ parênteses na frase do percentual.
 ### 5.5 Confirmação de exclusão in-place
 Sem segundo modal empilhado: a confirmação substitui o link no próprio rodapé (ver §3).
 
+### 5.6 Caixinhas são o primitivo; "receitas" geram lotes de caixinhas automaticamente
+Decisão de arquitetura (2026-08-05, ver `plan/FINANCIAL_PLAN.md` para o contexto do método DSM de
+Eduardo Amuri que motivou essa análise): **Caixinha continua sendo a única entidade de dados**
+(nome, meta, período, lançamentos vinculados). Funcionalidades do método DSM que pareciam exigir
+modelos próprios (ex.: os "Quadrantes") são implementadas como **receitas** — módulos opt-in,
+habilitados em Preferências, que criam e mantêm um conjunto de caixinhas automaticamente. Isso evita
+introduzir uma segunda entidade de orçamento no schema.
+
+#### Receita "Quadrantes" (primeira receita, ainda não implementada)
+
+Toggle em **Preferências** (Settings), reaproveitando o padrão visual já existente do toggle de
+retenção do audit log (`Settings/index.tsx` — label + descrição + switch, dentro da seção
+`activeSection === 'preferences'`). Ao ser habilitada, a receita cria 4 caixinhas por mês, uma por
+intervalo fixo de dias do mês corrente (dia 1–8, 9–16, 17–24, 25–fim do mês). Decisões tomadas para
+a v1:
+
+- **Associação de lançamentos**: automática, por data — todo lançamento **do tipo `EXPENSE`** cuja
+  `date` cai dentro do intervalo do quadrante é vinculado a ele. `TRANSFER` e `CREDIT_PAYMENT` ficam
+  de fora — do contrário uma transferência entre contas próprias ou o pagamento da fatura do cartão
+  contariam como "gasto" do quadrante, e o `CREDIT_PAYMENT` ainda duplicaria um valor que já foi
+  contado quando a compra original caiu em algum quadrante (mesmo raciocínio de `CLAUDE.md` sobre
+  `CREDIT_PAYMENT` ficar fora de Receitas×Despesas). **Sem distinção fixo/variável na v1** — dentro do
+  universo `EXPENSE`, não há filtro por categoria (isso exigiria a classificação `budgetType` de
+  categoria, etapa `PL-01` de `FINANCIAL_PLAN.md`, fora de escopo por ora).
+- **Origem da meta**: os 4 valores são digitados manualmente pelo usuário na primeira vez que a
+  receita gera o lote do mês.
+- **Virada de mês**: automática e silenciosa — ao carregar `/budgets` (ou no boot do app), se a
+  receita estiver ativa, a checagem é "já existem caixinhas com `recipeSlug='quadrantes'` cujo
+  período cobre o mês corrente?"; se não, cria as 4. Checagem por existência, não por tempo
+  decorrido — idempotente a abrir o app várias vezes no mesmo mês. Alinhado ao princípio DSM "nunca
+  recuperar o atraso": **não back-filla** meses pulados — se o usuário ficar 2 meses sem abrir o app,
+  ao abrir vê direto o lote do mês atual, sem gerar retroativamente os lotes intermediários.
+- **Identidade do slot no schema**: caixinhas geradas pela receita carregam dois campos extras (nulos
+  em caixinhas manuais): `recipeSlug: 'quadrantes'` e `recipeSlot: 1 | 2 | 3 | 4`. Sem eles não dá
+  pra achar "o quadrante equivalente do mês anterior" de forma confiável — o nome se repete todo mês
+  e o período muda. O mês do lote não precisa de campo próprio: já está implícito em `period.start`.
+- **Herança de meta entre meses**: cada novo lote herda o `target` da **última** caixinha existente
+  com aquele `recipeSlot` (`period.start` mais recente antes do mês corrente) — no valor em que ela
+  estiver no momento da virada, inclusive se editada manualmente. Não existe um "valor-modelo"
+  separado da receita; a cópia é sempre caixinha → caixinha.
+- **Slot excluído pelo usuário**: a receita **recria** o slot no mês seguinte, puxando a meta da
+  última instância viva dele (que pode ser de mais de um mês atrás, se ele ficou uma ou mais viradas
+  sem existir) — a exclusão não "aposenta" o slot permanentemente.
+- **Desabilitar a receita**: só impede a geração de **novos** lotes. Caixinhas já criadas continuam
+  existindo, editáveis e excluíveis normalmente, como qualquer caixinha manual — nada é apagado ou
+  congelado. Reabilitar depois não faz backfill: gera direto o lote do mês corrente, mesmo fluxo do
+  primeiro ativamento.
+- **Nome dos 4 quadrantes gerados**: fixo, "Quadrante 1" a "Quadrante 4" — sem mês no nome, já que o
+  card exibe o período abaixo do nome e a informação ficaria duplicada.
+- **Arquivamento automático ao fim do mês (P-4, escopo desta receita — 2026-08-05)**: quando o lote
+  do novo mês é gerado, o lote do mês anterior é arquivado no mesmo passo — mesmo gatilho idempotente
+  descrito acima, só que arquivando em vez de criando. Segue o princípio DSM de só olhar pra frente:
+  o usuário não precisa decidir nada, o quadrante encerrado simplesmente sai da lista principal.
+  Arquivar é um estado de visibilidade, não exclusão — vínculos com lançamentos e histórico
+  permanecem intactos, e a busca de "última instância de um `recipeSlot`" (herança de meta, acima)
+  **inclui** caixinhas arquivadas, senão a cadeia de herança quebraria a cada virada de mês.
+  **Esta regra vale só para caixinhas com `recipeSlug='quadrantes'`** — caixinhas manuais não são
+  tocadas; o comportamento delas ao fim do período continua em aberto (P-4 geral, tabela §6.1).
+  **v1 não tem tela/relatório de caixinhas arquivadas** — fica inacessível pela UI até uma iteração
+  futura (registrado abaixo).
+- **Desvincular lançamento associado automaticamente**: sim, permitido — mesmo vínculo N:N de sempre
+  (P-1/P-2 em §6.1), sem estado "travado" especial pra vínculo de receita. Requisito de mecânica pra
+  isso funcionar de verdade: a varredura por data **liga o vínculo uma vez só**, no momento em que a
+  transação é criada ou editada de um jeito que passa a qualificar (ex.: data muda pra dentro do
+  intervalo) — nunca como reconciliação de fundo que reimporia o vínculo depois que o usuário o
+  removeu. Editar a **data** de uma transação pra fora/dentro de um intervalo ainda deve mover o
+  vínculo de acordo (isso é a data mudando de verdade, diferente de um desvínculo deliberado); uma
+  edição que não mexe na data não deve reacionar a regra. Eventuais efeitos colaterais inesperados
+  dessa mecânica ficam para resolução em v2, não bloqueiam a v1.
+
+#### Pendente para uma iteração futura (registrado a pedido, não priorizado)
+
+- **Tracking de "meses bem-sucedidos"**: histórico de quantos meses o usuário ficou dentro da meta
+  em cada quadrante (ou no agregado dos 4), para dar visibilidade de tendência/consistência ao longo
+  do tempo. Não desenhado ainda — nem a definição de "sucesso" (ficar ≤ 100% da meta? dos 4
+  quadrantes juntos?) nem a superfície de UI foram discutidas.
+- **Relatório/consulta de caixinhas arquivadas**: os quadrantes de meses encerrados ficam guardados
+  (nada é apagado), mas sem nenhuma tela para revisitá-los na v1. Precisa de uma superfície de
+  consulta histórica quando priorizado.
+
+### 5.7 Arquivamento manual para caixinhas comuns (P-4, escopo geral — 2026-08-05)
+Ao contrário da receita Quadrantes (§5.6, arquivamento automático), uma caixinha manual **nunca é
+arquivada por causa da data** — o fim do período não dispara nada sozinho, fica só a critério do
+usuário. Botão **"Arquivar"** no cabeçalho de `BudgetDetail.tsx`, ao lado de "Editar" — fora da zona
+destrutiva do modal (arquivar não é excluir: dado e vínculos continuam intactos, é só um estado de
+visibilidade). Confirmação simples antes de arquivar, no mesmo espírito da confirmação de exclusão
+(§3), avisando que a caixinha sai da lista principal.
+
+**Sem tela de "desarquivar" na v1** — mesma limitação já aceita para os quadrantes (§5.6): o dado
+não se perde, mas reverter só será possível quando a superfície de consulta de arquivadas for
+construída (v2, item já registrado em §5.6 como pendência futura). O diálogo de confirmação existe
+justamente para deixar isso claro no momento da ação.
+
 ---
 
 ## 6. Pendências que exigem revisão do humano
@@ -193,22 +286,22 @@ Sem segundo modal empilhado: a confirmação substitui o link no próprio rodap�
 
 | # | Questão | Impacto |
 |---|---------|---------|
-| **P-1** | **Como um lançamento entra na caixinha?** Associação manual, um-a-um? Ou uma regra (categoria/tag/conta) que puxa automaticamente? Ou os dois? | **Alto** — define se `Transaction` ganha um `budgetId`, se existe uma tabela de vínculo N:N, ou se a caixinha guarda um *filtro* em vez de uma lista |
-| **P-2** | **Um lançamento pode estar em mais de uma caixinha?** | Decide 1:N vs. N:N no schema |
-| **P-3** | **Caixinha recorrente** ("R$ 800/mês de mercado") está no escopo? Hoje só existe data fixa ou intervalo único. | **Alto** — recorrência muda o modelo de período inteiro e é provavelmente o caso de uso mais comum de "budget" |
-| **P-4** | O que acontece com uma caixinha **depois do fim do período**? Arquiva, some da lista, vira histórico consultável? | Define se a lista precisa de filtro/aba de arquivadas |
-| **P-5** | Caixinha do tipo **receita** faz sentido no produto, ou Caixinhas é só sobre despesa? | Se for só despesa, some metade da régua de status e o modal simplifica |
-| **P-6** | Lançamentos **futuros/não pagos** contam para o valor atual, ou só os efetivados? | Espelha a discussão de `isPaid` que já existe no resto do app |
-| **P-7** | Compra **parcelada no cartão** — a caixinha conta a compra inteira ou parcela a parcela? | Interage diretamente com o motor de fatura virtual (B-16) |
+| **P-1** | ~~Como um lançamento entra na caixinha?~~ **Resolvido (2026-08-05, §5.6): os dois.** Vínculo N:N manual continua existindo para caixinhas comuns; a receita "Quadrantes" popula o mesmo vínculo automaticamente por data. | Vínculo N:N único; a origem do vínculo (manual vs. receita) é o que muda |
+| **P-2** | ~~Um lançamento pode estar em mais de uma caixinha?~~ **Resolvido (2026-08-05): sim, N:N.** Dentro da receita Quadrantes os 4 slots já são mutuamente exclusivos por construção (intervalos de data não se sobrepõem); nada impede a mesma transação de também estar numa caixinha manual (ex.: a passagem aérea conta pro "Quadrante 1" *e* pra "Viagem para Portugal" — métricas legítimas e diferentes sobre o mesmo lançamento). | Tabela de junção `budget_transactions` (`budgetId` + `transactionId`), sem limite |
+| **P-3** | ~~Caixinha recorrente está no escopo?~~ **Resolvido (2026-08-05, §5.6): não como propriedade da caixinha individual.** Recorrência existe só no nível da receita "Quadrantes" (regenera o lote a cada virada de mês) — o modal de caixinha comum não ganha um toggle "repetir todo mês". | — |
+| **P-4** | ~~O que acontece com uma caixinha depois do fim do período?~~ **Resolvido (2026-08-05).** Receita "Quadrantes" (§5.6): arquivamento **automático** na virada de mês. Caixinhas manuais (§5.7): arquivamento **manual**, a critério do usuário — o fim do período não dispara nada sozinho. Nenhum dos dois casos tem tela de consulta de arquivadas na v1 (deferido pra v2). | Botão "Arquivar" em `BudgetDetail.tsx`; filtro/aba de arquivadas fica pra v2 |
+| **P-5** | ~~Caixinha do tipo receita faz sentido no produto?~~ **Resolvido (2026-08-05): sim, manter os dois tipos.** Cobre um caso de uso real que nenhuma outra tela resolve — "estou no caminho de bater minha meta de renda extra?" (Saúde Financeira olha renda já realizada; Patrimônio olha saldo acumulado; nenhuma responde isso). | Mantém o segmentado Despesa/Receita no modal e a régua de 4 estados — já pago no protótipo |
+| **P-6** | ~~Lançamentos futuros/não pagos contam para o valor atual?~~ **Resolvido (2026-08-05): não — "valor atual" soma só `isCashRealized(tx)` (B-15, `utils.ts:46`), o mesmo critério já usado em Dashboard/Patrimônio/Fluxo de Caixa/Lançamentos.** Lançamento futuro fica vinculado (aparece na lista) mas não conta na soma, evitando progresso falso antes do dinheiro se mover de fato. | Aplica-se igual a caixinhas manuais e às geradas pela receita Quadrantes |
+| **P-7** | ~~Compra parcelada — conta inteira ou parcela a parcela?~~ **Resolvido (2026-08-05): parcela a parcela — corolário direto do schema (cada parcela já é uma `Transaction` própria com seu `amount`/`date`, `types/index.ts:87-111`) + P-6 (só conta o realizado).** A receita Quadrantes já lida com isso de graça, varrendo por `date` de cada parcela. | Ver T-8 (nota de UX pra vincular a série inteira de uma vez) |
 
-### 6.2 UX — apontadas mas não resolvidas
+### 6.2 UX — decisões (2026-08-05)
 
-| # | Questão |
-|---|---------|
-| **U-1** | Nomes longos truncam cedo no card de 4 colunas ("Reserva para faculdade das crianças" vira reticências). Permitir 2 linhas de nome? |
-| **U-2** | Mobile: a feature não tem entrada no bottom nav. Aceitável, ou merece substituir algum slot? |
-| **U-3** | Ordenação da lista: hoje é a ordem do mock. Por prazo? Por % de progresso? Configurável? |
-| **U-4** | Não há estado visual para caixinha com período encerrado além do texto "período encerrado". |
+| # | Questão | Decisão |
+|---|---------|---------|
+| **U-1** | Nomes longos truncam cedo no card de 4 colunas. Permitir 2 linhas de nome? | **Não** — mantém truncamento de 1 linha com reticências, comportamento atual preservado. |
+| **U-2** | Mobile: a feature não tem entrada no bottom nav. Aceitável, ou merece substituir algum slot? | **Aceitável por ora** — Caixinhas não entra no bottom nav mobile; sem mudança de escopo mobile por enquanto. |
+| **U-3** | Ordenação da lista: hoje é a ordem do mock. Configurável? | **Sim** — `<select>` em Preferências, mesmo padrão visual de `incomeWindowMonths`/`reserveTargetMonths` (`Settings/index.tsx`). Critérios: **Prazo** (vencimento mais próximo primeiro), **Progresso** (% decrescente), **Nome** (alfabética), **Criação** (mais recente primeiro — equivale à ordem atual do mock, é o padrão). |
+| **U-4** | Não há estado visual para caixinha com período encerrado além do texto "período encerrado". | **CTA visual no card** ("Período encerrado" em destaque) — mas **não interativo**: o card inteiro continua sendo um único `Link` (§3), então o banner não pode ser um botão próprio (botão dentro de link é inválido e gera conflito de clique). Clicar em qualquer parte do card, banner incluso, leva ao detalhe; a ação "Arquivar" (§5.7) só existe lá. |
 
 ### 6.3 Técnico — quando virar feature real
 
@@ -221,6 +314,7 @@ Sem segundo modal empilhado: a confirmação substitui o link no próprio rodap�
 | **T-5** | **Testes**: zero até agora. Precisa de unit tests das derivações (`budgetCurrent`/`budgetDelta`/`getBudgetStatus`, incluindo meta zero e período invertido) e um E2E do fluxo criar → associar → excluir. |
 | **T-6** | **Demo mode**: `lib/demo.ts` precisa gerar caixinhas sintéticas, senão a tela fica vazia no deploy público. |
 | **T-7** | Registrar a feature no `PRD.md` (F-30) e o épico `BX-XX` no `BACKLOG.md`. |
+| **T-8** | (P-7) "Associar lançamento" força vincular parcela por parcela, uma de cada vez, ao longo de vários meses. Um atalho "vincular a série inteira" (usando `installment.parentId` pra linkar as N parcelas — inclusive futuras — de uma vez) evitaria a fricção. Melhoria de UX, não bloqueia o modelo de dados. |
 
 ---
 
