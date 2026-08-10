@@ -335,7 +335,7 @@ apontamento pra fase/item correspondente.
 |---|------|---------|
 | **T-1** | **Redirecionar após excluir**: a rota `/budgets/:id` deixa de existir; hoje cairia no fallback "sem dados". Precisa de `navigate('/budgets')`. | BX-06 |
 | **T-2** | **Plural de verdade** em `budgets.linkedCount` / `budgets.daysLeft` / `deleteConfirmBody`. Segui a convenção existente (interpolação simples de `{{count}}`, como `health.months`) em vez de introduzir formas `_one`/`_other` só aqui — mas "os 1 lançamentos" fica errado. | BX-06 |
-| **T-3** | **Schema**: bump de `CURRENT_SCHEMA_VERSION` (v14 → v15) + migração DDL nova, **e** atualizar `SCHEMA_DDL`/`PRAGMA user_version` do `data/sync_gimbo.py` junto (armadilha recorrente registrada no CLAUDE.md — já mordeu em M-51 e M-64). | BX-03 |
+| **T-3** | ~~Schema: bump de `CURRENT_SCHEMA_VERSION` + migração DDL nova, e atualizar `SCHEMA_DDL`/`PRAGMA user_version` do `sync_gimbo.py` junto (armadilha recorrente registrada no CLAUDE.md — já mordeu em M-51 e M-64).~~ **Resolvido (2026-08-10).** `sync_gimbo.py` também mudou de lugar: estava em `data/` (gitignored, só numa máquina) e passou a ser versionado em `scripts/` — saída (`gimbo.db`) continua em `data/`. | BX-03 |
 | **T-4** | **Sync/merge**: a nova entidade precisa de `updatedAt` e entrar no motor de merge (`lib/cloudSync/merge.ts`), incluindo `deletedIds`. | BX-09 |
 | **T-5** | **Testes**: zero até agora. Precisa de unit tests das derivações (`budgetCurrent`/`budgetDelta`/`getBudgetStatus`, incluindo meta zero e período invertido) e um E2E do fluxo criar → associar → excluir. | BX-11 |
 | **T-6** | **Demo mode**: `lib/demo.ts` precisa gerar caixinhas sintéticas, senão a tela fica vazia no deploy público. | BX-10 |

@@ -31,6 +31,10 @@ app/dev-dist/
 # Data directory
 data/
 
+# Python bytecode cache (scripts/sync_gimbo.py)
+__pycache__/
+*.pyc
+
 # Test & coverage artifacts
 app/coverage/
 app/playwright-report/

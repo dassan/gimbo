@@ -801,16 +801,20 @@ cd app && npx playwright test
 ## Ferramenta de Benchmark: Sync Organizze → Gimbo
 
 > Ferramenta de desenvolvimento (não faz parte do app). Mantém o Gimbo pareado com a
-> conta real do Organizze, usada como benchmark de fidelidade. Arquivos em `data/`
-> (diretório no `.gitignore` — dados e token nunca vão ao repositório).
+> conta real do Organizze, usada como benchmark de fidelidade. **`sync_gimbo.py` é versionado
+> em `scripts/`** (2026-08-10) — é autossuficiente (só depende de `requests`, sem importar
+> `organizze.py`); token/e-mail vêm só de env vars (`ORGANIZZE_TOKEN`/`ORGANIZZE_EMAIL`, nunca
+> hardcoded — B-20). A **saída** (`gimbo.db`) e quaisquer outros artefatos de dado continuam em
+> `data/` (diretório no `.gitignore` — nunca vai ao repositório); o default de `--out` já aponta
+> pra lá mesmo rodando de `scripts/`.
 
 ### Arquivos
 
 | Arquivo | Papel |
 |---------|-------|
-| `data/organizze.py` | Camada de leitura da API do Organizze (`/users`, `/categories`, `/accounts`, `/credit_cards`, `/transactions`), com paginação mensal que contorna o teto de 500 lançamentos/chamada |
-| `data/sync_gimbo.py` | Script autossuficiente, executável por demanda: lê a API, converte e escreve um `gimbo.db` pronto para importar via Configurações → Dados → Importar backup |
-| `data/convert_organizze.py` | Conversor offline legado (lê JSONs estáticos exportados). Superado por `sync_gimbo.py`; mantido por referência |
+| `data/organizze.py` | Camada de leitura da API do Organizze (`/users`, `/categories`, `/accounts`, `/credit_cards`, `/transactions`), com paginação mensal que contorna o teto de 500 lançamentos/chamada. Não versionado (`data/` no `.gitignore`) |
+| `scripts/sync_gimbo.py` | Script autossuficiente, executável por demanda: lê a API, converte e escreve um `gimbo.db` (em `data/`) pronto para importar via Configurações → Dados → Importar backup. Versionado |
+| `data/convert_organizze.py` | Conversor offline legado (lê JSONs estáticos exportados). Superado por `sync_gimbo.py`; mantido por referência. Não versionado |
 
 ### Fluxo
 
@@ -818,12 +822,13 @@ cd app && npx playwright test
 sync_gimbo.py [--start <data> | --window-months N] [--end <data>] [--base gimbo.db] [--out gimbo.db]
   1. autentica (HTTP Basic; token via env ORGANIZZE_TOKEN, email via ORGANIZZE_EMAIL/--email)
   2. busca categorias, contas, cartões e lançamentos mês a mês no horizonte [start, end]
-  3. converte em memória → (incremental: funde no --base) → escreve gimbo.db (user_version=7)
+  3. converte em memória → (incremental: funde no --base) → escreve gimbo.db (user_version=11)
 ```
 
-O `gimbo.db` gerado já inclui a coluna `accounts.archived` (M-42/M-51) e a tabela `saved_periods`
-(M-45), alinhado ao schema atual do app — `runMigrations()` não precisa aplicar nenhuma migração
-v6/v7 ao importar.
+O `gimbo.db` gerado já inclui a coluna `accounts.archived` (M-42/M-51), `accounts.is_reserve`
+(HE-14), as tabelas `saved_periods` (M-45) e `budgets`/`transaction_budgets` (F-30/BX-03),
+alinhado ao schema atual do app — `runMigrations()` não precisa aplicar nenhuma migração ao
+importar.
 
 ### Dois modos de operação
 
@@ -888,13 +893,13 @@ fora dela vindas da base. Cadastros (contas/cartões/categorias/tags) são unido
 # token e email via ambiente (PowerShell)
 $env:ORGANIZZE_TOKEN="..."; $env:ORGANIZZE_EMAIL="voce@mail.com"
 
-python data/sync_gimbo.py --start 2020-01-01                      # snapshot até hoje
-python data/sync_gimbo.py --start 2020-01-01 --end 2026-12-31     # inclui futuros/não pagos
-python data/sync_gimbo.py --start 2015-01-01 --base data/gimbo.db --out data/gimbo.db  # preserva saldos
+python scripts/sync_gimbo.py --start 2020-01-01                      # snapshot até hoje
+python scripts/sync_gimbo.py --start 2020-01-01 --end 2026-12-31     # inclui futuros/não pagos
+python scripts/sync_gimbo.py --start 2015-01-01 --base data/gimbo.db --out data/gimbo.db  # preserva saldos
 
 # Incremental (1x/dia): só os últimos 2 meses, funde no gimbo.db existente
-python data/sync_gimbo.py --window-months 2 --base data/gimbo.db
-python data/sync_gimbo.py --window-months 2 --end 2026-12-31 --base data/gimbo.db  # + agendados/futuros
+python scripts/sync_gimbo.py --window-months 2 --base data/gimbo.db
+python scripts/sync_gimbo.py --window-months 2 --end 2026-12-31 --base data/gimbo.db  # + agendados/futuros
 ```
 
 O resumo final reporta contagens (contas, categorias, tags, transações + não pagas) e itens ignorados (espelhos de transferência, contas não encontradas).
