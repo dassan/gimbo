@@ -23,6 +23,7 @@ export function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
     auditLog: [],
     deletedIds: [],
     savedPeriods: [],
+    budgets: [],
     ...overrides,
   }
 }
@@ -141,6 +142,7 @@ export function makeInstallmentGroup(
       type: 'EXPENSE' as const,
       isPaid: false,
       tags: [],
+      budgetIds: [],
       ...overrides,
       amount,
       date: txDate,

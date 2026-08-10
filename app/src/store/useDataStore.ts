@@ -97,6 +97,7 @@ function buildSummary(
     transaction: 'Transação',
     user: 'Perfil',
     savedPeriod: 'Período salvo',
+    budget: 'Caixinha',
   }
   const actionLabel: Record<AuditAction, string> = {
     CREATE: 'criada',

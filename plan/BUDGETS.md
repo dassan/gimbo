@@ -1,9 +1,11 @@
 # Caixinhas (Budgets) — F-30
 
 > Histórico de produto e design da feature **Caixinhas** (rotas `/budgets` e `/budgets/:budgetId`).
-> Estado atual: **protótipo visual mockado** — nenhuma entidade nova no `DataFile`, nenhuma
-> mutação de dados, nenhum teste. Toda a tela lê de `app/src/pages/Budgets/mock.ts`.
-> Branch: `dassan/caixinhas` (2 commits, ainda **não publicada**).
+> Estado atual: **UI ainda mockada** (telas leem de `app/src/pages/Budgets/mock.ts`, nenhuma
+> mutação real, nenhum teste de UI) **mas a entidade `Budget` já existe no `DataFile`** desde
+> `BX-03` — schema, migração SQLite (v11) e persistência (`worker.ts`/`StorageService.ts`)
+> resolvidos. Store (`useDataStore`) e telas ainda não foram religadas a ela (`BX-04`/`BX-05`).
+> Branch: `dassan/caixinhas` (3 commits, ainda **não publicada**).
 > Última atualização: 2026-08-10.
 
 ---
@@ -307,7 +309,7 @@ de arquivadas (v2) sem precisar de outro campo depois.
 | # | Questão | Impacto |
 |---|---------|---------|
 | **P-1** | ~~Como um lançamento entra na caixinha?~~ **Resolvido (2026-08-05, §5.6): os dois.** Vínculo N:N manual continua existindo para caixinhas comuns; a receita "Quadrantes" popula o mesmo vínculo automaticamente por data. | Vínculo N:N único; a origem do vínculo (manual vs. receita) é o que muda |
-| **P-2** | ~~Um lançamento pode estar em mais de uma caixinha?~~ **Resolvido (2026-08-05): sim, N:N.** Dentro da receita Quadrantes os 4 slots já são mutuamente exclusivos por construção (intervalos de data não se sobrepõem); nada impede a mesma transação de também estar numa caixinha manual (ex.: a passagem aérea conta pro "Quadrante 1" *e* pra "Viagem para Portugal" — métricas legítimas e diferentes sobre o mesmo lançamento). | Tabela de junção `budget_transactions` (`budgetId` + `transactionId`), sem limite |
+| **P-2** | ~~Um lançamento pode estar em mais de uma caixinha?~~ **Resolvido (2026-08-05): sim, N:N.** Dentro da receita Quadrantes os 4 slots já são mutuamente exclusivos por construção (intervalos de data não se sobrepõem); nada impede a mesma transação de também estar numa caixinha manual (ex.: a passagem aérea conta pro "Quadrante 1" *e* pra "Viagem para Portugal" — métricas legítimas e diferentes sobre o mesmo lançamento). **Implementado em `BX-03` (2026-08-10)**: em memória, `Transaction.budgetIds?: string[]` — mesmo padrão de `tags`, não uma tabela de junção própria no `DataFile`; fisicamente, `transaction_budgets` (`transaction_id` + `budget_id`, mesma forma de `transaction_tags`). | `Transaction.budgetIds` (in-memory) / `transaction_budgets` (SQLite) |
 | **P-3** | ~~Caixinha recorrente está no escopo?~~ **Resolvido (2026-08-05, §5.6): não como propriedade da caixinha individual.** Recorrência existe só no nível da receita "Quadrantes" (regenera o lote a cada virada de mês) — o modal de caixinha comum não ganha um toggle "repetir todo mês". | — |
 | **P-4** | ~~O que acontece com uma caixinha depois do fim do período?~~ **Resolvido (2026-08-05).** Receita "Quadrantes" (§5.6): arquivamento **automático** na virada de mês. Caixinhas manuais (§5.7): arquivamento **manual**, a critério do usuário — o fim do período não dispara nada sozinho. Nenhum dos dois casos tem tela de consulta de arquivadas na v1 (deferido pra v2). | Botão "Arquivar" em `BudgetDetail.tsx`; filtro/aba de arquivadas fica pra v2 |
 | **P-5** | ~~Caixinha do tipo receita faz sentido no produto?~~ **Resolvido (2026-08-05): sim, manter os dois tipos.** Cobre um caso de uso real que nenhuma outra tela resolve — "estou no caminho de bater minha meta de renda extra?" (Saúde Financeira olha renda já realizada; Patrimônio olha saldo acumulado; nenhuma responde isso). | Mantém o segmentado Despesa/Receita no modal e a régua de 4 estados — já pago no protótipo |

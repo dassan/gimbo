@@ -5,7 +5,7 @@ import { detectBrowserLocale, defaultCurrencyForLocale } from '@/lib/storage/wor
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 14
+export const CURRENT_SCHEMA_VERSION = 15
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -127,6 +127,7 @@ const TransactionSchema = z.object({
   invoiceDueDate: z.string().optional(), // CREDIT charges/credits: authoritative invoice due date "YYYY-MM-DD" from the source (CC-33)
   updatedAt: z.string().optional(), // CS-04: last-write-wins timestamp for the cloud-sync merge engine
   createdAt: z.string().optional(), // B-24: when the entry was added, distinct from `date`
+  budgetIds: z.array(z.string()).optional(), // F-30/BX-03: Budget N:N link, mirrors `tags`
 })
 
 const ValuationSchema = z.object({
@@ -144,11 +145,31 @@ const SavedPeriodSchema = z.object({
   end: z.string(),
 })
 
+// F-30 (Caixinhas): a single target date, or a closed [start, end] range.
+const BudgetPeriodSchema = z.union([
+  z.object({ mode: z.literal('date'), date: z.string() }),
+  z.object({ mode: z.literal('range'), start: z.string(), end: z.string() }),
+])
+
+const BudgetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  emoji: z.string(),
+  color: z.string(),
+  kind: z.enum(['expense', 'income']),
+  target: z.number(),
+  period: BudgetPeriodSchema,
+  archivedAt: z.string().optional(), // absent = active (plan/BUDGETS.md §5.8)
+  recipeSlug: z.string().optional(), // 'quadrantes' (plan/BUDGETS.md §5.6)
+  recipeSlot: z.number().int().min(1).max(4).optional(),
+  updatedAt: z.string().optional(), // CS-04: last-write-wins timestamp for the cloud-sync merge engine
+})
+
 const AuditEntrySchema = z.object({
   id: z.string(),
   timestamp: z.string(),
   action: z.enum(['CREATE', 'UPDATE', 'DELETE']),
-  entity: z.enum(['account', 'category', 'tag', 'transaction', 'user', 'savedPeriod']),
+  entity: z.enum(['account', 'category', 'tag', 'transaction', 'user', 'savedPeriod', 'budget']),
   entityId: z.string(),
   summary: z.string(),
 })
@@ -165,6 +186,7 @@ export const DataFileSchema = z.object({
   auditLog: z.array(AuditEntrySchema),
   deletedIds: z.array(z.string()).default([]), // tombstone — B-11; absent in v1/v2 files defaults to []
   savedPeriods: z.array(SavedPeriodSchema).default([]), // M-45; absent in older files defaults to []
+  budgets: z.array(BudgetSchema).default([]), // F-30/BX-03; absent in older files defaults to []
 })
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -296,6 +318,13 @@ function migrateDataFile(data: DataFile): DataFile {
     }
   }
 
+  // v14 → v15: adds the Budget entity (F-30/BX-03) — a `budgets` array (DataFile) and the
+  // `budgetIds` N:N link (Transaction), mirroring the existing `tags` pattern. Both are
+  // Zod-defaulted to [] via DataFileSchema.parse, so existing records only need the version bump.
+  if (migrated.schemaVersion === 14) {
+    migrated = { ...migrated, schemaVersion: 15 }
+  }
+
   return migrated
 }
 
@@ -319,6 +348,7 @@ export function createEmptyDataFile(name: string, email: string): DataFile {
     auditLog: [],
     deletedIds: [],
     savedPeriods: [],
+    budgets: [],
   }
 }
 

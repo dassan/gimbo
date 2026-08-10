@@ -14,7 +14,14 @@ export type CategoryType = 'INCOME' | 'EXPENSE'
 export type TransactionType = 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'CREDIT_PAYMENT'
 
 export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE'
-export type AuditEntity = 'account' | 'category' | 'tag' | 'transaction' | 'user' | 'savedPeriod'
+export type AuditEntity =
+  | 'account'
+  | 'category'
+  | 'tag'
+  | 'transaction'
+  | 'user'
+  | 'savedPeriod'
+  | 'budget'
 
 // ─── Entities ─────────────────────────────────────────────────────────────────
 
@@ -115,6 +122,8 @@ export interface Transaction {
   invoiceDueDate?: string // CREDIT charges/credits: authoritative due date of the bound invoice, "YYYY-MM-DD", captured from the source. Used by getEffectiveCashFlowDate so historical invoices stay anchored even if the card's closing/due day later changes (CC-33)
   updatedAt?: string // ISO 8601 — last-write-wins timestamp for the cloud-sync merge engine (CS-04)
   createdAt?: string // ISO 8601 — when the entry was added, distinct from `date` (which the user can back/postdate). Drives "recently added" ordering (B-24)
+  budgetIds?: string[] // UUID[] — Budget N:N link, mirrors `tags`. Optional (unlike `tags`) so the
+  // many existing call sites that build a Transaction by hand don't all need updating (F-30, BX-03)
 }
 
 export interface Valuation {
@@ -141,6 +150,30 @@ export interface SavedPeriod {
   end: string // "YYYY-MM-DD"
 }
 
+// F-30 (Caixinhas): despesa = target is a ceiling; receita = target is a floor. See
+// plan/BUDGETS.md §2 "Semântica do tipo".
+export type BudgetKind = 'expense' | 'income'
+
+// A single target date, or a closed [start, end] range. See plan/BUDGETS.md §2.
+export type BudgetPeriod =
+  | { mode: 'date'; date: string } // "YYYY-MM-DD"
+  | { mode: 'range'; start: string; end: string } // "YYYY-MM-DD" each
+
+export interface Budget {
+  id: string // UUID
+  name: string
+  emoji: string
+  color: string
+  kind: BudgetKind
+  target: number
+  period: BudgetPeriod
+  archivedAt?: string // ISO 8601 — absent = active. Set automatically (Quadrantes recipe) or by the
+  // user (manual "Arquivar"). Visibility state only — linked transactions are untouched (plan/BUDGETS.md §5.8)
+  recipeSlug?: string // 'quadrantes' — absent for manual budgets (plan/BUDGETS.md §5.6)
+  recipeSlot?: number // 1-4 — only set alongside recipeSlug, identifies which slot in the monthly batch
+  updatedAt?: string // ISO 8601 — last-write-wins timestamp for the cloud-sync merge engine (CS-04)
+}
+
 // ─── Root data.json shape ─────────────────────────────────────────────────────
 
 export interface DataFile {
@@ -155,6 +188,7 @@ export interface DataFile {
   auditLog: AuditEntry[]
   deletedIds: string[] // tombstone: IDs explicitly deleted on this device (B-11)
   savedPeriods: SavedPeriod[] // M-45: named custom date ranges saved from Reports
+  budgets: Budget[] // F-30: caixinhas
 }
 
 // ─── workspace.json shape ─────────────────────────────────────────────────────
