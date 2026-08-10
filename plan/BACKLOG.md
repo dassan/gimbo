@@ -667,3 +667,60 @@ Adiada na D0. Reaproveita o cold start de renda (HE-09) para o custo mensal méd
 | HE-13 | **Saldo da reserva — quais contas.** **Decisão de produto (2026-07-11, ver `FINANCIAL_HEALTH.md` §8 D8).** **Resolução:** marcação explícita por conta via `reserveMetadata` em contas `RETAIL`/`SAVINGS` (`RESERVE_ELIGIBLE_TYPES` em `lib/utils.ts`) — toggle dedicado no modal de Settings (mesmo padrão visual de CREDIT/LOAN), badge `Umbrella` na lista de contas (Settings, Dashboard, Patrimônio). `getReserveBalance` soma o saldo derivado das contas marcadas. `MOCK_EMERGENCY_RESERVE` removido. | média | **resolvido** |
 | HE-14 | **Reserva como conceito + ligar o card.** **Decisão de produto (2026-07-11, ver `FINANCIAL_HEALTH.md` §8 D6).** **Resolução:** sem `AccountType` novo — `reserveMetadata` (schema v11→v12, espelho SQLite `is_reserve`) anexável a `RETAIL`/`SAVINGS`. Card da Reserva em `pages/Health/index.tsx` ligado a `getReserveBalance`/`deriveMonthlyCost` (com edição inline do custo mensal, mesmo padrão da renda), selo "Em breve" removido. Testes de schema, store, `lib/utils.ts` e `Health.test.tsx`. | média | **resolvido** |
 | HE-16 | **Meta em meses da reserva configurável pelo usuário.** **Decisão de produto (2026-07-11, ver `FINANCIAL_HEALTH.md` §8 D9)**, motivada por teste manual: `RESERVE_TARGET_MONTHS` (antes fixo em 6) virou `workspace.reserveTargetMonths` (3\|6\|9\|12, default 6), com seletor dedicado em Configurações (`setReserveTargetMonths`), independente do `incomeWindowMonths` (janela de lookback do custo). Meta continua global, não por conta (D8 mantida). Testes em `Settings.test.tsx`/`Health.test.tsx` cobrindo independência dos dois seletores. | média | **resolvido** |
+
+## Caixinhas — F-30
+
+Planejamento financeiro por meta declarada pelo usuário (`/budgets`, `/budgets/:budgetId`), inspirado
+(sem fidelidade literal) no método "Dinheiro Sem Medo" de Eduardo Amuri. Decisões completas de
+produto e UX em `plan/BUDGETS.md`; análise do método e roadmap de features derivadas em
+`plan/FINANCIAL_PLAN.md`. **Ordem das fases é dependente** — schema (Fase 2) antes de motores/UI
+real (Fase 3), que por sua vez precede a receita "Quadrantes" (Fase 4).
+
+> **Decisões de produto (2026-08-01 a 2026-08-10, ver `plan/BUDGETS.md` §5–6):** Caixinha é o único
+> primitivo de dados (nome, meta, período, lançamentos vinculados via N:N); "receitas" são módulos
+> opt-in que geram lotes de caixinhas automaticamente, sem entidade própria no schema. V1 tem uma
+> única receita hardcoded ("Quadrantes"), não um framework de receitas genérico — isso fica para v2.
+> "Valor atual" soma só lançamentos `isCashRealized` (B-15); compra parcelada conta parcela a
+> parcela (consequência do schema de `Installment`, não regra nova).
+
+### Fase 1 — Design inicial mockado (resolvido)
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| BX-01 | **`App.tsx` + `components/Navbar.tsx` — Rotas `/budgets`/`/budgets/:budgetId` e item de navbar "Caixinhas".** Item entre "Lançamentos" e "Relatórios" no nav desktop; fora do bottom nav mobile (5 slots cheios, mesma decisão de Patrimônio/Saúde — U-2). | alta | resolvido |
+| BX-02 | **`pages/Budgets/{index,BudgetDetail,BudgetFormModal,shared,helpers}.tsx` + `mock.ts` — Telas mockadas completas.** Lista em grade responsiva, detalhe com lançamentos associados + resumo por categoria, modal de criação/edição com exclusão in-place. Nada lê do `useDataStore` nem persiste; derivações puras (`budgetCurrent`/`budgetDelta`/`budgetProgress`/`getBudgetStatus`) operam sobre `MOCK_BUDGETS`. Selo de status removido e título aumentado no card após review de UI. | alta | resolvido |
+
+### Fase 2 — Schema e modelo de dados
+
+Pré-requisito bloqueador das fases seguintes. Ver `plan/BUDGETS.md` §5.8 e P-1/P-2 (§6.1) para as
+decisões que este schema precisa expressar.
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| BX-03 | **`types/index.ts` + `schema.ts` — Entidade `Budget` real.** Campos: `id`, `name`, `emoji`, `color`, `kind` (`'expense'\|'income'`), `target`, `period` (`{mode:'date',date}` \| `{mode:'range',start,end}`), `archivedAt?` (ISO, ausente = ativa — §5.8), `recipeSlug?`/`recipeSlot?` (§5.6), `updatedAt` (motor de merge, BX-08). Tabela de junção `budget_transactions` (`budgetId` + `transactionId`, N:N — P-2). Bump `CURRENT_SCHEMA_VERSION` + migração SQLite. **Atualizar `SCHEMA_DDL`/`PRAGMA user_version` de `data/sync_gimbo.py` no mesmo commit** — armadilha recorrente registrada no `CLAUDE.md` (já mordeu em M-51/M-64). | alta | pendente |
+| BX-04 | **`store/useDataStore.ts` — CRUD de `Budget` via `mutate()`.** Criar/editar/excluir/arquivar caixinha; vincular/desvincular lançamento (tabela de junção). Nunca mutação direta — sempre `mutate()`, igual ao resto do store. | alta | pendente |
+
+### Fase 3 — Motores e telas reais
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| BX-05 | **`lib/utils.ts` — Portar derivações do mock para funções reais.** `budgetCurrent`/`budgetDelta`/`budgetProgress`/`getBudgetStatus` operando sobre `Budget`/`Transaction` reais: soma só `isCashRealized(tx)` (P-6); parcela de compra parcelada conta individualmente, sem lógica extra (P-7, consequência do schema de `Installment`). Testes unitários incluindo meta zero e período invertido. | alta | pendente |
+| BX-06 | **`pages/Budgets/*.tsx` — Trocar `mock.ts` pelo `useDataStore` real.** Ação "Associar/Desvincular lançamento" (picker de transações); atalho de vincular série de parcelas inteira via `installment.parentId` (T-8, melhoria de UX ligada ao P-7). Redirect para `/budgets` após excluir (rota deixa de existir). Plurais corretos em `linkedCount`/`daysLeft`/`deleteConfirmBody`. Botão "Arquivar" no cabeçalho do detalhe, fora da zona destrutiva (§5.7), com confirmação. Ordenação configurável em Preferências — Prazo/Progresso/Nome/Criação (U-3, mesmo padrão visual de `incomeWindowMonths`). CTA visual não-interativo "Período encerrado" no card (U-4). Nome truncado em 1 linha, sem 2ª linha (U-1). `mock.ts` removido. | alta | pendente |
+
+### Fase 4 — Receita "Quadrantes"
+
+Depende da Fase 3 (a receita só popula vínculos que já precisam existir de verdade). Decisões
+completas em `plan/BUDGETS.md` §5.6.
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| BX-07 | **Toggle "Quadrantes" em Preferências + geração idempotente do lote mensal.** Ao carregar `/budgets`/boot, se ativo e não existem caixinhas `recipeSlug='quadrantes'` cobrindo o mês corrente, cria as 4 (dias 1–8/9–16/17–24/25–fim), herdando `target` da última instância de cada `recipeSlot` (mesmo se arquivada). Sem back-fill de meses pulados. Emoji numérico + cor neutra `#6B7280` fixos (§5.6). Recria slot que o usuário excluiu, puxando meta da última instância viva. Desabilitar só para novas gerações — caixinhas existentes intactas. | alta | pendente |
+| BX-08 | **Associação automática por data + arquivamento automático de virada de mês.** Vincula `EXPENSE` (só esse tipo — exclui `TRANSFER`/`CREDIT_PAYMENT` para não duplicar gasto) cuja `date` cai no intervalo, **uma vez só** na criação/edição-qualificante da transação — nunca como reconciliação de fundo (permite desvincular manualmente e o desvínculo persistir). Editar a data de uma transação move o vínculo de acordo. Arquiva o lote do mês anterior no mesmo passo em que gera o novo. | alta | pendente |
+
+### Fase 5 — Sync, demo mode e testes
+
+| ID | Descrição | Prioridade | Status |
+|----|-----------|------------|--------|
+| BX-09 | **Sync/merge multi-dispositivo.** `Budget` (e a tabela de junção) entram no motor de merge (`lib/cloudSync/merge.ts`) via `updatedAt`, incluindo `deletedIds`. | média | pendente |
+| BX-10 | **Demo mode.** `lib/demo.ts` gera caixinhas sintéticas — senão a tela fica vazia no deploy público (demo mode desabilita persistência, então a receita Quadrantes também precisa de dado sintético coerente). | média | pendente |
+| BX-11 | **Testes.** Unitários das derivações (BX-05, incluindo meta zero e período invertido) e da geração/varredura da receita (BX-07/BX-08, incluindo idempotência e herança de meta). E2E do fluxo criar → associar → arquivar/excluir. | alta | pendente |

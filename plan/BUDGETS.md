@@ -4,7 +4,7 @@
 > Estado atual: **protótipo visual mockado** — nenhuma entidade nova no `DataFile`, nenhuma
 > mutação de dados, nenhum teste. Toda a tela lê de `app/src/pages/Budgets/mock.ts`.
 > Branch: `dassan/caixinhas` (2 commits, ainda **não publicada**).
-> Última atualização: 2026-08-05.
+> Última atualização: 2026-08-10.
 
 ---
 
@@ -234,6 +234,12 @@ a v1:
   primeiro ativamento.
 - **Nome dos 4 quadrantes gerados**: fixo, "Quadrante 1" a "Quadrante 4" — sem mês no nome, já que o
   card exibe o período abaixo do nome e a informação ficaria duplicada.
+- **Emoji e cor dos 4 quadrantes (2026-08-10)**: fixos, não escolhidos pelo usuário. Emoji numérico
+  por slot — 1️⃣/2️⃣/3️⃣/4️⃣, batendo com `recipeSlot` — e uma única cor neutra compartilhada pelos 4,
+  `#6B7280` (Bambu 600, já usada como cor secundária/estrutural em `design/DESIGN.md` e em
+  `mock.ts` na categoria "Serviços"). A cor única (em vez de uma por caixinha, como nas manuais)
+  sinaliza visualmente "isto foi gerado pelo sistema", distinto das cores escolhidas à mão pelo
+  usuário nas caixinhas comuns.
 - **Arquivamento automático ao fim do mês (P-4, escopo desta receita — 2026-08-05)**: quando o lote
   do novo mês é gerado, o lote do mês anterior é arquivado no mesmo passo — mesmo gatilho idempotente
   descrito acima, só que arquivando em vez de criando. Segue o princípio DSM de só olhar pra frente:
@@ -242,7 +248,7 @@ a v1:
   permanecem intactos, e a busca de "última instância de um `recipeSlot`" (herança de meta, acima)
   **inclui** caixinhas arquivadas, senão a cadeia de herança quebraria a cada virada de mês.
   **Esta regra vale só para caixinhas com `recipeSlug='quadrantes'`** — caixinhas manuais não são
-  tocadas; o comportamento delas ao fim do período continua em aberto (P-4 geral, tabela §6.1).
+  tocadas; o comportamento delas ao fim do período é o arquivamento manual descrito em §5.7.
   **v1 não tem tela/relatório de caixinhas arquivadas** — fica inacessível pela UI até uma iteração
   futura (registrado abaixo).
 - **Desvincular lançamento associado automaticamente**: sim, permitido — mesmo vínculo N:N de sempre
@@ -254,9 +260,17 @@ a v1:
   vínculo de acordo (isso é a data mudando de verdade, diferente de um desvínculo deliberado); uma
   edição que não mexe na data não deve reacionar a regra. Eventuais efeitos colaterais inesperados
   dessa mecânica ficam para resolução em v2, não bloqueiam a v1.
+- **Escopo v1 = uma receita hardcoded, não um framework de receitas**: "receita" no sentido de §5.6
+  é um conceito de produto (um módulo opt-in que gera caixinhas), não uma abstração técnica genérica
+  na v1. Não existe registro/gestão de "receitas" plural, nem tela pra habilitar/configurar múltiplas
+  receitas — é um toggle único ("Quadrantes") em Preferências, com a lógica de geração específica
+  dela. Se e quando uma segunda receita for proposta, aí sim vale generalizar.
 
 #### Pendente para uma iteração futura (registrado a pedido, não priorizado)
 
+- **Gestão de receitas**: se/quando existir mais de uma receita, como o usuário administra isso —
+  uma tela própria, lista de receitas ativas/disponíveis, configuração por receita? Adiado a pedido
+  (2026-08-10): a v1 não precisa disso (ver bullet acima).
 - **Tracking de "meses bem-sucedidos"**: histórico de quantos meses o usuário ficou dentro da meta
   em cada quadrante (ou no agregado dos 4), para dar visibilidade de tendência/consistência ao longo
   do tempo. Não desenhado ainda — nem a definição de "sucesso" (ficar ≤ 100% da meta? dos 4
@@ -277,6 +291,12 @@ visibilidade). Confirmação simples antes de arquivar, no mesmo espírito da co
 não se perde, mas reverter só será possível quando a superfície de consulta de arquivadas for
 construída (v2, item já registrado em §5.6 como pendência futura). O diálogo de confirmação existe
 justamente para deixar isso claro no momento da ação.
+
+### 5.8 Representação técnica do arquivamento (2026-08-10)
+Um único campo cobre os dois caminhos (§5.6 automático e §5.7 manual): `archivedAt?: string` — ISO
+8601, ausente/`undefined` = caixinha ativa. Timestamp em vez de `boolean` pelo mesmo custo de
+implementação, mas guarda "quando" de graça — útil pra ordenar/filtrar na futura tela de consulta
+de arquivadas (v2) sem precisar de outro campo depois.
 
 ---
 
@@ -305,16 +325,20 @@ justamente para deixar isso claro no momento da ação.
 
 ### 6.3 Técnico — quando virar feature real
 
-| # | Item |
-|---|------|
-| **T-1** | **Redirecionar após excluir**: a rota `/budgets/:id` deixa de existir; hoje cairia no fallback "sem dados". Precisa de `navigate('/budgets')`. |
-| **T-2** | **Plural de verdade** em `budgets.linkedCount` / `budgets.daysLeft` / `deleteConfirmBody`. Segui a convenção existente (interpolação simples de `{{count}}`, como `health.months`) em vez de introduzir formas `_one`/`_other` só aqui — mas "os 1 lançamentos" fica errado. |
-| **T-3** | **Schema**: bump de `CURRENT_SCHEMA_VERSION` (v14 → v15) + migração DDL nova, **e** atualizar `SCHEMA_DDL`/`PRAGMA user_version` do `data/sync_gimbo.py` junto (armadilha recorrente registrada no CLAUDE.md — já mordeu em M-51 e M-64). |
-| **T-4** | **Sync/merge**: a nova entidade precisa de `updatedAt` e entrar no motor de merge (`lib/cloudSync/merge.ts`), incluindo `deletedIds`. |
-| **T-5** | **Testes**: zero até agora. Precisa de unit tests das derivações (`budgetCurrent`/`budgetDelta`/`getBudgetStatus`, incluindo meta zero e período invertido) e um E2E do fluxo criar → associar → excluir. |
-| **T-6** | **Demo mode**: `lib/demo.ts` precisa gerar caixinhas sintéticas, senão a tela fica vazia no deploy público. |
-| **T-7** | Registrar a feature no `PRD.md` (F-30) e o épico `BX-XX` no `BACKLOG.md`. |
-| **T-8** | (P-7) "Associar lançamento" força vincular parcela por parcela, uma de cada vez, ao longo de vários meses. Um atalho "vincular a série inteira" (usando `installment.parentId` pra linkar as N parcelas — inclusive futuras — de uma vez) evitaria a fricção. Melhoria de UX, não bloqueia o modelo de dados. |
+Rastreamento de execução mora agora no épico **`BX-01` a `BX-11`** em `plan/BACKLOG.md` (aberto
+2026-08-10). Tabela abaixo mantida como registro histórico do que motivou cada item, com o
+apontamento pra fase/item correspondente.
+
+| # | Item | Fase/item em `BACKLOG.md` |
+|---|------|---------|
+| **T-1** | **Redirecionar após excluir**: a rota `/budgets/:id` deixa de existir; hoje cairia no fallback "sem dados". Precisa de `navigate('/budgets')`. | BX-06 |
+| **T-2** | **Plural de verdade** em `budgets.linkedCount` / `budgets.daysLeft` / `deleteConfirmBody`. Segui a convenção existente (interpolação simples de `{{count}}`, como `health.months`) em vez de introduzir formas `_one`/`_other` só aqui — mas "os 1 lançamentos" fica errado. | BX-06 |
+| **T-3** | **Schema**: bump de `CURRENT_SCHEMA_VERSION` (v14 → v15) + migração DDL nova, **e** atualizar `SCHEMA_DDL`/`PRAGMA user_version` do `data/sync_gimbo.py` junto (armadilha recorrente registrada no CLAUDE.md — já mordeu em M-51 e M-64). | BX-03 |
+| **T-4** | **Sync/merge**: a nova entidade precisa de `updatedAt` e entrar no motor de merge (`lib/cloudSync/merge.ts`), incluindo `deletedIds`. | BX-09 |
+| **T-5** | **Testes**: zero até agora. Precisa de unit tests das derivações (`budgetCurrent`/`budgetDelta`/`getBudgetStatus`, incluindo meta zero e período invertido) e um E2E do fluxo criar → associar → excluir. | BX-11 |
+| **T-6** | **Demo mode**: `lib/demo.ts` precisa gerar caixinhas sintéticas, senão a tela fica vazia no deploy público. | BX-10 |
+| **T-7** | ~~Registrar a feature no `PRD.md` (F-30) e o épico `BX-XX` no `BACKLOG.md`.~~ **Resolvido (2026-08-10)** — `PRD.md` §5 (F-30) e `BACKLOG.md` (épico "Caixinhas — F-30", `BX-01` a `BX-11`). | — |
+| **T-8** | (P-7) "Associar lançamento" força vincular parcela por parcela, uma de cada vez, ao longo de vários meses. Um atalho "vincular a série inteira" (usando `installment.parentId` pra linkar as N parcelas — inclusive futuras — de uma vez) evitaria a fricção. Melhoria de UX, não bloqueia o modelo de dados. | BX-06 |
 
 ---
 
