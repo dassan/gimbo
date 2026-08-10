@@ -7,6 +7,7 @@ import type {
   Transaction,
   Valuation,
   SavedPeriod,
+  Budget,
   AuditEntry,
   AuditAction,
   AuditEntity,
@@ -163,6 +164,17 @@ interface DataStore {
   // M-45: named custom date ranges saved from the Reports period picker
   addSavedPeriod: (period: SavedPeriod) => void
   deleteSavedPeriod: (id: string) => void
+
+  // F-30/BX-04: caixinhas
+  addBudget: (budget: Budget) => void
+  updateBudget: (budget: Budget) => void
+  deleteBudget: (id: string) => void
+  // §5.7: manual archiving, user-triggered only — the period ending never archives on its own
+  archiveBudget: (id: string) => void
+  // §5.6/P-1/P-2: Transaction.budgetIds N:N link — same primitive whether the caller is a
+  // manual "Associar lançamento" action or the Quadrantes recipe's automatic sweep (BX-08)
+  linkTransactionToBudget: (budgetId: string, transactionId: string) => void
+  unlinkTransactionFromBudget: (budgetId: string, transactionId: string) => void
 
   updateUser: (patch: Partial<DataFile['user']>) => void
   setRetentionLimit: (limit: number | null) => void
@@ -677,6 +689,134 @@ export const useDataStore = create<DataStore>((set, get) => ({
           makeEntry('DELETE', 'savedPeriod', id, `Período salvo removido: ${period?.name ?? id}`)
         )
       })
+    ),
+
+  // ── Caixinhas (F-30/BX-04) ────────────────────────────────────────────────
+
+  addBudget: (budget) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          d.budgets.push({ ...budget, updatedAt: now() })
+          addAudit(
+            d,
+            makeEntry('CREATE', 'budget', budget.id, buildSummary('CREATE', 'budget', budget.name))
+          )
+        },
+        'budget_created'
+      )
+    ),
+
+  updateBudget: (budget) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const i = d.budgets.findIndex((b) => b.id === budget.id)
+          if (i !== -1) d.budgets[i] = { ...budget, updatedAt: now() }
+          addAudit(
+            d,
+            makeEntry('UPDATE', 'budget', budget.id, buildSummary('UPDATE', 'budget', budget.name))
+          )
+        },
+        'budget_updated'
+      )
+    ),
+
+  // Deleting a caixinha never deletes the linked transactions — only the link itself (the
+  // confirmation copy in BudgetFormModal promises exactly this: "só perdem o vínculo").
+  deleteBudget: (id) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const name = d.budgets.find((b) => b.id === id)?.name ?? id
+          d.budgets = d.budgets.filter((b) => b.id !== id)
+          d.transactions = d.transactions.map((t) =>
+            t.budgetIds?.includes(id)
+              ? { ...t, budgetIds: t.budgetIds.filter((bId) => bId !== id), updatedAt: now() }
+              : t
+          )
+          d.deletedIds = [...new Set([...d.deletedIds, id])]
+          addAudit(d, makeEntry('DELETE', 'budget', id, buildSummary('DELETE', 'budget', name)))
+        },
+        'budget_deleted'
+      )
+    ),
+
+  // §5.7: visibility only — linked transactions and history stay untouched.
+  archiveBudget: (id) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const budget = d.budgets.find((b) => b.id === id)
+          if (!budget) return
+          const ts = now()
+          budget.archivedAt = ts
+          budget.updatedAt = ts
+          addAudit(
+            d,
+            makeEntry(
+              'UPDATE',
+              'budget',
+              id,
+              buildSummary('UPDATE', 'budget', budget.name, 'arquivada')
+            )
+          )
+        },
+        'budget_archived'
+      )
+    ),
+
+  linkTransactionToBudget: (budgetId, transactionId) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const budget = d.budgets.find((b) => b.id === budgetId)
+          const tx = d.transactions.find((t) => t.id === transactionId)
+          if (!budget || !tx) return
+          if (tx.budgetIds?.includes(budgetId)) return
+          tx.budgetIds = [...(tx.budgetIds ?? []), budgetId]
+          tx.updatedAt = now()
+          addAudit(
+            d,
+            makeEntry(
+              'UPDATE',
+              'budget',
+              budgetId,
+              `Lançamento associado à caixinha: ${budget.name} — ${tx.description}`
+            )
+          )
+        },
+        'budget_transaction_linked'
+      )
+    ),
+
+  unlinkTransactionFromBudget: (budgetId, transactionId) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const budget = d.budgets.find((b) => b.id === budgetId)
+          const tx = d.transactions.find((t) => t.id === transactionId)
+          if (!budget || !tx?.budgetIds?.includes(budgetId)) return
+          tx.budgetIds = tx.budgetIds.filter((id) => id !== budgetId)
+          tx.updatedAt = now()
+          addAudit(
+            d,
+            makeEntry(
+              'UPDATE',
+              'budget',
+              budgetId,
+              `Lançamento desvinculado da caixinha: ${budget.name} — ${tx.description}`
+            )
+          )
+        },
+        'budget_transaction_unlinked'
+      )
     ),
 
   // ── User / Settings ───────────────────────────────────────────────────────

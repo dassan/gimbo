@@ -11,6 +11,7 @@ import type {
   ReserveMetadata,
   Valuation,
   SavedPeriod,
+  Budget,
 } from '@/types'
 
 function makeAccount(overrides: Partial<Account> = {}): Account {
@@ -1312,5 +1313,181 @@ describe('deleteSavedPeriod', () => {
     useDataStore.setState({ data: makeDataFile({ savedPeriods: [] }) })
     expect(() => useDataStore.getState().deleteSavedPeriod('ghost-id')).not.toThrow()
     expect(useDataStore.getState().data!.deletedIds).toContain('ghost-id')
+  })
+})
+
+// ─── Caixinhas (F-30/BX-04) ────────────────────────────────────────────────────
+
+function makeBudget(overrides: Partial<Budget> = {}): Budget {
+  return {
+    id: 'bx-1',
+    name: 'Viagem',
+    emoji: '✈️',
+    color: '#1B4F72',
+    kind: 'expense',
+    target: 1000,
+    period: { mode: 'range', start: '2026-01-01', end: '2026-12-31' },
+    ...overrides,
+  }
+}
+
+describe('addBudget', () => {
+  it('appends the budget and creates a CREATE audit entry', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    useDataStore.getState().addBudget(makeBudget())
+    const { budgets, auditLog } = useDataStore.getState().data!
+    expect(budgets).toHaveLength(1)
+    expect(budgets[0].name).toBe('Viagem')
+    expect(budgets[0].updatedAt).toBeTruthy()
+    const entry = auditLog.at(-1)!
+    expect(entry.action).toBe('CREATE')
+    expect(entry.entity).toBe('budget')
+    expect(entry.summary).toContain('Viagem')
+  })
+
+  it('does nothing when data is null', () => {
+    useDataStore.setState({ data: null })
+    useDataStore.getState().addBudget(makeBudget())
+    expect(useDataStore.getState().data).toBeNull()
+  })
+})
+
+describe('updateBudget', () => {
+  it('updates an existing budget', () => {
+    useDataStore.setState({ data: makeDataFile({ budgets: [makeBudget({ target: 1000 })] }) })
+    useDataStore.getState().updateBudget(makeBudget({ target: 2000 }))
+    expect(useDataStore.getState().data?.budgets[0].target).toBe(2000)
+  })
+
+  it('does not crash on a non-existent budget', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    expect(() => useDataStore.getState().updateBudget(makeBudget({ id: 'ghost' }))).not.toThrow()
+  })
+})
+
+describe('deleteBudget', () => {
+  it('removes the budget and records id in deletedIds with a DELETE audit entry', () => {
+    useDataStore.setState({ data: makeDataFile({ budgets: [makeBudget()] }) })
+    useDataStore.getState().deleteBudget('bx-1')
+    const { budgets, deletedIds, auditLog } = useDataStore.getState().data!
+    expect(budgets).toHaveLength(0)
+    expect(deletedIds).toContain('bx-1')
+    const entry = auditLog.at(-1)!
+    expect(entry.action).toBe('DELETE')
+    expect(entry.entity).toBe('budget')
+    expect(entry.summary).toContain('Viagem')
+  })
+
+  it('strips the budget id from every linked transaction, without deleting the transactions', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [makeBudget()],
+        transactions: [
+          makeTransaction({ id: 'tx-1', budgetIds: ['bx-1'] }),
+          makeTransaction({ id: 'tx-2', budgetIds: ['bx-1', 'bx-2'] }),
+          makeTransaction({ id: 'tx-3', budgetIds: ['bx-2'] }),
+        ],
+      }),
+    })
+    useDataStore.getState().deleteBudget('bx-1')
+    const { transactions, deletedIds } = useDataStore.getState().data!
+    expect(transactions).toHaveLength(3)
+    expect(transactions.find((t) => t.id === 'tx-1')?.budgetIds).toEqual([])
+    expect(transactions.find((t) => t.id === 'tx-2')?.budgetIds).toEqual(['bx-2'])
+    expect(transactions.find((t) => t.id === 'tx-3')?.budgetIds).toEqual(['bx-2'])
+    expect(deletedIds).not.toContain('tx-1')
+  })
+
+  it('is idempotent: deleting a non-existent id does not crash', () => {
+    useDataStore.setState({ data: makeDataFile({ budgets: [] }) })
+    expect(() => useDataStore.getState().deleteBudget('ghost-id')).not.toThrow()
+    expect(useDataStore.getState().data!.deletedIds).toContain('ghost-id')
+  })
+})
+
+describe('archiveBudget', () => {
+  it('sets archivedAt without touching linked transactions', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [makeBudget()],
+        transactions: [makeTransaction({ id: 'tx-1', budgetIds: ['bx-1'] })],
+      }),
+    })
+    useDataStore.getState().archiveBudget('bx-1')
+    const { budgets, transactions, auditLog } = useDataStore.getState().data!
+    expect(budgets[0].archivedAt).toBeTruthy()
+    expect(transactions[0].budgetIds).toEqual(['bx-1'])
+    const entry = auditLog.at(-1)!
+    expect(entry.entity).toBe('budget')
+    expect(entry.summary).toContain('arquivada')
+  })
+
+  it('is idempotent: archiving a non-existent id does not crash', () => {
+    useDataStore.setState({ data: makeDataFile({ budgets: [] }) })
+    expect(() => useDataStore.getState().archiveBudget('ghost-id')).not.toThrow()
+  })
+})
+
+describe('linkTransactionToBudget', () => {
+  it('adds the budget id to the transaction budgetIds', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [makeBudget()],
+        transactions: [makeTransaction({ id: 'tx-1', budgetIds: [] })],
+      }),
+    })
+    useDataStore.getState().linkTransactionToBudget('bx-1', 'tx-1')
+    const { transactions, auditLog } = useDataStore.getState().data!
+    expect(transactions[0].budgetIds).toEqual(['bx-1'])
+    const entry = auditLog.at(-1)!
+    expect(entry.entity).toBe('budget')
+    expect(entry.entityId).toBe('bx-1')
+    expect(entry.summary).toContain('associado')
+  })
+
+  it('is idempotent: linking an already-linked transaction does not duplicate the id', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [makeBudget()],
+        transactions: [makeTransaction({ id: 'tx-1', budgetIds: ['bx-1'] })],
+      }),
+    })
+    useDataStore.getState().linkTransactionToBudget('bx-1', 'tx-1')
+    expect(useDataStore.getState().data!.transactions[0].budgetIds).toEqual(['bx-1'])
+  })
+
+  it('does not crash when the budget or transaction does not exist', () => {
+    useDataStore.setState({ data: makeDataFile({ budgets: [makeBudget()], transactions: [] }) })
+    expect(() => useDataStore.getState().linkTransactionToBudget('bx-1', 'ghost-tx')).not.toThrow()
+    expect(() =>
+      useDataStore.getState().linkTransactionToBudget('ghost-budget', 'tx-1')
+    ).not.toThrow()
+  })
+})
+
+describe('unlinkTransactionFromBudget', () => {
+  it('removes the budget id from the transaction budgetIds', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [makeBudget()],
+        transactions: [makeTransaction({ id: 'tx-1', budgetIds: ['bx-1', 'bx-2'] })],
+      }),
+    })
+    useDataStore.getState().unlinkTransactionFromBudget('bx-1', 'tx-1')
+    const { transactions, auditLog } = useDataStore.getState().data!
+    expect(transactions[0].budgetIds).toEqual(['bx-2'])
+    const entry = auditLog.at(-1)!
+    expect(entry.summary).toContain('desvinculado')
+  })
+
+  it('is idempotent: unlinking a transaction that is not linked does not crash', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [makeBudget()],
+        transactions: [makeTransaction({ id: 'tx-1', budgetIds: [] })],
+      }),
+    })
+    expect(() => useDataStore.getState().unlinkTransactionFromBudget('bx-1', 'tx-1')).not.toThrow()
+    expect(useDataStore.getState().data!.transactions[0].budgetIds).toEqual([])
   })
 })
