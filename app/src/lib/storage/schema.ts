@@ -163,6 +163,7 @@ const BudgetSchema = z.object({
   recipeSlug: z.string().optional(), // 'quadrantes' (plan/BUDGETS.md §5.6)
   recipeSlot: z.number().int().min(1).max(4).optional(),
   updatedAt: z.string().optional(), // CS-04: last-write-wins timestamp for the cloud-sync merge engine
+  createdAt: z.string().optional(), // BX-06/U-3: drives the "Criação" sort, distinct from updatedAt
 })
 
 const AuditEntrySchema = z.object({
@@ -363,6 +364,7 @@ export function createDefaultWorkspace(): WorkspaceFile {
     netWorthIncludeHidden: true,
     incomeWindowMonths: 6,
     reserveTargetMonths: 6,
+    budgetSortBy: 'createdAt',
   }
 }
 

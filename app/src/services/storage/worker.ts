@@ -120,6 +120,7 @@ type RawBudget = {
   recipeSlug?: string
   recipeSlot?: number
   updatedAt?: string
+  createdAt?: string
 }
 type RawDataFile = {
   user: RawUser
@@ -377,7 +378,7 @@ async function replaceAll(raw: unknown): Promise<void> {
           b.archivedAt ?? null,
           b.recipeSlug ?? null,
           b.recipeSlot ?? null,
-          ts,
+          b.createdAt ?? ts,
           b.updatedAt ?? ts,
         ]
       )
@@ -669,6 +670,7 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
     if (r.recipe_slot !== null && r.recipe_slot !== undefined)
       b.recipeSlot = r.recipe_slot as number
     if (r.updated_at !== null && r.updated_at !== undefined) b.updatedAt = r.updated_at as string
+    if (r.created_at !== null && r.created_at !== undefined) b.createdAt = r.created_at as string
     return b
   })
 

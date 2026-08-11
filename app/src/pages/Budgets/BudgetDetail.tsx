@@ -1,20 +1,37 @@
-// Caixinhas — detalhe. PROTÓTIPO: lê apenas de `mock.ts`, não escreve nada.
+// Caixinhas — detalhe.
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams } from 'react-router-dom'
-import { ChevronLeft, Link2, Pencil } from 'lucide-react'
-import { formatCurrency, cn, parseDateLocal } from '@/lib/utils'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Archive, ChevronLeft, Link2, Pencil } from 'lucide-react'
+import {
+  budgetCurrent,
+  budgetDelta,
+  budgetProgress,
+  formatCurrency,
+  cn,
+  getBudgetStatus,
+  isCashRealized,
+  parseDateLocal,
+} from '@/lib/utils'
+import { useDataStore } from '@/store/useDataStore'
 import BudgetFormModal from './BudgetFormModal'
-import { budgetCurrent, budgetDelta, budgetProgress, findMockBudget } from './mock'
-import type { MockBudget, MockBudgetTx } from './mock'
+import { TransactionPickerModal } from './TransactionPicker'
 import { BudgetAvatar, ProgressBar } from './shared'
-import { STATUS_COLOR, daysRemaining, formatBudgetPeriod, getBudgetStatus } from './helpers'
+import { STATUS_COLOR, daysRemaining, formatBudgetPeriod } from './helpers'
+import type { Account, Budget, Category, Transaction } from '@/types'
 
 export default function BudgetDetail() {
   const { t, i18n } = useTranslation()
+  const navigate = useNavigate()
   const { budgetId } = useParams<{ budgetId: string }>()
   const [showEditModal, setShowEditModal] = useState(false)
-  const budget = findMockBudget(budgetId)
+  const [showPicker, setShowPicker] = useState(false)
+  const [confirmingArchive, setConfirmingArchive] = useState(false)
+  const budget = useDataStore((s) => s.data?.budgets.find((b) => b.id === budgetId))
+  const allTransactions = useDataStore((s) => s.data?.transactions ?? [])
+  const categories = useDataStore((s) => s.data?.categories ?? [])
+  const accounts = useDataStore((s) => s.data?.accounts ?? [])
+  const archiveBudget = useDataStore((s) => s.archiveBudget)
 
   if (!budget) {
     return (
@@ -25,24 +42,39 @@ export default function BudgetDetail() {
     )
   }
 
-  const current = budgetCurrent(budget)
-  const delta = budgetDelta(budget)
-  const progress = budgetProgress(budget)
-  const status = getBudgetStatus(budget)
+  const current = budgetCurrent(budget, allTransactions)
+  const delta = budgetDelta(budget, allTransactions)
+  const progress = budgetProgress(budget, allTransactions)
+  const status = getBudgetStatus(budget, allTransactions)
   const color = STATUS_COLOR[status]
   const remaining = daysRemaining(budget.period)
 
-  // Lançamentos mais recentes primeiro, como num extrato.
-  const transactions = [...budget.transactions].sort((a, b) => b.date.localeCompare(a.date))
+  // Lançamentos vinculados — inclui os ainda não realizados (P-6: ficam associados,
+  // só não entram na soma de "Atual" abaixo). Mais recentes primeiro, como num extrato.
+  const linked = allTransactions
+    .filter((tx) => tx.budgetIds?.includes(budget.id))
+    .sort((a, b) => b.date.localeCompare(a.date))
 
+  // Resumo por categoria usa só o realizado, pra bater com o "Atual" mostrado acima.
   const categoryTotals = Object.entries(
-    transactions.reduce<Record<string, { total: number; color: string }>>((acc, tx) => {
-      const entry = acc[tx.categoryName] ?? { total: 0, color: tx.categoryColor }
-      entry.total += tx.amount
-      acc[tx.categoryName] = entry
-      return acc
-    }, {})
+    linked
+      .filter(isCashRealized)
+      .reduce<Record<string, { total: number; color: string }>>((acc, tx) => {
+        const cat = categories.find((c) => c.id === tx.categoryId)
+        const key = cat?.name ?? t('common.noData')
+        const entry = acc[key] ?? { total: 0, color: cat?.color ?? '#6B7280' }
+        entry.total += tx.amount
+        acc[key] = entry
+        return acc
+      }, {})
   ).sort((a, b) => b[1].total - a[1].total)
+
+  function handleArchive() {
+    archiveBudget(budget!.id)
+    // Caixinhas arquivadas somem da lista principal (sem tela de consulta na v1) —
+    // ficar no detalhe de algo inalcançável pela lista confundiria mais do que ajudaria.
+    void navigate('/budgets')
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
@@ -68,19 +100,60 @@ export default function BudgetDetail() {
                 {t(budget.kind === 'income' ? 'budgets.kindIncome' : 'budgets.kindExpense')} ·{' '}
                 {formatBudgetPeriod(budget.period, i18n.language)} ·{' '}
                 {remaining >= 0
-                  ? t('budgets.daysLeft', { count: remaining })
+                  ? // pt-BR's CLDR rule groups 0 with "one" (Intl.PluralRules('pt-BR').select(0)
+                    // === 'one'), which would render "falta 0 dia" — force a zero form instead.
+                    t('budgets.daysLeft', {
+                      count: remaining,
+                      context: remaining === 0 ? 'zero' : undefined,
+                    })
                   : t('budgets.periodClosed')}
               </p>
             </div>
           </div>
 
-          <button
-            onClick={() => setShowEditModal(true)}
-            className="flex items-center gap-2 rounded-2xl bg-surface-container-low px-4 py-2 text-sm font-medium text-on-surface/60 transition-colors hover:bg-surface-container-high hover:text-on-surface"
-          >
-            <Pencil size={14} strokeWidth={1.5} />
-            {t('budgets.edit')}
-          </button>
+          {confirmingArchive ? (
+            <div className="flex max-w-xs flex-col gap-2 rounded-2xl border-[0.5px] border-tertiary/30 bg-tertiary/5 px-4 py-3">
+              <div>
+                <p className="text-xs font-semibold text-on-surface">
+                  {t('budgets.archiveConfirmTitle')}
+                </p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-on-surface/60">
+                  {t('budgets.archiveConfirmBody')}
+                </p>
+              </div>
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setConfirmingArchive(false)}
+                  className="shrink-0 text-xs font-medium text-on-surface/60 hover:text-on-surface"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={handleArchive}
+                  className="shrink-0 rounded-xl bg-tertiary px-3 py-1.5 text-xs font-semibold text-white transition-all hover:brightness-110 active:scale-[0.97]"
+                >
+                  {t('budgets.archiveConfirm')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowEditModal(true)}
+                className="flex items-center gap-2 rounded-2xl bg-surface-container-low px-4 py-2 text-sm font-medium text-on-surface/60 transition-colors hover:bg-surface-container-high hover:text-on-surface"
+              >
+                <Pencil size={14} strokeWidth={1.5} />
+                {t('budgets.edit')}
+              </button>
+              <button
+                onClick={() => setConfirmingArchive(true)}
+                className="flex items-center gap-2 rounded-2xl bg-surface-container-low px-4 py-2 text-sm font-medium text-on-surface/60 transition-colors hover:bg-surface-container-high hover:text-on-surface"
+              >
+                <Archive size={14} strokeWidth={1.5} />
+                {t('budgets.archive')}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Mesmas 4 colunas do card da lista, em escala maior */}
@@ -94,7 +167,7 @@ export default function BudgetDetail() {
           />
           <HeadFigure
             label={t('budgets.linked')}
-            value={String(budget.transactions.length)}
+            value={String(linked.length)}
             hint={t('budgets.linkedHint')}
           />
         </div>
@@ -124,24 +197,29 @@ export default function BudgetDetail() {
             <h2 className="text-base font-semibold text-on-surface">
               {t('budgets.transactionsTitle')}
             </h2>
-            <button className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline">
+            <button
+              onClick={() => setShowPicker(true)}
+              className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+            >
               <Link2 size={13} strokeWidth={1.75} />
               {t('budgets.linkTransaction')}
             </button>
           </div>
 
           <div className="overflow-hidden rounded-2xl bg-surface-container shadow-card">
-            {transactions.length === 0 ? (
+            {linked.length === 0 ? (
               <p className="p-12 text-center text-sm text-on-surface/40">
                 {t('budgets.noTransactions')}
               </p>
             ) : (
-              transactions.map((tx, i) => (
+              linked.map((tx, i) => (
                 <BudgetTxRow
                   key={tx.id}
                   tx={tx}
                   budget={budget}
-                  isLast={i === transactions.length - 1}
+                  categories={categories}
+                  accounts={accounts}
+                  isLast={i === linked.length - 1}
                 />
               ))
             )}
@@ -186,6 +264,9 @@ export default function BudgetDetail() {
       </div>
 
       {showEditModal && <BudgetFormModal budget={budget} onClose={() => setShowEditModal(false)} />}
+      {showPicker && (
+        <TransactionPickerModal budget={budget} onClose={() => setShowPicker(false)} />
+      )}
     </div>
   )
 }
@@ -237,13 +318,21 @@ function HeadFigure({
 function BudgetTxRow({
   tx,
   budget,
+  categories,
+  accounts,
   isLast,
 }: {
-  tx: MockBudgetTx
-  budget: MockBudget
+  tx: Transaction
+  budget: Budget
+  categories: Category[]
+  accounts: Account[]
   isLast: boolean
 }) {
   const { i18n } = useTranslation()
+  const category = categories.find((c) => c.id === tx.categoryId)
+  const catName = category?.name ?? ''
+  const catColor = category?.color ?? '#6B7280'
+  const accName = accounts.find((a) => a.id === tx.accountId)?.name ?? ''
   return (
     <div
       className={cn(
@@ -253,16 +342,16 @@ function BudgetTxRow({
     >
       <div
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-semibold text-white"
-        style={{ backgroundColor: tx.categoryColor }}
+        style={{ backgroundColor: catColor }}
       >
-        {tx.categoryName[0]}
+        {catName[0] ?? '?'}
       </div>
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-on-surface">{tx.description}</p>
         <div className="mt-0.5 flex items-center gap-2">
-          <span className="text-xs text-on-surface/40">{tx.categoryName}</span>
-          <span className="text-xs text-on-surface/30">· {tx.accountName}</span>
+          <span className="text-xs text-on-surface/40">{catName}</span>
+          <span className="text-xs text-on-surface/30">· {accName}</span>
         </div>
       </div>
 

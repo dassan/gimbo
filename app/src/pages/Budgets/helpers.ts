@@ -1,25 +1,12 @@
-// Lógica de apresentação das caixinhas (cores, status, período).
-// Protótipo de UI — ver nota em `mock.ts`.
-import { parseDateLocal } from '@/lib/utils'
-import { budgetProgress, type BudgetPeriod, type MockBudget } from './mock'
+// Lógica de apresentação das caixinhas (cores, período, ordenação da lista).
+// Derivações de dado (progresso, status) vivem em lib/utils.ts desde a BX-05 —
+// aqui fica só o que é puramente de UI.
+import { parseDateLocal, budgetProgress, type BudgetStatus } from '@/lib/utils'
+import type { Budget, BudgetPeriod, BudgetSortBy, Transaction } from '@/types'
 
 export const GAUGE_GREEN = '#2D6A4F'
 export const GAUGE_AMBER = '#D4A017'
 export const GAUGE_RED = '#C0392B'
-
-export type BudgetStatus = 'onTrack' | 'warning' | 'exceeded' | 'reached'
-
-/**
- * Despesa: quanto mais perto da meta, mais tenso — passar dela é estouro.
- * Receita: a meta é um piso, então só existe "em andamento" e "atingida".
- */
-export function getBudgetStatus(budget: MockBudget): BudgetStatus {
-  const p = budgetProgress(budget)
-  if (budget.kind === 'income') return p >= 1 ? 'reached' : 'warning'
-  if (p > 1) return 'exceeded'
-  if (p >= 0.8) return 'warning'
-  return 'onTrack'
-}
 
 export const STATUS_COLOR: Record<BudgetStatus, string> = {
   onTrack: GAUGE_GREEN,
@@ -50,4 +37,30 @@ export function daysRemaining(period: BudgetPeriod, today = new Date()): number 
   const target = parseDateLocal(period.mode === 'date' ? period.date : period.end)
   const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
   return Math.round((target.getTime() - startOfToday.getTime()) / 86_400_000)
+}
+
+/**
+ * Ordenação configurável da lista (U-3). 'deadline' = prazo mais próximo primeiro
+ * (inclusive os já encerrados, que ficam no topo); 'progress' = % decrescente;
+ * 'name' = alfabética; 'createdAt' = criação mais recente primeiro (default).
+ */
+export function sortBudgets(
+  budgets: Budget[],
+  transactions: Transaction[],
+  sortBy: BudgetSortBy
+): Budget[] {
+  const sorted = [...budgets]
+  switch (sortBy) {
+    case 'deadline':
+      return sorted.sort((a, b) => daysRemaining(a.period) - daysRemaining(b.period))
+    case 'progress':
+      return sorted.sort(
+        (a, b) => budgetProgress(b, transactions) - budgetProgress(a, transactions)
+      )
+    case 'name':
+      return sorted.sort((a, b) => a.name.localeCompare(b.name))
+    case 'createdAt':
+    default:
+      return sorted.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+  }
 }

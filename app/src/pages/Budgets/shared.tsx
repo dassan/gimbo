@@ -1,6 +1,5 @@
 // Peças visuais compartilhadas entre a lista de caixinhas e a tela de detalhe.
-// Protótipo de UI — ver nota em `mock.ts`.
-import type { MockBudget } from './mock'
+import type { Budget } from '@/types'
 
 export function ProgressBar({
   progress,
@@ -27,7 +26,7 @@ export function ProgressBar({
   )
 }
 
-export function BudgetAvatar({ budget, size = 'md' }: { budget: MockBudget; size?: 'md' | 'lg' }) {
+export function BudgetAvatar({ budget, size = 'md' }: { budget: Budget; size?: 'md' | 'lg' }) {
   const dim = size === 'lg' ? 'h-12 w-12 text-xl' : 'h-10 w-10 text-base'
   return (
     <div

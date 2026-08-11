@@ -1339,6 +1339,7 @@ describe('addBudget', () => {
     expect(budgets).toHaveLength(1)
     expect(budgets[0].name).toBe('Viagem')
     expect(budgets[0].updatedAt).toBeTruthy()
+    expect(budgets[0].createdAt).toBeTruthy()
     const entry = auditLog.at(-1)!
     expect(entry.action).toBe('CREATE')
     expect(entry.entity).toBe('budget')
@@ -1362,6 +1363,16 @@ describe('updateBudget', () => {
   it('does not crash on a non-existent budget', () => {
     useDataStore.setState({ data: makeDataFile() })
     expect(() => useDataStore.getState().updateBudget(makeBudget({ id: 'ghost' }))).not.toThrow()
+  })
+
+  it('preserves createdAt when the caller passes it through unchanged', () => {
+    useDataStore.setState({
+      data: makeDataFile({ budgets: [makeBudget({ createdAt: '2026-01-01T00:00:00.000Z' })] }),
+    })
+    useDataStore
+      .getState()
+      .updateBudget(makeBudget({ target: 2000, createdAt: '2026-01-01T00:00:00.000Z' }))
+    expect(useDataStore.getState().data?.budgets[0].createdAt).toBe('2026-01-01T00:00:00.000Z')
   })
 })
 

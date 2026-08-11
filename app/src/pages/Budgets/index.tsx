@@ -1,17 +1,34 @@
-// Caixinhas — lista geral. PROTÓTIPO: lê apenas de `mock.ts`, não escreve nada.
-import { useState } from 'react'
+// Caixinhas — lista geral.
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { PiggyBank, Plus } from 'lucide-react'
-import { formatCurrency } from '@/lib/utils'
+import {
+  formatCurrency,
+  budgetCurrent,
+  budgetDelta,
+  budgetProgress,
+  getBudgetStatus,
+} from '@/lib/utils'
+import { useDataStore } from '@/store/useDataStore'
+import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import BudgetFormModal from './BudgetFormModal'
-import { MOCK_BUDGETS, budgetCurrent, budgetDelta, budgetProgress, type MockBudget } from './mock'
 import { ProgressBar } from './shared'
-import { GAUGE_RED, STATUS_COLOR, getBudgetStatus } from './helpers'
+import { GAUGE_RED, STATUS_COLOR, daysRemaining, sortBudgets } from './helpers'
+import type { Budget, Transaction } from '@/types'
 
 export default function Budgets() {
   const { t } = useTranslation()
   const [showNewModal, setShowNewModal] = useState(false)
+  const budgets = useDataStore((s) => s.data?.budgets ?? [])
+  const transactions = useDataStore((s) => s.data?.transactions ?? [])
+  const sortBy = useWorkspaceStore((s) => s.workspace.budgetSortBy)
+
+  const visible = useMemo(() => budgets.filter((b) => !b.archivedAt), [budgets])
+  const sorted = useMemo(
+    () => sortBudgets(visible, transactions, sortBy),
+    [visible, transactions, sortBy]
+  )
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
@@ -33,12 +50,12 @@ export default function Budgets() {
       </div>
 
       {/* ── Lista de caixinhas ─────────────────────────────────────────────── */}
-      {MOCK_BUDGETS.length === 0 ? (
+      {sorted.length === 0 ? (
         <EmptyState onCreate={() => setShowNewModal(true)} />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {MOCK_BUDGETS.map((budget) => (
-            <BudgetCard key={budget.id} budget={budget} />
+          {sorted.map((budget) => (
+            <BudgetCard key={budget.id} budget={budget} transactions={transactions} />
           ))}
         </div>
       )}
@@ -50,14 +67,16 @@ export default function Budgets() {
 
 // ─── Card de caixinha (layout de 4 colunas, espelha o painel de reserva) ──────
 
-function BudgetCard({ budget }: { budget: MockBudget }) {
+function BudgetCard({ budget, transactions }: { budget: Budget; transactions: Transaction[] }) {
   const { t } = useTranslation()
 
-  const current = budgetCurrent(budget)
-  const delta = budgetDelta(budget)
-  const progress = budgetProgress(budget)
-  const status = getBudgetStatus(budget)
+  const current = budgetCurrent(budget, transactions)
+  const delta = budgetDelta(budget, transactions)
+  const progress = budgetProgress(budget, transactions)
+  const status = getBudgetStatus(budget, transactions)
   const color = STATUS_COLOR[status]
+  const linkedCount = transactions.filter((tx) => tx.budgetIds?.includes(budget.id)).length
+  const isEnded = daysRemaining(budget.period) < 0
 
   // O card inteiro é o link para o detalhe — num tile estreito não sobra espaço
   // para uma área clicável menor que isso.
@@ -73,8 +92,21 @@ function BudgetCard({ budget }: { budget: MockBudget }) {
 
       <p className="mt-0.5 text-[11px] text-on-surface/40">
         {t(budget.kind === 'income' ? 'budgets.kindIncome' : 'budgets.kindExpense')} ·{' '}
-        {t('budgets.linkedCount', { count: budget.transactions.length })}
+        {t('budgets.linkedCount', {
+          count: linkedCount,
+          // pt-BR's CLDR plural rule groups 0 with "one" (Intl.PluralRules('pt-BR').select(0)
+          // === 'one'), which would otherwise render the singular "0 lançamento" — force a
+          // dedicated zero form instead of relying on the automatic plural category.
+          context: linkedCount === 0 ? 'zero' : undefined,
+        })}
       </p>
+
+      {/* U-4: aviso não-interativo — a ação de arquivar só existe no detalhe */}
+      {isEnded && (
+        <span className="mt-2 inline-flex w-fit items-center rounded-full bg-tertiary/10 px-2 py-0.5 text-[10px] font-semibold text-tertiary">
+          {t('budgets.periodEndedBadge')}
+        </span>
+      )}
 
       {/* Meta — a âncora do card; o valor atual aparece junto do percentual abaixo */}
       <div className="mt-4">

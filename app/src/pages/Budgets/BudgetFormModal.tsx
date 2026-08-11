@@ -1,30 +1,56 @@
-// Modal de caixinha — criação e edição. PROTÓTIPO: o botão de confirmar apenas
-// fecha o modal, nenhuma mutação de dados acontece. Ver nota em `mock.ts`.
+// Modal de caixinha — criação e edição.
 //
 // Criar e editar compartilham os mesmos campos; no modo edição o tipo
 // (despesa/receita) e o emoji ficam de fora — mudar o tipo de uma caixinha que
 // já tem lançamentos associados inverteria o sentido de todos eles.
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { Trash2, X } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, uuid } from '@/lib/utils'
+import { useDataStore } from '@/store/useDataStore'
 import DatePicker from '@/components/DatePicker'
-import type { BudgetKind, MockBudget } from './mock'
+import type { Budget, BudgetKind } from '@/types'
 
 const EMOJI_OPTIONS = ['🎯', '✈️', '🎁', '🔨', '🚗', '🏠', '💼', '📚', '🐾']
+
+// Não há seletor de cor no modal — cada emoji já carrega uma cor fixa correspondente,
+// só usada como tint do avatar (BudgetAvatar).
+const EMOJI_COLORS: Record<string, string> = {
+  '🎯': '#2D6A4F',
+  '✈️': '#1B4F72',
+  '🎁': '#C0392B',
+  '🔨': '#92400E',
+  '🚗': '#1F3A5F',
+  '🏠': '#92400E',
+  '💼': '#2D6A4F',
+  '📚': '#6B7280',
+  '🐾': '#D4A017',
+}
 
 function centsToStr(value: number): string {
   return value.toFixed(2).replace('.', ',')
 }
 
+function strToAmount(value: string): number {
+  return parseFloat(value.replace(',', '.')) || 0
+}
+
 export interface BudgetFormModalProps {
   onClose: () => void
   /** Ausente = criação; presente = edição, com os campos pré-preenchidos. */
-  budget?: MockBudget
+  budget?: Budget
 }
 
 export default function BudgetFormModal({ onClose, budget }: BudgetFormModalProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
+  const addBudget = useDataStore((s) => s.addBudget)
+  const updateBudget = useDataStore((s) => s.updateBudget)
+  const deleteBudget = useDataStore((s) => s.deleteBudget)
+  const linkedCount = useDataStore(
+    (s) => s.data?.transactions.filter((tx) => tx.budgetIds?.includes(budget?.id ?? '')).length ?? 0
+  )
   const isEdit = budget !== undefined
 
   const today = new Date().toISOString().slice(0, 10)
@@ -48,6 +74,37 @@ export default function BudgetFormModal({ onClose, budget }: BudgetFormModalProp
   function handleAmountInput(e: React.ChangeEvent<HTMLInputElement>) {
     const cents = parseInt(e.target.value.replace(/\D/g, '') || '0', 10)
     setAmountStr(centsToStr(cents / 100))
+  }
+
+  function handleSave() {
+    const target = strToAmount(amountStr)
+    const period =
+      periodMode === 'range'
+        ? ({ mode: 'range', start, end } as const)
+        : ({ mode: 'date', date: end } as const)
+
+    if (isEdit) {
+      updateBudget({ ...budget, name: name.trim(), target, period })
+    } else {
+      addBudget({
+        id: uuid(),
+        name: name.trim(),
+        emoji,
+        color: EMOJI_COLORS[emoji] ?? EMOJI_COLORS[EMOJI_OPTIONS[0]],
+        kind,
+        target,
+        period,
+      })
+    }
+    onClose()
+  }
+
+  function handleDelete() {
+    if (!budget) return
+    deleteBudget(budget.id)
+    // T-1: a rota /budgets/:id deixa de existir depois da exclusão — o modal só é
+    // aberto em modo edição a partir do detalhe, então sempre é seguro voltar à lista.
+    void navigate('/budgets')
   }
 
   const fieldClass =
@@ -193,12 +250,12 @@ export default function BudgetFormModal({ onClose, budget }: BudgetFormModalProp
           </div>
 
           <button
-            onClick={onClose}
-            className="w-full rounded-2xl bg-primary py-3.5 text-sm font-semibold text-white transition-all hover:brightness-110 active:scale-[0.97]"
+            onClick={handleSave}
+            disabled={!name.trim()}
+            className="w-full rounded-2xl bg-primary py-3.5 text-sm font-semibold text-white transition-all hover:brightness-110 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none"
           >
             {t(isEdit ? 'budgets.save' : 'budgets.create')}
           </button>
-          <p className="text-center text-[11px] text-on-surface/40">{t('budgets.prototypeNote')}</p>
 
           {/* Zona destrutiva — separada do "Salvar" por uma divisória e com peso
               de link, para nunca competir com a ação primária. */}
@@ -209,8 +266,12 @@ export default function BudgetFormModal({ onClose, budget }: BudgetFormModalProp
                   {t('budgets.deleteConfirmTitle')}
                 </p>
                 <p className="mt-1 text-xs leading-relaxed text-on-surface/60">
+                  {/* pt-BR's CLDR rule groups 0 with "one", which would otherwise render the
+                      singular "O lançamento associado continua..." — falsely implying one
+                      exists. Force a dedicated zero form instead. */}
                   {t('budgets.deleteConfirmBody', {
-                    count: budget.transactions.length,
+                    count: linkedCount,
+                    context: linkedCount === 0 ? 'zero' : undefined,
                   })}
                 </p>
                 <div className="mt-3 grid grid-cols-2 gap-2">
@@ -223,7 +284,7 @@ export default function BudgetFormModal({ onClose, budget }: BudgetFormModalProp
                   </button>
                   <button
                     type="button"
-                    onClick={onClose}
+                    onClick={handleDelete}
                     className="rounded-xl bg-tertiary py-2.5 text-sm font-semibold text-white transition-all hover:brightness-110 active:scale-[0.97]"
                   >
                     {t('budgets.deleteConfirm')}

@@ -698,7 +698,8 @@ export const useDataStore = create<DataStore>((set, get) => ({
       mutate(
         s,
         (d) => {
-          d.budgets.push({ ...budget, updatedAt: now() })
+          const ts = now()
+          d.budgets.push({ ...budget, createdAt: ts, updatedAt: ts })
           addAudit(
             d,
             makeEntry('CREATE', 'budget', budget.id, buildSummary('CREATE', 'budget', budget.name))

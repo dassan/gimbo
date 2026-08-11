@@ -100,6 +100,7 @@ import type {
   Theme,
   AuditAction,
   IncomeWindowMonths,
+  BudgetSortBy,
 } from '@/types'
 
 type Section = 'accounts' | 'categories' | 'tags' | 'profile' | 'preferences' | 'backup' | 'history'
@@ -275,6 +276,7 @@ export default function Settings() {
     setCurrency,
     setIncomeWindowMonths,
     setReserveTargetMonths,
+    setBudgetSortBy,
   } = useWorkspaceStore()
 
   const navigate = useNavigate()
@@ -1144,6 +1146,19 @@ export default function Settings() {
                       <option value={6}>{t('health.months', { count: 6 })}</option>
                       <option value={9}>{t('health.months', { count: 9 })}</option>
                       <option value={12}>{t('health.months', { count: 12 })}</option>
+                    </select>
+                  </SettingRow>
+
+                  <SettingRow label={t('settings.budgetSortBy')}>
+                    <select
+                      value={workspace.budgetSortBy}
+                      onChange={(e) => setBudgetSortBy(e.target.value as BudgetSortBy)}
+                      className="appearance-none rounded-xl bg-surface-container-high px-4 py-2.5 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                    >
+                      <option value="createdAt">{t('budgets.sortCreatedAt')}</option>
+                      <option value="deadline">{t('budgets.sortDeadline')}</option>
+                      <option value="progress">{t('budgets.sortProgress')}</option>
+                      <option value="name">{t('budgets.sortName')}</option>
                     </select>
                   </SettingRow>
 

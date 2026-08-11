@@ -172,6 +172,7 @@ export interface Budget {
   recipeSlug?: string // 'quadrantes' — absent for manual budgets (plan/BUDGETS.md §5.6)
   recipeSlot?: number // 1-4 — only set alongside recipeSlug, identifies which slot in the monthly batch
   updatedAt?: string // ISO 8601 — last-write-wins timestamp for the cloud-sync merge engine (CS-04)
+  createdAt?: string // ISO 8601 — when the caixinha was created, distinct from updatedAt (drives the "Criação" sort, BX-06/U-3)
 }
 
 // ─── Root data.json shape ─────────────────────────────────────────────────────
@@ -197,6 +198,10 @@ export type Theme = 'light' | 'dark' | 'system'
 export type Locale = 'pt-BR' | 'en-US'
 export type Currency = 'BRL' | 'USD'
 export type IncomeWindowMonths = 3 | 6 | 9 | 12
+// F-30/BX-06 (U-3): 'deadline' = nearest period end first; 'progress' = highest % first;
+// 'name' = alphabetical; 'createdAt' = most recently created first (default — matches the
+// order caixinhas naturally appear in when there's no explicit sort).
+export type BudgetSortBy = 'deadline' | 'progress' | 'name' | 'createdAt'
 
 export interface WorkspaceFile {
   theme: Theme
@@ -209,4 +214,5 @@ export interface WorkspaceFile {
   incomeWindowMonths: IncomeWindowMonths // HE-09: lookback window for the income suggestion (default 6)
   monthlyCostOverride?: number // HE-12/D7: user-confirmed monthly cost; always wins over the derived suggestion
   reserveTargetMonths: IncomeWindowMonths // HE-16: target months multiplier for the recommended reserve (default 6)
+  budgetSortBy: BudgetSortBy // F-30/BX-06 (U-3): sort order for the caixinhas list (default 'createdAt')
 }

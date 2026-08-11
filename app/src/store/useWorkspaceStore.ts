@@ -1,5 +1,12 @@
 import { create } from 'zustand'
-import type { WorkspaceFile, Theme, Locale, Currency, IncomeWindowMonths } from '@/types'
+import type {
+  WorkspaceFile,
+  Theme,
+  Locale,
+  Currency,
+  IncomeWindowMonths,
+  BudgetSortBy,
+} from '@/types'
 import { loadWorkspace, saveWorkspace, defaultCurrencyForLocale } from '@/lib/storage/workspace'
 import { createDefaultWorkspace } from '@/lib/storage/schema'
 import { setCurrencyDefaults } from '@/lib/utils'
@@ -18,6 +25,7 @@ interface WorkspaceStore {
   setIncomeWindowMonths: (v: IncomeWindowMonths) => void
   setMonthlyCostOverride: (v: number | undefined) => void
   setReserveTargetMonths: (v: IncomeWindowMonths) => void
+  setBudgetSortBy: (v: BudgetSortBy) => void
 }
 
 const _initialWorkspace = createDefaultWorkspace()
@@ -100,6 +108,12 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
   setReserveTargetMonths: (reserveTargetMonths) => {
     const workspace = { ...get().workspace, reserveTargetMonths }
+    set({ workspace })
+    saveWorkspace(workspace)
+  },
+
+  setBudgetSortBy: (budgetSortBy) => {
+    const workspace = { ...get().workspace, budgetSortBy }
     set({ workspace })
     saveWorkspace(workspace)
   },
