@@ -154,13 +154,19 @@ export class StorageService {
 
   async upsertSettings(settings: Settings): Promise<void> {
     await this.run(
-      `INSERT INTO settings (id, file_created_at, file_updated_at, audit_log_retention_limit)
-       VALUES ('singleton', ?, ?, ?)
+      `INSERT INTO settings (id, file_created_at, file_updated_at, audit_log_retention_limit, quadrantes_enabled)
+       VALUES ('singleton', ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          file_created_at = excluded.file_created_at,
          file_updated_at = excluded.file_updated_at,
-         audit_log_retention_limit = excluded.audit_log_retention_limit`,
-      [settings.fileCreatedAt, settings.fileUpdatedAt, settings.auditLogRetentionLimit]
+         audit_log_retention_limit = excluded.audit_log_retention_limit,
+         quadrantes_enabled = excluded.quadrantes_enabled`,
+      [
+        settings.fileCreatedAt,
+        settings.fileUpdatedAt,
+        settings.auditLogRetentionLimit,
+        settings.quadrantesEnabled ? 1 : 0,
+      ]
     )
   }
 
@@ -674,6 +680,7 @@ function rowToSettings(row: Row): Settings {
     fileCreatedAt: row.file_created_at as string,
     fileUpdatedAt: row.file_updated_at as string,
     auditLogRetentionLimit: row.audit_log_retention_limit as number | null,
+    quadrantesEnabled: Boolean(row.quadrantes_enabled),
   }
 }
 

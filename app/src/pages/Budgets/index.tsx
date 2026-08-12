@@ -1,5 +1,5 @@
 // Caixinhas — lista geral.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { PiggyBank, Plus } from 'lucide-react'
@@ -22,7 +22,13 @@ export default function Budgets() {
   const [showNewModal, setShowNewModal] = useState(false)
   const budgets = useDataStore((s) => s.data?.budgets ?? [])
   const transactions = useDataStore((s) => s.data?.transactions ?? [])
+  const ensureQuadrantesBatch = useDataStore((s) => s.ensureQuadrantesBatch)
   const sortBy = useWorkspaceStore((s) => s.workspace.budgetSortBy)
+
+  // BX-07: idempotente — só gera/arquiva se o lote do mês corrente ainda não existir.
+  useEffect(() => {
+    ensureQuadrantesBatch()
+  }, [ensureQuadrantesBatch])
 
   const visible = useMemo(() => budgets.filter((b) => !b.archivedAt), [budgets])
   const sorted = useMemo(
@@ -76,7 +82,11 @@ function BudgetCard({ budget, transactions }: { budget: Budget; transactions: Tr
   const status = getBudgetStatus(budget, transactions)
   const color = STATUS_COLOR[status]
   const linkedCount = transactions.filter((tx) => tx.budgetIds?.includes(budget.id)).length
-  const isEnded = daysRemaining(budget.period) < 0
+  // U-4 é para o usuário decidir arquivar uma caixinha manual — não se aplica aos slots da
+  // receita Quadrantes (BX-07): o intervalo de dias de um slot passa bem antes do fim do mês
+  // (ex.: Quadrante 1 encerra no dia 8), mas o lote inteiro continua "corrente" até a próxima
+  // virada arquivar automaticamente. Mostrar o selo aqui sugeriria uma ação que não existe.
+  const isEnded = !budget.recipeSlug && daysRemaining(budget.period) < 0
 
   // O card inteiro é o link para o detalhe — num tile estreito não sobra espaço
   // para uma área clicável menor que isso.

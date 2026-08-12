@@ -36,6 +36,7 @@ export interface Settings {
   fileCreatedAt: string // ISO 8601
   fileUpdatedAt: string // ISO 8601
   auditLogRetentionLimit: number | null // null = unlimited (opt-in); default 200
+  quadrantesEnabled: boolean // F-30/BX-07: opt-in "Quadrantes" recipe (plan/BUDGETS.md §5.6); default false
 }
 
 export interface CreditMetadata {

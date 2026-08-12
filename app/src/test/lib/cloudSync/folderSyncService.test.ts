@@ -42,6 +42,7 @@ function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
       fileCreatedAt: '2026-01-01',
       fileUpdatedAt: '2026-01-01',
       auditLogRetentionLimit: 200,
+      quadrantesEnabled: false,
     },
     accounts: [],
     categories: [],

@@ -31,6 +31,7 @@ import {
 } from '@/lib/utils'
 import { isDemoMode } from '@/lib/demo'
 import { trackAction } from '@/lib/telemetry'
+import { applyQuadrantesRecipe, findQuadranteForDate, QUADRANTE_SLUG } from '@/lib/budgetRecipes'
 
 // ─── Debounce helper ──────────────────────────────────────────────────────────
 
@@ -118,6 +119,15 @@ function makeEntry(
   return { id: uuid(), timestamp: now(), action, entity, entityId, summary }
 }
 
+// BX-08: associação automática por data — só na criação (nunca como reconciliação de fundo).
+// Só EXPENSE qualifica (§5.6): TRANSFER/CREDIT_PAYMENT ficam de fora para não duplicar gasto.
+function withAutoQuadranteLink(tx: Transaction, budgets: Budget[]): Transaction {
+  if (tx.type !== 'EXPENSE') return tx
+  const match = findQuadranteForDate(budgets, tx.date)
+  if (!match || tx.budgetIds?.includes(match.id)) return tx
+  return { ...tx, budgetIds: [...(tx.budgetIds ?? []), match.id] }
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 interface DataStore {
@@ -175,9 +185,14 @@ interface DataStore {
   // manual "Associar lançamento" action or the Quadrantes recipe's automatic sweep (BX-08)
   linkTransactionToBudget: (budgetId: string, transactionId: string) => void
   unlinkTransactionFromBudget: (budgetId: string, transactionId: string) => void
+  // BX-07: gera o lote mensal da receita Quadrantes se ainda não existir (idempotente) —
+  // chamada em todo boot do app e no mount de /budgets. No-op se a receita estiver desligada.
+  ensureQuadrantesBatch: () => void
 
   updateUser: (patch: Partial<DataFile['user']>) => void
   setRetentionLimit: (limit: number | null) => void
+  // BX-07: liga/desliga a receita Quadrantes; ligar já dispara a geração do lote corrente.
+  setQuadrantesEnabled: (enabled: boolean) => void
 }
 
 export const useDataStore = create<DataStore>((set, get) => ({
@@ -391,7 +406,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
                 updatedAt: now(),
                 createdAt: now(),
               }
-              d.transactions.push(installmentTx)
+              d.transactions.push(withAutoQuadranteLink(installmentTx, d.budgets))
             }
 
             const totalStr = `R$ ${tx.amount.toFixed(2).replace('.', ',')}`
@@ -425,7 +440,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
                 updatedAt: now(),
                 createdAt: now(),
               }
-              d.transactions.push(occurrence)
+              d.transactions.push(withAutoQuadranteLink(occurrence, d.budgets))
             }
 
             const freqLabel = { weekly: 'semanal', biweekly: 'quinzenal', monthly: 'mensal' }[
@@ -439,7 +454,9 @@ export const useDataStore = create<DataStore>((set, get) => ({
           }
 
           // ── Standard single transaction ──────────────────────────────────
-          d.transactions.push({ ...tx, updatedAt: now(), createdAt: now() })
+          d.transactions.push(
+            withAutoQuadranteLink({ ...tx, updatedAt: now(), createdAt: now() }, d.budgets)
+          )
           let summary: string
           if (tx.type === 'CREDIT_PAYMENT') {
             const creditAccName =
@@ -466,7 +483,23 @@ export const useDataStore = create<DataStore>((set, get) => ({
         s,
         (d) => {
           const i = d.transactions.findIndex((t) => t.id === tx.id)
-          if (i !== -1) d.transactions[i] = { ...tx, updatedAt: now() }
+          if (i !== -1) {
+            const prev = d.transactions[i]
+            let next: Transaction = { ...tx, updatedAt: now() }
+            // BX-08: só reavalia o vínculo automático quando a *data* de fato muda — uma edição
+            // que não mexe na data não reaciona a regra, e não reimpõe um vínculo que o usuário
+            // removeu manualmente pelo picker (plan/BUDGETS.md §5.6).
+            if (prev.date.slice(0, 10) !== next.date.slice(0, 10)) {
+              const quadranteIds = new Set(
+                d.budgets.filter((b) => b.recipeSlug === QUADRANTE_SLUG).map((b) => b.id)
+              )
+              const manualIds = (next.budgetIds ?? []).filter((id) => !quadranteIds.has(id))
+              const match =
+                next.type === 'EXPENSE' ? findQuadranteForDate(d.budgets, next.date) : undefined
+              next = { ...next, budgetIds: match ? [...manualIds, match.id] : manualIds }
+            }
+            d.transactions[i] = next
+          }
           const catName = d.categories.find((c) => c.id === tx.categoryId)?.name ?? ''
           addAudit(
             d,
@@ -820,6 +853,22 @@ export const useDataStore = create<DataStore>((set, get) => ({
       )
     ),
 
+  // BX-07/BX-08: gera o lote mensal da receita Quadrantes (idempotente) e arquiva o anterior no
+  // mesmo passo (§5.6). Chamada em todo boot e no mount de /budgets; no-op se a receita estiver
+  // desligada ou se o lote do mês corrente já existir.
+  ensureQuadrantesBatch: () =>
+    set((s) => {
+      if (!s.data || !s.data.settings.quadrantesEnabled) return {}
+      const data = structuredClone(s.data)
+      const ts = now()
+      if (!applyQuadrantesRecipe(data.budgets, todayStr(), ts)) return {}
+      addAudit(data, makeEntry('CREATE', 'budget', 'quadrantes', 'Quadrantes: lote mensal gerado'))
+      data.settings.fileUpdatedAt = ts
+      debouncedReplaceAll(data)
+      trackAction('quadrantes_batch_generated')
+      return { data }
+    }),
+
   // ── User / Settings ───────────────────────────────────────────────────────
 
   updateUser: (patch) =>
@@ -841,6 +890,26 @@ export const useDataStore = create<DataStore>((set, get) => ({
       data.auditLog = applyRetention(data.auditLog, limit)
       data.settings.fileUpdatedAt = now()
       debouncedReplaceAll(data)
+      return { data }
+    }),
+
+  setQuadrantesEnabled: (enabled) =>
+    set((s) => {
+      if (!s.data) return {}
+      const data = structuredClone(s.data)
+      const ts = now()
+      data.settings.quadrantesEnabled = enabled
+      data.settings.fileUpdatedAt = ts
+      // Ligar já gera o lote do mês corrente na hora — o usuário não precisa recarregar a
+      // página pra ver os 4 quadrantes aparecerem.
+      if (enabled && applyQuadrantesRecipe(data.budgets, todayStr(), ts)) {
+        addAudit(
+          data,
+          makeEntry('CREATE', 'budget', 'quadrantes', 'Quadrantes: lote mensal gerado')
+        )
+      }
+      debouncedReplaceAll(data)
+      trackAction('quadrantes_toggle')
       return { data }
     }),
 }))

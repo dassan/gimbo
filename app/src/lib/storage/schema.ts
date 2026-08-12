@@ -5,7 +5,7 @@ import { detectBrowserLocale, defaultCurrencyForLocale } from '@/lib/storage/wor
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 15
+export const CURRENT_SCHEMA_VERSION = 16
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -36,6 +36,7 @@ const SettingsSchema = z.object({
   fileCreatedAt: z.string(),
   fileUpdatedAt: z.string(),
   auditLogRetentionLimit: z.number().nullable(),
+  quadrantesEnabled: z.boolean().default(false), // F-30/BX-07; absent in older files defaults to false
 })
 
 const CreditMetadataSchema = z.object({
@@ -326,6 +327,13 @@ function migrateDataFile(data: DataFile): DataFile {
     migrated = { ...migrated, schemaVersion: 15 }
   }
 
+  // v15 → v16: adds optional quadrantesEnabled (Settings) — opt-in toggle for the "Quadrantes"
+  // recipe (F-30/BX-07). Zod-defaulted to false via DataFileSchema.parse, so existing records
+  // only need the version bump.
+  if (migrated.schemaVersion === 15) {
+    migrated = { ...migrated, schemaVersion: 16 }
+  }
+
   return migrated
 }
 
@@ -340,6 +348,7 @@ export function createEmptyDataFile(name: string, email: string): DataFile {
       fileCreatedAt: ts,
       fileUpdatedAt: ts,
       auditLogRetentionLimit: AUDIT_RETENTION_DEFAULT,
+      quadrantesEnabled: false,
     },
     accounts: [],
     categories: getDefaultCategories(),

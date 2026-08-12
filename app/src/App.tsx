@@ -33,6 +33,7 @@ export default function App() {
   const theme = useWorkspaceStore((s) => s.workspace.theme)
   const loadData = useDataStore((s) => s.loadData)
   const refreshRecurrenceHorizons = useDataStore((s) => s.refreshRecurrenceHorizons)
+  const ensureQuadrantesBatch = useDataStore((s) => s.ensureQuadrantesBatch)
   const data = useDataStore((s) => s.data)
   const [hydrated, setHydrated] = useState(false)
   const [initError, setInitError] = useState<string | null>(null)
@@ -66,6 +67,7 @@ export default function App() {
         if (isDemoMode()) {
           loadData(await loadDemoData())
           refreshRecurrenceHorizons()
+          ensureQuadrantesBatch()
           return
         }
 
@@ -94,6 +96,7 @@ export default function App() {
         if (saved) {
           loadData(saved)
           refreshRecurrenceHorizons()
+          ensureQuadrantesBatch()
           // CS-15: never blocks the boot — the app hydrates from local OPFS first, sync runs
           // after in the background (no-op when multi-device mode is off).
           void useDataStore.getState().runPeerSync()
@@ -108,7 +111,7 @@ export default function App() {
       }
     }
     void init()
-  }, [initWorkspace, loadData, refreshRecurrenceHorizons])
+  }, [initWorkspace, loadData, refreshRecurrenceHorizons, ensureQuadrantesBatch])
 
   if (!hydrated) return null
 

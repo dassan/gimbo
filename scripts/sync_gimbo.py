@@ -744,7 +744,10 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS settings (
   id TEXT PRIMARY KEY DEFAULT 'singleton',
   file_created_at TEXT NOT NULL DEFAULT '', file_updated_at TEXT NOT NULL DEFAULT '',
-  audit_log_retention_limit INTEGER
+  audit_log_retention_limit INTEGER,
+  -- F-30/BX-07/app schema v12: toggle da receita "Quadrantes", nunca populado pelo Organizze
+  -- (mesmo motivo das colunas LOAN/reserva acima).
+  quadrantes_enabled INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS accounts (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL,
@@ -824,7 +827,7 @@ CREATE INDEX IF NOT EXISTS idx_valuations_account ON valuations(account_id);
 CREATE INDEX IF NOT EXISTS idx_valuations_date ON valuations(date);
 CREATE INDEX IF NOT EXISTS idx_transaction_budgets_tx ON transaction_budgets(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_transaction_budgets_budget ON transaction_budgets(budget_id);
-PRAGMA user_version = 11;
+PRAGMA user_version = 12;
 """
 
 

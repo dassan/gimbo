@@ -18,6 +18,7 @@ import v8Schema from './migrations/v8.sql?raw'
 import v9Schema from './migrations/v9.sql?raw'
 import v10Schema from './migrations/v10.sql?raw'
 import v11Schema from './migrations/v11.sql?raw'
+import v12Schema from './migrations/v12.sql?raw'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
 
@@ -40,6 +41,7 @@ type RawSettings = {
   fileCreatedAt: string
   fileUpdatedAt: string
   auditLogRetentionLimit: number | null
+  quadrantesEnabled: boolean
 }
 type RawAccount = {
   id: string
@@ -149,7 +151,7 @@ const DB_FILENAME = 'gimbo.db'
 // this number was written by a newer app build and must be skipped, not partially migrated.
 // Bump this alongside every new migrations/vN.sql (same trap as data/sync_gimbo.py — see
 // CLAUDE.md "Armadilha recorrente").
-const MAX_KNOWN_DB_VERSION = 11
+const MAX_KNOWN_DB_VERSION = 12
 
 // ─── Initialization ───────────────────────────────────────────────────────────
 
@@ -214,6 +216,9 @@ async function runMigrationsOn(dbPtr: number): Promise<void> {
   }
   if (version < 11) {
     await sqlite3.run(dbPtr, v11Schema)
+  }
+  if (version < 12) {
+    await sqlite3.run(dbPtr, v12Schema)
   }
 }
 
@@ -290,8 +295,13 @@ async function replaceAll(raw: unknown): Promise<void> {
     // settings
     await sqlite3.run(
       db,
-      "INSERT INTO settings (id, file_created_at, file_updated_at, audit_log_retention_limit) VALUES ('singleton', ?, ?, ?)",
-      [d.settings.fileCreatedAt, d.settings.fileUpdatedAt, d.settings.auditLogRetentionLimit]
+      "INSERT INTO settings (id, file_created_at, file_updated_at, audit_log_retention_limit, quadrantes_enabled) VALUES ('singleton', ?, ?, ?, ?)",
+      [
+        d.settings.fileCreatedAt,
+        d.settings.fileUpdatedAt,
+        d.settings.auditLogRetentionLimit,
+        d.settings.quadrantesEnabled ? 1 : 0,
+      ]
     )
 
     // accounts
@@ -698,6 +708,7 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       fileCreatedAt: s.file_created_at as string,
       fileUpdatedAt: s.file_updated_at as string,
       auditLogRetentionLimit: s.audit_log_retention_limit as number | null,
+      quadrantesEnabled: Boolean(s.quadrantes_enabled),
     },
     accounts,
     categories,
