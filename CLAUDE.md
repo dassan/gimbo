@@ -262,9 +262,23 @@ Decisões arquiteturais (2026-05-27, mantidas):
 - Política de conflito = merge aditivo por UUID + LWW por `updatedAt`; duplicatas offline sobrevivem, usuário remove manualmente; deleções protegidas por `deletedIds`.
 - Nenhum servidor Gimbo em nenhuma fase — a camada de sync é sempre infraestrutura do próprio usuário.
 
-Ferramentas de desenvolvimento (2026-06-08, atualizado em 2026-08-10):
-- **Sync Organizze → Gimbo** (`scripts/sync_gimbo.py` — versionado desde 2026-08-10, antes vivia só em `data/`, gitignored): script de benchmark que lê a API do Organizze por demanda e gera um `gimbo.db` (`PRAGMA user_version = 11`) para importar. IDs determinísticos (`uuid5`), saldos iniciais zerados (preenchidos à mão), janela `--start`/`--end` (com `--end` futuro para lançamentos não pagos). **Dois modos**: snapshot (`--start`, replace total, `--base` preserva só saldos) e incremental (`--window-months N`, busca só os últimos N meses e funde transações por id no `--base` — para run 1x/dia, ~7 chamadas de API). A saída (`gimbo.db`) continua em `data/` por padrão (default de `--out`), mesmo o script morando em `scripts/`. Documentação completa em `ARCHITECTURE.md` → "Ferramenta de Benchmark: Sync Organizze → Gimbo".
+Ferramentas de desenvolvimento (2026-06-08, atualizado em 2026-08-12):
+- **Sync Organizze → Gimbo** (`scripts/sync_gimbo.py` — versionado desde 2026-08-10, antes vivia só em `data/`, gitignored): script de benchmark que lê a API do Organizze por demanda e gera um `gimbo.db` (`PRAGMA user_version = 12`) para importar. IDs determinísticos (`uuid5`), saldos iniciais zerados (preenchidos à mão), janela `--start`/`--end` (com `--end` futuro para lançamentos não pagos). **Dois modos**: snapshot (`--start`, replace total, `--base` preserva só saldos) e incremental (`--window-months N`, busca só os últimos N meses e funde transações por id no `--base` — para run 1x/dia, ~7 chamadas de API). A saída (`gimbo.db`) continua em `data/` por padrão (default de `--out`), mesmo o script morando em `scripts/`. Documentação completa em `ARCHITECTURE.md` → "Ferramenta de Benchmark: Sync Organizze → Gimbo".
 
 > **Armadilha recorrente:** todo bump de schema físico do app exige atualizar o `SCHEMA_DDL` e o
 > `PRAGMA user_version` do `sync_gimbo.py` **junto**. Senão o `runMigrations()` do app pula o
 > `ALTER TABLE` ao importar o `.db` gerado. Já aconteceu em M-51 e M-64 — e vai voltar no CS-04.
+
+> **Limitação conhecida (2026-08-12, F-30):** Caixinhas e a receita Quadrantes não têm equivalente
+> no Organizze, então `sync_gimbo.py` nunca as popula — `budgets`/`transaction_budgets` saem
+> sempre vazias e `settings.quadrantes_enabled` sai sempre `0` (o `DEFAULT` da coluna), **mesmo
+> em modo incremental com `--base`** — `read_base_data()` não lê a tabela `settings`, então o
+> toggle e as caixinhas do `--base` nunca são carregados de volta. Mesmo padrão que
+> `audit_log_retention_limit` já tinha (sempre hardcoded, nunca preservado do `--base`), não é
+> regressão da F-30. Como a importação em Configurações → Dados é **replace total**, rodar este
+> script e importar o `.db` resultante **apaga qualquer caixinha criada manualmente no app e
+> desliga a receita Quadrantes se estiver ligada**. Se algum dia isso virar problema real (ex.:
+> sync incremental 1x/dia rodando junto de uso ativo de Caixinhas), a correção é estender
+> `read_base_data`/`write_db` para preservar `budgets` e `quadrantes_enabled` do `--base`, no
+> mesmo espírito de como `balance`/`include_in_balance`/`archived` já são preservados por id —
+> ainda não implementado, decisão de produto em aberto.
