@@ -9,7 +9,8 @@
   "settings": {
     "fileCreatedAt": "2025-01-01T00:00:00-03:00",
     "fileUpdatedAt": "2026-05-24T11:10:58.718Z",
-    "auditLogRetentionLimit": 200
+    "auditLogRetentionLimit": 200,
+    "quadrantesEnabled": true
   },
   "accounts": [
     {
@@ -11238,6 +11239,9 @@
       "isPaid": true,
       "tags": [
         "5b2d8e11-0002-4c3f-b002-000000000004"
+      ],
+      "budgetIds": [
+        "b1000001-0005-4a1b-e005-000000000001"
       ]
     },
     {
@@ -11275,7 +11279,10 @@
       "date": "2026-04-07",
       "description": "iFood",
       "isPaid": true,
-      "tags": []
+      "tags": [],
+      "budgetIds": [
+        "b1000001-0005-4a1b-e005-000000000001"
+      ]
     },
     {
       "id": "513687fd-73b9-4663-85c4-a5f3ae8910b2",
@@ -11286,7 +11293,10 @@
       "date": "2026-04-08",
       "description": "Padaria Boa Vista",
       "isPaid": true,
-      "tags": []
+      "tags": [],
+      "budgetIds": [
+        "b1000001-0005-4a1b-e005-000000000001"
+      ]
     },
     {
       "id": "1dddfb56-cd18-4813-b629-41b5bbefa0d6",
@@ -11299,6 +11309,9 @@
       "isPaid": true,
       "tags": [
         "5b2d8e11-0002-4c3f-b002-000000000003"
+      ],
+      "budgetIds": [
+        "b1000001-0005-4a1b-e005-000000000001"
       ]
     },
     {
@@ -11312,6 +11325,9 @@
       "isPaid": true,
       "tags": [
         "5b2d8e11-0002-4c3f-b002-000000000003"
+      ],
+      "budgetIds": [
+        "b1000001-0005-4a1b-e005-000000000001"
       ]
     },
     {
@@ -11400,6 +11416,9 @@
       "isPaid": true,
       "tags": [
         "5b2d8e11-0002-4c3f-b002-000000000004"
+      ],
+      "budgetIds": [
+        "b1000001-0005-4a1b-e005-000000000001"
       ]
     },
     {
@@ -11529,7 +11548,10 @@
       "date": "2026-04-16",
       "description": "Padaria Boa Vista",
       "isPaid": true,
-      "tags": []
+      "tags": [],
+      "budgetIds": [
+        "b1000001-0005-4a1b-e005-000000000001"
+      ]
     },
     {
       "id": "a28e5e87-30a6-4992-a420-9789c9a88ccd",
@@ -11542,6 +11564,9 @@
       "isPaid": true,
       "tags": [
         "5b2d8e11-0002-4c3f-b002-000000000003"
+      ],
+      "budgetIds": [
+        "b1000001-0005-4a1b-e005-000000000001"
       ]
     },
     {
@@ -11566,7 +11591,10 @@
       "date": "2026-04-19",
       "description": "Lanchonete Central",
       "isPaid": true,
-      "tags": []
+      "tags": [],
+      "budgetIds": [
+        "b1000001-0005-4a1b-e005-000000000001"
+      ]
     },
     {
       "id": "30374e0b-3c00-4451-a90b-0d6de6bb5a0e",
@@ -11604,7 +11632,10 @@
       "date": "2026-04-20",
       "description": "iFood",
       "isPaid": true,
-      "tags": []
+      "tags": [],
+      "budgetIds": [
+        "b1000001-0005-4a1b-e005-000000000001"
+      ]
     },
     {
       "id": "bb014be4-acc9-4340-ac42-c85d0d7fa750",
@@ -17387,5 +17418,36 @@
       "summary": "Transação criada: Teste — R$ 0,01 — Condomínio"
     }
   ],
-  "deletedIds": []
+  "deletedIds": [],
+  "budgets": [
+    {
+      "id": "b1000001-0005-4a1b-e005-000000000001",
+      "name": "Comida & Mercado",
+      "emoji": "🛒",
+      "color": "#2D6A4F",
+      "kind": "expense",
+      "target": 4500,
+      "period": {
+        "mode": "range",
+        "start": "2026-04-01",
+        "end": "2026-04-30"
+      },
+      "createdAt": "2026-04-01T09:00:00-03:00",
+      "updatedAt": "2026-04-01T09:00:00-03:00"
+    },
+    {
+      "id": "b1000001-0005-4a1b-e005-000000000002",
+      "name": "Viagem dos sonhos",
+      "emoji": "✈️",
+      "color": "#1B4F72",
+      "kind": "expense",
+      "target": 12000,
+      "period": {
+        "mode": "date",
+        "date": "2026-12-20"
+      },
+      "createdAt": "2026-01-10T09:00:00-03:00",
+      "updatedAt": "2026-01-10T09:00:00-03:00"
+    }
+  ]
 }
