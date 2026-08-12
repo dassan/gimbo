@@ -1174,6 +1174,8 @@ export default function Settings() {
                       </div>
                       <button
                         onClick={() => setQuadrantesEnabled(!data?.settings.quadrantesEnabled)}
+                        aria-label={t('budgets.quadrantesLabel')}
+                        aria-pressed={data?.settings.quadrantesEnabled ?? false}
                         className={cn(
                           'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200',
                           data?.settings.quadrantesEnabled
