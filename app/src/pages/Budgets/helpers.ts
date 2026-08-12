@@ -2,6 +2,7 @@
 // Derivações de dado (progresso, status) vivem em lib/utils.ts desde a BX-05 —
 // aqui fica só o que é puramente de UI.
 import { parseDateLocal, budgetProgress, type BudgetStatus } from '@/lib/utils'
+import { QUADRANTE_SLUG } from '@/lib/budgetRecipes'
 import type { Budget, BudgetPeriod, BudgetSortBy, Transaction } from '@/types'
 
 export const GAUGE_GREEN = '#2D6A4F'
@@ -63,4 +64,31 @@ export function sortBudgets(
     default:
       return sorted.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
   }
+}
+
+/**
+ * Agrupa a lista para /budgets: enquanto a receita Quadrantes estiver ativa, seus slots
+ * ficam sempre nas 4 primeiras posições, ordenados por `recipeSlot` (não pela ordenação
+ * configurável) — previsibilidade do conjunto fixo 1-4 importa mais que o critério do
+ * usuário. `budgetSortBy` continua valendo só para o resto. Com a receita desligada (ou
+ * sem nenhum slot visível — ex.: todos arquivados), a lista volta a ser um grupo só.
+ */
+export function groupBudgetsForList(
+  budgets: Budget[],
+  transactions: Transaction[],
+  sortBy: BudgetSortBy,
+  quadrantesEnabled: boolean
+): { quadrantes: Budget[]; rest: Budget[] } {
+  if (!quadrantesEnabled) {
+    return { quadrantes: [], rest: sortBudgets(budgets, transactions, sortBy) }
+  }
+  const quadrantes = budgets
+    .filter((b) => b.recipeSlug === QUADRANTE_SLUG)
+    .sort((a, b) => (a.recipeSlot ?? 0) - (b.recipeSlot ?? 0))
+  const rest = sortBudgets(
+    budgets.filter((b) => b.recipeSlug !== QUADRANTE_SLUG),
+    transactions,
+    sortBy
+  )
+  return { quadrantes, rest }
 }

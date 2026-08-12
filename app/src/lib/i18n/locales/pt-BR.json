@@ -78,7 +78,8 @@
     "pickerEmpty": "Nenhum lançamento encontrado.",
     "pickerInstallmentHint": "Vincula as {{total}} parcelas desta compra",
     "quadrantesLabel": "Receita Quadrantes",
-    "quadrantesHint": "Gera 4 caixinhas por mês (dias 1–8, 9–16, 17–24, 25–fim) e associa despesas automaticamente por data."
+    "quadrantesHint": "Gera 4 caixinhas por mês (dias 1–8, 9–16, 17–24, 25–fim) e associa despesas automaticamente por data.",
+    "otherBudgets": "Outras caixinhas"
   },
   "onboarding": {
     "headline": "Seu Ledger,\nSua Liberdade.",

@@ -14,7 +14,7 @@ import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import BudgetFormModal from './BudgetFormModal'
 import { ProgressBar } from './shared'
-import { GAUGE_RED, STATUS_COLOR, daysRemaining, sortBudgets } from './helpers'
+import { GAUGE_RED, STATUS_COLOR, daysRemaining, groupBudgetsForList } from './helpers'
 import type { Budget, Transaction } from '@/types'
 
 export default function Budgets() {
@@ -22,6 +22,7 @@ export default function Budgets() {
   const [showNewModal, setShowNewModal] = useState(false)
   const budgets = useDataStore((s) => s.data?.budgets ?? [])
   const transactions = useDataStore((s) => s.data?.transactions ?? [])
+  const quadrantesEnabled = useDataStore((s) => s.data?.settings.quadrantesEnabled ?? false)
   const ensureQuadrantesBatch = useDataStore((s) => s.ensureQuadrantesBatch)
   const sortBy = useWorkspaceStore((s) => s.workspace.budgetSortBy)
 
@@ -31,9 +32,11 @@ export default function Budgets() {
   }, [ensureQuadrantesBatch])
 
   const visible = useMemo(() => budgets.filter((b) => !b.archivedAt), [budgets])
-  const sorted = useMemo(
-    () => sortBudgets(visible, transactions, sortBy),
-    [visible, transactions, sortBy]
+  // M-68: enquanto a receita Quadrantes estiver ativa, seus 4 slots ficam fixos nas primeiras
+  // posições (ordenados por recipeSlot) — a ordenação configurável (U-3) vale só pro resto.
+  const { quadrantes, rest } = useMemo(
+    () => groupBudgetsForList(visible, transactions, sortBy, quadrantesEnabled),
+    [visible, transactions, sortBy, quadrantesEnabled]
   )
 
   return (
@@ -56,14 +59,37 @@ export default function Budgets() {
       </div>
 
       {/* ── Lista de caixinhas ─────────────────────────────────────────────── */}
-      {sorted.length === 0 ? (
+      {quadrantes.length === 0 && rest.length === 0 ? (
         <EmptyState onCreate={() => setShowNewModal(true)} />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {sorted.map((budget) => (
-            <BudgetCard key={budget.id} budget={budget} transactions={transactions} />
-          ))}
-        </div>
+        <>
+          {quadrantes.length > 0 && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {quadrantes.map((budget) => (
+                <BudgetCard key={budget.id} budget={budget} transactions={transactions} />
+              ))}
+            </div>
+          )}
+
+          {/* Rótulo só aqui — os quadrantes já se identificam pelo emoji numérico + cor
+              neutra (§5.6), um cabeçalho próprio pra eles seria redundante. */}
+          {quadrantes.length > 0 && rest.length > 0 && (
+            <div className="pt-1">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.05em] text-on-surface/40">
+                {t('budgets.otherBudgets')}
+              </p>
+              <div className="mt-2 border-t border-surface-container-high" />
+            </div>
+          )}
+
+          {rest.length > 0 && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {rest.map((budget) => (
+                <BudgetCard key={budget.id} budget={budget} transactions={transactions} />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {showNewModal && <BudgetFormModal onClose={() => setShowNewModal(false)} />}
