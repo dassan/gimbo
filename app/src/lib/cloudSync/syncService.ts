@@ -1,7 +1,9 @@
 // F-28 Nível 2, Fase 2 — CS-06: orchestrates pull+merge and push for the Google Drive transport.
-// Unlike Fase 1's folderSyncService (one file per device), Drive holds a single shared gimbo.db —
-// so instead of a per-peer lastMergedAt cache, staleness is judged by comparing timestamps:
-// `settings.fileUpdatedAt` (local) against the Drive file's own `modifiedTime` (S-09).
+// Staleness is judged the same way as Fase 1's folderSyncService (CS-15): a persisted "last
+// remote version this device has already pulled" cache, not `settings.fileUpdatedAt`. A device
+// with a freshly created (empty) local vault gets a brand-new `fileUpdatedAt` — comparing that
+// against the Drive file's `modifiedTime` made a new device's empty vault look "newer" than a
+// Drive file full of real data, silently skipping the pull it needed most (CS-22).
 
 import { storage } from '@/services/storage'
 import type { DataFile } from '@/types'
@@ -9,6 +11,19 @@ import { isGoogleConnected } from './googleAuth'
 import { createGoogleDriveProvider } from './googleDrive'
 import { mergeForSync } from './merge'
 import type { SyncResult } from './provider'
+
+const LAST_PULLED_KEY = 'gimbo_sync_drive_last_pulled_mtime'
+
+function getLastPulledRemoteModifiedTime(): string {
+  return localStorage.getItem(LAST_PULLED_KEY) ?? ''
+}
+
+function setLastPulledRemoteModifiedTime(modifiedTime: string): void {
+  // Cache only — never financial data, safe in localStorage (same reasoning as
+  // folderSyncService's LAST_MERGED_KEY_PREFIX): worst case on loss is one redundant re-pull of
+  // an already-merged remote, harmless because mergeForSync is idempotent (CS-05).
+  localStorage.setItem(LAST_PULLED_KEY, modifiedTime)
+}
 
 /**
  * Pulls the Drive file (if newer than local), merges it in, and pushes the result back. First
@@ -26,8 +41,8 @@ export async function pullAndMerge(local: DataFile): Promise<SyncResult> {
     }
 
     const meta = await provider.getMetadata()
-    if (meta.modifiedTime <= local.settings.fileUpdatedAt) {
-      return { status: 'synced' } // local is already at least as new — nothing to pull
+    if (meta.modifiedTime <= getLastPulledRemoteModifiedTime()) {
+      return { status: 'synced' } // this device already pulled this exact remote version
     }
 
     const buffer = await provider.download()
@@ -39,6 +54,7 @@ export async function pullAndMerge(local: DataFile): Promise<SyncResult> {
     const merged = mergeForSync(local, result.data)
     await storage.replaceAll(merged)
     await provider.upload(await storage.exportBlob())
+    setLastPulledRemoteModifiedTime(meta.modifiedTime)
     return { status: 'merged', peersMerged: 1 }
   } catch {
     // Network/API failure (offline, revoked access, Drive outage...) — never fatal, the app
