@@ -14,7 +14,14 @@ export type CategoryType = 'INCOME' | 'EXPENSE'
 export type TransactionType = 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'CREDIT_PAYMENT'
 
 export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE'
-export type AuditEntity = 'account' | 'category' | 'tag' | 'transaction' | 'user' | 'savedPeriod'
+export type AuditEntity =
+  | 'account'
+  | 'category'
+  | 'tag'
+  | 'transaction'
+  | 'user'
+  | 'savedPeriod'
+  | 'budget'
 
 // ─── Entities ─────────────────────────────────────────────────────────────────
 
@@ -29,6 +36,7 @@ export interface Settings {
   fileCreatedAt: string // ISO 8601
   fileUpdatedAt: string // ISO 8601
   auditLogRetentionLimit: number | null // null = unlimited (opt-in); default 200
+  quadrantesEnabled: boolean // F-30/BX-07: opt-in "Quadrantes" recipe (plan/BUDGETS.md §5.6); default false
 }
 
 export interface CreditMetadata {
@@ -115,6 +123,8 @@ export interface Transaction {
   invoiceDueDate?: string // CREDIT charges/credits: authoritative due date of the bound invoice, "YYYY-MM-DD", captured from the source. Used by getEffectiveCashFlowDate so historical invoices stay anchored even if the card's closing/due day later changes (CC-33)
   updatedAt?: string // ISO 8601 — last-write-wins timestamp for the cloud-sync merge engine (CS-04)
   createdAt?: string // ISO 8601 — when the entry was added, distinct from `date` (which the user can back/postdate). Drives "recently added" ordering (B-24)
+  budgetIds?: string[] // UUID[] — Budget N:N link, mirrors `tags`. Optional (unlike `tags`) so the
+  // many existing call sites that build a Transaction by hand don't all need updating (F-30, BX-03)
 }
 
 export interface Valuation {
@@ -141,6 +151,31 @@ export interface SavedPeriod {
   end: string // "YYYY-MM-DD"
 }
 
+// F-30 (Caixinhas): despesa = target is a ceiling; receita = target is a floor. See
+// plan/BUDGETS.md §2 "Semântica do tipo".
+export type BudgetKind = 'expense' | 'income'
+
+// A single target date, or a closed [start, end] range. See plan/BUDGETS.md §2.
+export type BudgetPeriod =
+  | { mode: 'date'; date: string } // "YYYY-MM-DD"
+  | { mode: 'range'; start: string; end: string } // "YYYY-MM-DD" each
+
+export interface Budget {
+  id: string // UUID
+  name: string
+  emoji: string
+  color: string
+  kind: BudgetKind
+  target: number
+  period: BudgetPeriod
+  archivedAt?: string // ISO 8601 — absent = active. Set automatically (Quadrantes recipe) or by the
+  // user (manual "Arquivar"). Visibility state only — linked transactions are untouched (plan/BUDGETS.md §5.8)
+  recipeSlug?: string // 'quadrantes' — absent for manual budgets (plan/BUDGETS.md §5.6)
+  recipeSlot?: number // 1-4 — only set alongside recipeSlug, identifies which slot in the monthly batch
+  updatedAt?: string // ISO 8601 — last-write-wins timestamp for the cloud-sync merge engine (CS-04)
+  createdAt?: string // ISO 8601 — when the caixinha was created, distinct from updatedAt (drives the "Criação" sort, BX-06/U-3)
+}
+
 // ─── Root data.json shape ─────────────────────────────────────────────────────
 
 export interface DataFile {
@@ -155,6 +190,7 @@ export interface DataFile {
   auditLog: AuditEntry[]
   deletedIds: string[] // tombstone: IDs explicitly deleted on this device (B-11)
   savedPeriods: SavedPeriod[] // M-45: named custom date ranges saved from Reports
+  budgets: Budget[] // F-30: caixinhas
 }
 
 // ─── workspace.json shape ─────────────────────────────────────────────────────
@@ -163,6 +199,10 @@ export type Theme = 'light' | 'dark' | 'system'
 export type Locale = 'pt-BR' | 'en-US'
 export type Currency = 'BRL' | 'USD'
 export type IncomeWindowMonths = 3 | 6 | 9 | 12
+// F-30/BX-06 (U-3): 'deadline' = nearest period end first; 'progress' = highest % first;
+// 'name' = alphabetical; 'createdAt' = most recently created first (default — matches the
+// order caixinhas naturally appear in when there's no explicit sort).
+export type BudgetSortBy = 'deadline' | 'progress' | 'name' | 'createdAt'
 
 export interface WorkspaceFile {
   theme: Theme
@@ -175,4 +215,5 @@ export interface WorkspaceFile {
   incomeWindowMonths: IncomeWindowMonths // HE-09: lookback window for the income suggestion (default 6)
   monthlyCostOverride?: number // HE-12/D7: user-confirmed monthly cost; always wins over the derived suggestion
   reserveTargetMonths: IncomeWindowMonths // HE-16: target months multiplier for the recommended reserve (default 6)
+  budgetSortBy: BudgetSortBy // F-30/BX-06 (U-3): sort order for the caixinhas list (default 'createdAt')
 }

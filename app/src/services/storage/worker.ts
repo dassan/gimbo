@@ -17,6 +17,8 @@ import v7Schema from './migrations/v7.sql?raw'
 import v8Schema from './migrations/v8.sql?raw'
 import v9Schema from './migrations/v9.sql?raw'
 import v10Schema from './migrations/v10.sql?raw'
+import v11Schema from './migrations/v11.sql?raw'
+import v12Schema from './migrations/v12.sql?raw'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
 
@@ -39,6 +41,7 @@ type RawSettings = {
   fileCreatedAt: string
   fileUpdatedAt: string
   auditLogRetentionLimit: number | null
+  quadrantesEnabled: boolean
 }
 type RawAccount = {
   id: string
@@ -85,6 +88,7 @@ type RawTransaction = {
   invoiceDueDate?: string
   updatedAt?: string
   createdAt?: string
+  budgetIds?: string[]
 }
 type RawAuditEntry = {
   id: string
@@ -106,6 +110,20 @@ type RawSavedPeriod = {
   start: string
   end: string
 }
+type RawBudget = {
+  id: string
+  name: string
+  emoji: string
+  color: string
+  kind: string
+  target: number
+  period: { mode: 'date'; date: string } | { mode: 'range'; start: string; end: string }
+  archivedAt?: string
+  recipeSlug?: string
+  recipeSlot?: number
+  updatedAt?: string
+  createdAt?: string
+}
 type RawDataFile = {
   user: RawUser
   settings: RawSettings
@@ -117,6 +135,7 @@ type RawDataFile = {
   auditLog: RawAuditEntry[]
   deletedIds: string[]
   savedPeriods: RawSavedPeriod[]
+  budgets: RawBudget[]
 }
 
 // ─── SQLite state ─────────────────────────────────────────────────────────────
@@ -132,7 +151,7 @@ const DB_FILENAME = 'gimbo.db'
 // this number was written by a newer app build and must be skipped, not partially migrated.
 // Bump this alongside every new migrations/vN.sql (same trap as data/sync_gimbo.py — see
 // CLAUDE.md "Armadilha recorrente").
-const MAX_KNOWN_DB_VERSION = 10
+const MAX_KNOWN_DB_VERSION = 12
 
 // ─── Initialization ───────────────────────────────────────────────────────────
 
@@ -195,6 +214,12 @@ async function runMigrationsOn(dbPtr: number): Promise<void> {
   if (version < 10) {
     await sqlite3.run(dbPtr, v10Schema)
   }
+  if (version < 11) {
+    await sqlite3.run(dbPtr, v11Schema)
+  }
+  if (version < 12) {
+    await sqlite3.run(dbPtr, v12Schema)
+  }
 }
 
 // ─── Export / Import ──────────────────────────────────────────────────────────
@@ -247,11 +272,13 @@ async function replaceAll(raw: unknown): Promise<void> {
   try {
     // Clear in dependency order (junction tables and leaves first)
     await sqlite3.run(db, 'DELETE FROM transaction_tags')
+    await sqlite3.run(db, 'DELETE FROM transaction_budgets')
     await sqlite3.run(db, 'DELETE FROM audit_log')
     await sqlite3.run(db, 'DELETE FROM deleted_ids')
     await sqlite3.run(db, 'DELETE FROM transactions')
     await sqlite3.run(db, 'DELETE FROM valuations')
     await sqlite3.run(db, 'DELETE FROM saved_periods')
+    await sqlite3.run(db, 'DELETE FROM budgets')
     await sqlite3.run(db, 'DELETE FROM categories')
     await sqlite3.run(db, 'DELETE FROM tags')
     await sqlite3.run(db, 'DELETE FROM accounts')
@@ -268,8 +295,13 @@ async function replaceAll(raw: unknown): Promise<void> {
     // settings
     await sqlite3.run(
       db,
-      "INSERT INTO settings (id, file_created_at, file_updated_at, audit_log_retention_limit) VALUES ('singleton', ?, ?, ?)",
-      [d.settings.fileCreatedAt, d.settings.fileUpdatedAt, d.settings.auditLogRetentionLimit]
+      "INSERT INTO settings (id, file_created_at, file_updated_at, audit_log_retention_limit, quadrantes_enabled) VALUES ('singleton', ?, ?, ?, ?)",
+      [
+        d.settings.fileCreatedAt,
+        d.settings.fileUpdatedAt,
+        d.settings.auditLogRetentionLimit,
+        d.settings.quadrantesEnabled ? 1 : 0,
+      ]
     )
 
     // accounts
@@ -334,6 +366,34 @@ async function replaceAll(raw: unknown): Promise<void> {
       )
     }
 
+    // budgets (F-30/BX-03)
+    for (const b of d.budgets ?? []) {
+      await sqlite3.run(
+        db,
+        `INSERT INTO budgets
+           (id, name, emoji, color, kind, target, period_mode, period_date, period_start, period_end,
+            archived_at, recipe_slug, recipe_slot, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          b.id,
+          b.name,
+          b.emoji,
+          b.color,
+          b.kind,
+          b.target,
+          b.period.mode,
+          b.period.mode === 'date' ? b.period.date : null,
+          b.period.mode === 'range' ? b.period.start : null,
+          b.period.mode === 'range' ? b.period.end : null,
+          b.archivedAt ?? null,
+          b.recipeSlug ?? null,
+          b.recipeSlot ?? null,
+          b.createdAt ?? ts,
+          b.updatedAt ?? ts,
+        ]
+      )
+    }
+
     // transactions + junction rows
     for (const tx of d.transactions) {
       await sqlite3.run(
@@ -373,6 +433,13 @@ async function replaceAll(raw: unknown): Promise<void> {
           db,
           'INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)',
           [tx.id, tagId]
+        )
+      }
+      for (const budgetId of tx.budgetIds ?? []) {
+        await sqlite3.run(
+          db,
+          'INSERT INTO transaction_budgets (transaction_id, budget_id) VALUES (?, ?)',
+          [tx.id, budgetId]
         )
       }
     }
@@ -513,14 +580,17 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
 
   const txRows = await queryRows(
     dbPtr,
-    `SELECT t.*, GROUP_CONCAT(tt.tag_id) AS tag_ids
+    `SELECT t.*, GROUP_CONCAT(DISTINCT tt.tag_id) AS tag_ids,
+            GROUP_CONCAT(DISTINCT tb.budget_id) AS budget_ids
      FROM transactions t
      LEFT JOIN transaction_tags tt ON t.id = tt.transaction_id
+     LEFT JOIN transaction_budgets tb ON t.id = tb.transaction_id
      GROUP BY t.id
      ORDER BY t.date DESC, t.created_at DESC`
   )
   const transactions: RawTransaction[] = txRows.map((r) => {
     const tagIds = r.tag_ids as string | null
+    const budgetIds = r.budget_ids as string | null
     const tx: RawTransaction = {
       id: r.id as string,
       accountId: r.account_id as string,
@@ -531,6 +601,7 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       date: r.date as string,
       isPaid: Boolean(r.is_paid),
       tags: tagIds ? tagIds.split(',') : [],
+      budgetIds: budgetIds ? budgetIds.split(',') : [],
     }
     if (r.updated_at !== null && r.updated_at !== undefined) tx.updatedAt = r.updated_at as string
     if (r.created_at !== null && r.created_at !== undefined) tx.createdAt = r.created_at as string
@@ -587,6 +658,32 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
     end: r.end_date as string,
   }))
 
+  const budgetRows = await queryRows(dbPtr, 'SELECT * FROM budgets ORDER BY created_at')
+  const budgets: RawBudget[] = budgetRows.map((r) => {
+    const period: RawBudget['period'] =
+      r.period_mode === 'date'
+        ? { mode: 'date', date: r.period_date as string }
+        : { mode: 'range', start: r.period_start as string, end: r.period_end as string }
+    const b: RawBudget = {
+      id: r.id as string,
+      name: r.name as string,
+      emoji: r.emoji as string,
+      color: r.color as string,
+      kind: r.kind as string,
+      target: r.target as number,
+      period,
+    }
+    if (r.archived_at !== null && r.archived_at !== undefined)
+      b.archivedAt = r.archived_at as string
+    if (r.recipe_slug !== null && r.recipe_slug !== undefined)
+      b.recipeSlug = r.recipe_slug as string
+    if (r.recipe_slot !== null && r.recipe_slot !== undefined)
+      b.recipeSlot = r.recipe_slot as number
+    if (r.updated_at !== null && r.updated_at !== undefined) b.updatedAt = r.updated_at as string
+    if (r.created_at !== null && r.created_at !== undefined) b.createdAt = r.created_at as string
+    return b
+  })
+
   const auditRows = await queryRows(dbPtr, 'SELECT * FROM audit_log ORDER BY timestamp ASC')
   const auditLog: RawAuditEntry[] = auditRows.map((r) => ({
     id: r.id as string,
@@ -611,6 +708,7 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       fileCreatedAt: s.file_created_at as string,
       fileUpdatedAt: s.file_updated_at as string,
       auditLogRetentionLimit: s.audit_log_retention_limit as number | null,
+      quadrantesEnabled: Boolean(s.quadrantes_enabled),
     },
     accounts,
     categories,
@@ -620,6 +718,7 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
     auditLog,
     deletedIds,
     savedPeriods,
+    budgets,
   }
 }
 
@@ -689,11 +788,13 @@ async function clearAll(): Promise<void> {
   await sqlite3.run(db, 'BEGIN')
   try {
     await sqlite3.run(db, 'DELETE FROM transaction_tags')
+    await sqlite3.run(db, 'DELETE FROM transaction_budgets')
     await sqlite3.run(db, 'DELETE FROM audit_log')
     await sqlite3.run(db, 'DELETE FROM deleted_ids')
     await sqlite3.run(db, 'DELETE FROM transactions')
     await sqlite3.run(db, 'DELETE FROM valuations')
     await sqlite3.run(db, 'DELETE FROM saved_periods')
+    await sqlite3.run(db, 'DELETE FROM budgets')
     await sqlite3.run(db, 'DELETE FROM categories')
     await sqlite3.run(db, 'DELETE FROM tags')
     await sqlite3.run(db, 'DELETE FROM accounts')

@@ -6,6 +6,7 @@ import type {
   AuditAction,
   AuditEntity,
   AuditEntry,
+  Budget,
   Category,
   CategoryType,
   CreditMetadata,
@@ -153,13 +154,19 @@ export class StorageService {
 
   async upsertSettings(settings: Settings): Promise<void> {
     await this.run(
-      `INSERT INTO settings (id, file_created_at, file_updated_at, audit_log_retention_limit)
-       VALUES ('singleton', ?, ?, ?)
+      `INSERT INTO settings (id, file_created_at, file_updated_at, audit_log_retention_limit, quadrantes_enabled)
+       VALUES ('singleton', ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          file_created_at = excluded.file_created_at,
          file_updated_at = excluded.file_updated_at,
-         audit_log_retention_limit = excluded.audit_log_retention_limit`,
-      [settings.fileCreatedAt, settings.fileUpdatedAt, settings.auditLogRetentionLimit]
+         audit_log_retention_limit = excluded.audit_log_retention_limit,
+         quadrantes_enabled = excluded.quadrantes_enabled`,
+      [
+        settings.fileCreatedAt,
+        settings.fileUpdatedAt,
+        settings.auditLogRetentionLimit,
+        settings.quadrantesEnabled ? 1 : 0,
+      ]
     )
   }
 
@@ -352,9 +359,11 @@ export class StorageService {
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
     const rows = await this.query(
-      `SELECT t.*, GROUP_CONCAT(tt.tag_id) AS tag_ids
+      `SELECT t.*, GROUP_CONCAT(DISTINCT tt.tag_id) AS tag_ids,
+              GROUP_CONCAT(DISTINCT tb.budget_id) AS budget_ids
        FROM transactions t
        LEFT JOIN transaction_tags tt ON t.id = tt.transaction_id
+       LEFT JOIN transaction_budgets tb ON t.id = tb.transaction_id
        ${where}
        GROUP BY t.id
        ORDER BY t.date DESC, t.created_at DESC`,
@@ -397,10 +406,18 @@ export class StorageService {
         ])
       }
     }
+    for (const budgetId of data.budgetIds ?? []) {
+      await this.run('INSERT INTO transaction_budgets (transaction_id, budget_id) VALUES (?, ?)', [
+        id,
+        budgetId,
+      ])
+    }
     const rows = await this.query(
-      `SELECT t.*, GROUP_CONCAT(tt.tag_id) AS tag_ids
+      `SELECT t.*, GROUP_CONCAT(DISTINCT tt.tag_id) AS tag_ids,
+              GROUP_CONCAT(DISTINCT tb.budget_id) AS budget_ids
        FROM transactions t
        LEFT JOIN transaction_tags tt ON t.id = tt.transaction_id
+       LEFT JOIN transaction_budgets tb ON t.id = tb.transaction_id
        WHERE t.id = ?
        GROUP BY t.id`,
       [id]
@@ -410,9 +427,11 @@ export class StorageService {
 
   async updateTransaction(id: string, data: UpdateTransactionData): Promise<Transaction> {
     const rows = await this.query(
-      `SELECT t.*, GROUP_CONCAT(tt.tag_id) AS tag_ids
+      `SELECT t.*, GROUP_CONCAT(DISTINCT tt.tag_id) AS tag_ids,
+              GROUP_CONCAT(DISTINCT tb.budget_id) AS budget_ids
        FROM transactions t
        LEFT JOIN transaction_tags tt ON t.id = tt.transaction_id
+       LEFT JOIN transaction_budgets tb ON t.id = tb.transaction_id
        WHERE t.id = ?
        GROUP BY t.id`,
       [id]
@@ -448,6 +467,13 @@ export class StorageService {
       await this.run('INSERT INTO transaction_tags (transaction_id, tag_id) VALUES (?, ?)', [
         id,
         tagId,
+      ])
+    }
+    await this.run('DELETE FROM transaction_budgets WHERE transaction_id = ?', [id])
+    for (const budgetId of merged.budgetIds ?? []) {
+      await this.run('INSERT INTO transaction_budgets (transaction_id, budget_id) VALUES (?, ?)', [
+        id,
+        budgetId,
       ])
     }
     return merged
@@ -530,6 +556,13 @@ export class StorageService {
     }))
   }
 
+  // ─── Budgets (F-30/BX-03) ──────────────────────────────────────────────────────
+
+  async getBudgets(): Promise<Budget[]> {
+    const rows = await this.query('SELECT * FROM budgets ORDER BY created_at')
+    return rows.map(rowToBudget)
+  }
+
   // ─── Export / Import ─────────────────────────────────────────────────────────
 
   async exportBlob(): Promise<Blob> {
@@ -585,6 +618,7 @@ export class StorageService {
       auditLog,
       deletedIds,
       savedPeriods,
+      budgets,
     ] = await Promise.all([
       this.getAccounts(),
       this.getCategories(),
@@ -594,6 +628,7 @@ export class StorageService {
       this.getAuditLog(),
       this.getDeletedIds(),
       this.getSavedPeriods(),
+      this.getBudgets(),
     ])
 
     return {
@@ -608,6 +643,7 @@ export class StorageService {
       auditLog,
       deletedIds,
       savedPeriods,
+      budgets,
     }
   }
 
@@ -644,6 +680,7 @@ function rowToSettings(row: Row): Settings {
     fileCreatedAt: row.file_created_at as string,
     fileUpdatedAt: row.file_updated_at as string,
     auditLogRetentionLimit: row.audit_log_retention_limit as number | null,
+    quadrantesEnabled: Boolean(row.quadrantes_enabled),
   }
 }
 
@@ -714,6 +751,7 @@ function rowToTag(row: Row): Tag {
 
 function rowToTransaction(row: Row): Transaction {
   const tagIds = row.tag_ids as string | null
+  const budgetIds = row.budget_ids as string | null
   const tx: Transaction = {
     id: row.id as string,
     accountId: row.account_id as string,
@@ -724,6 +762,7 @@ function rowToTransaction(row: Row): Transaction {
     date: row.date as string,
     isPaid: Boolean(row.is_paid),
     tags: tagIds ? tagIds.split(',') : [],
+    budgetIds: budgetIds ? budgetIds.split(',') : [],
   }
   if (row.updated_at !== null && row.updated_at !== undefined) {
     tx.updatedAt = row.updated_at as string
@@ -761,6 +800,38 @@ function rowToTransaction(row: Row): Transaction {
     tx.recurrence = recurrence
   }
   return tx
+}
+
+function rowToBudget(row: Row): Budget {
+  const period: Budget['period'] =
+    row.period_mode === 'date'
+      ? { mode: 'date', date: row.period_date as string }
+      : { mode: 'range', start: row.period_start as string, end: row.period_end as string }
+  const b: Budget = {
+    id: row.id as string,
+    name: row.name as string,
+    emoji: row.emoji as string,
+    color: row.color as string,
+    kind: row.kind as Budget['kind'],
+    target: row.target as number,
+    period,
+  }
+  if (row.archived_at !== null && row.archived_at !== undefined) {
+    b.archivedAt = row.archived_at as string
+  }
+  if (row.recipe_slug !== null && row.recipe_slug !== undefined) {
+    b.recipeSlug = row.recipe_slug as string
+  }
+  if (row.recipe_slot !== null && row.recipe_slot !== undefined) {
+    b.recipeSlot = row.recipe_slot as number
+  }
+  if (row.updated_at !== null && row.updated_at !== undefined) {
+    b.updatedAt = row.updated_at as string
+  }
+  if (row.created_at !== null && row.created_at !== undefined) {
+    b.createdAt = row.created_at as string
+  }
+  return b
 }
 
 function rowToAuditEntry(row: Row): AuditEntry {

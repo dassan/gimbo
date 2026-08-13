@@ -14,6 +14,7 @@ export function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
       fileCreatedAt: '2024-01-01T00:00:00',
       fileUpdatedAt: '2024-01-01T00:00:00',
       auditLogRetentionLimit: 200,
+      quadrantesEnabled: false,
     },
     accounts: [],
     categories: [],
@@ -23,6 +24,7 @@ export function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
     auditLog: [],
     deletedIds: [],
     savedPeriods: [],
+    budgets: [],
     ...overrides,
   }
 }
@@ -141,6 +143,7 @@ export function makeInstallmentGroup(
       type: 'EXPENSE' as const,
       isPaid: false,
       tags: [],
+      budgetIds: [],
       ...overrides,
       amount,
       date: txDate,

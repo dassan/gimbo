@@ -22,6 +22,7 @@ import { loadBackupDirHandle } from '@/lib/backupDir'
 const NAV_ITEMS = [
   { to: '/dashboard', key: 'nav.dashboard' },
   { to: '/transactions', key: 'nav.transactions' },
+  { to: '/budgets', key: 'nav.budgets' },
   { to: '/analytics', key: 'nav.analytics' },
   { to: '/net-worth', key: 'nav.netWorth' },
   { to: '/health', key: 'nav.health' },

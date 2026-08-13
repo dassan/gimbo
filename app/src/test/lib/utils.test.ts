@@ -29,8 +29,12 @@ import {
   projectRecurringOccurrences,
   getRecurringCommitment,
   sortCategoriesHierarchical,
+  budgetCurrent,
+  budgetDelta,
+  budgetProgress,
+  getBudgetStatus,
 } from '@/lib/utils'
-import type { Account, Category, Transaction } from '@/types'
+import type { Account, Budget, Category, Transaction } from '@/types'
 
 describe('formatCurrency', () => {
   it('formats BRL with comma decimal separator', () => {
@@ -184,6 +188,19 @@ function makeTx(overrides: Partial<Transaction> = {}): Transaction {
     description: 'Test',
     isPaid: false,
     tags: [],
+    ...overrides,
+  }
+}
+
+function makeBudget(overrides: Partial<Budget> = {}): Budget {
+  return {
+    id: 'bx-1',
+    name: 'Viagem',
+    emoji: '✈️',
+    color: '#1B4F72',
+    kind: 'expense',
+    target: 1000,
+    period: { mode: 'range', start: '2026-01-01', end: '2026-12-31' },
     ...overrides,
   }
 }
@@ -1309,5 +1326,145 @@ describe('getRecurringCommitment (M-63)', () => {
     })
     expect(getRecurringCommitment([a, b], '2028-02-01')).toBe(300)
     expect(getRecurringCommitment([], '2028-02-01')).toBe(0)
+  })
+})
+
+describe('budgetCurrent (F-30/BX-05)', () => {
+  it('sums only transactions linked via budgetIds', () => {
+    const linked = makeTx({ id: 'tx-1', amount: 100, isPaid: true, budgetIds: ['bx-1'] })
+    const unlinked = makeTx({ id: 'tx-2', amount: 500, isPaid: true, budgetIds: [] })
+    const noBudgetIds = makeTx({ id: 'tx-3', amount: 500, isPaid: true })
+    expect(budgetCurrent(makeBudget(), [linked, unlinked, noBudgetIds])).toBe(100)
+  })
+
+  it('excludes linked transactions that are not realized yet (P-6)', () => {
+    const paid = makeTx({ id: 'tx-1', amount: 100, isPaid: true, budgetIds: ['bx-1'] })
+    const unpaid = makeTx({ id: 'tx-2', amount: 200, isPaid: false, budgetIds: ['bx-1'] })
+    expect(budgetCurrent(makeBudget(), [paid, unpaid])).toBe(100)
+  })
+
+  it('counts a linked CREDIT_PAYMENT/TRANSFER even without isPaid — always realized', () => {
+    const payment = makeTx({
+      id: 'tx-1',
+      amount: 300,
+      type: 'CREDIT_PAYMENT',
+      isPaid: false,
+      budgetIds: ['bx-1'],
+    })
+    expect(budgetCurrent(makeBudget(), [payment])).toBe(300)
+  })
+
+  it('counts every installment of a parcelada purchase individually, once paid (P-7)', () => {
+    const installment1 = makeTx({
+      id: 'tx-1',
+      amount: 50,
+      isPaid: true,
+      budgetIds: ['bx-1'],
+      installment: { parentId: 'p1', currentIndex: 1, total: 3 },
+    })
+    const installment2 = makeTx({
+      id: 'tx-2',
+      amount: 50,
+      isPaid: true,
+      budgetIds: ['bx-1'],
+      installment: { parentId: 'p1', currentIndex: 2, total: 3 },
+    })
+    const installment3NotYetPaid = makeTx({
+      id: 'tx-3',
+      amount: 50,
+      isPaid: false,
+      budgetIds: ['bx-1'],
+      installment: { parentId: 'p1', currentIndex: 3, total: 3 },
+    })
+    expect(budgetCurrent(makeBudget(), [installment1, installment2, installment3NotYetPaid])).toBe(
+      100
+    )
+  })
+
+  it('returns 0 with no linked transactions', () => {
+    expect(budgetCurrent(makeBudget(), [])).toBe(0)
+  })
+})
+
+describe('budgetDelta (F-30/BX-05)', () => {
+  it('expense: positive when current is under target (slack)', () => {
+    const tx = makeTx({ amount: 400, isPaid: true, budgetIds: ['bx-1'] })
+    expect(budgetDelta(makeBudget({ kind: 'expense', target: 1000 }), [tx])).toBe(600)
+  })
+
+  it('expense: negative when current exceeds target (over)', () => {
+    const tx = makeTx({ amount: 1200, isPaid: true, budgetIds: ['bx-1'] })
+    expect(budgetDelta(makeBudget({ kind: 'expense', target: 1000 }), [tx])).toBe(-200)
+  })
+
+  it('income: positive when current surpasses the goal', () => {
+    const tx = makeTx({ amount: 1200, isPaid: true, budgetIds: ['bx-1'] })
+    expect(budgetDelta(makeBudget({ kind: 'income', target: 1000 }), [tx])).toBe(200)
+  })
+
+  it('income: negative when current is still short of the goal', () => {
+    const tx = makeTx({ amount: 400, isPaid: true, budgetIds: ['bx-1'] })
+    expect(budgetDelta(makeBudget({ kind: 'income', target: 1000 }), [tx])).toBe(-600)
+  })
+})
+
+describe('budgetProgress (F-30/BX-05)', () => {
+  it('returns the fraction of target reached, uncapped', () => {
+    const tx = makeTx({ amount: 570, isPaid: true, budgetIds: ['bx-1'] })
+    expect(budgetProgress(makeBudget({ target: 1000 }), [tx])).toBeCloseTo(0.57)
+  })
+
+  it('returns 0 when target is exactly 0 (avoids division by zero)', () => {
+    const tx = makeTx({ amount: 100, isPaid: true, budgetIds: ['bx-1'] })
+    expect(budgetProgress(makeBudget({ target: 0 }), [tx])).toBe(0)
+  })
+
+  it('returns 0 when target is negative (guard covers <= 0, not just === 0)', () => {
+    const tx = makeTx({ amount: 100, isPaid: true, budgetIds: ['bx-1'] })
+    expect(budgetProgress(makeBudget({ target: -100 }), [tx])).toBe(0)
+  })
+
+  it('is unaffected by an inverted period (start after end) — period is never consulted', () => {
+    const tx = makeTx({ amount: 500, isPaid: true, budgetIds: ['bx-1'] })
+    const invertedPeriod = makeBudget({
+      target: 1000,
+      period: { mode: 'range', start: '2026-12-31', end: '2026-01-01' },
+    })
+    expect(budgetProgress(invertedPeriod, [tx])).toBeCloseTo(0.5)
+  })
+})
+
+describe('getBudgetStatus (F-30/BX-05)', () => {
+  it('expense: onTrack below 80%', () => {
+    const tx = makeTx({ amount: 700, isPaid: true, budgetIds: ['bx-1'] })
+    expect(getBudgetStatus(makeBudget({ kind: 'expense', target: 1000 }), [tx])).toBe('onTrack')
+  })
+
+  it('expense: warning from 80% up to (and including) 100%', () => {
+    const tx = makeTx({ amount: 800, isPaid: true, budgetIds: ['bx-1'] })
+    expect(getBudgetStatus(makeBudget({ kind: 'expense', target: 1000 }), [tx])).toBe('warning')
+    const txAtTarget = makeTx({ amount: 1000, isPaid: true, budgetIds: ['bx-1'] })
+    expect(getBudgetStatus(makeBudget({ kind: 'expense', target: 1000 }), [txAtTarget])).toBe(
+      'warning'
+    )
+  })
+
+  it('expense: exceeded above 100%', () => {
+    const tx = makeTx({ amount: 1100, isPaid: true, budgetIds: ['bx-1'] })
+    expect(getBudgetStatus(makeBudget({ kind: 'expense', target: 1000 }), [tx])).toBe('exceeded')
+  })
+
+  it('income: warning below 100%', () => {
+    const tx = makeTx({ amount: 700, isPaid: true, budgetIds: ['bx-1'] })
+    expect(getBudgetStatus(makeBudget({ kind: 'income', target: 1000 }), [tx])).toBe('warning')
+  })
+
+  it('income: reached at or above 100%', () => {
+    const txAtTarget = makeTx({ amount: 1000, isPaid: true, budgetIds: ['bx-1'] })
+    expect(getBudgetStatus(makeBudget({ kind: 'income', target: 1000 }), [txAtTarget])).toBe(
+      'reached'
+    )
+    const txOver = makeTx({ amount: 1200, isPaid: true, budgetIds: ['bx-1'] })
+    expect(getBudgetStatus(makeBudget({ kind: 'income', target: 1000 }), [txOver])).toBe('reached')
   })
 })

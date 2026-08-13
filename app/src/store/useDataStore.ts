@@ -7,6 +7,7 @@ import type {
   Transaction,
   Valuation,
   SavedPeriod,
+  Budget,
   AuditEntry,
   AuditAction,
   AuditEntity,
@@ -30,6 +31,7 @@ import {
 } from '@/lib/utils'
 import { isDemoMode } from '@/lib/demo'
 import { trackAction } from '@/lib/telemetry'
+import { applyQuadrantesRecipe, findQuadranteForDate, QUADRANTE_SLUG } from '@/lib/budgetRecipes'
 
 // ─── Debounce helper ──────────────────────────────────────────────────────────
 
@@ -97,6 +99,7 @@ function buildSummary(
     transaction: 'Transação',
     user: 'Perfil',
     savedPeriod: 'Período salvo',
+    budget: 'Caixinha',
   }
   const actionLabel: Record<AuditAction, string> = {
     CREATE: 'criada',
@@ -114,6 +117,15 @@ function makeEntry(
   summary: string
 ): AuditEntry {
   return { id: uuid(), timestamp: now(), action, entity, entityId, summary }
+}
+
+// BX-08: associação automática por data — só na criação (nunca como reconciliação de fundo).
+// Só EXPENSE qualifica (§5.6): TRANSFER/CREDIT_PAYMENT ficam de fora para não duplicar gasto.
+function withAutoQuadranteLink(tx: Transaction, budgets: Budget[]): Transaction {
+  if (tx.type !== 'EXPENSE') return tx
+  const match = findQuadranteForDate(budgets, tx.date)
+  if (!match || tx.budgetIds?.includes(match.id)) return tx
+  return { ...tx, budgetIds: [...(tx.budgetIds ?? []), match.id] }
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -163,8 +175,24 @@ interface DataStore {
   addSavedPeriod: (period: SavedPeriod) => void
   deleteSavedPeriod: (id: string) => void
 
+  // F-30/BX-04: caixinhas
+  addBudget: (budget: Budget) => void
+  updateBudget: (budget: Budget) => void
+  deleteBudget: (id: string) => void
+  // §5.7: manual archiving, user-triggered only — the period ending never archives on its own
+  archiveBudget: (id: string) => void
+  // §5.6/P-1/P-2: Transaction.budgetIds N:N link — same primitive whether the caller is a
+  // manual "Associar lançamento" action or the Quadrantes recipe's automatic sweep (BX-08)
+  linkTransactionToBudget: (budgetId: string, transactionId: string) => void
+  unlinkTransactionFromBudget: (budgetId: string, transactionId: string) => void
+  // BX-07: gera o lote mensal da receita Quadrantes se ainda não existir (idempotente) —
+  // chamada em todo boot do app e no mount de /budgets. No-op se a receita estiver desligada.
+  ensureQuadrantesBatch: () => void
+
   updateUser: (patch: Partial<DataFile['user']>) => void
   setRetentionLimit: (limit: number | null) => void
+  // BX-07: liga/desliga a receita Quadrantes; ligar já dispara a geração do lote corrente.
+  setQuadrantesEnabled: (enabled: boolean) => void
 }
 
 export const useDataStore = create<DataStore>((set, get) => ({
@@ -378,7 +406,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
                 updatedAt: now(),
                 createdAt: now(),
               }
-              d.transactions.push(installmentTx)
+              d.transactions.push(withAutoQuadranteLink(installmentTx, d.budgets))
             }
 
             const totalStr = `R$ ${tx.amount.toFixed(2).replace('.', ',')}`
@@ -412,7 +440,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
                 updatedAt: now(),
                 createdAt: now(),
               }
-              d.transactions.push(occurrence)
+              d.transactions.push(withAutoQuadranteLink(occurrence, d.budgets))
             }
 
             const freqLabel = { weekly: 'semanal', biweekly: 'quinzenal', monthly: 'mensal' }[
@@ -426,7 +454,9 @@ export const useDataStore = create<DataStore>((set, get) => ({
           }
 
           // ── Standard single transaction ──────────────────────────────────
-          d.transactions.push({ ...tx, updatedAt: now(), createdAt: now() })
+          d.transactions.push(
+            withAutoQuadranteLink({ ...tx, updatedAt: now(), createdAt: now() }, d.budgets)
+          )
           let summary: string
           if (tx.type === 'CREDIT_PAYMENT') {
             const creditAccName =
@@ -453,7 +483,23 @@ export const useDataStore = create<DataStore>((set, get) => ({
         s,
         (d) => {
           const i = d.transactions.findIndex((t) => t.id === tx.id)
-          if (i !== -1) d.transactions[i] = { ...tx, updatedAt: now() }
+          if (i !== -1) {
+            const prev = d.transactions[i]
+            let next: Transaction = { ...tx, updatedAt: now() }
+            // BX-08: só reavalia o vínculo automático quando a *data* de fato muda — uma edição
+            // que não mexe na data não reaciona a regra, e não reimpõe um vínculo que o usuário
+            // removeu manualmente pelo picker (plan/BUDGETS.md §5.6).
+            if (prev.date.slice(0, 10) !== next.date.slice(0, 10)) {
+              const quadranteIds = new Set(
+                d.budgets.filter((b) => b.recipeSlug === QUADRANTE_SLUG).map((b) => b.id)
+              )
+              const manualIds = (next.budgetIds ?? []).filter((id) => !quadranteIds.has(id))
+              const match =
+                next.type === 'EXPENSE' ? findQuadranteForDate(d.budgets, next.date) : undefined
+              next = { ...next, budgetIds: match ? [...manualIds, match.id] : manualIds }
+            }
+            d.transactions[i] = next
+          }
           const catName = d.categories.find((c) => c.id === tx.categoryId)?.name ?? ''
           addAudit(
             d,
@@ -678,6 +724,151 @@ export const useDataStore = create<DataStore>((set, get) => ({
       })
     ),
 
+  // ── Caixinhas (F-30/BX-04) ────────────────────────────────────────────────
+
+  addBudget: (budget) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const ts = now()
+          d.budgets.push({ ...budget, createdAt: ts, updatedAt: ts })
+          addAudit(
+            d,
+            makeEntry('CREATE', 'budget', budget.id, buildSummary('CREATE', 'budget', budget.name))
+          )
+        },
+        'budget_created'
+      )
+    ),
+
+  updateBudget: (budget) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const i = d.budgets.findIndex((b) => b.id === budget.id)
+          if (i !== -1) d.budgets[i] = { ...budget, updatedAt: now() }
+          addAudit(
+            d,
+            makeEntry('UPDATE', 'budget', budget.id, buildSummary('UPDATE', 'budget', budget.name))
+          )
+        },
+        'budget_updated'
+      )
+    ),
+
+  // Deleting a caixinha never deletes the linked transactions — only the link itself (the
+  // confirmation copy in BudgetFormModal promises exactly this: "só perdem o vínculo").
+  deleteBudget: (id) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const name = d.budgets.find((b) => b.id === id)?.name ?? id
+          d.budgets = d.budgets.filter((b) => b.id !== id)
+          d.transactions = d.transactions.map((t) =>
+            t.budgetIds?.includes(id)
+              ? { ...t, budgetIds: t.budgetIds.filter((bId) => bId !== id), updatedAt: now() }
+              : t
+          )
+          d.deletedIds = [...new Set([...d.deletedIds, id])]
+          addAudit(d, makeEntry('DELETE', 'budget', id, buildSummary('DELETE', 'budget', name)))
+        },
+        'budget_deleted'
+      )
+    ),
+
+  // §5.7: visibility only — linked transactions and history stay untouched.
+  archiveBudget: (id) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const budget = d.budgets.find((b) => b.id === id)
+          if (!budget) return
+          const ts = now()
+          budget.archivedAt = ts
+          budget.updatedAt = ts
+          addAudit(
+            d,
+            makeEntry(
+              'UPDATE',
+              'budget',
+              id,
+              buildSummary('UPDATE', 'budget', budget.name, 'arquivada')
+            )
+          )
+        },
+        'budget_archived'
+      )
+    ),
+
+  linkTransactionToBudget: (budgetId, transactionId) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const budget = d.budgets.find((b) => b.id === budgetId)
+          const tx = d.transactions.find((t) => t.id === transactionId)
+          if (!budget || !tx) return
+          if (tx.budgetIds?.includes(budgetId)) return
+          tx.budgetIds = [...(tx.budgetIds ?? []), budgetId]
+          tx.updatedAt = now()
+          addAudit(
+            d,
+            makeEntry(
+              'UPDATE',
+              'budget',
+              budgetId,
+              `Lançamento associado à caixinha: ${budget.name} — ${tx.description}`
+            )
+          )
+        },
+        'budget_transaction_linked'
+      )
+    ),
+
+  unlinkTransactionFromBudget: (budgetId, transactionId) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const budget = d.budgets.find((b) => b.id === budgetId)
+          const tx = d.transactions.find((t) => t.id === transactionId)
+          if (!budget || !tx?.budgetIds?.includes(budgetId)) return
+          tx.budgetIds = tx.budgetIds.filter((id) => id !== budgetId)
+          tx.updatedAt = now()
+          addAudit(
+            d,
+            makeEntry(
+              'UPDATE',
+              'budget',
+              budgetId,
+              `Lançamento desvinculado da caixinha: ${budget.name} — ${tx.description}`
+            )
+          )
+        },
+        'budget_transaction_unlinked'
+      )
+    ),
+
+  // BX-07/BX-08: gera o lote mensal da receita Quadrantes (idempotente) e arquiva o anterior no
+  // mesmo passo (§5.6). Chamada em todo boot e no mount de /budgets; no-op se a receita estiver
+  // desligada ou se o lote do mês corrente já existir.
+  ensureQuadrantesBatch: () =>
+    set((s) => {
+      if (!s.data || !s.data.settings.quadrantesEnabled) return {}
+      const data = structuredClone(s.data)
+      const ts = now()
+      if (!applyQuadrantesRecipe(data.budgets, todayStr(), ts)) return {}
+      addAudit(data, makeEntry('CREATE', 'budget', 'quadrantes', 'Quadrantes: lote mensal gerado'))
+      data.settings.fileUpdatedAt = ts
+      debouncedReplaceAll(data)
+      trackAction('quadrantes_batch_generated')
+      return { data }
+    }),
+
   // ── User / Settings ───────────────────────────────────────────────────────
 
   updateUser: (patch) =>
@@ -699,6 +890,26 @@ export const useDataStore = create<DataStore>((set, get) => ({
       data.auditLog = applyRetention(data.auditLog, limit)
       data.settings.fileUpdatedAt = now()
       debouncedReplaceAll(data)
+      return { data }
+    }),
+
+  setQuadrantesEnabled: (enabled) =>
+    set((s) => {
+      if (!s.data) return {}
+      const data = structuredClone(s.data)
+      const ts = now()
+      data.settings.quadrantesEnabled = enabled
+      data.settings.fileUpdatedAt = ts
+      // Ligar já gera o lote do mês corrente na hora — o usuário não precisa recarregar a
+      // página pra ver os 4 quadrantes aparecerem.
+      if (enabled && applyQuadrantesRecipe(data.budgets, todayStr(), ts)) {
+        addAudit(
+          data,
+          makeEntry('CREATE', 'budget', 'quadrantes', 'Quadrantes: lote mensal gerado')
+        )
+      }
+      debouncedReplaceAll(data)
+      trackAction('quadrantes_toggle')
       return { data }
     }),
 }))

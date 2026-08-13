@@ -39,6 +39,7 @@ function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
       fileCreatedAt: '2026-01-01T00:00:00.000Z',
       fileUpdatedAt: '2026-01-01T00:00:00.000Z',
       auditLogRetentionLimit: 200,
+      quadrantesEnabled: false,
     },
     accounts: [],
     categories: [],
@@ -48,6 +49,7 @@ function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
     auditLog: [],
     deletedIds: [],
     savedPeriods: [],
+    budgets: [],
     ...overrides,
   }
 }
@@ -92,6 +94,7 @@ describe('pullAndMerge', () => {
           fileCreatedAt: '',
           fileUpdatedAt: '2026-02-01T00:00:00.000Z',
           auditLogRetentionLimit: 200,
+          quadrantesEnabled: false,
         },
       })
     )
@@ -151,6 +154,7 @@ describe('pushIfNeeded', () => {
             fileCreatedAt: '',
             fileUpdatedAt: '2026-02-01T00:00:00.000Z',
             auditLogRetentionLimit: 200,
+            quadrantesEnabled: false,
           },
         })
       )
@@ -168,6 +172,7 @@ describe('pushIfNeeded', () => {
             fileCreatedAt: '',
             fileUpdatedAt: '2026-01-01T00:00:00.000Z',
             auditLogRetentionLimit: 200,
+            quadrantesEnabled: false,
           },
         })
       )

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mergeForSync } from '@/lib/cloudSync/merge'
-import type { Account, AuditEntry, DataFile, Transaction } from '@/types'
+import type { Account, AuditEntry, Budget, DataFile, Transaction } from '@/types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -17,6 +17,7 @@ function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
       fileCreatedAt: '2026-01-01T00:00:00.000Z',
       fileUpdatedAt: '2026-01-01T00:00:00.000Z',
       auditLogRetentionLimit: 200,
+      quadrantesEnabled: false,
     },
     accounts: [],
     categories: [],
@@ -26,6 +27,7 @@ function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
     auditLog: [],
     deletedIds: [],
     savedPeriods: [],
+    budgets: [],
     ...overrides,
   }
 }
@@ -53,6 +55,20 @@ function makeTx(overrides: Partial<Transaction> = {}): Transaction {
     description: 'Compra',
     isPaid: true,
     tags: [],
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
+function makeBudget(overrides: Partial<Budget> = {}): Budget {
+  return {
+    id: 'bx-1',
+    name: 'Viagem',
+    emoji: '✈️',
+    color: '#1B4F72',
+    kind: 'expense',
+    target: 1000,
+    period: { mode: 'range', start: '2026-01-01', end: '2026-12-31' },
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
   }
@@ -173,6 +189,7 @@ describe('mergeForSync', () => {
         fileCreatedAt: daysAgo(3),
         fileUpdatedAt: daysAgo(3),
         auditLogRetentionLimit: 2,
+        quadrantesEnabled: false,
       },
     })
     const remote = makeDataFile({
@@ -190,6 +207,7 @@ describe('mergeForSync', () => {
         fileCreatedAt: '2026-01-01T00:00:00.000Z',
         fileUpdatedAt: '2026-01-01T00:00:00.000Z',
         auditLogRetentionLimit: 200,
+        quadrantesEnabled: false,
       },
     })
     const remote = makeDataFile({
@@ -197,6 +215,7 @@ describe('mergeForSync', () => {
         fileCreatedAt: '2026-01-01T00:00:00.000Z',
         fileUpdatedAt: '2026-03-01T00:00:00.000Z',
         auditLogRetentionLimit: 200,
+        quadrantesEnabled: false,
       },
     })
     const result = mergeForSync(local, remote)
@@ -227,6 +246,68 @@ describe('mergeForSync', () => {
     const result = mergeForSync(local, remote)
     expect(result.valuations.find((v) => v.id === 'v-1')?.marketValue).toBe(100)
     expect(result.valuations.find((v) => v.id === 'v-2')?.marketValue).toBe(200)
+  })
+
+  // ─── BX-09: caixinhas (Budget) no motor de merge ─────────────────────────────
+  // Mecânica resolvida em BX-03 como efeito colateral do bump de DataFile (budgets some
+  // union por LWW igual a accounts/categories/tags) — faltava só este teste dedicado.
+
+  it('keeps a budget that only exists in remote', () => {
+    const local = makeDataFile()
+    const remote = makeDataFile({ budgets: [makeBudget({ id: 'bx-remote' })] })
+    const result = mergeForSync(local, remote)
+    expect(result.budgets.map((b) => b.id)).toEqual(['bx-remote'])
+  })
+
+  it('keeps a budget that only exists in local', () => {
+    const local = makeDataFile({ budgets: [makeBudget({ id: 'bx-local' })] })
+    const remote = makeDataFile()
+    const result = mergeForSync(local, remote)
+    expect(result.budgets.map((b) => b.id)).toEqual(['bx-local'])
+  })
+
+  it('on collision, the greater updatedAt wins (remote newer)', () => {
+    const local = makeDataFile({
+      budgets: [makeBudget({ target: 1000, updatedAt: '2026-01-01T00:00:00.000Z' })],
+    })
+    const remote = makeDataFile({
+      budgets: [makeBudget({ target: 2000, updatedAt: '2026-02-01T00:00:00.000Z' })],
+    })
+    const result = mergeForSync(local, remote)
+    expect(result.budgets).toHaveLength(1)
+    expect(result.budgets[0].target).toBe(2000)
+  })
+
+  it('on collision, the greater updatedAt wins (local newer)', () => {
+    const local = makeDataFile({
+      budgets: [makeBudget({ target: 2000, updatedAt: '2026-02-01T00:00:00.000Z' })],
+    })
+    const remote = makeDataFile({
+      budgets: [makeBudget({ target: 1000, updatedAt: '2026-01-01T00:00:00.000Z' })],
+    })
+    const result = mergeForSync(local, remote)
+    expect(result.budgets).toHaveLength(1)
+    expect(result.budgets[0].target).toBe(2000)
+  })
+
+  it('removes a budget present on the other side when it is in deletedIds', () => {
+    const local = makeDataFile({ deletedIds: ['bx-1'] })
+    const remote = makeDataFile({ budgets: [makeBudget({ id: 'bx-1' })] })
+    const result = mergeForSync(local, remote)
+    expect(result.budgets).toHaveLength(0)
+  })
+
+  it('carries budgetIds along for free as part of the transaction merge (no dedicated logic)', () => {
+    const local = makeDataFile({
+      transactions: [
+        makeTx({ id: 'tx-1', budgetIds: ['bx-1'], updatedAt: '2026-02-01T00:00:00.000Z' }),
+      ],
+    })
+    const remote = makeDataFile({
+      transactions: [makeTx({ id: 'tx-1', budgetIds: [], updatedAt: '2026-01-01T00:00:00.000Z' })],
+    })
+    const result = mergeForSync(local, remote)
+    expect(result.transactions[0].budgetIds).toEqual(['bx-1'])
   })
 
   it('is idempotent: merge(merge(a, b), b) equals merge(a, b)', () => {

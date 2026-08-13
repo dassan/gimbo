@@ -52,6 +52,7 @@ export function mergeForSync(local: DataFile, remote: DataFile): DataFile {
 
   const valuations = notDeleted(unionByIdLocalWins(local.valuations, remote.valuations))
   const savedPeriods = notDeleted(unionByIdLocalWins(local.savedPeriods, remote.savedPeriods))
+  const budgets = notDeleted(unionByIdLWW(local.budgets, remote.budgets))
 
   const auditById = new Map<string, AuditEntry>()
   for (const entry of local.auditLog) auditById.set(entry.id, entry)
@@ -81,5 +82,6 @@ export function mergeForSync(local: DataFile, remote: DataFile): DataFile {
     auditLog,
     deletedIds,
     savedPeriods,
+    budgets,
   }
 }

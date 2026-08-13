@@ -1,6 +1,7 @@
 import type {
   Account,
   AccountType,
+  Budget,
   Category,
   Currency,
   IncomeWindowMonths,
@@ -918,4 +919,50 @@ export function getEffectiveCashFlowDate(tx: Transaction, accounts: Account[]): 
 
   const period = getTxInvoicePeriod(tx, account)
   return getInvoiceDueDate(period, account.creditMetadata.dueDay, account.creditMetadata.closingDay)
+}
+
+// ─── Caixinhas — Budget Engine (F-30/BX-05) ───────────────────────────────────
+
+export type BudgetStatus = 'onTrack' | 'warning' | 'exceeded' | 'reached'
+
+/**
+ * Sum of every transaction linked to this budget (Transaction.budgetIds) that has actually
+ * moved money (isCashRealized — B-15). A linked-but-unrealized transaction (future/unpaid)
+ * stays associated but doesn't count yet, avoiding a false sense of progress before the cash
+ * moves (plan/BUDGETS.md §6.1 P-6). Each installment counts individually the moment it's
+ * paid — it's already its own Transaction row with its own date/amount (P-7), no extra
+ * grouping logic needed.
+ */
+export function budgetCurrent(budget: Budget, transactions: Transaction[]): number {
+  return transactions
+    .filter((tx) => tx.budgetIds?.includes(budget.id) && isCashRealized(tx))
+    .reduce((sum, tx) => sum + tx.amount, 0)
+}
+
+/**
+ * Difference between current and target, oriented so that positive always means "slack":
+ * leftover budget on an expense caixinha, or amount past the goal on an income one
+ * (plan/BUDGETS.md §5.3).
+ */
+export function budgetDelta(budget: Budget, transactions: Transaction[]): number {
+  const current = budgetCurrent(budget, transactions)
+  return budget.kind === 'expense' ? budget.target - current : current - budget.target
+}
+
+/** Fraction of the target reached (not clamped to [0,1]). 0 when target <= 0 (avoids ÷0). */
+export function budgetProgress(budget: Budget, transactions: Transaction[]): number {
+  if (budget.target <= 0) return 0
+  return budgetCurrent(budget, transactions) / budget.target
+}
+
+/**
+ * Despesa: a meta é um teto — passar de 100% é ruim. Receita: a meta é um piso — chegar a
+ * 100% é o objetivo, por isso só existe "em andamento"/"atingida" (plan/BUDGETS.md §2).
+ */
+export function getBudgetStatus(budget: Budget, transactions: Transaction[]): BudgetStatus {
+  const p = budgetProgress(budget, transactions)
+  if (budget.kind === 'income') return p >= 1 ? 'reached' : 'warning'
+  if (p > 1) return 'exceeded'
+  if (p >= 0.8) return 'warning'
+  return 'onTrack'
 }

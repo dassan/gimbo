@@ -11,6 +11,7 @@ import type {
   ReserveMetadata,
   Valuation,
   SavedPeriod,
+  Budget,
 } from '@/types'
 
 function makeAccount(overrides: Partial<Account> = {}): Account {
@@ -1312,5 +1313,444 @@ describe('deleteSavedPeriod', () => {
     useDataStore.setState({ data: makeDataFile({ savedPeriods: [] }) })
     expect(() => useDataStore.getState().deleteSavedPeriod('ghost-id')).not.toThrow()
     expect(useDataStore.getState().data!.deletedIds).toContain('ghost-id')
+  })
+})
+
+// ─── Caixinhas (F-30/BX-04) ────────────────────────────────────────────────────
+
+function makeBudget(overrides: Partial<Budget> = {}): Budget {
+  return {
+    id: 'bx-1',
+    name: 'Viagem',
+    emoji: '✈️',
+    color: '#1B4F72',
+    kind: 'expense',
+    target: 1000,
+    period: { mode: 'range', start: '2026-01-01', end: '2026-12-31' },
+    ...overrides,
+  }
+}
+
+describe('addBudget', () => {
+  it('appends the budget and creates a CREATE audit entry', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    useDataStore.getState().addBudget(makeBudget())
+    const { budgets, auditLog } = useDataStore.getState().data!
+    expect(budgets).toHaveLength(1)
+    expect(budgets[0].name).toBe('Viagem')
+    expect(budgets[0].updatedAt).toBeTruthy()
+    expect(budgets[0].createdAt).toBeTruthy()
+    const entry = auditLog.at(-1)!
+    expect(entry.action).toBe('CREATE')
+    expect(entry.entity).toBe('budget')
+    expect(entry.summary).toContain('Viagem')
+  })
+
+  it('does nothing when data is null', () => {
+    useDataStore.setState({ data: null })
+    useDataStore.getState().addBudget(makeBudget())
+    expect(useDataStore.getState().data).toBeNull()
+  })
+})
+
+describe('updateBudget', () => {
+  it('updates an existing budget', () => {
+    useDataStore.setState({ data: makeDataFile({ budgets: [makeBudget({ target: 1000 })] }) })
+    useDataStore.getState().updateBudget(makeBudget({ target: 2000 }))
+    expect(useDataStore.getState().data?.budgets[0].target).toBe(2000)
+  })
+
+  it('does not crash on a non-existent budget', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    expect(() => useDataStore.getState().updateBudget(makeBudget({ id: 'ghost' }))).not.toThrow()
+  })
+
+  it('preserves createdAt when the caller passes it through unchanged', () => {
+    useDataStore.setState({
+      data: makeDataFile({ budgets: [makeBudget({ createdAt: '2026-01-01T00:00:00.000Z' })] }),
+    })
+    useDataStore
+      .getState()
+      .updateBudget(makeBudget({ target: 2000, createdAt: '2026-01-01T00:00:00.000Z' }))
+    expect(useDataStore.getState().data?.budgets[0].createdAt).toBe('2026-01-01T00:00:00.000Z')
+  })
+})
+
+describe('deleteBudget', () => {
+  it('removes the budget and records id in deletedIds with a DELETE audit entry', () => {
+    useDataStore.setState({ data: makeDataFile({ budgets: [makeBudget()] }) })
+    useDataStore.getState().deleteBudget('bx-1')
+    const { budgets, deletedIds, auditLog } = useDataStore.getState().data!
+    expect(budgets).toHaveLength(0)
+    expect(deletedIds).toContain('bx-1')
+    const entry = auditLog.at(-1)!
+    expect(entry.action).toBe('DELETE')
+    expect(entry.entity).toBe('budget')
+    expect(entry.summary).toContain('Viagem')
+  })
+
+  it('strips the budget id from every linked transaction, without deleting the transactions', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [makeBudget()],
+        transactions: [
+          makeTransaction({ id: 'tx-1', budgetIds: ['bx-1'] }),
+          makeTransaction({ id: 'tx-2', budgetIds: ['bx-1', 'bx-2'] }),
+          makeTransaction({ id: 'tx-3', budgetIds: ['bx-2'] }),
+        ],
+      }),
+    })
+    useDataStore.getState().deleteBudget('bx-1')
+    const { transactions, deletedIds } = useDataStore.getState().data!
+    expect(transactions).toHaveLength(3)
+    expect(transactions.find((t) => t.id === 'tx-1')?.budgetIds).toEqual([])
+    expect(transactions.find((t) => t.id === 'tx-2')?.budgetIds).toEqual(['bx-2'])
+    expect(transactions.find((t) => t.id === 'tx-3')?.budgetIds).toEqual(['bx-2'])
+    expect(deletedIds).not.toContain('tx-1')
+  })
+
+  it('is idempotent: deleting a non-existent id does not crash', () => {
+    useDataStore.setState({ data: makeDataFile({ budgets: [] }) })
+    expect(() => useDataStore.getState().deleteBudget('ghost-id')).not.toThrow()
+    expect(useDataStore.getState().data!.deletedIds).toContain('ghost-id')
+  })
+})
+
+describe('archiveBudget', () => {
+  it('sets archivedAt without touching linked transactions', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [makeBudget()],
+        transactions: [makeTransaction({ id: 'tx-1', budgetIds: ['bx-1'] })],
+      }),
+    })
+    useDataStore.getState().archiveBudget('bx-1')
+    const { budgets, transactions, auditLog } = useDataStore.getState().data!
+    expect(budgets[0].archivedAt).toBeTruthy()
+    expect(transactions[0].budgetIds).toEqual(['bx-1'])
+    const entry = auditLog.at(-1)!
+    expect(entry.entity).toBe('budget')
+    expect(entry.summary).toContain('arquivada')
+  })
+
+  it('is idempotent: archiving a non-existent id does not crash', () => {
+    useDataStore.setState({ data: makeDataFile({ budgets: [] }) })
+    expect(() => useDataStore.getState().archiveBudget('ghost-id')).not.toThrow()
+  })
+})
+
+describe('linkTransactionToBudget', () => {
+  it('adds the budget id to the transaction budgetIds', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [makeBudget()],
+        transactions: [makeTransaction({ id: 'tx-1', budgetIds: [] })],
+      }),
+    })
+    useDataStore.getState().linkTransactionToBudget('bx-1', 'tx-1')
+    const { transactions, auditLog } = useDataStore.getState().data!
+    expect(transactions[0].budgetIds).toEqual(['bx-1'])
+    const entry = auditLog.at(-1)!
+    expect(entry.entity).toBe('budget')
+    expect(entry.entityId).toBe('bx-1')
+    expect(entry.summary).toContain('associado')
+  })
+
+  it('is idempotent: linking an already-linked transaction does not duplicate the id', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [makeBudget()],
+        transactions: [makeTransaction({ id: 'tx-1', budgetIds: ['bx-1'] })],
+      }),
+    })
+    useDataStore.getState().linkTransactionToBudget('bx-1', 'tx-1')
+    expect(useDataStore.getState().data!.transactions[0].budgetIds).toEqual(['bx-1'])
+  })
+
+  it('does not crash when the budget or transaction does not exist', () => {
+    useDataStore.setState({ data: makeDataFile({ budgets: [makeBudget()], transactions: [] }) })
+    expect(() => useDataStore.getState().linkTransactionToBudget('bx-1', 'ghost-tx')).not.toThrow()
+    expect(() =>
+      useDataStore.getState().linkTransactionToBudget('ghost-budget', 'tx-1')
+    ).not.toThrow()
+  })
+})
+
+describe('unlinkTransactionFromBudget', () => {
+  it('removes the budget id from the transaction budgetIds', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [makeBudget()],
+        transactions: [makeTransaction({ id: 'tx-1', budgetIds: ['bx-1', 'bx-2'] })],
+      }),
+    })
+    useDataStore.getState().unlinkTransactionFromBudget('bx-1', 'tx-1')
+    const { transactions, auditLog } = useDataStore.getState().data!
+    expect(transactions[0].budgetIds).toEqual(['bx-2'])
+    const entry = auditLog.at(-1)!
+    expect(entry.summary).toContain('desvinculado')
+  })
+
+  it('is idempotent: unlinking a transaction that is not linked does not crash', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [makeBudget()],
+        transactions: [makeTransaction({ id: 'tx-1', budgetIds: [] })],
+      }),
+    })
+    expect(() => useDataStore.getState().unlinkTransactionFromBudget('bx-1', 'tx-1')).not.toThrow()
+    expect(useDataStore.getState().data!.transactions[0].budgetIds).toEqual([])
+  })
+})
+
+// ─── Receita Quadrantes (F-30/BX-07/BX-08) ─────────────────────────────────────
+
+describe('ensureQuadrantesBatch', () => {
+  it('does nothing when the recipe is disabled', () => {
+    useDataStore.setState({
+      data: makeDataFile({ settings: { ...makeDataFile().settings, quadrantesEnabled: false } }),
+    })
+    useDataStore.getState().ensureQuadrantesBatch()
+    expect(useDataStore.getState().data!.budgets).toHaveLength(0)
+  })
+
+  it('does nothing when data is null', () => {
+    useDataStore.setState({ data: null })
+    expect(() => useDataStore.getState().ensureQuadrantesBatch()).not.toThrow()
+  })
+
+  it('generates the 4-budget batch and an audit entry when enabled and no batch exists yet', () => {
+    useDataStore.setState({
+      data: makeDataFile({ settings: { ...makeDataFile().settings, quadrantesEnabled: true } }),
+    })
+    useDataStore.getState().ensureQuadrantesBatch()
+    const { budgets, auditLog } = useDataStore.getState().data!
+    expect(budgets).toHaveLength(4)
+    expect(budgets.every((b) => b.recipeSlug === 'quadrantes')).toBe(true)
+    const entry = auditLog.at(-1)!
+    expect(entry.entity).toBe('budget')
+    expect(entry.summary).toContain('Quadrantes')
+  })
+
+  it('is idempotent: calling it again the same month does not duplicate the batch', () => {
+    useDataStore.setState({
+      data: makeDataFile({ settings: { ...makeDataFile().settings, quadrantesEnabled: true } }),
+    })
+    useDataStore.getState().ensureQuadrantesBatch()
+    useDataStore.getState().ensureQuadrantesBatch()
+    expect(useDataStore.getState().data!.budgets).toHaveLength(4)
+  })
+})
+
+describe('setQuadrantesEnabled', () => {
+  it('persists the toggle', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    useDataStore.getState().setQuadrantesEnabled(true)
+    expect(useDataStore.getState().data!.settings.quadrantesEnabled).toBe(true)
+  })
+
+  it('generates the current-month batch immediately when turned on', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    useDataStore.getState().setQuadrantesEnabled(true)
+    expect(useDataStore.getState().data!.budgets).toHaveLength(4)
+  })
+
+  it('turning off does not delete already-generated budgets', () => {
+    useDataStore.setState({
+      data: makeDataFile({ settings: { ...makeDataFile().settings, quadrantesEnabled: true } }),
+    })
+    useDataStore.getState().ensureQuadrantesBatch()
+    useDataStore.getState().setQuadrantesEnabled(false)
+    expect(useDataStore.getState().data!.budgets).toHaveLength(4)
+    expect(useDataStore.getState().data!.settings.quadrantesEnabled).toBe(false)
+  })
+})
+
+describe('addTransaction — BX-08 auto-link by date', () => {
+  function activeQuadranteBudgets(): Budget[] {
+    const today = new Date()
+    const y = today.getFullYear()
+    const m = String(today.getMonth() + 1).padStart(2, '0')
+    return [
+      makeBudget({
+        id: 'q-slot1',
+        recipeSlug: 'quadrantes',
+        recipeSlot: 1,
+        period: { mode: 'range', start: `${y}-${m}-01`, end: `${y}-${m}-08` },
+      }),
+    ]
+  }
+
+  it('links a new EXPENSE transaction whose date falls in a quadrante range', () => {
+    const today = new Date()
+    const y = today.getFullYear()
+    const m = String(today.getMonth() + 1).padStart(2, '0')
+    useDataStore.setState({ data: makeDataFile({ budgets: activeQuadranteBudgets() }) })
+    useDataStore
+      .getState()
+      .addTransaction(makeTransaction({ id: 'tx-1', type: 'EXPENSE', date: `${y}-${m}-03` }))
+    expect(useDataStore.getState().data!.transactions[0].budgetIds).toEqual(['q-slot1'])
+  })
+
+  it('does not link a TRANSFER even if its date matches a quadrante range', () => {
+    const today = new Date()
+    const y = today.getFullYear()
+    const m = String(today.getMonth() + 1).padStart(2, '0')
+    useDataStore.setState({ data: makeDataFile({ budgets: activeQuadranteBudgets() }) })
+    useDataStore.getState().addTransaction(
+      makeTransaction({
+        id: 'tx-1',
+        type: 'TRANSFER',
+        date: `${y}-${m}-03`,
+        transferAccountId: 'acc-2',
+      })
+    )
+    expect(useDataStore.getState().data!.transactions[0].budgetIds ?? []).toEqual([])
+  })
+
+  it('does not link an EXPENSE whose date falls outside every quadrante range', () => {
+    useDataStore.setState({ data: makeDataFile({ budgets: activeQuadranteBudgets() }) })
+    useDataStore
+      .getState()
+      .addTransaction(makeTransaction({ id: 'tx-1', type: 'EXPENSE', date: '2020-01-15' }))
+    expect(useDataStore.getState().data!.transactions[0].budgetIds ?? []).toEqual([])
+  })
+
+  it('links each installment individually by its own date (P-7)', () => {
+    const today = new Date()
+    const y = today.getFullYear()
+    const m = String(today.getMonth() + 1).padStart(2, '0')
+    const budgets = [
+      makeBudget({
+        id: 'q-slot1',
+        recipeSlug: 'quadrantes',
+        recipeSlot: 1,
+        period: { mode: 'range', start: `${y}-${m}-01`, end: `${y}-${m}-08` },
+      }),
+      makeBudget({
+        id: 'q-slot2',
+        recipeSlug: 'quadrantes',
+        recipeSlot: 2,
+        period: { mode: 'range', start: `${y}-${m}-09`, end: `${y}-${m}-16` },
+      }),
+    ]
+    useDataStore.setState({ data: makeDataFile({ budgets }) })
+    useDataStore.getState().addTransaction(
+      makeTransaction({
+        id: 'parent-1',
+        type: 'EXPENSE',
+        date: `${y}-${m}-03`,
+        installment: { parentId: 'parent-1', currentIndex: 1, total: 2 },
+      })
+    )
+    const { transactions } = useDataStore.getState().data!
+    expect(transactions).toHaveLength(2)
+    // 1st installment falls in slot 1's range; the 2nd (one month later) falls outside both.
+    expect(transactions[0].budgetIds).toEqual(['q-slot1'])
+  })
+})
+
+describe('updateTransaction — BX-08 move-on-date-change', () => {
+  function slotBudgets() {
+    const today = new Date()
+    const y = today.getFullYear()
+    const m = String(today.getMonth() + 1).padStart(2, '0')
+    return {
+      y,
+      m,
+      budgets: [
+        makeBudget({
+          id: 'q-slot1',
+          recipeSlug: 'quadrantes',
+          recipeSlot: 1,
+          period: { mode: 'range', start: `${y}-${m}-01`, end: `${y}-${m}-08` },
+        }),
+        makeBudget({
+          id: 'q-slot2',
+          recipeSlug: 'quadrantes',
+          recipeSlot: 2,
+          period: { mode: 'range', start: `${y}-${m}-09`, end: `${y}-${m}-16` },
+        }),
+      ],
+    }
+  }
+
+  it('moves the auto-link when the date is edited into a different quadrante', () => {
+    const { y, m, budgets } = slotBudgets()
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets,
+        transactions: [
+          makeTransaction({
+            id: 'tx-1',
+            type: 'EXPENSE',
+            date: `${y}-${m}-03`,
+            budgetIds: ['q-slot1'],
+          }),
+        ],
+      }),
+    })
+    useDataStore.getState().updateTransaction(
+      makeTransaction({
+        id: 'tx-1',
+        type: 'EXPENSE',
+        date: `${y}-${m}-12`,
+        budgetIds: ['q-slot1'],
+      })
+    )
+    expect(useDataStore.getState().data!.transactions[0].budgetIds).toEqual(['q-slot2'])
+  })
+
+  it('does not reintroduce a manually-removed link when the date is left unchanged', () => {
+    const { y, m, budgets } = slotBudgets()
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets,
+        transactions: [
+          makeTransaction({ id: 'tx-1', type: 'EXPENSE', date: `${y}-${m}-03`, budgetIds: [] }),
+        ],
+      }),
+    })
+    // Same date as before — a plain edit (e.g. description) must not reactivate the sweep.
+    useDataStore.getState().updateTransaction(
+      makeTransaction({
+        id: 'tx-1',
+        type: 'EXPENSE',
+        date: `${y}-${m}-03`,
+        description: 'edited',
+        budgetIds: [],
+      })
+    )
+    expect(useDataStore.getState().data!.transactions[0].budgetIds).toEqual([])
+  })
+
+  it('preserves manual (non-recipe) budget links when the date moves between quadrantes', () => {
+    const { y, m, budgets } = slotBudgets()
+    const manual = makeBudget({ id: 'manual-1', recipeSlug: undefined, recipeSlot: undefined })
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [...budgets, manual],
+        transactions: [
+          makeTransaction({
+            id: 'tx-1',
+            type: 'EXPENSE',
+            date: `${y}-${m}-03`,
+            budgetIds: ['q-slot1', 'manual-1'],
+          }),
+        ],
+      }),
+    })
+    useDataStore.getState().updateTransaction(
+      makeTransaction({
+        id: 'tx-1',
+        type: 'EXPENSE',
+        date: `${y}-${m}-12`,
+        budgetIds: ['q-slot1', 'manual-1'],
+      })
+    )
+    const budgetIds = useDataStore.getState().data!.transactions[0].budgetIds!
+    expect(budgetIds).toContain('manual-1')
+    expect(budgetIds).toContain('q-slot2')
+    expect(budgetIds).not.toContain('q-slot1')
   })
 })

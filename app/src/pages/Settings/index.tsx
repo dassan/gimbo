@@ -100,6 +100,7 @@ import type {
   Theme,
   AuditAction,
   IncomeWindowMonths,
+  BudgetSortBy,
 } from '@/types'
 
 type Section = 'accounts' | 'categories' | 'tags' | 'profile' | 'preferences' | 'backup' | 'history'
@@ -263,6 +264,7 @@ export default function Settings() {
     deleteTag,
     updateUser,
     setRetentionLimit,
+    setQuadrantesEnabled,
     syncStatus,
     lastSyncedAt,
     runPeerSync,
@@ -275,6 +277,7 @@ export default function Settings() {
     setCurrency,
     setIncomeWindowMonths,
     setReserveTargetMonths,
+    setBudgetSortBy,
   } = useWorkspaceStore()
 
   const navigate = useNavigate()
@@ -1146,6 +1149,49 @@ export default function Settings() {
                       <option value={12}>{t('health.months', { count: 12 })}</option>
                     </select>
                   </SettingRow>
+
+                  <SettingRow label={t('settings.budgetSortBy')}>
+                    <select
+                      value={workspace.budgetSortBy}
+                      onChange={(e) => setBudgetSortBy(e.target.value as BudgetSortBy)}
+                      className="appearance-none rounded-xl bg-surface-container-high px-4 py-2.5 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                    >
+                      <option value="createdAt">{t('budgets.sortCreatedAt')}</option>
+                      <option value="deadline">{t('budgets.sortDeadline')}</option>
+                      <option value="progress">{t('budgets.sortProgress')}</option>
+                      <option value="name">{t('budgets.sortName')}</option>
+                    </select>
+                  </SettingRow>
+
+                  {/* F-30/BX-07: Quadrantes recipe toggle */}
+                  <div className="rounded-2xl bg-surface-container px-5 py-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-on-surface">{t('budgets.quadrantesLabel')}</p>
+                        <p className="text-xs text-on-surface/40 mt-0.5">
+                          {t('budgets.quadrantesHint')}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setQuadrantesEnabled(!data?.settings.quadrantesEnabled)}
+                        aria-label={t('budgets.quadrantesLabel')}
+                        aria-pressed={data?.settings.quadrantesEnabled ?? false}
+                        className={cn(
+                          'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200',
+                          data?.settings.quadrantesEnabled
+                            ? 'bg-primary'
+                            : 'bg-surface-container-high'
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 mt-0.5',
+                            data?.settings.quadrantesEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                          )}
+                        />
+                      </button>
+                    </div>
+                  </div>
 
                   {/* Audit log retention toggle */}
                   <div className="rounded-2xl bg-surface-container px-5 py-4 space-y-3">
