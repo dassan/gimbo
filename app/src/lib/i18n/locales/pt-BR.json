@@ -721,6 +721,18 @@
       "sourcesTitle": "Fontes",
       "source1Label": "Dicio — Dicionário Online de Português: gimbo",
       "source2Label": "Campo Grande News — Jimbo e florim: a aventura do dinheiro no Brasil"
+    },
+    "whyLocal": {
+      "title": "Por que guardar dados no navegador é seguro",
+      "intro": "O Gimbo grava tudo num banco de dados que roda dentro do seu navegador. Isso não é um atalho barato; é uma arquitetura com garantias reais de isolamento e privacidade.",
+      "s1Title": "Isolado por origem",
+      "s1Body": "O navegador reserva esse espaço de armazenamento exclusivamente para o domínio do Gimbo. Nenhum outro site, aba ou aplicativo tem acesso a ele, a mesma barreira de segurança que protege senhas salvas e cookies.",
+      "s2Title": "Nada trafega pela rede",
+      "s2Body": "O Gimbo funciona totalmente offline. Seus lançamentos nunca saem do seu dispositivo, a menos que você mesmo ative um backup ou sincronização opcional; e mesmo assim, o destino é sempre uma infraestrutura que já é sua, como uma pasta local ou uma conta de nuvem própria.",
+      "s3Title": "Você é dono do arquivo",
+      "s3Body": "A qualquer momento, é possível exportar todo o seu histórico como um único arquivo .db, uma cópia que você guarda, transfere ou leva para outro dispositivo, sem depender de ninguém.",
+      "s4Title": "O que isso não cobre",
+      "s4Body": "Se você limpar os dados do navegador ou desinstalá-lo sem ter feito um backup, o conteúdo é perdido; o mesmo risco de qualquer informação guardada só localmente. Por isso vale configurar um backup assim que começar a usar o Gimbo."
     }
   },
   "bugReport": {
@@ -742,5 +754,100 @@
     "privacyNote": "Nenhum dado financeiro é incluído. Você revisa antes de enviar.",
     "privacyBadge": "Somente metadados seguros — nenhum valor, nome ou dado financeiro é transmitido",
     "reportFromError": "Reportar este problema"
+  },
+  "landing": {
+    "nav": {
+      "features": "Funcionalidades",
+      "privacy": "Privacidade",
+      "faq": "Perguntas frequentes",
+      "cta": "Criar meu Cofre"
+    },
+    "hero": {
+      "eyebrow": "Finanças pessoais, 100% locais",
+      "headline": "Organize seu dinheiro sem entregar seus dados a ninguém.",
+      "subtitle": "O Gimbo guarda lançamentos, cartões e patrimônio direto no seu navegador; sem nuvem, sem conta, sem servidor no meio do caminho.",
+      "ctaPrimary": "Criar Cofre de Dados",
+      "ctaSecondary": "Ver funcionalidades",
+      "mockLabel": "SALDO TOTAL",
+      "mockValue": "R$ 12.480,32",
+      "mockDelta": "+8,2% este mês",
+      "mockCategory1": "Moradia",
+      "mockCategory2": "Mercado",
+      "mockCategory3": "Transporte",
+      "mockCategory4": "Outros"
+    },
+    "trust": {
+      "item1": "Sem servidor",
+      "item2": "Sem conta",
+      "item3": "Gratuito",
+      "item4": "Versão Mobile"
+    },
+    "steps": {
+      "title": "Como funciona",
+      "step1Title": "Crie seu Cofre",
+      "step1Body": "Sem cadastro. Dê um nome ao seu perfil e comece. Seus dados nascem no seu dispositivo.",
+      "step2Title": "Registre seu dia a dia",
+      "step2Body": "Receitas, despesas, cartões e transferências em poucos cliques, com categorias e tags.",
+      "step3Title": "Acompanhe sua saúde financeira",
+      "step3Body": "Fluxo de caixa projetado, patrimônio líquido e o peso real das suas dívidas, sempre atualizados."
+    },
+    "features": {
+      "title": "Tudo o que você precisa.\nNada que você não pediu.",
+      "subtitle": "Um único app cobre o lançamento diário e a análise de longo prazo, sem depender de planilhas paralelas.",
+      "f1Title": "Lançamentos rápidos",
+      "f1Body": "Receitas, despesas e transferências em segundos, com categorias, subcategorias e tags.",
+      "f2Title": "Cartão de crédito sob controle",
+      "f2Body": "Fatura virtual, parcelamentos e limite disponível recalculados automaticamente a cada lançamento.",
+      "f3Title": "Análises avançadas",
+      "f3Body": "Fluxo de caixa projetado, despesas por categoria e evolução de faturas, três meses para trás e para frente.",
+      "f4Title": "Patrimônio líquido",
+      "f4Body": "Ativos e passivos consolidados, com a evolução histórica do seu patrimônio mês a mês.",
+      "f5Title": "Saúde financeira",
+      "f5Body": "A dívida total comprometida e o quanto ela pesa no seu orçamento, sem letra miúda.",
+      "f6Title": "Caixinhas",
+      "f6Body": "Metas declaradas, como uma viagem, uma reforma ou um teto de gasto, acompanhadas lançamento a lançamento."
+    },
+    "privacy": {
+      "title": "<hl>Privacidade</hl> não é um recurso. É a <hl>fundação</hl>.",
+      "intro": "O Gimbo não tem servidor. Não porque falta infraestrutura; porque seus dados financeiros não são negócio de mais ninguém além do seu.",
+      "pillar1Title": "Tudo fica no seu dispositivo",
+      "pillar1Body": "Um banco de dados roda dentro do próprio navegador. Nada é enviado, nada é lido por terceiros.",
+      "pillar2Title": "Você controla o backup",
+      "pillar2Body": "Exporte um arquivo .db a qualquer momento; é a cópia que você guarda, transfere ou apaga, sem depender de ninguém.",
+      "pillar3Title": "Sincronização é opcional e sua",
+      "pillar3Body": "Para usar o Gimbo em mais de um aparelho, o sync usa uma pasta local ou uma conta de nuvem que já é sua, nunca um servidor do Gimbo.",
+      "linkWhyBrowser": "Por que guardar dados no navegador é seguro",
+      "linkPolicy": "Ler a política de privacidade"
+    },
+    "faq": {
+      "title": "Perguntas frequentes",
+      "q1": "Meus dados ficam guardados em algum servidor do Gimbo?",
+      "a1": "Não. Não existe servidor do Gimbo armazenando seus dados. Eles ficam num banco SQLite dentro do seu navegador, no seu dispositivo.",
+      "q2": "Preciso criar conta ou fazer login?",
+      "a2": "Não. Basta abrir o app e dar um nome ao seu perfil.",
+      "q3": "O Gimbo é gratuito?",
+      "a3": "Sim, sem custo e sem plano pago.",
+      "q4": "E se eu trocar de computador ou limpar os dados do navegador?",
+      "a4": "Exporte o arquivo .db em Configurações e importe no novo dispositivo. Também é possível configurar um backup automático numa pasta local.",
+      "q5": "O Gimbo funciona sem internet?",
+      "a5": "Sim. É uma aplicação web instalável e funciona totalmente offline; a internet só entra em jogo se você ativar backup ou sincronização opcionais.",
+      "q6": "Posso usar no celular?",
+      "a6": "Sim, o Gimbo é responsivo e pode ser instalado como um app no celular, com navegação adaptada para toque.",
+      "q7": "É possível usar o Gimbo em mais de um dispositivo?",
+      "a7": "Sim, de forma opcional: por uma pasta compartilhada entre computadores ou por uma conta própria do Google Drive, sempre infraestrutura que já é sua.",
+      "q8": "O que acontece se eu limpar os dados do navegador sem fazer backup?",
+      "a8": "Os dados são perdidos; é o mesmo risco de qualquer informação guardada só localmente. Por isso vale configurar um backup desde o primeiro uso."
+    },
+    "finalCta": {
+      "title": "Seu dinheiro, sua régua, seu dispositivo.",
+      "subtitle": "Comece agora; não pedimos cartão de crédito nem conta.",
+      "cta": "Criar meu Cofre"
+    },
+    "footer": {
+      "tagline": "Finanças pessoais, sem intermediários.",
+      "privacy": "Privacidade",
+      "terms": "Termos de Uso",
+      "origin": "Sobre o nome"
+    }
   }
 }

@@ -19,8 +19,7 @@ test.beforeEach(async ({ page }) => {
 // ─── New profile flow ─────────────────────────────────────────────────────────
 
 test('new profile: fills name and navigates to dashboard', async ({ page }) => {
-  await page.goto('/')
-  await expect(page).toHaveURL(/\/onboarding/)
+  await page.goto('/onboarding')
 
   await page.getByRole('button', { name: 'Entendi, vamos começar' }).click()
   await page.getByPlaceholder('Ex: Arthur Dent').fill('Test User')

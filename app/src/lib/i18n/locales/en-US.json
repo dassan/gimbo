@@ -721,6 +721,18 @@
       "sourcesTitle": "Sources",
       "source1Label": "Dicio — Dicionário Online de Português: gimbo",
       "source2Label": "Campo Grande News — Jimbo e florim: a aventura do dinheiro no Brasil"
+    },
+    "whyLocal": {
+      "title": "Why storing data in the browser is safe",
+      "intro": "Gimbo saves everything in a database that runs inside your own browser. That's not a cheap shortcut; it's an architecture with real isolation and privacy guarantees.",
+      "s1Title": "Isolated by origin",
+      "s1Body": "The browser reserves that storage space exclusively for Gimbo's domain. No other site, tab, or app can access it, the same security boundary that protects saved passwords and cookies.",
+      "s2Title": "Nothing travels over the network",
+      "s2Body": "Gimbo works fully offline. Your entries never leave your device unless you turn on an optional backup or sync yourself; and even then, the destination is always infrastructure that's already yours, such as a local folder or your own cloud account.",
+      "s3Title": "You own the file",
+      "s3Body": "At any time, you can export your entire history as a single .db file, a copy you keep, move, or take to another device, without depending on anyone.",
+      "s4Title": "What this doesn't cover",
+      "s4Body": "If you clear your browser data or uninstall it without having backed up, the content is lost; the same risk as any information kept only locally. That's why it's worth setting up a backup as soon as you start using Gimbo."
     }
   },
   "bugReport": {
@@ -742,5 +754,100 @@
     "privacyNote": "No financial data is included. You review before sending.",
     "privacyBadge": "Safe metadata only — no values, names or financial data are transmitted",
     "reportFromError": "Report this problem"
+  },
+  "landing": {
+    "nav": {
+      "features": "Features",
+      "privacy": "Privacy",
+      "faq": "FAQ",
+      "cta": "Create my Vault"
+    },
+    "hero": {
+      "eyebrow": "Personal finance, 100% local",
+      "headline": "Organize your money without handing your data to anyone.",
+      "subtitle": "Gimbo keeps your transactions, cards, and net worth right in your browser; no cloud, no account, no server in between.",
+      "ctaPrimary": "Create Data Vault",
+      "ctaSecondary": "See features",
+      "mockLabel": "TOTAL BALANCE",
+      "mockValue": "$12,480.32",
+      "mockDelta": "+8.2% this month",
+      "mockCategory1": "Housing",
+      "mockCategory2": "Groceries",
+      "mockCategory3": "Transport",
+      "mockCategory4": "Other"
+    },
+    "trust": {
+      "item1": "No server",
+      "item2": "No account",
+      "item3": "Free",
+      "item4": "Mobile version"
+    },
+    "steps": {
+      "title": "How it works",
+      "step1Title": "Create your Vault",
+      "step1Body": "No sign-up. Give your profile a name and start. Your data is born on your device.",
+      "step2Title": "Log your day to day",
+      "step2Body": "Income, expenses, cards, and transfers in a few clicks, with categories and tags.",
+      "step3Title": "Track your financial health",
+      "step3Body": "Projected cash flow, net worth, and the real weight of your debt, always up to date."
+    },
+    "features": {
+      "title": "Everything you need.\nNothing you didn't ask for.",
+      "subtitle": "One app covers daily entries and long-term analysis, so you don't need a parallel spreadsheet.",
+      "f1Title": "Fast transactions",
+      "f1Body": "Income, expenses, and transfers in seconds, with categories, subcategories, and tags.",
+      "f2Title": "Credit cards under control",
+      "f2Body": "Virtual invoices, installments, and available limit, recalculated automatically with every entry.",
+      "f3Title": "Advanced analytics",
+      "f3Body": "Projected cash flow, spending by category, and invoice history, three months back and forward.",
+      "f4Title": "Net worth",
+      "f4Body": "Assets and liabilities consolidated, with your net worth's historical evolution month by month.",
+      "f5Title": "Financial health",
+      "f5Body": "Your total committed debt and how much it weighs on your budget, no fine print.",
+      "f6Title": "Budgets",
+      "f6Body": "Declared goals, like a trip, a renovation, or a spending cap, tracked entry by entry."
+    },
+    "privacy": {
+      "title": "<hl>Privacy</hl> isn't a feature. It's the <hl>foundation</hl>.",
+      "intro": "Gimbo has no server. Not for lack of infrastructure; because your financial data is nobody's business but yours.",
+      "pillar1Title": "Everything stays on your device",
+      "pillar1Body": "A database runs inside your own browser. Nothing is sent, nothing is read by third parties.",
+      "pillar2Title": "You control the backup",
+      "pillar2Body": "Export a .db file whenever you want; it's the copy you keep, move, or delete, without depending on anyone.",
+      "pillar3Title": "Sync is optional and yours",
+      "pillar3Body": "To use Gimbo on more than one device, sync uses a local folder or a cloud account that's already yours, never a Gimbo server.",
+      "linkWhyBrowser": "Why storing data in the browser is safe",
+      "linkPolicy": "Read the privacy policy"
+    },
+    "faq": {
+      "title": "Frequently asked questions",
+      "q1": "Is my data stored on any Gimbo server?",
+      "a1": "No. There is no Gimbo server storing your data. It lives in a SQLite database inside your browser, on your device.",
+      "q2": "Do I need to create an account or log in?",
+      "a2": "No. Just open the app and give your profile a name.",
+      "q3": "Is Gimbo free?",
+      "a3": "Yes, no cost and no paid plan.",
+      "q4": "What if I switch computers or clear my browser data?",
+      "a4": "Export the .db file in Settings and import it on the new device. You can also set up automatic backup to a local folder.",
+      "q5": "Does Gimbo work without internet?",
+      "a5": "Yes. It's an installable web app and works fully offline; the internet only comes into play if you turn on optional backup or sync.",
+      "q6": "Can I use it on my phone?",
+      "a6": "Yes, Gimbo is responsive and can be installed as an app on your phone, with navigation adapted for touch.",
+      "q7": "Can I use Gimbo on more than one device?",
+      "a7": "Yes, optionally: via a folder shared between computers or your own Google Drive account, always infrastructure that's already yours.",
+      "q8": "What happens if I clear my browser data without backing up?",
+      "a8": "The data is lost; the same risk as any information kept only locally. That's why it's worth setting up a backup from the first use."
+    },
+    "finalCta": {
+      "title": "Your money, your terms, your device.",
+      "subtitle": "Start now; no credit card, no account required.",
+      "cta": "Create my Vault"
+    },
+    "footer": {
+      "tagline": "Personal finance, no middlemen.",
+      "privacy": "Privacy",
+      "terms": "Terms of Service",
+      "origin": "About the name"
+    }
   }
 }
