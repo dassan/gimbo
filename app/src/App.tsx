@@ -10,6 +10,7 @@ import { clearBackupDirHandle } from '@/lib/backupDir'
 import { startSyncPolling } from '@/lib/cloudSync/syncScheduler'
 import AppLayout from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import Landing from '@/pages/Landing'
 import Onboarding from '@/pages/Onboarding'
 import Dashboard from '@/pages/Dashboard'
 import Transactions from '@/pages/Transactions'
@@ -27,6 +28,7 @@ import CloudSync from '@/pages/Docs/CloudSync'
 import PrivacyPolicy from '@/pages/Legal/PrivacyPolicy'
 import TermsOfService from '@/pages/Legal/TermsOfService'
 import NameOrigin from '@/pages/Legal/NameOrigin'
+import WhyLocalStorage from '@/pages/Legal/WhyLocalStorage'
 
 export default function App() {
   const initWorkspace = useWorkspaceStore((s) => s.init)
@@ -132,10 +134,12 @@ export default function App() {
     <ErrorBoundary fallback="full-page">
       <BrowserRouter>
         <Routes>
+          <Route path="/" element={isLoaded ? <Navigate to="/dashboard" replace /> : <Landing />} />
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<TermsOfService />} />
           <Route path="/origin" element={<NameOrigin />} />
+          <Route path="/why-local-storage" element={<WhyLocalStorage />} />
 
           {isLoaded ? (
             <Route element={<AppLayout />}>
