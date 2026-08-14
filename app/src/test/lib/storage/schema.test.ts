@@ -8,6 +8,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   SchemaVersionError,
 } from '@/lib/storage/schema'
+import { mergeForSync } from '@/lib/cloudSync/merge'
 import type { AuditEntry, DataFile } from '@/types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -118,6 +119,22 @@ describe('createEmptyDataFile', () => {
     for (const cat of file.categories) {
       expect(() => DataFileSchema.shape.categories.element.parse(cat)).not.toThrow()
     }
+  })
+
+  // CS-23 regression: two devices each running "Criar novo" before ever syncing must seed
+  // identical category ids, or mergeForSync's union-by-id (CS-05) treats every default category
+  // as a look-alike duplicate instead of the same entity.
+  it('seeds the same category ids across independent calls', () => {
+    const a = createEmptyDataFile('Ana', 'ana@example.com')
+    const b = createEmptyDataFile('Bob', 'bob@example.com')
+    expect(b.categories.map((c) => c.id)).toEqual(a.categories.map((c) => c.id))
+  })
+
+  it('merging two independently created empty ledgers does not duplicate default categories', () => {
+    const a = createEmptyDataFile('Ana', 'ana@example.com')
+    const b = createEmptyDataFile('Bob', 'bob@example.com')
+    const merged = mergeForSync(a, b)
+    expect(merged.categories).toHaveLength(a.categories.length)
   })
 })
 

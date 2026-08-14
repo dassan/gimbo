@@ -55,6 +55,7 @@ function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
 }
 
 beforeEach(() => {
+  localStorage.clear()
   isGoogleConnectedMock.mockReset().mockReturnValue(true)
   fileExistsMock.mockReset()
   uploadMock.mockReset()
@@ -85,21 +86,39 @@ describe('pullAndMerge', () => {
     expect(uploadMock).toHaveBeenCalledTimes(1)
   })
 
-  it('does nothing when local is already at least as new as Drive', async () => {
+  it('does nothing when this device already pulled this exact remote version', async () => {
+    localStorage.setItem('gimbo_sync_drive_last_pulled_mtime', '2026-01-01T00:00:00.000Z')
     fileExistsMock.mockResolvedValue(true)
     getMetadataMock.mockResolvedValue({ modifiedTime: '2026-01-01T00:00:00.000Z' })
+    const result = await pullAndMerge(makeDataFile())
+    expect(result).toEqual({ status: 'synced' })
+    expect(downloadMock).not.toHaveBeenCalled()
+  })
+
+  // CS-22 regression: a freshly created (empty) local vault gets `fileUpdatedAt = now`, which
+  // used to look "newer" than an older Drive `modifiedTime` and made the pull get skipped even
+  // though this device had never actually pulled anything — silently leaving it empty.
+  it('pulls a never-before-seen remote even when local is a freshly created vault with a newer timestamp', async () => {
+    fileExistsMock.mockResolvedValue(true)
+    getMetadataMock.mockResolvedValue({ modifiedTime: '2026-01-01T00:00:00.000Z' })
+    readPeerBlobMock.mockResolvedValue({ status: 'ok', data: makeDataFile() })
+
     const result = await pullAndMerge(
       makeDataFile({
         settings: {
-          fileCreatedAt: '',
+          fileCreatedAt: '2026-02-01T00:00:00.000Z',
           fileUpdatedAt: '2026-02-01T00:00:00.000Z',
           auditLogRetentionLimit: 200,
           quadrantesEnabled: false,
         },
       })
     )
-    expect(result).toEqual({ status: 'synced' })
-    expect(downloadMock).not.toHaveBeenCalled()
+
+    expect(result).toEqual({ status: 'merged', peersMerged: 1 })
+    expect(downloadMock).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem('gimbo_sync_drive_last_pulled_mtime')).toBe(
+      '2026-01-01T00:00:00.000Z'
+    )
   })
 
   it('downloads, merges, and republishes when Drive is newer', async () => {

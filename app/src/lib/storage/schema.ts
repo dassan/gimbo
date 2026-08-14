@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { DataFile, WorkspaceFile } from '@/types'
-import { uuid, now } from '@/lib/utils'
+import { now } from '@/lib/utils'
 import { detectBrowserLocale, defaultCurrencyForLocale } from '@/lib/storage/workspace'
 
 export const AUDIT_RETENTION_DEFAULT = 200
@@ -377,10 +377,14 @@ export function createDefaultWorkspace(): WorkspaceFile {
   }
 }
 
+// Fixed ids (CS-23) — every fresh ledger seeds the same categories, and two devices that each
+// ran "Criar novo" independently before ever syncing need those seeds to converge under
+// mergeForSync's union-by-id (CS-05) instead of surviving as look-alike duplicates. Never change
+// an existing id here: it would make every ledger already in the wild diverge from new ones.
 function getDefaultCategories() {
   return [
     {
-      id: uuid(),
+      id: 'd75314da-3745-4d3c-a275-849ec460d058',
       parentId: null,
       name: 'Salário',
       icon: 'briefcase',
@@ -388,7 +392,7 @@ function getDefaultCategories() {
       type: 'INCOME' as const,
     },
     {
-      id: uuid(),
+      id: 'f2f5e8c1-e69d-4297-986b-ab08e06c7540',
       parentId: null,
       name: 'Freelance',
       icon: 'laptop',
@@ -396,7 +400,7 @@ function getDefaultCategories() {
       type: 'INCOME' as const,
     },
     {
-      id: uuid(),
+      id: '1b8c7a34-8aca-4a5d-b31f-09210053e378',
       parentId: null,
       name: 'Alimentação',
       icon: 'utensils',
@@ -404,7 +408,7 @@ function getDefaultCategories() {
       type: 'EXPENSE' as const,
     },
     {
-      id: uuid(),
+      id: '1bed865c-d442-4409-b7eb-421dd9592e1f',
       parentId: null,
       name: 'Transporte',
       icon: 'car',
@@ -412,7 +416,7 @@ function getDefaultCategories() {
       type: 'EXPENSE' as const,
     },
     {
-      id: uuid(),
+      id: 'f0ac9909-cce0-4456-8f7b-cbe7ec36a800',
       parentId: null,
       name: 'Saúde',
       icon: 'heart-pulse',
@@ -420,7 +424,7 @@ function getDefaultCategories() {
       type: 'EXPENSE' as const,
     },
     {
-      id: uuid(),
+      id: '9fe5cd5b-c6b2-458b-9311-21ed5910d3ed',
       parentId: null,
       name: 'Lazer',
       icon: 'smile',
@@ -428,7 +432,7 @@ function getDefaultCategories() {
       type: 'EXPENSE' as const,
     },
     {
-      id: uuid(),
+      id: '12f6f151-5377-4e7b-ab04-194c21058a45',
       parentId: null,
       name: 'Moradia',
       icon: 'home',

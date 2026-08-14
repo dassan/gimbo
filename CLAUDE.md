@@ -202,7 +202,7 @@ Todas as features do PRD (F-1 a F-29, com F-28 no Nível 1) implementadas. Módu
 
 Features concluídas desde 2026-05-27:
 - **F-24** — Patrimônio Líquido: `/net-worth`, stat cards, breakdown por conta, gráfico AreaChart (NW-01 a NW-07)
-- **F-25** — Demo Mode: `lib/demo.ts`, dados sintéticos, banner, deploy Vercel (DM-01 a DM-05)
+- **F-25** — Demo Mode: `lib/demo.ts`, dados sintéticos, banner, deploy público (DM-01 a DM-05; originalmente Vercel, migrado para **Cloudflare Pages** — ver nota abaixo)
 - **F-26** — Bug Report System: `lib/telemetry.ts`, `BugReportDialog`, ErrorBoundary, Settings (TASK-BR-01 a BR-08)
 - **F-27** — Mobile PWA: bottom nav, layouts responsivos, bottom sheet, manifest standalone, E2E mobile (MB-01 a MB-07; MB-08 aberto — Analytics responsivo)
 - **F-28 Nível 1** — Backup Local: `lib/backupDir.ts`, aba "Backup & Sync", auto-backup, `WelcomeModal`, doc pages, sync manual (BK-01 a BK-03, BK-05 a BK-08; BK-04 aberto — banner de re-permissão)
@@ -211,6 +211,15 @@ Features concluídas desde 2026-05-27:
 - **B-16/M-22** — Ciclo de fatura de cartão (Opção 2): pagamento vinculado ao período (`referenceMonth`, schema v4→v5), `CREDIT_PAYMENT` debita a conta pagadora, fatura líquida de créditos + selo de status (aberta/parcial/paga), estornos como `INCOME` na conta CREDIT; sync preserva sinal e infere `referenceMonth`
 - **M-62/B-22** — Camada de projeção de 10 anos no Fluxo de Caixa (Relatórios) + janela rolante de recorrências sem `endDate`
 - **M-64/CC-34** — `Installment.purchaseDate` (data de compra original em todas as parcelas, schema v10→v11) + correção definitiva do agrupamento de parcelas no sync do Organizze via `created_at` como chave de série
+
+> **Deploy migrado de Vercel para Cloudflare Pages (antes de 2026-08-13, data exata não registrada).**
+> `app/wrangler.jsonc` é a config de deploy atual; produção serve em `https://gimbo.com.br`. A
+> migração não foi propagada para nenhuma config externa que referencia o domínio — já causou um
+> incidente real: as "Authorized redirect URIs"/"Authorized JavaScript origins" do OAuth client do
+> Google Drive (CS-01/CS-02) ficaram apontando para o domínio antigo da Vercel, e conectar o sync a
+> partir de `gimbo.com.br` falhava com `Error 400: redirect_uri_mismatch` até serem atualizadas
+> manualmente no Google Cloud Console. Qualquer outra allowlist amarrada ao domínio (CORS, CSP
+> `connect-src`, webhooks) merece a mesma checagem antes de assumir que aponta para o lugar certo.
 
 Itens em aberto:
 - **F-30 — Caixinhas (budgets):** existe apenas como **protótipo visual mockado** na branch
