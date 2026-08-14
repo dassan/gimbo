@@ -21,7 +21,6 @@ test.beforeEach(async ({ page }) => {
 test('new profile: fills name and navigates to dashboard', async ({ page }) => {
   await page.goto('/onboarding')
 
-  await page.getByRole('button', { name: 'Entendi, vamos começar' }).click()
   await page.getByPlaceholder('Ex: Arthur Dent').fill('Test User')
   await page.getByRole('button', { name: 'Criar Cofre de Dados' }).click()
 
@@ -51,7 +50,6 @@ test('import backup: uploads exported .db file and navigates to dashboard', asyn
   })
 
   await page.goto('/onboarding')
-  await page.getByRole('button', { name: 'Entendi, vamos começar' }).click()
   await page.getByRole('button', { name: 'Importar Dados' }).click()
 
   const fileChooserPromise = page.waitForEvent('filechooser')
@@ -68,7 +66,6 @@ test('import backup: uploads exported .db file and navigates to dashboard', asyn
 
 test('import JSON: invalid file shows error and stays on onboarding', async ({ page }) => {
   await page.goto('/onboarding')
-  await page.getByRole('button', { name: 'Entendi, vamos começar' }).click()
   await page.getByRole('button', { name: 'Importar Dados' }).click()
 
   const fileChooserPromise = page.waitForEvent('filechooser')

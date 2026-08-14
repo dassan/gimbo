@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, Link } from 'react-router-dom'
-import { ArrowRight, ArrowLeft, FileJson, FolderOpen, HardDrive, Loader2, Lock } from 'lucide-react'
+import { ArrowRight, FileJson, FolderOpen, Loader2 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { createEmptyDataFile } from '@/lib/storage/schema'
@@ -16,7 +16,6 @@ import { setMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
 import type { Locale } from '@/types'
 
 type Tab = 'new' | 'import' | 'folder'
-type Step = 'intro' | 'form'
 
 export default function Onboarding() {
   const { t, i18n } = useTranslation()
@@ -24,7 +23,6 @@ export default function Onboarding() {
   const loadData = useDataStore((s) => s.loadData)
   const setLocale = useWorkspaceStore((s) => s.setLocale)
 
-  const [step, setStep] = useState<Step>('intro')
   const [tab, setTab] = useState<Tab>('new')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -154,248 +152,176 @@ export default function Onboarding() {
             className="w-full max-w-md rounded-3xl bg-surface-container p-8"
             style={{ boxShadow: '0px 20px 60px rgba(0,0,0,0.3)' }}
           >
-            {step === 'intro' ? (
-              /* ── Local-first explainer ── */
-              <div className="space-y-6">
-                <div className="flex justify-center">
-                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                    <HardDrive size={26} strokeWidth={1.5} />
-                  </span>
+            {/* Tabs */}
+            <div className="flex rounded-full bg-surface-container-low p-1 mb-8">
+              <TabButton
+                active={tab === 'new'}
+                onClick={() => {
+                  setTab('new')
+                  setFileError(null)
+                }}
+              >
+                {t('onboarding.tabNew')}
+              </TabButton>
+              <TabButton
+                active={tab === 'import'}
+                onClick={() => {
+                  setTab('import')
+                  setFileError(null)
+                }}
+              >
+                {t('onboarding.tabImport')}
+              </TabButton>
+              <TabButton
+                active={tab === 'folder'}
+                onClick={() => {
+                  setTab('folder')
+                  setFileError(null)
+                }}
+              >
+                {t('onboarding.tabFolder')}
+              </TabButton>
+            </div>
+
+            {tab === 'new' ? (
+              /* ── New profile form ── */
+              <div className="space-y-4">
+                <p className="text-xs text-on-surface/40">{t('onboarding.newDesc')}</p>
+                <div>
+                  <label className="label text-on-surface/40 block mb-1.5">
+                    {t('onboarding.name')}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={t('onboarding.namePlaceholder')}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && void handleCreate()}
+                    className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none transition focus:ring-2 focus:ring-primary/30"
+                  />
                 </div>
 
-                <div className="space-y-2 text-center">
-                  <h2 className="text-xl font-bold text-on-surface">
-                    {t('onboarding.introTitle')}
-                  </h2>
-                  <p className="text-sm leading-relaxed text-on-surface/60">
-                    {t('onboarding.introBody')}
-                  </p>
+                <div>
+                  <label className="label text-on-surface/40 block mb-1.5">
+                    {t('onboarding.email')}
+                  </label>
+                  <input
+                    type="email"
+                    placeholder={t('onboarding.emailPlaceholder')}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && void handleCreate()}
+                    className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none transition focus:ring-2 focus:ring-primary/30"
+                  />
                 </div>
 
-                <div className="space-y-3">
-                  {[
-                    {
-                      icon: <HardDrive size={16} strokeWidth={1.5} />,
-                      title: t('onboarding.introPoint1Title'),
-                      body: t('onboarding.introPoint1Body'),
-                    },
-                    {
-                      icon: <FileJson size={16} strokeWidth={1.5} />,
-                      title: t('onboarding.introPoint2Title'),
-                      body: t('onboarding.introPoint2Body'),
-                    },
-                    {
-                      icon: <Lock size={16} strokeWidth={1.5} />,
-                      title: t('onboarding.introPoint3Title'),
-                      body: t('onboarding.introPoint3Body'),
-                    },
-                  ].map((point, i) => (
-                    <div
-                      key={i}
-                      className="flex items-start gap-3 rounded-2xl bg-surface-container-low p-4"
+                <div>
+                  <label className="label text-on-surface/40 block mb-1.5">
+                    {t('onboarding.language')}
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base">
+                      {locale === 'pt-BR' ? '🇧🇷' : '🇺🇸'}
+                    </span>
+                    <select
+                      value={locale}
+                      onChange={(e) => {
+                        const l = e.target.value as Locale
+                        setLocaleState(l)
+                        void i18n.changeLanguage(l)
+                      }}
+                      className="w-full appearance-none rounded-xl bg-surface-container-high py-3 pl-10 pr-4 text-sm text-on-surface outline-none transition focus:ring-2 focus:ring-primary/30"
                     >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                        {point.icon}
-                      </span>
-                      <div>
-                        <p className="text-sm font-semibold text-on-surface">{point.title}</p>
-                        <p className="text-xs leading-relaxed text-on-surface/50">{point.body}</p>
-                      </div>
-                    </div>
-                  ))}
+                      <option value="pt-BR">Português (Brasil)</option>
+                      <option value="en-US">English (US)</option>
+                    </select>
+                  </div>
                 </div>
+
+                <p className="text-xs text-on-surface/40 pt-1">{t('onboarding.createHint')}</p>
+
+                {fileError && <p className="text-xs text-red-500">{fileError}</p>}
 
                 <button
-                  onClick={() => setStep('form')}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-4 text-sm font-semibold text-white transition hover:brightness-110 active:scale-[0.97]"
+                  onClick={() => void handleCreate()}
+                  disabled={!name.trim()}
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-4 text-sm font-semibold text-white transition hover:brightness-110 active:scale-[0.97] disabled:opacity-40"
                 >
-                  {t('onboarding.introCta')}
+                  {t('onboarding.create')}
                   <ArrowRight size={16} strokeWidth={2.5} />
                 </button>
               </div>
-            ) : (
-              <>
-                {/* Back to explainer */}
-                <button
-                  onClick={() => setStep('intro')}
-                  className="mb-4 flex items-center gap-1 text-xs text-on-surface/40 hover:text-on-surface/60 transition-colors"
+            ) : tab === 'import' ? (
+              /* ── Import form ── */
+              <div className="space-y-4">
+                <p className="text-xs text-on-surface/40">{t('onboarding.importDesc')}</p>
+                {/* Drop zone */}
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    if (!isImporting) setDragging(true)
+                  }}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={handleDrop}
+                  onClick={() => !isImporting && fileInputRef.current?.click()}
+                  className={cn(
+                    'flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed py-12 transition-colors',
+                    isImporting && 'cursor-default border-outline-variant bg-surface',
+                    !isImporting && dragging && 'cursor-pointer border-primary bg-primary/5',
+                    !isImporting &&
+                      !dragging &&
+                      'cursor-pointer border-outline-variant bg-surface hover:border-primary/50 hover:bg-surface-container-low'
+                  )}
                 >
-                  <ArrowLeft size={12} strokeWidth={2} />
-                  {t('onboarding.introBack')}
-                </button>
-
-                {/* Tabs */}
-                <div className="flex rounded-full bg-surface-container-low p-1 mb-8">
-                  <TabButton
-                    active={tab === 'new'}
-                    onClick={() => {
-                      setTab('new')
-                      setFileError(null)
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
+                    {isImporting ? (
+                      <Loader2 size={24} className="text-primary animate-spin" />
+                    ) : (
+                      <FileJson size={24} className="text-primary" strokeWidth={1.5} />
+                    )}
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-on-surface">
+                      {isImporting ? t('onboarding.importing') : t('onboarding.importDrop')}
+                    </p>
+                    {!isImporting && (
+                      <p className="mt-1 text-xs text-on-surface/40">
+                        {t('onboarding.importDropSub')}
+                      </p>
+                    )}
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".db"
+                    disabled={isImporting}
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) void handleImportFile(e.target.files[0])
                     }}
-                  >
-                    {t('onboarding.tabNew')}
-                  </TabButton>
-                  <TabButton
-                    active={tab === 'import'}
-                    onClick={() => {
-                      setTab('import')
-                      setFileError(null)
-                    }}
-                  >
-                    {t('onboarding.tabImport')}
-                  </TabButton>
-                  <TabButton
-                    active={tab === 'folder'}
-                    onClick={() => {
-                      setTab('folder')
-                      setFileError(null)
-                    }}
-                  >
-                    {t('onboarding.tabFolder')}
-                  </TabButton>
+                  />
                 </div>
 
-                {tab === 'new' ? (
-                  /* ── New profile form ── */
-                  <div className="space-y-4">
-                    <p className="text-xs text-on-surface/40">{t('onboarding.newDesc')}</p>
-                    <div>
-                      <label className="label text-on-surface/40 block mb-1.5">
-                        {t('onboarding.name')}
-                      </label>
-                      <input
-                        type="text"
-                        placeholder={t('onboarding.namePlaceholder')}
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && void handleCreate()}
-                        className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none transition focus:ring-2 focus:ring-primary/30"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="label text-on-surface/40 block mb-1.5">
-                        {t('onboarding.email')}
-                      </label>
-                      <input
-                        type="email"
-                        placeholder={t('onboarding.emailPlaceholder')}
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && void handleCreate()}
-                        className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none transition focus:ring-2 focus:ring-primary/30"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="label text-on-surface/40 block mb-1.5">
-                        {t('onboarding.language')}
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base">
-                          {locale === 'pt-BR' ? '🇧🇷' : '🇺🇸'}
-                        </span>
-                        <select
-                          value={locale}
-                          onChange={(e) => {
-                            const l = e.target.value as Locale
-                            setLocaleState(l)
-                            void i18n.changeLanguage(l)
-                          }}
-                          className="w-full appearance-none rounded-xl bg-surface-container-high py-3 pl-10 pr-4 text-sm text-on-surface outline-none transition focus:ring-2 focus:ring-primary/30"
-                        >
-                          <option value="pt-BR">Português (Brasil)</option>
-                          <option value="en-US">English (US)</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-on-surface/40 pt-1">{t('onboarding.createHint')}</p>
-
-                    {fileError && <p className="text-xs text-red-500">{fileError}</p>}
-
-                    <button
-                      onClick={() => void handleCreate()}
-                      disabled={!name.trim()}
-                      className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-4 text-sm font-semibold text-white transition hover:brightness-110 active:scale-[0.97] disabled:opacity-40"
-                    >
-                      {t('onboarding.create')}
-                      <ArrowRight size={16} strokeWidth={2.5} />
-                    </button>
-                  </div>
-                ) : tab === 'import' ? (
-                  /* ── Import form ── */
-                  <div className="space-y-4">
-                    <p className="text-xs text-on-surface/40">{t('onboarding.importDesc')}</p>
-                    {/* Drop zone */}
-                    <div
-                      onDragOver={(e) => {
-                        e.preventDefault()
-                        if (!isImporting) setDragging(true)
-                      }}
-                      onDragLeave={() => setDragging(false)}
-                      onDrop={handleDrop}
-                      onClick={() => !isImporting && fileInputRef.current?.click()}
-                      className={cn(
-                        'flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed py-12 transition-colors',
-                        isImporting && 'cursor-default border-outline-variant bg-surface',
-                        !isImporting && dragging && 'cursor-pointer border-primary bg-primary/5',
-                        !isImporting &&
-                          !dragging &&
-                          'cursor-pointer border-outline-variant bg-surface hover:border-primary/50 hover:bg-surface-container-low'
-                      )}
-                    >
-                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10">
-                        {isImporting ? (
-                          <Loader2 size={24} className="text-primary animate-spin" />
-                        ) : (
-                          <FileJson size={24} className="text-primary" strokeWidth={1.5} />
-                        )}
-                      </div>
-                      <div className="text-center">
-                        <p className="text-sm font-medium text-on-surface">
-                          {isImporting ? t('onboarding.importing') : t('onboarding.importDrop')}
-                        </p>
-                        {!isImporting && (
-                          <p className="mt-1 text-xs text-on-surface/40">
-                            {t('onboarding.importDropSub')}
-                          </p>
-                        )}
-                      </div>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".db"
-                        disabled={isImporting}
-                        className="hidden"
-                        onChange={(e) => {
-                          if (e.target.files?.[0]) void handleImportFile(e.target.files[0])
-                        }}
-                      />
-                    </div>
-
-                    {fileError && <p className="text-xs text-red-500">{fileError}</p>}
-                  </div>
-                ) : (
-                  /* ── S-17: restore from a shared multi-device folder ── */
-                  <div className="space-y-4">
-                    <p className="text-xs text-on-surface/40">{t('onboarding.folderDesc')}</p>
-                    <button
-                      onClick={() => void handleRestoreFromFolder()}
-                      disabled={isImporting}
-                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-4 text-sm font-semibold text-white transition hover:brightness-110 active:scale-[0.97] disabled:opacity-60"
-                    >
-                      {isImporting ? (
-                        <Loader2 size={16} strokeWidth={2} className="animate-spin" />
-                      ) : (
-                        <FolderOpen size={16} strokeWidth={2} />
-                      )}
-                      {isImporting ? t('onboarding.importing') : t('onboarding.folderButton')}
-                    </button>
-                    {fileError && <p className="text-xs text-red-500">{fileError}</p>}
-                  </div>
-                )}
-              </>
+                {fileError && <p className="text-xs text-red-500">{fileError}</p>}
+              </div>
+            ) : (
+              /* ── S-17: restore from a shared multi-device folder ── */
+              <div className="space-y-4">
+                <p className="text-xs text-on-surface/40">{t('onboarding.folderDesc')}</p>
+                <button
+                  onClick={() => void handleRestoreFromFolder()}
+                  disabled={isImporting}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-4 text-sm font-semibold text-white transition hover:brightness-110 active:scale-[0.97] disabled:opacity-60"
+                >
+                  {isImporting ? (
+                    <Loader2 size={16} strokeWidth={2} className="animate-spin" />
+                  ) : (
+                    <FolderOpen size={16} strokeWidth={2} />
+                  )}
+                  {isImporting ? t('onboarding.importing') : t('onboarding.folderButton')}
+                </button>
+                {fileError && <p className="text-xs text-red-500">{fileError}</p>}
+              </div>
             )}
           </div>
         </div>
