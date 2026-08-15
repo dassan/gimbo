@@ -133,14 +133,15 @@ export class StorageService {
   }
 
   async upsertUser(user: User): Promise<void> {
+    // `email` column is kept physically (no DDL change) but never populated anymore — see M-69.
     await this.run(
       `INSERT INTO users (id, name, email, created_at, updated_at)
-       VALUES ('singleton', ?, ?, ?, ?)
+       VALUES ('singleton', ?, '', ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          name = excluded.name,
          email = excluded.email,
          updated_at = excluded.updated_at`,
-      [user.name, user.email, user.createdAt, user.updatedAt]
+      [user.name, user.createdAt, user.updatedAt]
     )
   }
 
@@ -669,7 +670,6 @@ export class StorageService {
 function rowToUser(row: Row): User {
   return {
     name: row.name as string,
-    email: row.email as string,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }

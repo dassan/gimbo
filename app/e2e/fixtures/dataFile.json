@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "user": { "name": "E2E User", "email": "e2e@test.com", "createdAt": "2024-01-01T00:00:00.000Z", "updatedAt": "2024-01-01T00:00:00.000Z" },
+  "user": { "name": "E2E User", "createdAt": "2024-01-01T00:00:00.000Z", "updatedAt": "2024-01-01T00:00:00.000Z" },
   "settings": { "fileCreatedAt": "2024-01-01T00:00:00.000Z", "fileUpdatedAt": "2024-01-01T00:00:00.000Z", "auditLogRetentionLimit": 200 },
   "accounts": [
     { "id": "acc-e2e-1", "name": "Conta E2E", "type": "RETAIL", "balance": 1000, "includeInBalance": true },

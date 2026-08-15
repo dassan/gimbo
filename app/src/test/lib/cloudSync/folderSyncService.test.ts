@@ -34,7 +34,6 @@ function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
     schemaVersion: 13,
     user: {
       name: 'Ana',
-      email: 'ana@example.com',
       createdAt: '2026-01-01',
       updatedAt: '2026-01-01',
     },

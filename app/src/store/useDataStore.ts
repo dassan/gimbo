@@ -97,7 +97,7 @@ function buildSummary(
     category: 'Categoria',
     tag: 'Tag',
     transaction: 'Transação',
-    user: 'Perfil',
+    user: 'Cofre',
     savedPeriod: 'Período salvo',
     budget: 'Caixinha',
   }

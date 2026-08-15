@@ -5,7 +5,7 @@ import { detectBrowserLocale, defaultCurrencyForLocale } from '@/lib/storage/wor
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 16
+export const CURRENT_SCHEMA_VERSION = 17
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -27,7 +27,6 @@ export class SchemaVersionError extends Error {
 
 const UserSchema = z.object({
   name: z.string(),
-  email: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -334,16 +333,24 @@ function migrateDataFile(data: DataFile): DataFile {
     migrated = { ...migrated, schemaVersion: 16 }
   }
 
+  // v16 → v17: removes email (User) — collected in Onboarding/Settings but never consumed by
+  // any real flow (no recovery, no notifications, no export); flagged as a privacy inconsistency
+  // in M-69 and removed in favor of a single vault name. No shape change beyond the bump — Zod
+  // already strips the extra `email` key from older files during UserSchema.parse.
+  if (migrated.schemaVersion === 16) {
+    migrated = { ...migrated, schemaVersion: 17 }
+  }
+
   return migrated
 }
 
 // ─── Factories ────────────────────────────────────────────────────────────────
 
-export function createEmptyDataFile(name: string, email: string): DataFile {
+export function createEmptyDataFile(name: string): DataFile {
   const ts = now()
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
-    user: { name, email, createdAt: ts, updatedAt: ts },
+    user: { name, createdAt: ts, updatedAt: ts },
     settings: {
       fileCreatedAt: ts,
       fileUpdatedAt: ts,

@@ -27,18 +27,18 @@ vi.mock('@/lib/backupDir', () => ({
 }))
 
 describe('Navbar', () => {
-  it('renders initials in avatar', () => {
-    render(<Navbar initials="AB" />)
-    expect(screen.getByText('AB')).toBeInTheDocument()
+  it('renders the vault name', () => {
+    render(<Navbar vaultName="Family Vault" />)
+    expect(screen.getByText('Family Vault')).toBeInTheDocument()
   })
 
-  it('defaults initials to "U" when not provided', () => {
+  it('renders no vault name text when not provided', () => {
     render(<Navbar />)
-    expect(screen.getByText('U')).toBeInTheDocument()
+    expect(screen.queryByText('Family Vault')).not.toBeInTheDocument()
   })
 
   it('renders nav links for dashboard, transactions, analytics', () => {
-    render(<Navbar initials="AB" />)
+    render(<Navbar vaultName="Family Vault" />)
     // nav.dashboard and nav.transactions appear in both the top bar and the mobile bottom nav
     expect(screen.getAllByText('nav.dashboard').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('nav.transactions').length).toBeGreaterThanOrEqual(1)
@@ -46,7 +46,7 @@ describe('Navbar', () => {
   })
 
   it('renders settings button(s) — one in desktop top bar, one in mobile bottom nav', async () => {
-    render(<Navbar initials="AB" />)
+    render(<Navbar vaultName="Family Vault" />)
     // MB-02: two settings buttons rendered (desktop hidden via CSS, mobile hidden via CSS).
     // Both are present in the DOM; visibility is controlled by Tailwind responsive classes.
     const settingsBtns = screen.getAllByRole('button', { name: 'nav.settings' })
@@ -56,14 +56,14 @@ describe('Navbar', () => {
   })
 
   it('does not show the local-backup badge when no backup folder is configured', async () => {
-    render(<Navbar initials="AB" />)
+    render(<Navbar vaultName="Family Vault" />)
     await waitFor(() => expect(loadBackupDirHandle).toHaveBeenCalled())
     expect(screen.queryByLabelText('settings.localBackupBadgeLabel')).not.toBeInTheDocument()
   })
 
   it('shows the local-backup badge (Nível 1) once a backup folder is configured', async () => {
     vi.mocked(loadBackupDirHandle).mockResolvedValueOnce({} as FileSystemDirectoryHandle)
-    render(<Navbar initials="AB" />)
+    render(<Navbar vaultName="Family Vault" />)
     expect(await screen.findByLabelText('settings.localBackupBadgeLabel')).toBeInTheDocument()
   })
 })

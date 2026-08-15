@@ -6,7 +6,7 @@ import {
   Landmark,
   Tag as TagIcon,
   FolderTree,
-  User,
+  Lock,
   Sliders,
   Plus,
   Upload,
@@ -103,7 +103,7 @@ import type {
   BudgetSortBy,
 } from '@/types'
 
-type Section = 'accounts' | 'categories' | 'tags' | 'profile' | 'preferences' | 'backup' | 'history'
+type Section = 'accounts' | 'categories' | 'tags' | 'vault' | 'preferences' | 'backup' | 'history'
 
 // ─── Credit issuer config ─────────────────────────────────────────────────────
 
@@ -229,7 +229,7 @@ const DATA_SECTIONS: { key: Section; icon: React.ReactNode; labelKey: string }[]
   { key: 'tags', icon: <TagIcon size={16} strokeWidth={1.5} />, labelKey: 'settings.tags' },
 ]
 const APP_SECTIONS: { key: Section; icon: React.ReactNode; labelKey: string }[] = [
-  { key: 'profile', icon: <User size={16} strokeWidth={1.5} />, labelKey: 'settings.profile' },
+  { key: 'vault', icon: <Lock size={16} strokeWidth={1.5} />, labelKey: 'settings.vault' },
   {
     key: 'preferences',
     icon: <Sliders size={16} strokeWidth={1.5} />,
@@ -302,8 +302,7 @@ export default function Settings() {
   const [googleConnected, setGoogleConnected] = useState(() => isGoogleConnected())
   const [googleEmail, setGoogleEmail] = useState(() => getGoogleAccountEmail())
   const [googleOAuthError, setGoogleOAuthError] = useState<string | null>(null)
-  const [profileName, setProfileName] = useState(data?.user.name ?? '')
-  const [profileEmail, setProfileEmail] = useState(data?.user.email ?? '')
+  const [vaultName, setVaultName] = useState(data?.user.name ?? '')
   const [modal, setModal] = useState<ModalState>({ open: false })
   const [categoryModal, setCategoryModal] = useState<CategoryModalState>({ open: false })
   const [tagModal, setTagModal] = useState<TagModalState>({ open: false })
@@ -526,9 +525,9 @@ export default function Settings() {
     await refreshDeviceList()
   }
 
-  function handleSaveProfile() {
+  function handleSaveVaultName() {
     if (!data) return
-    updateUser({ name: profileName, email: profileEmail })
+    updateUser({ name: vaultName })
   }
 
   function handleLocaleChange(locale: Locale) {
@@ -1046,9 +1045,9 @@ export default function Settings() {
               </Section>
             )}
 
-            {/* Profile */}
-            {activeSection === 'profile' && (
-              <Section title={t('settings.profile')}>
+            {/* Vault */}
+            {activeSection === 'vault' && (
+              <Section title={t('settings.vault')}>
                 <div className="space-y-4">
                   <div>
                     <label className="label text-on-surface/40 block mb-1.5">
@@ -1056,27 +1055,17 @@ export default function Settings() {
                     </label>
                     <input
                       type="text"
-                      value={profileName}
-                      onChange={(e) => setProfileName(e.target.value)}
-                      className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-                    />
-                  </div>
-                  <div>
-                    <label className="label text-on-surface/40 block mb-1.5">
-                      {t('onboarding.email')}
-                    </label>
-                    <input
-                      type="email"
-                      value={profileEmail}
-                      onChange={(e) => setProfileEmail(e.target.value)}
+                      value={vaultName}
+                      onChange={(e) => setVaultName(e.target.value)}
+                      maxLength={40}
                       className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                     />
                   </div>
                   <button
-                    onClick={handleSaveProfile}
-                    className="rounded-2xl bg-on-surface px-6 py-3 text-sm font-semibold text-white hover:brightness-110 transition-all"
+                    onClick={handleSaveVaultName}
+                    className="rounded-2xl bg-primary px-6 py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
                   >
-                    {t('settings.saveProfile')}
+                    {t('settings.saveVaultName')}
                   </button>
                 </div>
               </Section>

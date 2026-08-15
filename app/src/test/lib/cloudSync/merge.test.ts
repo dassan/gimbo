@@ -9,7 +9,6 @@ function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
     schemaVersion: 13,
     user: {
       name: 'Ana',
-      email: 'ana@example.com',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
     },
@@ -224,13 +223,13 @@ describe('mergeForSync', () => {
 
   it('local settings (other than fileUpdatedAt) and user always win', () => {
     const local = makeDataFile({
-      user: { name: 'Local User', email: 'l@x.com', createdAt: '', updatedAt: '' },
+      user: { name: 'Local Vault', createdAt: '', updatedAt: '' },
     })
     const remote = makeDataFile({
-      user: { name: 'Remote User', email: 'r@x.com', createdAt: '', updatedAt: '' },
+      user: { name: 'Remote Vault', createdAt: '', updatedAt: '' },
     })
     const result = mergeForSync(local, remote)
-    expect(result.user.name).toBe('Local User')
+    expect(result.user.name).toBe('Local Vault')
   })
 
   it('valuations and savedPeriods union by id with local winning on collision', () => {

@@ -34,7 +34,7 @@ const { pullAndMerge, pushIfNeeded } = await import('@/lib/cloudSync/syncService
 function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
   return {
     schemaVersion: 13,
-    user: { name: 'Ana', email: 'a@x.com', createdAt: '2026-01-01', updatedAt: '2026-01-01' },
+    user: { name: 'Ana', createdAt: '2026-01-01', updatedAt: '2026-01-01' },
     settings: {
       fileCreatedAt: '2026-01-01T00:00:00.000Z',
       fileUpdatedAt: '2026-01-01T00:00:00.000Z',

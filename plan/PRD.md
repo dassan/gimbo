@@ -27,7 +27,7 @@ O Gimbo é um aplicativo web (PWA Client-side) de gestão de finanças pessoais 
 ## 5. Escopo e Funcionalidades
 
 ### Dentro do Escopo (Must-have)
-* **F-1:** Criação simples de perfil de usuário (Nome, E-mail, datas de edição).
+* **F-1:** Criação simples de cofre local, identificado por um nome (sem e-mail nem qualquer outro dado pessoal — ver M-69).
 * **F-2:** Sistema completo de Gestão de Contas com 8 tipos e flag `includeInBalance`. Saldo inicial editável no modal de criação/edição. Campo `issuerIcon` para contas CREDIT.
 * **F-3:** Gestão de Categorias com suporte a hierarquia de Sub-categorias via "ParentId".
 * **F-4:** Sistema de Tags personalizáveis e associáveis a múltiplas transações.
@@ -95,7 +95,7 @@ Documentação detalhada em `ARCHITECTURE.md`. Resumo:
 ```json
 {
   "schemaVersion": 9,
-  "user": { "name": "", "email": "", "createdAt": "", "updatedAt": "" },
+  "user": { "name": "", "createdAt": "", "updatedAt": "" },
   "settings": { "fileCreatedAt": "", "fileUpdatedAt": "", "auditLogRetentionLimit": 200 },
   "accounts": [{ "id": "", "name": "", "type": "RETAIL|SAVINGS|CREDIT|CRYPTO|FOREX|ASSET|STOCKS|OTHER", "balance": 0, "includeInBalance": true, "creditMetadata?": { "limit": 0, "closingDay": 1, "dueDay": 1 }, "issuerIcon?": "", "archived?": false }],
   "categories": [{ "id": "", "parentId": null, "name": "", "icon": "", "color": "", "type": "INCOME|EXPENSE" }],

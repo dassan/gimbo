@@ -5,8 +5,7 @@ export function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
   return {
     schemaVersion: 4,
     user: {
-      name: 'Test User',
-      email: 'test@example.com',
+      name: 'Test Vault',
       createdAt: '2024-01-01T00:00:00',
       updatedAt: '2024-01-01T00:00:00',
     },

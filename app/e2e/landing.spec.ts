@@ -19,7 +19,7 @@ test('no local vault yet: root URL shows the landing page', async ({ page }) => 
 
 test('existing local vault: root URL redirects straight to the dashboard', async ({ page }) => {
   await page.goto('/onboarding')
-  await page.getByPlaceholder('Ex: Arthur Dent').fill('Test User')
+  await page.getByPlaceholder('Ex: Finanças da Família').fill('Test Vault')
   await page.getByRole('button', { name: 'Criar Cofre de Dados' }).click()
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 5000 })
 

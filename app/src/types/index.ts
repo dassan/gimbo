@@ -26,8 +26,7 @@ export type AuditEntity =
 // ─── Entities ─────────────────────────────────────────────────────────────────
 
 export interface User {
-  name: string
-  email: string
+  name: string // vault display name (not a person's name — see M-69)
   createdAt: string // ISO 8601
   updatedAt: string // ISO 8601
 }

@@ -28,7 +28,7 @@ function makeEntry(daysAgo: number): AuditEntry {
 
 const MINIMAL_VALID: DataFile = {
   schemaVersion: CURRENT_SCHEMA_VERSION,
-  user: { name: 'x', email: '', createdAt: '', updatedAt: '' },
+  user: { name: 'x', createdAt: '', updatedAt: '' },
   settings: {
     fileCreatedAt: '',
     fileUpdatedAt: '',
@@ -82,9 +82,8 @@ describe('applyRetention', () => {
 
 describe('createEmptyDataFile', () => {
   it('returns a valid DataFile shape', () => {
-    const file = createEmptyDataFile('Ana', 'ana@example.com')
+    const file = createEmptyDataFile('Ana')
     expect(file.user.name).toBe('Ana')
-    expect(file.user.email).toBe('ana@example.com')
     expect(Array.isArray(file.accounts)).toBe(true)
     expect(Array.isArray(file.transactions)).toBe(true)
     expect(Array.isArray(file.auditLog)).toBe(true)
@@ -92,29 +91,29 @@ describe('createEmptyDataFile', () => {
   })
 
   it('creates default categories', () => {
-    const file = createEmptyDataFile('x', '')
+    const file = createEmptyDataFile('x')
     expect(file.categories.length).toBeGreaterThan(0)
   })
 
   it('produces a DataFile that passes Zod validation', () => {
-    const file = createEmptyDataFile('Alice', 'alice@example.com')
+    const file = createEmptyDataFile('Alice')
     expect(() => DataFileSchema.parse(file)).not.toThrow()
   })
 
   it(`sets schemaVersion to CURRENT_SCHEMA_VERSION (${CURRENT_SCHEMA_VERSION})`, () => {
-    const file = createEmptyDataFile('Dave', '')
+    const file = createEmptyDataFile('Dave')
     expect(file.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
   })
 
   it('starts with empty accounts, tags and transactions', () => {
-    const file = createEmptyDataFile('Bob', '')
+    const file = createEmptyDataFile('Bob')
     expect(file.accounts).toHaveLength(0)
     expect(file.tags).toHaveLength(0)
     expect(file.transactions).toHaveLength(0)
   })
 
   it('pre-populates default categories that each pass the category schema', () => {
-    const file = createEmptyDataFile('Charlie', '')
+    const file = createEmptyDataFile('Charlie')
     expect(file.categories.length).toBeGreaterThan(0)
     for (const cat of file.categories) {
       expect(() => DataFileSchema.shape.categories.element.parse(cat)).not.toThrow()
@@ -125,14 +124,14 @@ describe('createEmptyDataFile', () => {
   // identical category ids, or mergeForSync's union-by-id (CS-05) treats every default category
   // as a look-alike duplicate instead of the same entity.
   it('seeds the same category ids across independent calls', () => {
-    const a = createEmptyDataFile('Ana', 'ana@example.com')
-    const b = createEmptyDataFile('Bob', 'bob@example.com')
+    const a = createEmptyDataFile('Ana')
+    const b = createEmptyDataFile('Bob')
     expect(b.categories.map((c) => c.id)).toEqual(a.categories.map((c) => c.id))
   })
 
   it('merging two independently created empty ledgers does not duplicate default categories', () => {
-    const a = createEmptyDataFile('Ana', 'ana@example.com')
-    const b = createEmptyDataFile('Bob', 'bob@example.com')
+    const a = createEmptyDataFile('Ana')
+    const b = createEmptyDataFile('Bob')
     const merged = mergeForSync(a, b)
     expect(merged.categories).toHaveLength(a.categories.length)
   })
@@ -323,7 +322,7 @@ describe('validateDataFile — schema version', () => {
 describe('validateDataFile — v1 → v2 migration', () => {
   const V1_FILE: DataFile = {
     schemaVersion: 1,
-    user: { name: 'x', email: '', createdAt: '', updatedAt: '' },
+    user: { name: 'x', createdAt: '', updatedAt: '' },
     settings: {
       fileCreatedAt: '',
       fileUpdatedAt: '',
@@ -353,9 +352,9 @@ describe('validateDataFile — v1 → v2 migration', () => {
     budgets: [],
   }
 
-  it('migrates a v1 file to schemaVersion 16 (current)', () => {
+  it('migrates a v1 file to schemaVersion 17 (current)', () => {
     const result = validateDataFile(V1_FILE)
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
   })
 
   it('preserves all existing accounts during v1 → v2 migration', () => {
@@ -372,86 +371,91 @@ describe('validateDataFile — v1 → v2 migration', () => {
     expect(result.transactions[0].installment).toBeUndefined()
   })
 
-  it('accepts a v2 file and migrates it to schemaVersion 16', () => {
+  it('accepts a v2 file and migrates it to schemaVersion 17', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 2 })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
   })
 
-  it('migrates a v3 file to schemaVersion 16', () => {
+  it('migrates a v3 file to schemaVersion 17', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 3, valuations: [] })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
   })
 
-  it('migrates a v4 file to schemaVersion 16', () => {
+  it('migrates a v4 file to schemaVersion 17', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 4, valuations: [] })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
   })
 
-  it('migrates a v5 file to schemaVersion 16 (B-18, no-op shape change)', () => {
+  it('migrates a v5 file to schemaVersion 17 (B-18, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 5, valuations: [] })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
   })
 
-  it('migrates a v6 file to schemaVersion 16 (CC-33, no-op shape change)', () => {
+  it('migrates a v6 file to schemaVersion 17 (CC-33, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 6, valuations: [] })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
   })
 
-  it('migrates a v7 file to schemaVersion 16 (M-42, no-op shape change)', () => {
+  it('migrates a v7 file to schemaVersion 17 (M-42, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 7, valuations: [] })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
   })
 
-  it('migrates a v8 file to schemaVersion 16 (M-45, no-op shape change)', () => {
+  it('migrates a v8 file to schemaVersion 17 (M-45, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 8, valuations: [] })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
   })
 
-  it('migrates a v9 file to schemaVersion 16 (HE-04, no-op shape change)', () => {
+  it('migrates a v9 file to schemaVersion 17 (HE-04, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 9, valuations: [] })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
   })
 
-  it('migrates a v10 file to schemaVersion 16 (M-64, no-op shape change)', () => {
+  it('migrates a v10 file to schemaVersion 17 (M-64, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 10, valuations: [] })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
   })
 
-  it('migrates a v11 file to schemaVersion 16 (HE-14, no-op shape change)', () => {
+  it('migrates a v11 file to schemaVersion 17 (HE-14, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 11, valuations: [] })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
   })
 
-  it('migrates a v12 file to schemaVersion 16 (CS-04, backfills updatedAt)', () => {
+  it('migrates a v12 file to schemaVersion 17 (CS-04, backfills updatedAt)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 12, valuations: [] })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
   })
 
-  it('migrates a v13 file to schemaVersion 16 (B-24, backfills createdAt from date)', () => {
+  it('migrates a v13 file to schemaVersion 17 (B-24, backfills createdAt from date)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 13, valuations: [] })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
     expect(result.transactions[0].createdAt).toBe(result.transactions[0].date)
   })
 
-  it('migrates a v14 file to schemaVersion 16 (F-30/BX-03, no-op shape change)', () => {
+  it('migrates a v14 file to schemaVersion 17 (F-30/BX-03, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 14, valuations: [] })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
     expect(result.budgets).toEqual([])
   })
 
-  it('migrates a v15 file to schemaVersion 16 (F-30/BX-07, no-op shape change)', () => {
+  it('migrates a v15 file to schemaVersion 17 (F-30/BX-07, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 15, valuations: [] })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
     expect(result.settings.quadrantesEnabled).toBe(false)
   })
 
-  it('accepts a v16 file without running migration (idempotent)', () => {
+  it('migrates a v16 file to schemaVersion 17 (M-69, removes email — no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 16, valuations: [] })
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
   })
 
-  it('throws SchemaVersionError for a v17 file (future version)', () => {
-    expect(() => validateDataFile({ ...V1_FILE, schemaVersion: 17, valuations: [] })).toThrow(
+  it('accepts a v17 file without running migration (idempotent)', () => {
+    const result = validateDataFile({ ...V1_FILE, schemaVersion: 17, valuations: [] })
+    expect(result.schemaVersion).toBe(17)
+  })
+
+  it('throws SchemaVersionError for a v18 file (future version)', () => {
+    expect(() => validateDataFile({ ...V1_FILE, schemaVersion: 18, valuations: [] })).toThrow(
       SchemaVersionError
     )
   })
@@ -676,7 +680,7 @@ describe('validateDataFile — deletedIds tombstone (B-11)', () => {
   })
 
   it('createEmptyDataFile includes deletedIds: []', () => {
-    const file = createEmptyDataFile('Test', 'test@example.com')
+    const file = createEmptyDataFile('Test')
     expect(file.deletedIds).toEqual([])
   })
 })
@@ -686,7 +690,7 @@ describe('validateDataFile — deletedIds tombstone (B-11)', () => {
 describe('validateDataFile — v2 → v3 migration (NW-08)', () => {
   const V2_FILE: DataFile = {
     schemaVersion: 2,
-    user: { name: 'x', email: '', createdAt: '', updatedAt: '' },
+    user: { name: 'x', createdAt: '', updatedAt: '' },
     settings: {
       fileCreatedAt: '',
       fileUpdatedAt: '',
@@ -704,9 +708,9 @@ describe('validateDataFile — v2 → v3 migration (NW-08)', () => {
     budgets: [],
   }
 
-  it('migrates a v2 file to schemaVersion 16 (current)', () => {
+  it('migrates a v2 file to schemaVersion 17 (current)', () => {
     const result = validateDataFile(V2_FILE)
-    expect(result.schemaVersion).toBe(16)
+    expect(result.schemaVersion).toBe(17)
   })
 
   it('adds valuations: [] when field is absent in a v2 file', () => {
@@ -724,22 +728,22 @@ describe('validateDataFile — v2 → v3 migration (NW-08)', () => {
   })
 
   it('createEmptyDataFile includes valuations: []', () => {
-    const file = createEmptyDataFile('Test', 'test@example.com')
+    const file = createEmptyDataFile('Test')
     expect(file.valuations).toEqual([])
   })
 
   it('createEmptyDataFile sets schemaVersion to CURRENT_SCHEMA_VERSION', () => {
-    const file = createEmptyDataFile('Test', 'test@example.com')
-    expect(file.schemaVersion).toBe(16)
+    const file = createEmptyDataFile('Test')
+    expect(file.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
   })
 
   it('createEmptyDataFile includes savedPeriods: []', () => {
-    const file = createEmptyDataFile('Test', 'test@example.com')
+    const file = createEmptyDataFile('Test')
     expect(file.savedPeriods).toEqual([])
   })
 
   it('createEmptyDataFile includes budgets: []', () => {
-    const file = createEmptyDataFile('Test', 'test@example.com')
+    const file = createEmptyDataFile('Test')
     expect(file.budgets).toEqual([])
   })
 })
@@ -750,7 +754,7 @@ describe('validateDataFile — recurrence field (M-35)', () => {
   function withTransaction(tx: Record<string, unknown>) {
     return {
       schemaVersion: 4,
-      user: { name: 'x', email: '', createdAt: '', updatedAt: '' },
+      user: { name: 'x', createdAt: '', updatedAt: '' },
       settings: {
         fileCreatedAt: '',
         fileUpdatedAt: '',
@@ -1085,7 +1089,7 @@ describe('validateDataFile — savedPeriods (M-45)', () => {
 describe('validateDataFile — updatedAt backfill (CS-04)', () => {
   const V12_FILE: DataFile = {
     schemaVersion: 12,
-    user: { name: 'x', email: '', createdAt: '', updatedAt: '' },
+    user: { name: 'x', createdAt: '', updatedAt: '' },
     settings: {
       fileCreatedAt: '',
       fileUpdatedAt: '',

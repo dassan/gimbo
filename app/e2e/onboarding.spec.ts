@@ -21,7 +21,7 @@ test.beforeEach(async ({ page }) => {
 test('new profile: fills name and navigates to dashboard', async ({ page }) => {
   await page.goto('/onboarding')
 
-  await page.getByPlaceholder('Ex: Arthur Dent').fill('Test User')
+  await page.getByPlaceholder('Ex: Finanças da Família').fill('Test Vault')
   await page.getByRole('button', { name: 'Criar Cofre de Dados' }).click()
 
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 5000 })

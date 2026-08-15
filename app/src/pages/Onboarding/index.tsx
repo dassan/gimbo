@@ -25,7 +25,6 @@ export default function Onboarding() {
 
   const [tab, setTab] = useState<Tab>('new')
   const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
   const [locale, setLocaleState] = useState<Locale>(() => detectBrowserLocale())
   const [dragging, setDragging] = useState(false)
   const [fileError, setFileError] = useState<string | null>(null)
@@ -37,7 +36,7 @@ export default function Onboarding() {
   async function handleCreate() {
     if (!name.trim()) return
     setFileError(null)
-    const data = createEmptyDataFile(name.trim(), email.trim())
+    const data = createEmptyDataFile(name.trim())
     await storage.replaceAll(data)
     loadData(data)
     setLocale(locale)
@@ -184,7 +183,7 @@ export default function Onboarding() {
             </div>
 
             {tab === 'new' ? (
-              /* ── New profile form ── */
+              /* ── New vault form ── */
               <div className="space-y-4">
                 <p className="text-xs text-on-surface/40">{t('onboarding.newDesc')}</p>
                 <div>
@@ -197,20 +196,7 @@ export default function Onboarding() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && void handleCreate()}
-                    className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none transition focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-
-                <div>
-                  <label className="label text-on-surface/40 block mb-1.5">
-                    {t('onboarding.email')}
-                  </label>
-                  <input
-                    type="email"
-                    placeholder={t('onboarding.emailPlaceholder')}
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && void handleCreate()}
+                    maxLength={40}
                     className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none transition focus:ring-2 focus:ring-primary/30"
                   />
                 </div>

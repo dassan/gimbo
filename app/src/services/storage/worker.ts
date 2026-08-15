@@ -36,7 +36,7 @@ type WorkerResponse = {
 
 // ─── DataFile subset used by replaceAll ───────────────────────────────────────
 
-type RawUser = { name: string; email: string; createdAt: string; updatedAt: string }
+type RawUser = { name: string; createdAt: string; updatedAt: string }
 type RawSettings = {
   fileCreatedAt: string
   fileUpdatedAt: string
@@ -285,11 +285,11 @@ async function replaceAll(raw: unknown): Promise<void> {
     await sqlite3.run(db, 'DELETE FROM settings')
     await sqlite3.run(db, 'DELETE FROM users')
 
-    // user
+    // user — `email` column kept physically (no DDL change) but never populated anymore, M-69
     await sqlite3.run(
       db,
-      "INSERT INTO users (id, name, email, created_at, updated_at) VALUES ('singleton', ?, ?, ?, ?)",
-      [d.user.name, d.user.email, d.user.createdAt, d.user.updatedAt]
+      "INSERT INTO users (id, name, email, created_at, updated_at) VALUES ('singleton', ?, '', ?, ?)",
+      [d.user.name, d.user.createdAt, d.user.updatedAt]
     )
 
     // settings
@@ -700,7 +700,6 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
   return {
     user: {
       name: u.name as string,
-      email: u.email as string,
       createdAt: u.created_at as string,
       updatedAt: u.updated_at as string,
     },

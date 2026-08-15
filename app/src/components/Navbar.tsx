@@ -37,11 +37,11 @@ const BOTTOM_NAV_ITEMS = [
 ]
 
 interface NavbarProps {
-  initials?: string
+  vaultName?: string
   onNewTransaction?: () => void
 }
 
-export default function Navbar({ initials = 'U', onNewTransaction }: NavbarProps) {
+export default function Navbar({ vaultName = '', onNewTransaction }: NavbarProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   // Usability follow-up (CS-16), generalized for CS-09: discreet sync status indicator, hidden
@@ -158,8 +158,11 @@ export default function Navbar({ initials = 'U', onNewTransaction }: NavbarProps
             <Settings size={18} strokeWidth={1.5} />
           </button>
 
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-white">
-            {initials}
+          <div
+            title={vaultName}
+            className="flex h-8 max-w-[100px] sm:max-w-[160px] min-w-0 items-center rounded-full bg-primary px-3 text-[11px] font-semibold text-white"
+          >
+            <span className="truncate">{vaultName}</span>
           </div>
         </div>
       </header>
