@@ -398,14 +398,15 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
       />
 
       {/* Sheet
-          MB-04: Mobile = bottom sheet (slides up from bottom, 85dvh, rounded top corners).
-                 Desktop = right-side panel (slides in from right, full height, max 480px).
+          MB-04: Mobile = full-height bottom sheet (slides up from bottom, 100dvh, no gap at
+                 the top — CC-35 follow-up). Desktop = right-side panel (slides in from right,
+                 full height, max 480px).
           translate-y / translate-x toggled by the `open` state — responsive via Tailwind. */}
       <aside
         className={cn(
           'fixed z-50 flex flex-col bg-surface-container-low shadow-card-ambient transition-transform duration-300 ease-[var(--ease-fluid)]',
-          // Mobile layout: bottom sheet
-          'max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:h-[85dvh] max-sm:rounded-t-2xl',
+          // Mobile layout: full-height bottom sheet
+          'max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:h-dvh max-sm:rounded-t-2xl',
           // Desktop layout: right-side panel
           'sm:right-0 sm:top-0 sm:h-full sm:w-full sm:max-w-[480px]',
           // Animation: slide direction differs per viewport
@@ -442,7 +443,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
               inputMode="numeric"
               value={amountStr}
               onChange={handleAmountInput}
-              className="w-full text-center text-5xl font-bold text-on-surface outline-none bg-transparent"
+              className="w-full text-center text-4xl sm:text-5xl font-bold text-on-surface outline-none bg-transparent"
               placeholder="0,00"
             />
           </div>
@@ -995,11 +996,19 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
         </div>
 
         {/* Footer CTA
-            max-sm:pb-20: 80px bottom padding on mobile keeps the delete button above
-            the fixed bottom nav (h-16 = 64px) — the extra 16px adds comfortable clearance. */}
-        <div className="px-6 pb-8 max-sm:pb-20 pt-4 border-t border-surface-container-low space-y-3">
+            max-sm:pb-20 (80px) only in edit mode: clears the delete button (rendered below
+            the save button) above the fixed bottom nav. Create mode has no delete button, so
+            it doesn't need that extra clearance — reclaiming it helps Tags fit above the fold. */}
+        <div
+          className={cn(
+            'px-6 pb-8 pt-4 border-t border-surface-container-low space-y-3',
+            isEditMode ? 'max-sm:pb-20' : 'max-sm:pb-6'
+          )}
+        >
           {!isEditMode && (
-            <p className="text-center text-xs text-on-surface/30">
+            // Keyboard shortcut hint is meaningless on mobile (no physical Enter key) — hiding
+            // it there reclaims a full line of the sheet's permanently-visible footer.
+            <p className="hidden sm:block text-center text-xs text-on-surface/30">
               {t('transactions.shortcutHint')}
             </p>
           )}
