@@ -53,6 +53,7 @@
     "linkedCount_one": "{{count}} transaction",
     "linkedCount_other": "{{count}} transactions",
     "ofGoal": "of the goal",
+    "of": "of",
     "status": {
       "onTrack": "On track",
       "warning": "Watch out",

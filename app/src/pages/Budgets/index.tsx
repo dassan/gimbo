@@ -146,7 +146,7 @@ function BudgetCard({ budget, transactions }: { budget: Budget; transactions: Tr
       )}
 
       {/* Meta — a âncora do card; o valor atual aparece junto do percentual abaixo.
-          Desktop only (sm+) — mobile usa o resumo Atual/Meta abaixo (MB-14). */}
+          Desktop only (sm+) — mobile usa o resumo compacto com barra abaixo (MB-14/MB-15). */}
       <div className="mt-4 hidden sm:block">
         <p className="text-[10px] font-semibold uppercase tracking-[0.05em] text-on-surface/40">
           {t('budgets.target')}
@@ -177,15 +177,20 @@ function BudgetCard({ budget, transactions }: { budget: Budget; transactions: Tr
         </p>
       </div>
 
-      {/* MB-14: mobile-only compact summary — name + Atual/Meta, no lançamentos count, no
-          progress bar/percentual/disponível. Same anchor spot as the desktop blocks above. */}
+      {/* MB-15: mobile-only compact summary — one line "<atual> de <meta> (<percent>%)" + a
+          progress bar in the same style as desktop's, no second line (redundant with the
+          first). No lançamentos count either (MB-14). */}
       <div className="mt-4 sm:hidden">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.05em] text-on-surface/40">
-          {t('budgets.current')} / {t('budgets.target')}
+        <p className="text-xs text-on-surface/50">
+          <span className="text-sm font-bold tabular-nums" style={{ color }}>
+            {formatCurrency(current)}
+          </span>{' '}
+          {t('budgets.of')} <span className="tabular-nums">{formatCurrency(budget.target)}</span> (
+          {Math.round(progress * 100)}%)
         </p>
-        <p className="mt-0.5 text-xl font-bold tabular-nums text-on-surface">
-          {formatCurrency(current)} / {formatCurrency(budget.target)}
-        </p>
+        <div className="mt-2">
+          <ProgressBar progress={progress} color={color} />
+        </div>
       </div>
     </Link>
   )

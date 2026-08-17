@@ -53,6 +53,7 @@
     "linkedCount_one": "{{count}} lançamento",
     "linkedCount_other": "{{count}} lançamentos",
     "ofGoal": "da meta",
+    "of": "de",
     "status": {
       "onTrack": "No ritmo",
       "warning": "Atenção",
