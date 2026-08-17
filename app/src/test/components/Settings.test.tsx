@@ -312,43 +312,26 @@ describe('Settings — CC-15: accounts list balance bifurcation', () => {
   })
 })
 
-// ─── Settings — M-23: issuer icon picker for CREDIT accounts ─────────────────
+// ─── Settings — M-23: issuer icon no longer editable in the simplified account modal ──
 
-describe('Settings — M-23: issuer icon picker', () => {
-  async function openCreditModal() {
+describe('Settings — M-23: issuer icon picker removed from the account modal', () => {
+  it('does not render an issuer/institution picker in the CREDIT modal', async () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [], transactions: [] }),
     })
     render(<Settings />)
     await userEvent.click(screen.getByRole('button', { name: /settings\.newCreditCard/i }))
-  }
-
-  it('shows the issuer section label when CREDIT modal is open', async () => {
-    await openCreditModal()
-    expect(screen.getByText('accounts.issuer')).toBeInTheDocument()
+    expect(screen.queryByText('Nubank')).not.toBeInTheDocument()
   })
 
-  it('renders all issuer options in the picker', async () => {
-    await openCreditModal()
-    // All named issuers should appear as buttons
-    expect(screen.getByText('Nubank')).toBeInTheDocument()
-    expect(screen.getByText('Itaú')).toBeInTheDocument()
-    expect(screen.getByText('Bradesco')).toBeInTheDocument()
-    expect(screen.getByText('Inter')).toBeInTheDocument()
-    expect(screen.getByText('Santander')).toBeInTheDocument()
-    expect(screen.getByText('Caixa')).toBeInTheDocument()
-    expect(screen.getByText('accounts.issuerGeneric')).toBeInTheDocument()
-  })
-
-  it('does not show the issuer section when a non-CREDIT type is selected in the modal', async () => {
+  it('does not render an issuer/institution picker in the regular account modal', async () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [], transactions: [] }),
     })
     render(<Settings />)
     // Open a regular account modal (non-CREDIT default)
     await userEvent.click(screen.getByRole('button', { name: /settings\.newAccount/i }))
-
-    expect(screen.queryByText('accounts.issuer')).not.toBeInTheDocument()
+    expect(screen.queryByText('Nubank')).not.toBeInTheDocument()
   })
 
   it('preserves issuerIcon when editing a CREDIT account that already has one', () => {
@@ -476,7 +459,7 @@ describe('Settings — HE-05: create/edit LOAN account', () => {
     render(<Settings />)
 
     await userEvent.click(screen.getByRole('button', { name: /settings\.newAccount/i }))
-    await userEvent.click(screen.getByText('accounts.loan'))
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'LOAN')
 
     expect(screen.getByText('accounts.outstandingBalance')).toBeInTheDocument()
     expect(screen.getByText('accounts.monthlyPayment')).toBeInTheDocument()
@@ -489,7 +472,7 @@ describe('Settings — HE-05: create/edit LOAN account', () => {
     render(<Settings />)
 
     await userEvent.click(screen.getByRole('button', { name: /settings\.newAccount/i }))
-    await userEvent.click(screen.getByText('accounts.loan'))
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'LOAN')
 
     expect(screen.queryByText('accounts.initialBalance')).not.toBeInTheDocument()
   })
@@ -503,7 +486,7 @@ describe('Settings — HE-05: create/edit LOAN account', () => {
       screen.getByPlaceholderText('settings.accountNamePlaceholder'),
       'Financiamento do apê'
     )
-    await userEvent.click(screen.getByText('accounts.loan'))
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'LOAN')
 
     const balanceInputs = screen.getAllByPlaceholderText('R$ 0,00')
     await userEvent.type(balanceInputs[0], '20000')

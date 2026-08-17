@@ -1715,8 +1715,9 @@ function AddAccountModal({
   const [confirmDelete, setConfirmDelete] = useState(false)
   // M-42: "Ativa" toggle — default to active for new accounts; respect saved value in edit mode
   const [archived, setArchived] = useState(account?.archived ?? false)
-  // M-23: issuer icon for CREDIT accounts — defaults to 'generic' (no visual branding)
-  const [issuerIcon, setIssuerIcon] = useState<string>(account?.issuerIcon ?? 'generic')
+  // M-23: issuer icon — no longer editable in the modal (simplified form); preserved as-is for
+  // existing accounts (edit mode), always 'generic' (no branding) for accounts created from now on.
+  const [issuerIcon] = useState<string>(account?.issuerIcon ?? 'generic')
   // M-33: initial balance — only for non-CREDIT accounts; pre-filled from account.balance in edit mode
   const [initialBalance, setInitialBalance] = useState<string>(
     account && account.type !== 'CREDIT' && account.balance !== 0 ? String(account.balance) : ''
@@ -1889,30 +1890,22 @@ function AddAccountModal({
           />
         </div>
 
-        {/* Bank / Institution grid */}
+        {/* Account type */}
         <div className="mb-5">
           <label className="block text-[11px] font-semibold uppercase tracking-widest text-on-surface/40 mb-3">
-            {t('settings.bankInstitution')}
+            {t('settings.accountType')}
           </label>
-          <div className="grid grid-cols-4 gap-2">
-            {ACCOUNT_TYPES.map(({ type: t_, icon }) => (
-              <button
-                key={t_}
-                onClick={() => handleTypeSelect(t_)}
-                className={cn(
-                  'flex flex-col items-center gap-1.5 rounded-2xl border-2 py-3 px-1 transition-all',
-                  type === t_
-                    ? 'border-primary bg-primary/5 text-primary'
-                    : 'border-transparent bg-surface-container-low text-on-surface/50 hover:border-outline-variant'
-                )}
-              >
-                {icon}
-                <span className="text-[9px] font-semibold uppercase tracking-wide leading-none">
-                  {t(`accounts.${t_.toLowerCase()}`)}
-                </span>
-              </button>
+          <select
+            value={type}
+            onChange={(e) => handleTypeSelect(e.target.value as AccountType)}
+            className="w-full appearance-none rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            {ACCOUNT_TYPES.map(({ type: t_ }) => (
+              <option key={t_} value={t_}>
+                {t(`accounts.${t_.toLowerCase()}`)}
+              </option>
             ))}
-          </div>
+          </select>
 
           {/* M-33/HE-05: Initial balance — shown only for non-CREDIT, non-LOAN accounts */}
           {type !== 'CREDIT' && type !== 'LOAN' && (
@@ -1928,35 +1921,6 @@ function AddAccountModal({
                 placeholder="R$ 0,00"
                 className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
               />
-            </div>
-          )}
-
-          {/* M-34: Institution picker — shown for non-CREDIT accounts */}
-          {type !== 'CREDIT' && (
-            <div className="mt-4">
-              <label className="block text-[11px] font-semibold uppercase tracking-widest text-on-surface/40 mb-3">
-                {t('accounts.institution')}
-              </label>
-              <div className="grid grid-cols-4 gap-2">
-                {CREDIT_ISSUERS.map(({ key, label, color }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setIssuerIcon(key)}
-                    className={cn(
-                      'flex flex-col items-center gap-1.5 rounded-2xl border-2 py-2.5 px-1 transition-all',
-                      issuerIcon === key
-                        ? 'border-primary bg-primary/5'
-                        : 'border-transparent bg-surface-container-low hover:border-outline-variant'
-                    )}
-                  >
-                    <div className="h-5 w-5 rounded-full" style={{ backgroundColor: color }} />
-                    <span className="text-[9px] font-semibold uppercase tracking-wide leading-none text-on-surface/60 text-center">
-                      {key === 'generic' ? t('accounts.issuerGeneric') : label}
-                    </span>
-                  </button>
-                ))}
-              </div>
             </div>
           )}
 
@@ -2006,33 +1970,6 @@ function AddAccountModal({
                     placeholder="1–31"
                     className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                   />
-                </div>
-              </div>
-
-              {/* M-23: Issuer icon picker */}
-              <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-widest text-on-surface/40 mb-3">
-                  {t('accounts.issuer')}
-                </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {CREDIT_ISSUERS.map(({ key, label, color }) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setIssuerIcon(key)}
-                      className={cn(
-                        'flex flex-col items-center gap-1.5 rounded-2xl border-2 py-2.5 px-1 transition-all',
-                        issuerIcon === key
-                          ? 'border-primary bg-primary/5'
-                          : 'border-transparent bg-surface-container-low hover:border-outline-variant'
-                      )}
-                    >
-                      <div className="h-5 w-5 rounded-full" style={{ backgroundColor: color }} />
-                      <span className="text-[9px] font-semibold uppercase tracking-wide leading-none text-on-surface/60 text-center">
-                        {key === 'generic' ? t('accounts.issuerGeneric') : label}
-                      </span>
-                    </button>
-                  ))}
                 </div>
               </div>
             </div>
@@ -2104,7 +2041,7 @@ function AddAccountModal({
             <div className="mt-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Umbrella size={14} strokeWidth={1.5} className="text-on-surface/40" />
-                <span className="text-sm text-on-surface/70">{t('accounts.markAsReserve')}</span>
+                <span className="text-sm text-on-surface/70">{t('accounts.emergencyReserve')}</span>
               </div>
               <button
                 onClick={() => setIsReserve((v) => !v)}
