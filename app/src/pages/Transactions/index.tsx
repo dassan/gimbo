@@ -1,7 +1,16 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useOutletContext } from 'react-router-dom'
-import { Search, CheckCircle2, Clock, ChevronDown, ArrowRightLeft, CreditCard } from 'lucide-react'
+import {
+  Search,
+  CheckCircle2,
+  Clock,
+  ChevronDown,
+  ArrowRightLeft,
+  CreditCard,
+  Filter,
+  X,
+} from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import {
@@ -38,6 +47,8 @@ export default function Transactions() {
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense' | 'transfer'>('all')
   // B-15: footer totals reflect realized cash by default; toggle on to project unpaid entries.
   const [includeUnpaid, setIncludeUnpaid] = useState(false)
+  // MB-11: filters collapse into a bottom-sheet modal on mobile — desktop keeps the inline row.
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   const now = useMemo(() => new Date(), [])
 
@@ -240,9 +251,67 @@ export default function Transactions() {
 
   if (!data) return null
 
+  // MB-11: filter configs shared between the desktop inline row and the mobile filters modal —
+  // avoids duplicating the (non-trivial, e.g. archived-account handling) options logic.
+  const filterConfigs = [
+    {
+      key: 'accounts',
+      label: t('transactions.filterAccounts'),
+      value: filterAccountId,
+      onChange: setFilterAccountId,
+      options: [
+        { value: 'all', label: t('transactions.filterAccounts') },
+        // M-26: CREDIT accounts are excluded — their transactions live in /credit-card/:id
+        // M-42: archived accounts are hidden unless currently selected as the filter
+        ...filterArchivedAccounts(
+          data.accounts.filter((a) => a.type !== 'CREDIT'),
+          filterAccountId
+        ).map((a) => ({ value: a.id, label: a.name })),
+      ],
+    },
+    {
+      key: 'status',
+      label: t('transactions.filterStatus'),
+      value: filterStatus,
+      onChange: (v: string) => setFilterStatus(v as typeof filterStatus),
+      options: [
+        { value: 'all', label: t('transactions.filterStatus') },
+        { value: 'paid', label: t('transactions.paid') },
+        { value: 'pending', label: t('transactions.pending') },
+      ],
+    },
+    {
+      key: 'tags',
+      label: t('transactions.filterTags'),
+      value: 'all',
+      onChange: () => {},
+      options: [
+        { value: 'all', label: t('transactions.filterTags') },
+        ...data.tags.map((tag) => ({ value: tag.id, label: `#${tag.name}` })),
+      ],
+    },
+    {
+      key: 'type',
+      label: t('transactions.filterType'),
+      value: filterType,
+      onChange: (v: string) => setFilterType(v as typeof filterType),
+      options: [
+        { value: 'all', label: t('transactions.filterType') },
+        { value: 'income', label: t('transactions.income') },
+        { value: 'expense', label: t('transactions.expense') },
+        { value: 'transfer', label: t('transactions.transfer') },
+      ],
+    },
+  ]
+  const activeFilterCount = [
+    filterAccountId !== 'all',
+    filterStatus !== 'all',
+    filterType !== 'all',
+  ].filter(Boolean).length
+
   return (
     <>
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-6 sm:pt-8 pb-24 lg:pb-8">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-6 sm:pt-8 pb-20 lg:pb-8">
         {/* ── Period selector ───────────────────────────────────────────────── */}
         {/* Search moved below the "include unpaid" toggle in the summary panel, freeing up this
             row. sm:-ml-2 compensates the chevron button's own hit-area padding so the arrow tip
@@ -251,57 +320,130 @@ export default function Transactions() {
           <PeriodSelector value={period} onChange={setPeriod} />
         </div>
 
-        {/* ── Filter bar — wraps on mobile ─────────────────────────────────── */}
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5">
-          <FilterDropdown
-            className="flex-1 min-w-[140px]"
-            label={t('transactions.filterAccounts')}
-            value={filterAccountId}
-            onChange={setFilterAccountId}
-            options={[
-              { value: 'all', label: t('transactions.filterAccounts') },
-              // M-26: CREDIT accounts are excluded — their transactions live in /credit-card/:id
-              // M-42: archived accounts are hidden unless currently selected as the filter
-              ...filterArchivedAccounts(
-                data.accounts.filter((a) => a.type !== 'CREDIT'),
-                filterAccountId
-              ).map((a) => ({ value: a.id, label: a.name })),
-            ]}
-          />
-          <FilterDropdown
-            className="flex-1 min-w-[140px]"
-            label={t('transactions.filterStatus')}
-            value={filterStatus}
-            onChange={(v) => setFilterStatus(v as typeof filterStatus)}
-            options={[
-              { value: 'all', label: t('transactions.filterStatus') },
-              { value: 'paid', label: t('transactions.paid') },
-              { value: 'pending', label: t('transactions.pending') },
-            ]}
-          />
-          <FilterDropdown
-            className="flex-1 min-w-[140px]"
-            label={t('transactions.filterTags')}
-            value="all"
-            onChange={() => {}}
-            options={[
-              { value: 'all', label: t('transactions.filterTags') },
-              ...data.tags.map((tag) => ({ value: tag.id, label: `#${tag.name}` })),
-            ]}
-          />
-          <FilterDropdown
-            className="flex-1 min-w-[140px]"
-            label={t('transactions.filterType')}
-            value={filterType}
-            onChange={(v) => setFilterType(v as typeof filterType)}
-            options={[
-              { value: 'all', label: t('transactions.filterType') },
-              { value: 'income', label: t('transactions.income') },
-              { value: 'expense', label: t('transactions.expense') },
-              { value: 'transfer', label: t('transactions.transfer') },
-            ]}
-          />
+        {/* ── Filter bar — desktop only, wraps at narrower lg widths ─────────── */}
+        <div className="hidden lg:flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5">
+          {filterConfigs.map((f) => (
+            <FilterDropdown
+              key={f.key}
+              className="flex-1 min-w-[140px]"
+              label={f.label}
+              value={f.value}
+              onChange={f.onChange}
+              options={f.options}
+            />
+          ))}
         </div>
+
+        {/* ── MB-11: mobile — search stays visible, the 4 filters + toggle collapse behind
+            a single icon into a bottom-sheet modal (avoids the filter row eating the header). ── */}
+        <div className="flex lg:hidden items-center gap-2 mb-4">
+          <div className="relative flex-1">
+            <Search
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
+            />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('transactions.searchPlaceholder')}
+              className="w-full rounded-xl border border-outline-variant bg-surface-container-low py-2.5 pl-8 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+          <button
+            onClick={() => setFiltersOpen(true)}
+            aria-label={t('transactions.filters')}
+            className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-outline-variant bg-surface-container-low text-on-surface/60"
+          >
+            <Filter size={16} strokeWidth={1.75} />
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-white">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* ── MB-11: mobile filters modal (bottom sheet) ──────────────────────── */}
+        {filtersOpen && (
+          <div className="lg:hidden fixed inset-0 z-50">
+            <div
+              className="absolute inset-0 bg-on-surface/20 backdrop-blur-sm"
+              onClick={() => setFiltersOpen(false)}
+            />
+            <div className="absolute bottom-0 left-0 right-0 max-h-[85dvh] overflow-y-auto rounded-t-2xl border-t border-outline-variant bg-surface-container-low">
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="h-1 w-10 rounded-full bg-on-surface/15" />
+              </div>
+              <div className="flex items-center justify-between px-6 pt-2 pb-4">
+                <h2 className="text-base font-semibold text-on-surface">
+                  {t('transactions.filters')}
+                </h2>
+                <div className="flex items-center gap-4">
+                  {activeFilterCount > 0 && (
+                    <button
+                      onClick={() => {
+                        setFilterAccountId('all')
+                        setFilterStatus('all')
+                        setFilterType('all')
+                      }}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      {t('transactions.clearFilters')}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setFiltersOpen(false)}
+                    aria-label={t('common.close')}
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface/50 hover:bg-surface-container-high"
+                  >
+                    <X size={18} strokeWidth={2} />
+                  </button>
+                </div>
+              </div>
+              <div className="px-6 pb-6 space-y-4">
+                {filterConfigs.map((f) => (
+                  <div key={f.key}>
+                    <label className="block text-[11px] font-semibold uppercase tracking-widest text-on-surface/40 mb-1.5">
+                      {f.label}
+                    </label>
+                    <FilterDropdown
+                      className="w-full"
+                      value={f.value}
+                      onChange={f.onChange}
+                      options={f.options}
+                    />
+                  </div>
+                ))}
+
+                {/* B-15: include unpaid entries in the summary totals (off = realized cash only) */}
+                <button
+                  role="switch"
+                  aria-checked={includeUnpaid}
+                  onClick={() => setIncludeUnpaid((v) => !v)}
+                  className="flex w-full items-center justify-between rounded-2xl bg-surface-container px-5 py-4"
+                >
+                  <span className="text-sm font-medium text-on-surface">
+                    {t('analytics.includeUnpaid')}
+                  </span>
+                  <span
+                    className={cn(
+                      'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+                      includeUnpaid ? 'bg-primary' : 'bg-on-surface/20'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                        includeUnpaid ? 'translate-x-6' : 'translate-x-1'
+                      )}
+                    />
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── M-36: full-width transaction list / M-48: lg sidebar for the summary ── */}
         <div className="lg:grid lg:grid-cols-[1fr_280px] lg:gap-6 lg:items-start">
@@ -324,11 +466,10 @@ export default function Transactions() {
             )}
           </div>
 
-          {/* ── Summary: fixed footer on mobile/tablet, sticky sidebar on lg (M-48) ── */}
-          {/* bottom-24 (not bottom-6) on mobile/tablet: clears the fixed bottom nav bar (h-16 +
-              safe-area-inset) now that Search is a 3rd stacked child sitting below the toggle. */}
-          <div className="fixed bottom-24 left-0 right-0 z-30 pointer-events-none lg:static">
-            <div className="mx-auto max-w-7xl px-6 lg:mx-0 lg:max-w-none lg:px-0 lg:sticky lg:top-6 lg:mt-6 pointer-events-auto space-y-3">
+          {/* ── Summary sidebar — desktop only (M-48). MB-11: mobile has its own slim fixed
+              bar + filters modal below, instead of this whole card floating over the list. ── */}
+          <div className="hidden lg:block">
+            <div className="lg:sticky lg:top-6 lg:mt-6 space-y-3">
               {filtered.length > 0 && (
                 <div
                   className={cn(
@@ -455,6 +596,27 @@ export default function Transactions() {
             </div>
           </div>
         </div>
+
+        {/* ── MB-11: mobile summary — a single slim bar pinned above the bottom nav, instead
+            of the tall floating card that used to overlap the list. ── */}
+        {filtered.length > 0 && (
+          <div className="lg:hidden fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 border-t border-outline-variant bg-surface-container-low/95 px-4 py-2.5 backdrop-blur-md">
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <span className="text-on-surface/50">
+                <span className="font-semibold text-on-surface">{filtered.length}</span>{' '}
+                {t('transactions.listed')}
+              </span>
+              <span
+                className={cn(
+                  'font-bold tabular-nums',
+                  saldoPrevisto >= 0 ? 'text-primary' : 'text-tertiary'
+                )}
+              >
+                {t('transactions.projectedBalance')}: {formatCurrency(saldoPrevisto)}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </>
   )

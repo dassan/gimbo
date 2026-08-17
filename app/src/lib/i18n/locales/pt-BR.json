@@ -186,6 +186,8 @@
     "filterStatus": "Status",
     "filterTags": "Tags",
     "filterType": "Tipo",
+    "filters": "Filtros",
+    "clearFilters": "Limpar filtros",
     "today": "Hoje",
     "yesterday": "Ontem",
     "searchPlaceholder": "Buscar...",
