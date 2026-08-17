@@ -250,22 +250,27 @@ export default function Dashboard() {
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
       {/* ── Stat cards — "Previstas" (paid + unpaid of the month) ─────────── */}
-      {/* Mobile: single column. Desktop: 3-column. */}
+      {/* Mobile: only "Saldo Previsto" (income/expense hidden — MB-10, saves scroll on small
+          screens). Desktop: unchanged 3-column layout with all three cards. */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-        <StatCard
-          label={t('dashboard.income')}
-          value={formatCurrency(income)}
-          icon={<TrendingUp size={16} strokeWidth={1.5} />}
-          variant="income"
-          shadowClass={shadowClass}
-        />
-        <StatCard
-          label={t('dashboard.expenses')}
-          value={formatCurrency(expenses)}
-          icon={<TrendingDown size={16} strokeWidth={1.5} />}
-          variant="expense"
-          shadowClass={shadowClass}
-        />
+        <div className="hidden sm:block">
+          <StatCard
+            label={t('dashboard.income')}
+            value={formatCurrency(income)}
+            icon={<TrendingUp size={16} strokeWidth={1.5} />}
+            variant="income"
+            shadowClass={shadowClass}
+          />
+        </div>
+        <div className="hidden sm:block">
+          <StatCard
+            label={t('dashboard.expenses')}
+            value={formatCurrency(expenses)}
+            icon={<TrendingDown size={16} strokeWidth={1.5} />}
+            variant="expense"
+            shadowClass={shadowClass}
+          />
+        </div>
         <StatCard
           label={t('dashboard.balance')}
           value={formatCurrency(balance)}
