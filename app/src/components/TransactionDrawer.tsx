@@ -145,14 +145,24 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
     selectedAccount?.type === 'CREDIT' &&
     !!selectedAccount.creditMetadata
 
-  // CC-23: Show installment section only when creating an EXPENSE on a CREDIT account.
-  // M-35: installments and recurrence are mutually exclusive.
-  const showInstallmentSection =
-    !isEditMode && type === 'EXPENSE' && selectedAccount?.type === 'CREDIT' && !recurrenceEnabled
+  // CC-23/CC-35: installments apply to EXPENSE on any account type (not just CREDIT) — a
+  // financing booked parcela by parcela on a regular account is just as valid as a card
+  // purchase; the debt engine (getTotalCommittedDebt/getDebtBreakdown, HE-08/HE-10) already
+  // treats any non-LOAN account's open installments the same way.
+  const canToggleInstallments = !isEditMode && type === 'EXPENSE'
 
-  // M-35: recurrence applies to INCOME/EXPENSE on create; hidden while installments are on.
-  const showRecurrenceSection =
-    !isEditMode && (type === 'INCOME' || type === 'EXPENSE') && !installmentsEnabled
+  // M-35: recurrence applies to INCOME/EXPENSE on create.
+  const canToggleRecurrence = !isEditMode && (type === 'INCOME' || type === 'EXPENSE')
+
+  // CC-35: both toggles always render together (side by side) when either applies — mutually
+  // exclusive via auto-off-on-click instead of hiding the other's whole section.
+  const showToggleRow = canToggleInstallments || canToggleRecurrence
+
+  // CC-35: isPaid doesn't apply per-installment at creation time (same as it never applied to
+  // CREDIT charges) — each generated occurrence is managed individually afterward.
+  const showIsPaidToggle =
+    (type === 'INCOME' || (type === 'EXPENSE' && selectedAccount?.type !== 'CREDIT')) &&
+    !installmentsEnabled
 
   // Reset or pre-fill on open — intentional setState-in-effect to initialise form fields
   useEffect(() => {
@@ -248,14 +258,10 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   function handleSave() {
     if (!data || amount === 0) return
 
-    // CC-23: Build installment metadata if applicable (create mode, EXPENSE, CREDIT account)
+    // CC-23/CC-35: Build installment metadata if applicable (create mode, EXPENSE, any account)
     const parentId = uuid()
     const hasInstallments =
-      !isEditMode &&
-      installmentsEnabled &&
-      installmentCount >= 2 &&
-      type === 'EXPENSE' &&
-      selectedAccount?.type === 'CREDIT'
+      !isEditMode && installmentsEnabled && installmentCount >= 2 && type === 'EXPENSE'
 
     // M-35: build recurrence metadata when enabled (create mode, INCOME/EXPENSE)
     const hasRecurrence =
@@ -477,15 +483,15 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
             />
           </div>
 
-          {/* Date + isPaid (isPaid shown inline for INCOME/EXPENSE only) */}
+          {/* Date + isPaid (isPaid shown inline for INCOME/EXPENSE only, hidden while
+              installments are on — CC-35: same reason it never showed for CREDIT charges) */}
           <div>
-            {(type === 'INCOME' || (type === 'EXPENSE' && selectedAccount?.type !== 'CREDIT')) && (
+            {showIsPaidToggle ? (
               <div className="flex items-center justify-between mb-2">
                 <span className="label text-on-surface/40">{t('transactions.date')}</span>
                 <span className="label text-on-surface/40">{t('transactions.isPaid')}</span>
               </div>
-            )}
-            {!(type === 'INCOME' || (type === 'EXPENSE' && selectedAccount?.type !== 'CREDIT')) && (
+            ) : (
               <label className="label text-on-surface/40 block mb-2">
                 {t('transactions.date')}
               </label>
@@ -502,8 +508,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                   className="w-full rounded-xl bg-surface-container-low py-3 pl-9 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
-              {(type === 'INCOME' ||
-                (type === 'EXPENSE' && selectedAccount?.type !== 'CREDIT')) && (
+              {showIsPaidToggle && (
                 <button
                   role="switch"
                   aria-checked={isPaid}
@@ -681,37 +686,78 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
             </div>
           )}
 
-          {/* ── CC-23: Installment section (EXPENSE on CREDIT account, create only) ── */}
-          {showInstallmentSection && (
+          {/* ── CC-23/CC-35: Installments + M-35: Recurrence — side-by-side toggles (any
+              account type since CC-35), mutually exclusive via auto-off-on-click instead of
+              hiding the other's whole section, create mode only ── */}
+          {showToggleRow && (
             <div className="rounded-xl bg-surface-container-low px-4 py-3 space-y-3">
-              {/* Toggle row */}
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-on-surface">
-                  {t('transactions.installments')}
-                </label>
-                <button
-                  role="switch"
-                  aria-label={t('transactions.installments')}
-                  aria-checked={installmentsEnabled}
-                  onClick={() => {
-                    setInstallmentsEnabled((v) => !v)
-                    if (!installmentsEnabled) setInstallmentCount(2)
-                  }}
-                  className={cn(
-                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-                    installmentsEnabled ? 'bg-primary' : 'bg-on-surface/20'
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                      installmentsEnabled ? 'translate-x-6' : 'translate-x-1'
-                    )}
-                  />
-                </button>
+              {/* Toggle row — 2 columns when both apply, 1 when only recurrence does (INCOME) */}
+              <div
+                className={cn(
+                  'grid gap-4',
+                  canToggleInstallments && canToggleRecurrence ? 'grid-cols-2' : 'grid-cols-1'
+                )}
+              >
+                {canToggleInstallments && (
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-on-surface">
+                      {t('transactions.installments')}
+                    </label>
+                    <button
+                      role="switch"
+                      aria-label={t('transactions.installments')}
+                      aria-checked={installmentsEnabled}
+                      onClick={() => {
+                        setInstallmentsEnabled((v) => !v)
+                        if (!installmentsEnabled) {
+                          setInstallmentCount(2)
+                          setRecurrenceEnabled(false)
+                        }
+                      }}
+                      className={cn(
+                        'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+                        installmentsEnabled ? 'bg-primary' : 'bg-on-surface/20'
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                          installmentsEnabled ? 'translate-x-6' : 'translate-x-1'
+                        )}
+                      />
+                    </button>
+                  </div>
+                )}
+                {canToggleRecurrence && (
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-on-surface">
+                      {t('transactions.recurrence')}
+                    </label>
+                    <button
+                      role="switch"
+                      aria-label={t('transactions.recurrence')}
+                      aria-checked={recurrenceEnabled}
+                      onClick={() => {
+                        setRecurrenceEnabled((v) => !v)
+                        if (!recurrenceEnabled) setInstallmentsEnabled(false)
+                      }}
+                      className={cn(
+                        'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+                        recurrenceEnabled ? 'bg-primary' : 'bg-on-surface/20'
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                          recurrenceEnabled ? 'translate-x-6' : 'translate-x-1'
+                        )}
+                      />
+                    </button>
+                  </div>
+                )}
               </div>
 
-              {/* Count field + hint */}
+              {/* Count field + hint (installments) */}
               {installmentsEnabled && (
                 <>
                   <div>
@@ -746,39 +792,10 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                   )}
                 </>
               )}
-            </div>
-          )}
 
-          {/* ── M-35: Recurrence section (INCOME/EXPENSE, create only) ──────────── */}
-          {showRecurrenceSection && (
-            <div className="rounded-xl bg-surface-container-low px-4 py-3 space-y-3">
-              {/* Toggle row */}
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-on-surface">
-                  {t('transactions.recurrence')}
-                </label>
-                <button
-                  role="switch"
-                  aria-label={t('transactions.recurrence')}
-                  aria-checked={recurrenceEnabled}
-                  onClick={() => setRecurrenceEnabled((v) => !v)}
-                  className={cn(
-                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-                    recurrenceEnabled ? 'bg-primary' : 'bg-on-surface/20'
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                      recurrenceEnabled ? 'translate-x-6' : 'translate-x-1'
-                    )}
-                  />
-                </button>
-              </div>
-
+              {/* Frequency selector + end date + hint (recurrence) */}
               {recurrenceEnabled && (
                 <>
-                  {/* Frequency selector */}
                   <div>
                     <label className="label text-on-surface/40 block mb-2">
                       {t('transactions.recurrenceFrequency')}

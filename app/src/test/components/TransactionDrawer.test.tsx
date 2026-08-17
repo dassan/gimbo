@@ -426,21 +426,20 @@ describe('TransactionDrawer — CC-23: installment section', () => {
     })
   })
 
-  it('shows installment toggle when EXPENSE on CREDIT account (select changed to credit)', async () => {
+  it('shows installment toggle for EXPENSE regardless of account type (CC-35)', async () => {
     renderDrawer()
-    // By default, first account (testAccount = RETAIL) is selected — no installment section
-    expect(screen.queryByText('transactions.installments')).not.toBeInTheDocument()
-    // Change account selector to credit account (first combobox is the account selector)
+    // testAccount (RETAIL) is selected by default — toggle already shows, no CREDIT needed
+    expect(screen.getByText('transactions.installments')).toBeInTheDocument()
+    // Switching to the credit account keeps it showing
     const selects = screen.getAllByRole('combobox')
     await userEvent.selectOptions(selects[0], testCreditAccount.id)
-    // Now the installment toggle should appear
     expect(screen.getByText('transactions.installments')).toBeInTheDocument()
   })
 
-  it('does not show installment toggle for EXPENSE on non-CREDIT account', () => {
+  it('shows installment toggle for EXPENSE on a non-CREDIT account (CC-35)', () => {
     renderDrawer()
-    // testAccount is RETAIL — no installment section
-    expect(screen.queryByText('transactions.installments')).not.toBeInTheDocument()
+    // testAccount is RETAIL — installments apply here too since CC-35
+    expect(screen.getByText('transactions.installments')).toBeInTheDocument()
   })
 
   it('does not show installment toggle when type is INCOME even with CREDIT account', async () => {
@@ -532,6 +531,62 @@ describe('TransactionDrawer — CC-23: installment section', () => {
     expect(arg.installment?.total).toBe(2) // default installmentCount is 2
     expect(arg.installment?.currentIndex).toBe(1)
     expect(arg.installment?.parentId).toBeDefined()
+  })
+
+  // ─── CC-35: installments extended to non-CREDIT accounts ───────────────────
+
+  it('calls addTransaction with installment data on a non-CREDIT (RETAIL) account', async () => {
+    // testAccount (RETAIL) is first/default — no account switch needed
+    const addTransaction = vi.fn()
+    vi.spyOn(useDataStore.getState(), 'addTransaction').mockImplementation(addTransaction)
+
+    renderDrawer()
+    const toggle = screen.getByRole('switch', { name: 'transactions.installments' })
+    await userEvent.click(toggle)
+
+    const amountInput = screen.getByPlaceholderText('0,00')
+    await userEvent.clear(amountInput)
+    await userEvent.type(amountInput, '30000')
+
+    await userEvent.click(screen.getByRole('button', { name: /transactions\.save\.expense/i }))
+
+    expect(addTransaction).toHaveBeenCalledOnce()
+    const arg = addTransaction.mock.calls[0][0] as Transaction
+    expect(arg.accountId).toBe(testAccount.id)
+    expect(arg.installment?.total).toBe(2)
+  })
+
+  it('shows both installment and recurrence toggles together for EXPENSE', () => {
+    renderDrawer()
+    expect(screen.getByText('transactions.installments')).toBeInTheDocument()
+    expect(screen.getByText('transactions.recurrence')).toBeInTheDocument()
+  })
+
+  it('enabling installments turns recurrence off, and vice versa', async () => {
+    renderDrawer()
+    const installmentsToggle = screen.getByRole('switch', { name: 'transactions.installments' })
+    const recurrenceToggle = screen.getByRole('switch', { name: 'transactions.recurrence' })
+
+    await userEvent.click(recurrenceToggle)
+    expect(recurrenceToggle).toHaveAttribute('aria-checked', 'true')
+
+    await userEvent.click(installmentsToggle)
+    expect(installmentsToggle).toHaveAttribute('aria-checked', 'true')
+    expect(recurrenceToggle).toHaveAttribute('aria-checked', 'false')
+
+    await userEvent.click(recurrenceToggle)
+    expect(recurrenceToggle).toHaveAttribute('aria-checked', 'true')
+    expect(installmentsToggle).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('hides the isPaid toggle once installments are enabled on a non-CREDIT account', async () => {
+    renderDrawer()
+    expect(screen.getByText('transactions.isPaid')).toBeInTheDocument()
+
+    const toggle = screen.getByRole('switch', { name: 'transactions.installments' })
+    await userEvent.click(toggle)
+
+    expect(screen.queryByText('transactions.isPaid')).not.toBeInTheDocument()
   })
 })
 
