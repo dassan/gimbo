@@ -7,7 +7,7 @@ import {
   Home,
   Receipt,
   Plus,
-  BarChart2,
+  PiggyBank,
   Cloud,
   CloudOff,
   DatabaseBackup,
@@ -29,11 +29,14 @@ const NAV_ITEMS = [
 ]
 
 // Bottom navigation items for mobile (MB-02)
-// Analytics shows a "coming soon" placeholder on mobile (MB-08).
+// MB-13: Analytics swapped for Budgets — Analytics isn't mobile-ready yet (MB-08, "coming
+// soon" placeholder) while Budgets already is (MB-01..07) and had no way to reach it on mobile
+// (MB-09). Analytics has no mobile entry point at all now — nothing lost, since the page itself
+// was just a placeholder there.
 const BOTTOM_NAV_ITEMS = [
   { to: '/dashboard', key: 'nav.dashboard', icon: Home },
   { to: '/transactions', key: 'nav.transactions', icon: Receipt },
-  { to: '/analytics', key: 'nav.analytics', icon: BarChart2 },
+  { to: '/budgets', key: 'nav.budgets', icon: PiggyBank },
 ]
 
 interface NavbarProps {
@@ -209,7 +212,7 @@ export default function Navbar({ vaultName = '', onNewTransaction }: NavbarProps
             </button>
           </div>
 
-          {/* Right items: Analytics */}
+          {/* Right items: Budgets */}
           {BOTTOM_NAV_ITEMS.slice(2).map(({ to, key, icon: Icon }) => (
             <NavLink
               key={to}

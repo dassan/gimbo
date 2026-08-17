@@ -37,12 +37,19 @@ describe('Navbar', () => {
     expect(screen.queryByText('Family Vault')).not.toBeInTheDocument()
   })
 
-  it('renders nav links for dashboard, transactions, analytics', () => {
+  it('renders nav links for dashboard, transactions, budgets', () => {
     render(<Navbar vaultName="Family Vault" />)
-    // nav.dashboard and nav.transactions appear in both the top bar and the mobile bottom nav
+    // nav.dashboard, nav.transactions and nav.budgets appear in both the top bar and the
+    // mobile bottom nav (MB-13: budgets replaced analytics in the bottom nav)
     expect(screen.getAllByText('nav.dashboard').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('nav.transactions').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('nav.analytics').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('nav.budgets').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('does not render analytics in the mobile bottom nav (MB-13)', () => {
+    render(<Navbar vaultName="Family Vault" />)
+    // Analytics still shows once, in the desktop top bar — just not duplicated in the bottom nav
+    expect(screen.getAllByText('nav.analytics').length).toBe(1)
   })
 
   it('renders settings button(s) — one in desktop top bar, one in mobile bottom nav', async () => {
