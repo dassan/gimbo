@@ -109,7 +109,9 @@ test('caixinha manual: criar → associar lançamento → editar → arquivar', 
 
   const card = page.locator('a').filter({ hasText: 'Viagem E2E' })
   await expect(card).toBeVisible({ timeout: 5000 })
-  await expect(card.getByText('R$ 1.000,00').first()).toBeVisible()
+  // MB-14: the target value renders differently per viewport (desktop: its own "Meta" line;
+  // mobile: combined into "Atual / Meta") — check presence, not a specific node's visibility.
+  await expect(card).toContainText('R$ 1.000,00')
 
   // Associar
   await card.click()
@@ -171,11 +173,10 @@ test('Quadrantes: ligar em Preferências gera o lote do mês e associa uma despe
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-pressed', 'true')
 
-  // Navegação direta por URL, não pelo nav — Caixinhas não tem entrada na bottom nav do
-  // mobile (MB-02 só cobre Dashboard/Lançamentos/Relatórios), gap pré-existente registrado
-  // em BACKLOG.md (MB-09) e fora do escopo deste teste. page.goto é um hard reload: espera o
-  // debounce de 300ms do toggle (debouncedReplaceAll) realmente chegar no OPFS antes de
-  // recarregar, senão o boot lê o estado anterior (quadrantesEnabled: false) persistido.
+  // Navegação direta por URL, não pelo nav — mais simples que clicar (Caixinhas já tem entrada
+  // na bottom nav do mobile desde MB-13, mas isso é incidental aqui). page.goto é um hard
+  // reload: espera o debounce de 300ms do toggle (debouncedReplaceAll) realmente chegar no OPFS
+  // antes de recarregar, senão o boot lê o estado anterior (quadrantesEnabled: false) persistido.
   await waitForSettingsPersisted(page)
   await page.goto('/budgets')
   await page.waitForLoadState('networkidle')

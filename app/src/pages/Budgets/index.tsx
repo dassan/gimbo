@@ -126,7 +126,8 @@ function BudgetCard({ budget, transactions }: { budget: Budget; transactions: Tr
         {budget.name}
       </h3>
 
-      <p className="mt-0.5 text-[11px] text-on-surface/40">
+      {/* MB-14: transaction count dropped on mobile — the point there is conciseness */}
+      <p className="mt-0.5 hidden text-[11px] text-on-surface/40 sm:block">
         {t(budget.kind === 'income' ? 'budgets.kindIncome' : 'budgets.kindExpense')} ·{' '}
         {t('budgets.linkedCount', {
           count: linkedCount,
@@ -144,8 +145,9 @@ function BudgetCard({ budget, transactions }: { budget: Budget; transactions: Tr
         </span>
       )}
 
-      {/* Meta — a âncora do card; o valor atual aparece junto do percentual abaixo */}
-      <div className="mt-4">
+      {/* Meta — a âncora do card; o valor atual aparece junto do percentual abaixo.
+          Desktop only (sm+) — mobile usa o resumo Atual/Meta abaixo (MB-14). */}
+      <div className="mt-4 hidden sm:block">
         <p className="text-[10px] font-semibold uppercase tracking-[0.05em] text-on-surface/40">
           {t('budgets.target')}
         </p>
@@ -154,8 +156,9 @@ function BudgetCard({ budget, transactions }: { budget: Budget; transactions: Tr
         </p>
       </div>
 
-      {/* Medidor, ancorado no rodapé para alinhar entre cards de alturas diferentes */}
-      <div className="mt-auto pt-4">
+      {/* Medidor, ancorado no rodapé para alinhar entre cards de alturas diferentes.
+          Desktop only (sm+) — barra de progresso + percentual + disponível/excedente. */}
+      <div className="mt-auto hidden pt-4 sm:block">
         <ProgressBar progress={progress} color={color} />
         <p className="mt-2 text-[11px] text-on-surface/40">
           <span className="text-xs font-semibold tabular-nums" style={{ color }}>
@@ -171,6 +174,17 @@ function BudgetCard({ budget, transactions }: { budget: Budget; transactions: Tr
           >
             {formatCurrency(Math.abs(delta))}
           </span>
+        </p>
+      </div>
+
+      {/* MB-14: mobile-only compact summary — name + Atual/Meta, no lançamentos count, no
+          progress bar/percentual/disponível. Same anchor spot as the desktop blocks above. */}
+      <div className="mt-4 sm:hidden">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.05em] text-on-surface/40">
+          {t('budgets.current')} / {t('budgets.target')}
+        </p>
+        <p className="mt-0.5 text-xl font-bold tabular-nums text-on-surface">
+          {formatCurrency(current)} / {formatCurrency(budget.target)}
         </p>
       </div>
     </Link>
