@@ -1,6 +1,7 @@
 ﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import Settings from '@/pages/Settings'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
@@ -14,11 +15,6 @@ import type { Account, Transaction } from '@/types'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { changeLanguage: vi.fn() } }),
-}))
-
-const mockNavigate = vi.fn()
-vi.mock('react-router-dom', () => ({
-  useNavigate: () => mockNavigate,
 }))
 
 vi.mock('@/lib/backupDir', () => ({
@@ -55,6 +51,27 @@ beforeEach(() => {
   vi.mocked(storage).loadDataFile.mockResolvedValue(null)
 })
 
+// MB-16: Settings now reads its active section from the URL (/settings or
+// /settings/:section) instead of local state, so tests need a real router — a
+// LocationDisplay sibling makes the resulting URL assertable without mocking navigate.
+function LocationDisplay() {
+  const location = useLocation()
+  return <div data-testid="location-display">{location.pathname}</div>
+}
+
+function renderSettings(initialPath = '/settings') {
+  return render(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <LocationDisplay />
+      <Routes>
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/settings/:section" element={<Settings />} />
+        <Route path="/credit-card/:accountId" element={<div>credit-card-page-stub</div>} />
+      </Routes>
+    </MemoryRouter>
+  )
+}
+
 // ─── Settings — BK-08: manual "Sync now" backup ──────────────────────────────
 
 describe('Settings — BK-08: manual sync now', () => {
@@ -63,7 +80,7 @@ describe('Settings — BK-08: manual sync now', () => {
     vi.mocked(loadBackupDirHandle).mockResolvedValueOnce(fakeHandle)
     const user = userEvent.setup()
 
-    render(<Settings />)
+    renderSettings()
     // Navigate to the Backup & Sync section (first nav occurrence).
     await user.click((await screen.findAllByText('settings.backupSync'))[0])
 
@@ -123,7 +140,7 @@ function makeTx(overrides: Partial<Transaction> = {}): Transaction {
 
 describe('Settings — M-24: accounts section split into Contas and Cartões', () => {
   it('shows "settings.accountsAndCards" as the sidebar navigation label', () => {
-    render(<Settings />)
+    renderSettings()
     // Both mobile tab bar and desktop sidebar render in jsdom — verify at least one exists.
     expect(
       screen.getAllByRole('button', { name: 'settings.accountsAndCards' })[0]
@@ -131,23 +148,23 @@ describe('Settings — M-24: accounts section split into Contas and Cartões', (
   })
 
   it('shows "settings.accounts" sub-section header for non-CREDIT accounts', () => {
-    render(<Settings />)
+    renderSettings()
     // The accounts section is active by default; sub-section header should be present
     expect(screen.getByText('settings.accounts')).toBeInTheDocument()
   })
 
   it('shows "settings.creditCards" sub-section header', () => {
-    render(<Settings />)
+    renderSettings()
     expect(screen.getByText('settings.creditCards')).toBeInTheDocument()
   })
 
   it('shows "settings.newAccount" add button in the non-CREDIT sub-section', () => {
-    render(<Settings />)
+    renderSettings()
     expect(screen.getByRole('button', { name: /settings\.newAccount/i })).toBeInTheDocument()
   })
 
   it('shows "settings.newCreditCard" add button in the CREDIT sub-section', () => {
-    render(<Settings />)
+    renderSettings()
     expect(screen.getByRole('button', { name: /settings\.newCreditCard/i })).toBeInTheDocument()
   })
 
@@ -158,7 +175,7 @@ describe('Settings — M-24: accounts section split into Contas and Cartões', (
       data: makeDataFile({ accounts: [retailAccount, creditAccount], transactions: [] }),
     })
 
-    render(<Settings />)
+    renderSettings()
 
     expect(screen.getByText('Minha Conta Corrente')).toBeInTheDocument()
     expect(screen.getByText('Meu Cartão Visa')).toBeInTheDocument()
@@ -169,7 +186,7 @@ describe('Settings — M-24: accounts section split into Contas and Cartões', (
       data: makeDataFile({ accounts: [], transactions: [] }),
     })
 
-    render(<Settings />)
+    renderSettings()
     await userEvent.click(screen.getByRole('button', { name: /settings\.newCreditCard/i }))
 
     // Modal should open with CREDIT pre-selected — B-13: the save button reads "Salvar Cartão"
@@ -185,7 +202,7 @@ describe('Settings — M-24: accounts section split into Contas and Cartões', (
       data: makeDataFile({ accounts: [retailAccount, creditAccount], transactions: [] }),
     })
 
-    render(<Settings />)
+    renderSettings()
 
     // availableLimit label appears only once (for the credit account)
     expect(screen.getAllByText('accounts.availableLimit')).toHaveLength(1)
@@ -201,7 +218,7 @@ describe('Settings — CC-15: accounts list balance bifurcation', () => {
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
     })
 
-    render(<Settings />)
+    renderSettings()
 
     expect(screen.getByText('accounts.availableLimit')).toBeInTheDocument()
   })
@@ -212,7 +229,7 @@ describe('Settings — CC-15: accounts list balance bifurcation', () => {
       data: makeDataFile({ accounts: [retailAccount], transactions: [] }),
     })
 
-    render(<Settings />)
+    renderSettings()
 
     expect(screen.queryByText('accounts.availableLimit')).not.toBeInTheDocument()
   })
@@ -234,7 +251,7 @@ describe('Settings — CC-15: accounts list balance bifurcation', () => {
       data: makeDataFile({ accounts: [creditAccount], transactions: [expense] }),
     })
 
-    render(<Settings />)
+    renderSettings()
 
     // Available limit = 10000 − 1500 = 8500 (if expense is in current invoice period)
     // or = 10000 (if expense is not in current period, e.g. after closing day)
@@ -248,7 +265,7 @@ describe('Settings — CC-15: accounts list balance bifurcation', () => {
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
     })
 
-    render(<Settings />)
+    renderSettings()
 
     // The only account shown has creditMetadata=undefined → balance=0
     // Use regex to avoid NBSP normalization issues with Intl.NumberFormat
@@ -274,7 +291,7 @@ describe('Settings — CC-15: accounts list balance bifurcation', () => {
       data: makeDataFile({ accounts: [retailAccount], transactions: [income, expense] }),
     })
 
-    render(<Settings />)
+    renderSettings()
 
     // Balance = 2000 - 500 = 1500 — unique value with only one account shown
     expect(screen.getByText(/1\.500,00/)).toBeInTheDocument()
@@ -304,7 +321,7 @@ describe('Settings — CC-15: accounts list balance bifurcation', () => {
       }),
     })
 
-    render(<Settings />)
+    renderSettings()
 
     // Retail balance = 4321 (credit expense must NOT be subtracted)
     // 4321 → R$ 4.321,00 — a value that won't appear in the credit account column
@@ -319,7 +336,7 @@ describe('Settings — M-23: issuer icon picker removed from the account modal',
     useDataStore.setState({
       data: makeDataFile({ accounts: [], transactions: [] }),
     })
-    render(<Settings />)
+    renderSettings()
     await userEvent.click(screen.getByRole('button', { name: /settings\.newCreditCard/i }))
     expect(screen.queryByText('Nubank')).not.toBeInTheDocument()
   })
@@ -328,7 +345,7 @@ describe('Settings — M-23: issuer icon picker removed from the account modal',
     useDataStore.setState({
       data: makeDataFile({ accounts: [], transactions: [] }),
     })
-    render(<Settings />)
+    renderSettings()
     // Open a regular account modal (non-CREDIT default)
     await userEvent.click(screen.getByRole('button', { name: /settings\.newAccount/i }))
     expect(screen.queryByText('Nubank')).not.toBeInTheDocument()
@@ -339,7 +356,7 @@ describe('Settings — M-23: issuer icon picker removed from the account modal',
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
     })
-    render(<Settings />)
+    renderSettings()
     // The credit card row should be rendered — the issuer color is applied via style
     expect(screen.getByText('Nexus Visa Gold')).toBeInTheDocument()
   })
@@ -358,7 +375,7 @@ describe('Settings — M-42: archived accounts', () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [activeAccount, archivedAccount], transactions: [] }),
     })
-    render(<Settings />)
+    renderSettings()
 
     expect(screen.getByText('Conta Ativa')).toBeInTheDocument()
     expect(screen.getByText(/accounts\.archivedAccounts/)).toBeInTheDocument()
@@ -375,7 +392,7 @@ describe('Settings — M-42: archived accounts', () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [archivedAccount], transactions: [] }),
     })
-    render(<Settings />)
+    renderSettings()
 
     await userEvent.click(screen.getByText(/accounts\.archivedAccounts/))
 
@@ -392,7 +409,7 @@ describe('Settings — M-42: archived accounts', () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [archivedAccount], transactions: [] }),
     })
-    render(<Settings />)
+    renderSettings()
 
     await userEvent.click(screen.getByText(/accounts\.archivedAccounts/))
     await userEvent.click(screen.getByRole('button', { name: /accounts\.reactivate/i }))
@@ -410,12 +427,13 @@ describe('Settings — M-42: archived accounts', () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [archivedCard], transactions: [] }),
     })
-    render(<Settings />)
+    renderSettings()
 
     await userEvent.click(screen.getByText(/accounts\.archivedAccounts/))
     await userEvent.click(screen.getByRole('button', { name: /accounts\.viewCard/i }))
 
-    expect(mockNavigate).toHaveBeenCalledWith('/credit-card/acc-old-card')
+    expect(await screen.findByText('credit-card-page-stub')).toBeInTheDocument()
+    expect(screen.getByTestId('location-display')).toHaveTextContent('/credit-card/acc-old-card')
   })
 
   it('toggling "Ativa" off in the account modal archives the account on save', async () => {
@@ -423,7 +441,7 @@ describe('Settings — M-42: archived accounts', () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [account], transactions: [] }),
     })
-    render(<Settings />)
+    renderSettings()
 
     await userEvent.click(screen.getByText('Conta 1'))
     await userEvent.click(screen.getByRole('button', { name: 'accounts.active' }))
@@ -456,7 +474,7 @@ function makeLoanAccount(overrides: Partial<Account> = {}): Account {
 describe('Settings — HE-05: create/edit LOAN account', () => {
   it('shows the loan metadata fields when LOAN is selected in the new-account modal', async () => {
     useDataStore.setState({ data: makeDataFile({ accounts: [], transactions: [] }) })
-    render(<Settings />)
+    renderSettings()
 
     await userEvent.click(screen.getByRole('button', { name: /settings\.newAccount/i }))
     await userEvent.selectOptions(screen.getByRole('combobox'), 'LOAN')
@@ -469,7 +487,7 @@ describe('Settings — HE-05: create/edit LOAN account', () => {
 
   it('does not show the initial-balance field for LOAN accounts (uses outstandingBalance instead)', async () => {
     useDataStore.setState({ data: makeDataFile({ accounts: [], transactions: [] }) })
-    render(<Settings />)
+    renderSettings()
 
     await userEvent.click(screen.getByRole('button', { name: /settings\.newAccount/i }))
     await userEvent.selectOptions(screen.getByRole('combobox'), 'LOAN')
@@ -479,7 +497,7 @@ describe('Settings — HE-05: create/edit LOAN account', () => {
 
   it('saves a new LOAN account with the entered loanMetadata', async () => {
     useDataStore.setState({ data: makeDataFile({ accounts: [], transactions: [] }) })
-    render(<Settings />)
+    renderSettings()
 
     await userEvent.click(screen.getByRole('button', { name: /settings\.newAccount/i }))
     await userEvent.type(
@@ -514,7 +532,7 @@ describe('Settings — HE-05: create/edit LOAN account', () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [loanAccount], transactions: [] }),
     })
-    render(<Settings />)
+    renderSettings()
 
     await userEvent.click(screen.getByText('Financiamento do carro'))
 
@@ -529,7 +547,7 @@ describe('Settings — HE-05: create/edit LOAN account', () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [loanAccount], transactions: [] }),
     })
-    render(<Settings />)
+    renderSettings()
 
     expect(screen.getByText(/15\.000,00/)).toBeInTheDocument()
   })
@@ -540,7 +558,7 @@ describe('Settings — HE-05: create/edit LOAN account', () => {
 describe('Settings — income lookback window preference', () => {
   async function openPreferences() {
     const user = userEvent.setup()
-    render(<Settings />)
+    renderSettings()
     await user.click((await screen.findAllByText('settings.preferences'))[0])
     return user
   }
@@ -573,7 +591,7 @@ describe('Settings — income lookback window preference', () => {
 describe('Settings — emergency reserve target preference', () => {
   async function openPreferences() {
     const user = userEvent.setup()
-    render(<Settings />)
+    renderSettings()
     await user.click((await screen.findAllByText('settings.preferences'))[0])
     return user
   }
@@ -613,7 +631,7 @@ describe('Settings — emergency reserve target preference', () => {
 describe('Settings — currency preference', () => {
   async function openPreferences() {
     const user = userEvent.setup()
-    render(<Settings />)
+    renderSettings()
     await user.click((await screen.findAllByText('settings.preferences'))[0])
     return user
   }

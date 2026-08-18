@@ -162,3 +162,37 @@ test('transactions page: transaction list is always visible', async ({ page }) =
   // Transaction row should be visible on both mobile and desktop
   await expect(page.getByText('Salário Janeiro')).toBeVisible({ timeout: 5000 })
 })
+
+// ─── Settings — mobile section list (MB-16) ───────────────────────────────────
+
+test('settings mobile: list → section → back, and browser back also returns to the list', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, 'The section-list screen only replaces the desktop sidebar on mobile')
+
+  await seedSqlite(page, dataFile)
+  await page.goto('/settings')
+  await expect(page).toHaveURL(/\/settings$/)
+
+  // Bare /settings shows the section list, not any section's content — the back link
+  // (only rendered in the content pane) is a good proxy: absent until a section is open.
+  await expect(page.getByRole('button', { name: 'Backup & Sync' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Voltar' })).not.toBeVisible()
+
+  // Tapping a section navigates and shows its content + a back link.
+  await page.getByRole('button', { name: 'Backup & Sync' }).click()
+  await expect(page).toHaveURL(/\/settings\/backup$/)
+  await expect(page.getByRole('link', { name: 'Voltar' })).toBeVisible()
+
+  // The browser back button returns to the list, not out of Settings entirely.
+  await page.goBack()
+  await expect(page).toHaveURL(/\/settings$/)
+  await expect(page.getByRole('button', { name: 'Backup & Sync' })).toBeVisible()
+
+  // The in-app back link works too.
+  await page.getByRole('button', { name: 'Backup & Sync' }).click()
+  await expect(page).toHaveURL(/\/settings\/backup$/)
+  await page.getByRole('link', { name: 'Voltar' }).click()
+  await expect(page).toHaveURL(/\/settings$/)
+})

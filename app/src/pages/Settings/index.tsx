@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams, Link } from 'react-router-dom'
 import BugReportDialog from '@/components/BugReportDialog'
 import {
   Landmark,
@@ -40,6 +40,8 @@ import {
   ExternalLink,
   RefreshCw,
   ChevronDown,
+  ChevronRight,
+  ChevronLeft,
   RotateCcw,
   Banknote,
   Umbrella,
@@ -242,6 +244,8 @@ const APP_SECTIONS: { key: Section; icon: React.ReactNode; labelKey: string }[] 
   },
   { key: 'history', icon: <History size={16} strokeWidth={1.5} />, labelKey: 'audit.title' },
 ]
+const ALL_SECTIONS = [...DATA_SECTIONS, ...APP_SECTIONS]
+const SECTION_KEYS: Section[] = ALL_SECTIONS.map((s) => s.key)
 
 const ACTION_ICON: Record<AuditAction, React.ReactNode> = {
   CREATE: <PlusCircle size={14} className="text-primary" strokeWidth={2} />,
@@ -282,7 +286,13 @@ export default function Settings() {
 
   const navigate = useNavigate()
 
-  const [activeSection, setActiveSection] = useState<Section>('accounts')
+  // MB-16: section comes from the URL (/settings or /settings/:section) — a bare /settings
+  // (no section, or an invalid one) defaults content to 'accounts', matching the old useState
+  // default; mobile treats "no section" as "show the section list" instead (see render below).
+  const { section: sectionParam } = useParams<{ section?: string }>()
+  const activeSection: Section = SECTION_KEYS.includes(sectionParam as Section)
+    ? (sectionParam as Section)
+    : 'accounts'
   const [bugReportOpen, setBugReportOpen] = useState(false)
   const [backupDir, setBackupDir] = useState<FileSystemDirectoryHandle | null>(null)
   const [backupLastSaved, setBackupLastSaved] = useState<string | null>(() =>
@@ -399,8 +409,9 @@ export default function Settings() {
     const code = params.get('code')
     const state = params.get('state')
     if (!code || !state) return
-    window.history.replaceState(null, '', window.location.pathname)
-    setActiveSection('backup')
+    // MB-16: navigate (replace) to /settings/backup — drops the ?code=&state= query string and
+    // lands on the right section in one step, no separate history.replaceState needed anymore.
+    void navigate('/settings/backup', { replace: true })
     handleGoogleCallback(code, state)
       .then(async () => {
         setGoogleConnected(true)
@@ -413,7 +424,8 @@ export default function Settings() {
         const detail = err instanceof Error ? err.message : String(err)
         setGoogleOAuthError(`${t('settings.googleConnectError')} (${detail})`)
       })
-    // Runs once on mount to consume the redirect — t()/runPeerSync() intentionally excluded.
+    // Runs once on mount to consume the redirect — t()/runPeerSync()/navigate() intentionally
+    // excluded (navigate is a stable reference from useNavigate()).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -728,31 +740,58 @@ export default function Settings() {
   return (
     <>
       <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
-        <h1 className="text-2xl font-bold text-on-surface mb-1">{t('settings.title')}</h1>
-
-        {/* ── Mobile: horizontal scrollable tab bar ──────────────────────────── */}
-        <div className="sm:hidden overflow-x-auto -mx-4 px-4 mt-4 pb-1">
-          <div className="flex gap-2 min-w-max pb-1">
-            {[...DATA_SECTIONS, ...APP_SECTIONS].map((s) => (
-              <button
-                key={s.key}
-                onClick={() => setActiveSection(s.key)}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors',
-                  activeSection === s.key
-                    ? 'bg-primary text-white'
-                    : 'bg-surface-container text-on-surface/60 hover:bg-surface-container-high'
-                )}
-              >
-                {s.icon}
-                {t(s.labelKey)}
-              </button>
-            ))}
-          </div>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-on-surface mb-1">{t('settings.title')}</h1>
+          {/* MB-16 (follow-up): back link sits beside the title, not stacked below it — mobile
+              only, and only once a section is open. */}
+          {sectionParam && (
+            <Link
+              to="/settings"
+              className="sm:hidden inline-flex items-center gap-1 text-sm text-on-surface/50 transition-colors hover:text-on-surface"
+            >
+              <ChevronLeft size={16} />
+              {t('settings.backToList')}
+            </Link>
+          )}
         </div>
 
+        {/* ── MB-16: mobile section list — shown only at a bare /settings (no section
+            chosen yet). Replaces the old horizontal-scroll pill bar, whose 4 of 7 options
+            fell off-screen with no hint there was more. ── */}
+        {!sectionParam && (
+          <div className="sm:hidden mt-4">
+            <SidebarGroup label={t('settings.dataManagement')}>
+              {DATA_SECTIONS.map((s) => (
+                <SidebarItem
+                  key={s.key}
+                  icon={s.icon}
+                  label={t(s.labelKey)}
+                  active={false}
+                  trailing={<ChevronRight size={16} className="text-on-surface/30" />}
+                  onClick={() => void navigate('/settings/' + s.key)}
+                />
+              ))}
+            </SidebarGroup>
+
+            <SidebarGroup label={t('settings.appSettings')} className="mt-4">
+              {APP_SECTIONS.map((s) => (
+                <SidebarItem
+                  key={s.key}
+                  icon={s.icon}
+                  label={t(s.labelKey)}
+                  active={false}
+                  trailing={<ChevronRight size={16} className="text-on-surface/30" />}
+                  onClick={() => void navigate('/settings/' + s.key)}
+                />
+              ))}
+            </SidebarGroup>
+
+            <p className="mt-6 px-3 text-[11px] text-on-surface/25">v{__APP_VERSION__}</p>
+          </div>
+        )}
+
         <div className="mt-4 sm:mt-6 sm:flex sm:gap-6">
-          {/* ── Sidebar — desktop only ───────────────────────────────────────── */}
+          {/* ── Sidebar — desktop only, unchanged; now navigates instead of setState ── */}
           <aside className="hidden sm:block w-52 shrink-0">
             <SidebarGroup label={t('settings.dataManagement')}>
               {DATA_SECTIONS.map((s) => (
@@ -761,7 +800,7 @@ export default function Settings() {
                   icon={s.icon}
                   label={t(s.labelKey)}
                   active={activeSection === s.key}
-                  onClick={() => setActiveSection(s.key)}
+                  onClick={() => void navigate('/settings/' + s.key)}
                 />
               ))}
             </SidebarGroup>
@@ -773,7 +812,7 @@ export default function Settings() {
                   icon={s.icon}
                   label={t(s.labelKey)}
                   active={activeSection === s.key}
-                  onClick={() => setActiveSection(s.key)}
+                  onClick={() => void navigate('/settings/' + s.key)}
                 />
               ))}
             </SidebarGroup>
@@ -781,8 +820,8 @@ export default function Settings() {
             <p className="mt-6 px-3 text-[11px] text-on-surface/25">v{__APP_VERSION__}</p>
           </aside>
 
-          {/* ── Content ─────────────────────────────────────────────────────── */}
-          <div className="flex-1 min-w-0 mt-4 sm:mt-0">
+          {/* ── Content — desktop always, mobile only once a section is chosen ── */}
+          <div className={cn('flex-1 min-w-0 mt-4 sm:mt-0', !sectionParam && 'hidden sm:block')}>
             {/* Accounts & Cards */}
             {activeSection === 'accounts' &&
               (() => {
@@ -2620,11 +2659,15 @@ function SidebarItem({
   label,
   active,
   onClick,
+  trailing,
 }: {
   icon: React.ReactNode
   label: string
   active: boolean
   onClick: () => void
+  // MB-16: optional trailing element (e.g. a chevron) — used by the mobile section list to
+  // signal "taps into a sub-screen"; unused (and unaffected) by the desktop sidebar.
+  trailing?: React.ReactNode
 }) {
   return (
     <button
@@ -2637,7 +2680,8 @@ function SidebarItem({
       )}
     >
       <span className={active ? 'text-primary' : 'text-on-surface/40'}>{icon}</span>
-      {label}
+      <span className="flex-1">{label}</span>
+      {trailing}
     </button>
   )
 }

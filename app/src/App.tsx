@@ -149,6 +149,7 @@ export default function App() {
               <Route path="/budgets/:budgetId" element={<BudgetDetail />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/settings/:section" element={<Settings />} />
               <Route path="/net-worth" element={<NetWorth />} />
               <Route path="/health" element={<Health />} />
               <Route path="/credit-card/:accountId" element={<CreditCardPage />} />
