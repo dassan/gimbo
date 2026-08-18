@@ -249,7 +249,9 @@ export default function CategoriasView({
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-4">
+      {/* MB-18: stacked on mobile (income above expenses, matching JSX order below) — side by
+          side from sm up, unchanged from before. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {/* Income donut */}
         <CategoryDonut
           title={t('analytics.categorias.incomeTitle')}
@@ -331,7 +333,7 @@ function CategoryDonut({ title, entries, shadowClass, onBucketClick }: CategoryD
           {t('analytics.categorias.noData')}
         </p>
       ) : (
-        <div className="flex gap-6">
+        <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start sm:gap-6">
           {/* Donut chart — one slice per root category */}
           <div className="relative shrink-0" style={{ width: 160, height: 160 }}>
             <PieChart width={160} height={160}>
@@ -358,7 +360,7 @@ function CategoryDonut({ title, entries, shadowClass, onBucketClick }: CategoryD
           </div>
 
           {/* Legend — roots, expandable to their children (R-09: no item limit) */}
-          <div className="flex-1 space-y-1">
+          <div className="w-full space-y-1 sm:flex-1">
             {entries.map((root) => {
               const isExpandable = root.children.length > 0
               const isOpen = expanded.has(root.id)

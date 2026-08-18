@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { BarChart2 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import {
@@ -90,21 +89,13 @@ export default function Analytics() {
 
   if (!data) return null
 
-  // ── Mobile placeholder ─────────────────────────────────────────────────
-  if (isMobile) {
-    return (
-      <div className="flex flex-col items-center justify-center px-8 py-24 text-center">
-        <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-primary/10 mb-6">
-          <BarChart2 size={36} strokeWidth={1.5} className="text-primary" />
-        </div>
-        <h2 className="text-xl font-bold text-on-surface mb-2">{t('analytics.comingSoonTitle')}</h2>
-        <p className="text-sm text-on-surface/50 max-w-xs">{t('analytics.comingSoonDesc')}</p>
-      </div>
-    )
-  }
+  // MB-18: mobile only has Categorias so far (the other 4 tabs aren't responsive yet,
+  // MB-08) — force that tab regardless of activeTab's last desktop value, and hide the
+  // now-pointless single-item tab switcher below.
+  const effectiveTab = isMobile ? 'categorias' : activeTab
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8 space-y-6">
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
       {/* ── Period selector ─────────────────────────────────────────────── */}
       {/* Same treatment as Transactions: sm:-ml-2 compensates the chevron button's own
           hit-area padding so the arrow tip lines up with the content below. */}
@@ -119,7 +110,10 @@ export default function Analytics() {
       </div>
 
       {/* ── Sub-navigation tabs + include-unpaid toggle ──────────────────── */}
-      <div className="flex items-center justify-between gap-3">
+      {/* MB-18: hidden on mobile — the tab switcher is pointless with a single reachable tab,
+          and the toggle didn't fit the narrow layout well. includeUnpaid keeps defaulting to
+          true (its normal initial value), so mobile behaves as if it were always toggled on. */}
+      <div className="hidden sm:flex items-center justify-between gap-3">
         <div className="flex gap-1">
           {TABS.map((tab) => (
             <button
@@ -151,7 +145,7 @@ export default function Analytics() {
       </div>
 
       {/* ── Active view ──────────────────────────────────────────────────── */}
-      {activeTab === 'categorias' && (
+      {effectiveTab === 'categorias' && (
         <CategoriasView
           transactions={data.transactions}
           accounts={data.accounts}
@@ -163,7 +157,7 @@ export default function Analytics() {
         />
       )}
 
-      {activeTab === 'cashflow' && (
+      {effectiveTab === 'cashflow' && (
         <CashFlowView
           transactions={cashFlowTransactions}
           accounts={data.accounts}
@@ -174,7 +168,7 @@ export default function Analytics() {
         />
       )}
 
-      {activeTab === 'contas' && (
+      {effectiveTab === 'contas' && (
         <ContasView
           transactions={data.transactions}
           accounts={data.accounts}
@@ -185,7 +179,7 @@ export default function Analytics() {
         />
       )}
 
-      {activeTab === 'tags' && (
+      {effectiveTab === 'tags' && (
         <TagsView
           transactions={data.transactions}
           tags={data.tags}
@@ -196,7 +190,7 @@ export default function Analytics() {
         />
       )}
 
-      {activeTab === 'faturas' && (
+      {effectiveTab === 'faturas' && (
         <FaturasView
           transactions={data.transactions}
           accounts={data.accounts}
