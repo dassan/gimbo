@@ -63,19 +63,19 @@ O Gimbo é um aplicativo web (PWA Client-side) de gestão de finanças pessoais 
   |-------|-----------|-----------------|--------|
   | 0 — Somente navegador | SQLite via `wa-sqlite` + OPFS | Browser limpa dados (`Clear site data`, troca de browser) | Implementado |
   | 1 — Pasta local | FSA `FileSystemDirectoryHandle` persistido via `idb`; escrita automática (`exportBlob()`) após cada mutação, debounced | Requer re-permissão por sessão (banner de reconexão); Chrome/Edge apenas; sem sync mobile | Implementado — ver épico `BK` em `plan/BACKLOG.md` |
-  | 2 — Cloud Sync | Google Drive ou Dropbox via OAuth2 PKCE; merge aditivo por UUID | OAuth, conflitos multi-device, dependência de rede | Planejado — ver épico `CS` em `plan/BACKLOG.md` (CS-01 a CS-12), demand-driven |
+  | 2 — Cloud Sync | Google Drive via OAuth2 PKCE + client secret bundlado (Dropbox como 2º provider); merge aditivo por UUID | OAuth, conflitos multi-device, dependência de rede | Google Drive implementado e validado em produção (2026-07-25) — ver épico `CS` em `plan/BACKLOG.md` (CS-01 a CS-09). Dropbox (CS-11/CS-12) planejado, demand-driven |
 
   **Nível 1 — nota de produto:** se a pasta configurada estiver dentro do Google Drive, Dropbox ou OneDrive, o sync para a nuvem ocorre automaticamente pelo cliente desktop — sem OAuth, sem código adicional. Cobre a maioria dos usuários desktop sem implementar o Nível 2.
 
-  **Nível 2 — nota de produto:** necessário para sync mobile real (onde não há cliente desktop instalado) e para usuários que não usam um cliente de nuvem. Requer `updatedAt` nas entidades mutáveis (schema v3). Política de conflito: último `updatedAt` vence em edições; transações duplicadas sobrevivem — usuário remove manualmente. Cenários em `plan/SYNC_SCENARIOS.md` (S-08 a S-15).
+  **Nível 2 — nota de produto:** necessário para sync mobile real (onde não há cliente desktop instalado) e para usuários que não usam um cliente de nuvem. Requer `updatedAt` nas entidades mutáveis (schema v3+). Política de conflito: último `updatedAt` vence em edições; transações duplicadas sobrevivem — usuário remove manualmente. Cenários em `plan/SYNC_SCENARIOS.md` (S-08 a S-15).
 
   **UX de configuração:** Settings → aba "Backup & Sync" exibe as opções dos Níveis 1 e 2 com texto explicativo, timestamp do último backup e link para a doc page interna correspondente. As opções são apresentadas como backup (não sync) enquanto o Nível 2 não estiver implementado. Ver tarefas BK-02, BK-06, BK-07 em `plan/BACKLOG.md`.
 
   **Doc pages:** rotas React estáticas dentro do app (funcionam offline), acessíveis a partir do modal de boas-vindas e da aba de Settings. Ver tarefa BK-07 em `plan/BACKLOG.md`.
 
-* **F-29:** Saúde Financeira — página dedicada na navbar (`/health`) focada em **dívida e seu peso no orçamento** (não em patrimônio — esse é a F-24). Mostra a **dívida total comprometida** (soma de tudo que ainda falta pagar em parcelas e contratos, não apenas a parcela do mês), o **peso no orçamento** (renda × comprometimento mensal, com % e horizonte), a **reserva de emergência** (saldo atual vs. recomendado = 6× custo mensal médio) e o **detalhamento expansível** das dívidas por cartão/empréstimo. Bens ilíquidos (imóvel, carro) estão fora de escopo (baixa liquidez). Card de dívida usa hero grafite (Bambu 900) — passivo não recebe a cor verde "positiva" da marca. **Estado atual: design inicial mockado** (sem motores; dados fixos em `MOCK_*`). **Decisões de produto (2026-06-21):** o primeiro corte funcional cobre **dívida + peso no orçamento**; a **Reserva de Emergência foi adiada** para um épico posterior; empréstimos/financiamentos não-cartão ganham uma **entidade de passivo de primeira classe (`LOAN`)** já no v1, que também passa a contribuir como passivo no Patrimônio (F-24). Decisões de produto e design em `plan/FINANCIAL_HEALTH.md`; épico `HE` (entidade `LOAN` → motores → testes) em `plan/BACKLOG.md`.
+* **F-29:** Saúde Financeira — página dedicada na navbar (`/health`) focada em **dívida e seu peso no orçamento** (não em patrimônio — esse é a F-24). Mostra a **dívida total comprometida** (soma de tudo que ainda falta pagar em parcelas e contratos, não apenas a parcela do mês), o **peso no orçamento** (renda × comprometimento mensal, com % e horizonte), a **reserva de emergência** (saldo atual vs. recomendado = 6× custo mensal médio) e o **detalhamento expansível** das dívidas por cartão/empréstimo. Bens ilíquidos (imóvel, carro) estão fora de escopo (baixa liquidez). Card de dívida usa hero grafite (Bambu 900) — passivo não recebe a cor verde "positiva" da marca. **Estado atual: implementado** — motores reais ligados (`getTotalCommittedDebt`, `getMonthlyCommitment`, `getDebtHorizon`, `getDebtBreakdown`, `deriveMonthlyIncome`, `getReserveBalance`, `deriveMonthlyCost`, `getRecurringCommitment`), épico `HE-01` a `HE-16` completo (resolvido). **Decisões de produto (2026-06-21):** o primeiro corte funcional cobre **dívida + peso no orçamento**; a **Reserva de Emergência foi adiada** para um épico posterior; empréstimos/financiamentos não-cartão ganham uma **entidade de passivo de primeira classe (`LOAN`)** já no v1, que também passa a contribuir como passivo no Patrimônio (F-24). Decisões de produto e design em `plan/FINANCIAL_HEALTH.md`; épico `HE` (entidade `LOAN` → motores → testes) em `plan/BACKLOG.md`.
 
-* **F-30:** Caixinhas — planejamento financeiro por meta declarada pelo usuário (rotas `/budgets` e `/budgets/:budgetId`), inspirado (sem fidelidade literal) no método "Dinheiro Sem Medo" de Eduardo Amuri. Diferença em relação a Relatórios/Saúde Financeira (que olham o passado consolidado): a caixinha é um objetivo *declarado* — uma viagem, uma reforma, um teto de gasto mensal — medido contra os lançamentos vinculados a ela (meta + período + progresso, tipo despesa/teto ou receita/piso). Vínculo caixinha↔lançamento é N:N, manual por padrão. **Receita "Quadrantes"**: módulo opt-in em Preferências (não vem habilitado por padrão) que gera automaticamente 4 caixinhas por mês, uma por intervalo fixo de dias (1–8/9–16/17–24/25–fim), associando lançamentos `EXPENSE` por data e arquivando o lote anterior a cada virada de mês. Caixinhas manuais são arquivadas só por ação explícita do usuário, nunca por data. **Estado atual: design de produto/UX fechado, protótipo visual mockado** (sem entidade real no `DataFile`, sem motores) — decisões completas em `plan/BUDGETS.md`; análise do método DSM e roadmap de features derivadas em `plan/FINANCIAL_PLAN.md`; épico `BX` (schema → motores → receita Quadrantes → sync → testes) em `plan/BACKLOG.md`.
+* **F-30:** Caixinhas — planejamento financeiro por meta declarada pelo usuário (rotas `/budgets` e `/budgets/:budgetId`), inspirado (sem fidelidade literal) no método "Dinheiro Sem Medo" de Eduardo Amuri. Diferença em relação a Relatórios/Saúde Financeira (que olham o passado consolidado): a caixinha é um objetivo *declarado* — uma viagem, uma reforma, um teto de gasto mensal — medido contra os lançamentos vinculados a ela (meta + período + progresso, tipo despesa/teto ou receita/piso). Vínculo caixinha↔lançamento é N:N, manual por padrão. **Receita "Quadrantes"**: módulo opt-in em Preferências (não vem habilitado por padrão) que gera automaticamente 4 caixinhas por mês, uma por intervalo fixo de dias (1–8/9–16/17–24/25–fim), associando lançamentos `EXPENSE` por data e arquivando o lote anterior a cada virada de mês. Caixinhas manuais são arquivadas só por ação explícita do usuário, nunca por data. **Estado atual: implementado** — entidade `Budget` real (N:N com `Transaction` via `budgetIds`), CRUD completo, motor de derivação, receita "Quadrantes" funcional (geração + associação automática + arquivamento), sync/merge multi-dispositivo e testes E2E (épico `BX-01` a `BX-11`, resolvido 2026-08-12). Decisões de produto/UX completas em `plan/BUDGETS.md`; análise do método DSM em `plan/FINANCIAL_PLAN.md` (roadmap `PL-XX` daquele documento não foi seguido literalmente — ver nota no topo daquele arquivo); histórico completo em `plan/BACKLOG.md`.
 
 ### Fora do Escopo (Permanente)
 * **X-1:** Criptografia do arquivo local.
@@ -90,17 +90,18 @@ O Gimbo é um aplicativo web (PWA Client-side) de gestão de finanças pessoais 
 Documentação detalhada em `ARCHITECTURE.md`. Resumo:
 
 1. **Config UI (`localStorage nexus_workspace`):** Tema, idioma, visualização padrão, ambient shadows, inclusão de contas ocultas no Patrimônio.
-2. **Ledger Financeiro:** persistido em SQLite local (`wa-sqlite` + OPFS), representado em memória como `DataFile` (schema v9). Entidades: `user`, `settings`, `accounts` (com `creditMetadata?`, `issuerIcon?`, `archived?`), `categories`, `tags`, `transactions` (com `installment?`, `recurrence?`, `transferAccountId?`, `referenceMonth?`, `invoiceDueDate?`), `valuations`, `auditLog`, `deletedIds`, `savedPeriods`.
+2. **Ledger Financeiro:** persistido em SQLite local (`wa-sqlite` + OPFS), representado em memória como `DataFile` (número de versão em `CURRENT_SCHEMA_VERSION`, `lib/storage/schema.ts` — não fixado aqui de propósito, evolui a cada feature). Entidades: `user`, `settings` (inclui `quadrantesEnabled`), `accounts` (com `creditMetadata?`, `issuerIcon?`, `archived?`, `loanMetadata?`/`reserveMetadata?` para os tipos `LOAN`/reserva de emergência — F-29), `categories`, `tags`, `transactions` (com `installment?`, `recurrence?`, `transferAccountId?`, `referenceMonth?`, `invoiceDueDate?`, `budgetIds?`), `budgets` (F-30), `valuations`, `auditLog`, `deletedIds`, `savedPeriods`. Estrutura completa e atualizada em `plan/ARCHITECTURE.md` (a interface `DataFile` deste PRD, abaixo, é ilustrativa e simplificada — não reproduz todos os campos, para não ficar obsoleta a cada bump de schema):
 
 ```json
 {
-  "schemaVersion": 9,
+  "schemaVersion": 0,
   "user": { "name": "", "createdAt": "", "updatedAt": "" },
-  "settings": { "fileCreatedAt": "", "fileUpdatedAt": "", "auditLogRetentionLimit": 200 },
-  "accounts": [{ "id": "", "name": "", "type": "RETAIL|SAVINGS|CREDIT|CRYPTO|FOREX|ASSET|STOCKS|OTHER", "balance": 0, "includeInBalance": true, "creditMetadata?": { "limit": 0, "closingDay": 1, "dueDay": 1 }, "issuerIcon?": "", "archived?": false }],
+  "settings": { "fileCreatedAt": "", "fileUpdatedAt": "", "auditLogRetentionLimit": 200, "quadrantesEnabled": false },
+  "accounts": [{ "id": "", "name": "", "type": "RETAIL|SAVINGS|CREDIT|CRYPTO|FOREX|ASSET|STOCKS|LOAN|OTHER", "balance": 0, "includeInBalance": true, "creditMetadata?": { "limit": 0, "closingDay": 1, "dueDay": 1 }, "issuerIcon?": "", "archived?": false }],
   "categories": [{ "id": "", "parentId": null, "name": "", "icon": "", "color": "", "type": "INCOME|EXPENSE" }],
   "tags": [{ "id": "", "name": "", "color": "" }],
-  "transactions": [{ "id": "", "accountId": "", "categoryId": "", "amount": 0, "type": "INCOME|EXPENSE|TRANSFER|CREDIT_PAYMENT", "date": "", "description": "", "isPaid": false, "tags": [], "installment?": { "parentId": "", "currentIndex": 1, "total": 2 }, "recurrence?": { "frequency": "monthly", "parentId": "", "endDate?": "" }, "transferAccountId?": "", "referenceMonth?": "YYYY-MM", "invoiceDueDate?": "YYYY-MM-DD" }],
+  "transactions": [{ "id": "", "accountId": "", "categoryId": "", "amount": 0, "type": "INCOME|EXPENSE|TRANSFER|CREDIT_PAYMENT", "date": "", "description": "", "isPaid": false, "tags": [], "budgetIds?": [], "installment?": { "parentId": "", "currentIndex": 1, "total": 2 }, "recurrence?": { "frequency": "monthly", "parentId": "", "endDate?": "" }, "transferAccountId?": "", "referenceMonth?": "YYYY-MM", "invoiceDueDate?": "YYYY-MM-DD" }],
+  "budgets": [{ "id": "", "name": "", "emoji": "", "color": "", "kind": "expense|income", "target": 0, "period": { "mode": "date|range" }, "archivedAt?": "", "recipeSlug?": "quadrantes" }],
   "valuations": [{ "id": "", "accountId": "", "date": "", "marketValue": 0 }],
   "auditLog": [{ "id": "", "timestamp": "", "action": "", "entity": "", "entityId": "", "summary": "" }],
   "deletedIds": [],
@@ -139,9 +140,15 @@ Backup/restore: exportar/importar um arquivo `.db` (SQLite) ou configurar grava�
 ## 10. Perguntas em Aberto
 *(Nenhuma pergunta pendente no momento)*
 
-## 11. Status de Implementação (2026-06-14)
+## 11. Status de Implementação (2026-08-18)
 
-### Features Must-have — todas implementadas
+> Esta seção é um snapshot pontual e não é reatualizada a cada feature — `plan/BACKLOG.md` é a
+> fonte viva e sempre atual (bugs `B-XX`, melhorias `M-XX`, cartão `CC-XX`, relatórios `R-XX`,
+> backup `BK-XX`, sync `CS-XX`, caixinhas `BX-XX`, mobile `MB-XX`). A seção "Estado Atual" do
+> `CLAUDE.md` também é mantida em sincronia com o código a cada sessão relevante; se algum número
+> aqui divergir dela, `CLAUDE.md`/`BACKLOG.md` são a referência.
+
+### Features — todas implementadas (F-1 a F-30)
 
 | Feature | Status |
 |---------|--------|
@@ -149,61 +156,34 @@ Backup/restore: exportar/importar um arquivo `.db` (SQLite) ou configurar grava�
 | F-21 | Cartões de crédito — creditMetadata, motor de fatura virtual, saldo disponível, página dedicada, ícone de emissora, painel de pagamento | ✅ |
 | F-22 | Parcelas — N transações com sufixo, modal de exclusão, selo "(X/N)" em Lançamentos e na fatura do cartão | ✅ |
 | F-23 | Pagamento de fatura — CREDIT_PAYMENT, exclusão dos totais | ✅ |
-| F-24 | Patrimônio Líquido — página dedicada, stat cards, breakdown por conta, gráfico de evolução (AreaChart) | ✅ |
+| F-24 | Patrimônio Líquido — página dedicada, stat cards, breakdown por conta | ✅ (sem gráfico de evolução histórica ainda — `M-63b`, aberto) |
 | F-25 | Demo Mode — dados sintéticos, banner, persistência no-op | ✅ |
 | F-26 | Bug Report System — telemetria local + reporte opt-in via GitHub Issues | ✅ |
-| F-27 | Mobile PWA — bottom nav, layouts responsivos, bottom sheets, DatePicker nativo | ✅ (Analytics mobile pendente — `MB-08`) |
+| F-27 | Mobile PWA — bottom nav (Dashboard/Lançamentos/Caixinhas/Relatórios; Configurações no menu do pill do cofre), layouts responsivos, bottom sheets, DatePicker nativo | ✅ (Analytics mobile só a aba Categorias — `MB-08` parcial) |
 | F-28 Nível 0/1 | SQLite/OPFS local + backup automático em pasta local (FSA) | ✅ |
-| F-28 Nível 2 | Cloud Sync (Google Drive/Dropbox) | 🔲 planejado (`CS-01` a `CS-12`) |
+| F-28 Nível 2 | Cloud Sync — Google Drive (OAuth2 + client secret bundlado) | ✅ validado em produção 2026-07-25 (Dropbox, `CS-11`/`CS-12`, segue planejado) |
+| F-29 | Saúde Financeira — dívida total comprometida, peso no orçamento, reserva de emergência, entidade `LOAN` (`HE-01` a `HE-16`) | ✅ |
+| F-30 | Caixinhas — entidade `Budget`, CRUD, receita "Quadrantes" automática, sync/merge, E2E (`BX-01` a `BX-11`) | ✅ |
 
-### Melhorias implementadas (M-01 a M-60)
+### Melhorias, relatórios e sync
 
-Todas as melhorias até M-60 foram implementadas. Destaques desde a última revisão deste documento:
-
-- **M-34 a M-44**: ícone de instituição emissora, ordenação de categorias em hierarquia, design
-  system (chips, espaçamentos), remoção de elementos redundantes do Dashboard
-- **M-42**: contas/cartões arquiváveis (`Account.archived`) — ocultos de seletores/listas, mas
-  continuam contando em saldos e no Patrimônio
-- **M-45**: períodos customizados salvos no seletor de Relatórios (`savedPeriods`, schema v9)
-- **M-47**: `DatePicker` próprio (nativo em mobile, popup calendário em desktop), substituindo
-  `<input type="date">` em todos os formulários
-- **M-48/M-49**: rodapé de resumo de Lançamentos em coluna lateral (desktop) + "Saldo Geral" no
-  Dashboard
-- **M-50/M-59**: selo "(X/N)" para transações parceladas em Lançamentos e na fatura do cartão
-- **M-51/M-52**: ferramenta de sync Organizze→Gimbo passa a refletir contas/cartões arquivados e
-  normaliza nomes de tags (remove `#` duplicado)
-- **M-53**: tooltip do gráfico de Entradas x Saídas corrigido para períodos > 12 meses (eixo X
-  com chave única por ano)
-- **M-54/M-55**: barra de filtro colapsável (categoria + busca por texto) na página do cartão,
-  substituindo as chips horizontais
-- **M-56/M-57**: navegação entre faturas movida para o cabeçalho da página do cartão; botão
-  "Pagar Agora" oculto (não apenas desabilitado) quando a fatura está paga
-- **M-58**: ação "mover para fatura anterior/seguinte" movida da linha do extrato para o
-  `TransactionDrawer`
-- **M-60**: padronização da exibição de categorias (sem `#`) entre Lançamentos e a fatura do
-  cartão
-
-### Relatórios Avançados — concluídos
-
-Épico detalhado em `plan/REPORTS.md`. Todas as fases implementadas:
-- ✅ Fase 1 — Navegação e Seletor de Período (R-01 a R-03)
-- ✅ Fase 2 — Feature Toggle: Ambient Shadows (R-04 a R-06)
-- ✅ Fase 3 — Cash Flow View (R-07 a R-08)
-- ✅ Fase 4 — Categorias com Drill-Down (R-09 a R-10)
-- ✅ Fase 5 — Contas com Drill-Down (R-11 a R-12)
-- ✅ Fase 6 — Tags com Multi-filtro (R-13 a R-14)
-- ✅ Fase 7 — Testes (R-15 a R-16)
-- ✅ Fase 8 — Aba "Faturas" (R-17 a R-18)
+Todas as melhorias `M-01` a `M-64` foram implementadas (destaques e histórico completo em
+`plan/BACKLOG.md`); `M-65` (WebDAV) registrado como futuro, demand-driven. Relatórios avançados
+`R-01` a `R-18` concluídos (`plan/REPORTS.md`). Sync multi-dispositivo: Fases 0 (motor de merge), 1
+(pasta compartilhada) e 2 (Google Drive) resolvidas; Fase 3 (Dropbox) planejada — ver roadmap em
+`CLAUDE.md`.
 
 ### Cobertura de testes
 
-**548 testes unitários** (21 arquivos) + **44 testes E2E** (5 specs, perfis desktop e mobile). Cobertura: ~97% statements.
+**841 testes unitários** (31 arquivos) + **59 testes E2E** (7 specs, perfis `chromium` e
+`mobile-chrome`). Cobertura: ~96% statements.
 
-### Melhorias e features em aberto
+### Features e melhorias em aberto
 
 | ID | Descrição | Prioridade |
 |----|-----------|-----------|
-| MB-08 | Analytics responsivo para mobile — os 5 gráficos do Relatórios mostram placeholder "em breve" em telas pequenas | média |
+| MB-08 | Analytics responsivo para mobile — só a aba Categorias tem versão mobile (`MB-18`); CashFlow, Contas, Tags e Faturas seguem sem | média |
 | BK-04 | Banner de re-permissão da pasta de backup no startup (hoje só ocorre ao tentar gravar) | média |
-| CC-34 | Agrupamento de parcelas importadas via `sync_gimbo.py` (`installment_parent_id` entre parcelas) | média |
-| CS-01 a CS-12 | Cloud Sync (Nível 2) — Google Drive/Dropbox via OAuth2 PKCE, merge por UUID | demand-driven |
+| M-63b | Gráfico de tendência (passado real + futuro projetado) no Patrimônio Líquido | baixa |
+| M-65 | WebDAV como transporte de sync adicional | baixa, demand-driven |
+| CS-11/CS-12 | Cloud Sync — Dropbox como segundo provider | demand-driven |

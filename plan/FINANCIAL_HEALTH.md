@@ -1,7 +1,7 @@
 # Saúde Financeira — F-29
 
 > Histórico de produto e design da tela de Saúde Financeira (`/health`).
-> Estado atual: **design inicial mockado** (sem motores reais). Implementação dos motores e testes: épico `HE` em `plan/BACKLOG.md`.
+> Estado atual: **implementado** — motores reais ligados desde `HE-04`, épico completo `HE-01` a `HE-16` resolvido (ver §7 abaixo para o detalhamento e `plan/BACKLOG.md` para o histórico).
 > Última atualização: 2026-06-20.
 
 ---

@@ -1034,8 +1034,10 @@ Adicionar em `locales/pt-BR.json` e `locales/en-US.json`:
 
 > Especificação derivada de `plan/FABLE-BRAINSTORM.md` (análise de alternativas),
 > `plan/SYNC_SCENARIOS.md` (cenários `S-16` a `S-20`) e do épico `CS` em `plan/BACKLOG.md`.
-> **Cobre apenas as Fases 0 e 1.** A Fase 2 (Google Drive) e a Fase 3 (Dropbox) serão
-> especificadas quando iniciadas — dependem de `CS-01`, que é ação externa do mantenedor.
+> Cobre as Fases 0 e 1 desta spec original. **`CS-01` foi concluído e a Fase 2 (Google Drive) foi
+> implementada e validada em produção em 2026-07-25** — não é mais uma dependência externa em
+> aberto; ver épico `CS` em `plan/BACKLOG.md` e a implementação em `app/src/lib/cloudSync/`. A
+> Fase 3 (Dropbox) ainda não tem especificação técnica própria nem módulo no código.
 
 ### Princípio de desenho
 

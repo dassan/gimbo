@@ -3,6 +3,13 @@
 > Documento de brainstorm arquitetural (2026-07-24). Não é uma spec — é uma análise de
 > alternativas com trade-offs, para subsidiar a decisão do épico CS (F-28 Nível 2).
 > Baseado em `ARCHITECTURE.md`, `SYNC_SCENARIOS.md` e `BACKLOG.md` (CS-01..CS-12).
+>
+> **Nota (2026-08-18):** a análise abaixo (§1-§9) e a recomendação faseada continuam válidas como
+> registro histórico da decisão — mas a "sincronização entre dispositivos" que a §1 descreve como
+> não resolvida **já está resolvida hoje**: Fase 1 (multi-desktop via pasta compartilhada) e Fase 2
+> (Google Drive, incluindo mobile) foram implementadas e validadas em produção em 2026-07-24 e
+> 2026-07-25 respectivamente. Só a Fase 3 (Dropbox) segue em aberto. Ver `CLAUDE.md` para o
+> roadmap com status atualizado.
 
 ---
 

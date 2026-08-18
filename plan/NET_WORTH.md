@@ -5,6 +5,18 @@
 > do épico F-24 em `plan/BACKLOG.md`. Ler em conjunto com `plan/PRD.md` (F-24) e o engine de
 > fatura em `src/lib/utils.ts`.
 
+> **Nota (2026-08-18) — o que de fato foi implementado:** a tela `/net-worth` foi construída sob os
+> IDs originais `NW-01` a `NW-07` de `plan/BACKLOG.md` (a renumeração `NW-08..NW-12`/`(rev)` proposta
+> na tabela §8 abaixo não foi adotada literalmente — é só o registro do plano na época). Dois pontos
+> divergem do que este documento especifica: **(1)** a fórmula de passivo do §4/D2 foi revisada
+> depois da implementação — `getTotalCreditLiability` hoje é só a **fatura atual em aberto** (mesmo
+> escopo de `getOpenCreditBalance`), não "fatura atual + parcelas futuras" como descrito abaixo; ver
+> o motor de fatura virtual em `CLAUDE.md`. **(2)** as funções de histórico do §6
+> (`getAccountBalanceAtMonth`, `getNetWorthHistory`) e o gráfico `AreaChart` do §7 item 5 **nunca
+> foram implementados** — `/net-worth` hoje mostra só o snapshot do saldo atual, sem série temporal.
+> Isso é rastreado como `M-63b` (aberto) em `plan/BACKLOG.md`. O restante do documento (§1-§3, §5,
+> toggle `netWorthIncludeHidden`) reflete o que está implementado hoje.
+
 ---
 
 ## 1. Objetivo

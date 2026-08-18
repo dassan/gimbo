@@ -141,8 +141,8 @@ desktop da nuvem replicando um arquivo comum que o Gimbo já escreve na pasta.
 
 ## Parte 2 — Fase 1: Multi-Desktop via Pasta Compartilhada (F-28 Nível 2, Fase 1)
 
-> **Status:** Planejado, não implementado. Tarefas `CS-13` a `CS-17` em `BACKLOG.md`;
-> especificação técnica na Fase 16 de `SPEC.md`.
+> **Status:** Resolvido em 2026-07-24. Tarefas `CS-13` a `CS-17` em `BACKLOG.md`;
+> especificação técnica na Fase 16 de `SPEC.md`; implementação em `app/src/lib/cloudSync/folderSyncService.ts`.
 
 ### Princípio Arquitetural
 
@@ -267,8 +267,10 @@ replicado pelo cliente de nuvem no exato momento da leitura.
 
 ## Parte 3 — Fase 2/3: Sync Multi-Dispositivo via Nuvem (F-28 Nível 2, Fases 2 e 3)
 
-> **Status:** Planejado, não implementado. Especificação técnica a detalhar em `plan/SPEC.md` quando o épico CS for iniciado.
-> Ver épico `CS` em `BACKLOG.md` para as tarefas.
+> **Status:** Fase 2 (Google Drive) resolvida e validada em produção em 2026-07-25 — `CS-01` a
+> `CS-03` e `CS-06` a `CS-09` em `BACKLOG.md`, implementação em `googleAuth.ts`/`googleDrive.ts`.
+> Fase 3 (Dropbox) segue planejada, demand-driven — `CS-11`/`CS-12`, sem especificação técnica
+> nem módulo no código ainda.
 >
 > **Esta é a fase que desbloqueia o mobile** — sem File System Access API, o PWA mobile só
 > participa do sync por rede. A Fase 1 (Parte 2) resolve multi-desktop; esta resolve o resto.
@@ -277,7 +279,10 @@ replicado pelo cliente de nuvem no exato momento da leitura.
 
 O Google Drive (ou Dropbox) do usuário atua como **camada de sync**, não como servidor do Gimbo.
 Os dados pertencem ao usuário, armazenados na conta de nuvem dele, em uma pasta `Gimbo/`.
-O Gimbo acessa essa pasta via API (OAuth2 PKCE — sem backend, sem servidor próprio).
+O Gimbo acessa essa pasta via API (OAuth2 PKCE + `client_secret` bundlado — sem backend, sem
+servidor próprio; ver achado técnico no `CLAUDE.md`: clientes OAuth "Aplicativo da Web" do Google
+exigem `client_secret` mesmo com PKCE, não existe tipo de cliente que dispense o secret e aceite
+`redirect_uri` HTTPS de produção).
 
 ```
 Google Drive do usuário
@@ -294,7 +299,7 @@ Mobile PWA (SQLite/OPFS) <──pull/push──>  Drive
 - **Offline** — mutações acumulam localmente; sync acontece na próxima conexão disponível.
 
 > **Decisões de produto/arquitetura (2026-07-11, revisadas em 2026-07-24):**
-> - ~~**Verificação OAuth do Google é pré-requisito, não opcional.**~~ **Revisado (2026-07-24):** a premissa estava superdimensionada. O escopo `drive.file` é classificado pelo Google como **não-sensível**, e apps que usam apenas escopos não-sensíveis **não são obrigados** a passar pela verificação completa (revisão de tela de consentimento, vídeo de demonstração); a avaliação de segurança anual aplica-se apenas a escopos **restritos** (`drive` completo), que o Gimbo não usa. O processo é **por app, uma única vez**, feito pelo mantenedor — o usuário final nunca participa de verificação, apenas consente em 2 cliques. **Ressalvas reais que permanecem no `CS-01`:** (a) publicar o app em *publishing status* **"Production"** — em "Testing" o aviso "app não verificado" aparece e há teto de usuários; (b) *brand verification* (processo leve) se quisermos exibir logo/nome próprios na tela de consentimento; (c) validar tudo isso na prática com um client_id de teste antes de dar o `CS-01` por resolvido.
+> - ~~**Verificação OAuth do Google é pré-requisito, não opcional.**~~ **Revisado (2026-07-24):** a premissa estava superdimensionada. O escopo `drive.file` é classificado pelo Google como **não-sensível**, e apps que usam apenas escopos não-sensíveis **não são obrigados** a passar pela verificação completa (revisão de tela de consentimento, vídeo de demonstração); a avaliação de segurança anual aplica-se apenas a escopos **restritos** (`drive` completo), que o Gimbo não usa. O processo é **por app, uma única vez**, feito pelo mantenedor — o usuário final nunca participa de verificação, apenas consente em 2 cliques. **Ressalvas reais que permanecem no `CS-01`:** (a) publicar o app em *publishing status* **"Production"** — em "Testing" o aviso "app não verificado" aparece e há teto de usuários; (b) *brand verification* (processo leve) se quisermos exibir logo/nome próprios na tela de consentimento; (c) ~~validar tudo isso na prática com um client_id de teste antes de dar o `CS-01` por resolvido~~ — **feito**: validação empírica em 2026-07-25, `CS-01` resolvido e sync com Google Drive funcionando em produção.
 > - **O arquivo `gimbo.db` é visível na pasta `Gimbo/` do Drive do usuário** (a API do Drive não permite ocultá-lo do Web UI do próprio usuário, mesmo com escopo `drive.file`). Isso vaza a implementação técnica (SQLite/OPFS) para uma superfície que o Gimbo não controla — o usuário pode abrir o Drive, ver um binário que não consegue abrir, e ficar em dúvida se pode apagar. Mitigação: aviso explícito na primeira conexão (S-08) + doc page (mesmo padrão de `BK-07`) explicando que o arquivo é gerenciado pelo Gimbo e não deve ser editado/movido/removido manualmente pelo usuário.
 
 ---

@@ -1,362 +1,300 @@
 # Gimbo
 
-> Personal finance management — 100% local, zero cloud dependency.
+> Gestão de finanças pessoais — 100% local, zero dependência de nuvem.
 
-Gimbo is a **local-first PWA** that runs entirely in the browser. Your financial ledger lives in a local SQLite database (via WebAssembly + the Origin Private File System), with one-click export/import of a portable `.db` backup file. No accounts, no servers, no subscription.
+Gimbo é um **PWA local-first** que roda inteiramente no navegador. Seu histórico financeiro vive
+num banco SQLite local (via WebAssembly + Origin Private File System), com export/import de um
+arquivo de backup `.db` portátil a um clique. Sem contas, sem servidores, sem assinatura.
 
 <img width="1858" height="959" alt="gimbo-dashboard" src="https://github.com/user-attachments/assets/a4ef1e12-d4ba-45af-bb19-14cb0069a1b9" />
 
 ---
 
-## Why Gimbo
+## Por que o Gimbo
 
-Most finance tools trade your privacy for convenience — storing transaction history on corporate servers and monetising your spending patterns. Gimbo rejects that model:
+A maioria das ferramentas de finanças troca sua privacidade por conveniência — guardando seu
+histórico de transações em servidores corporativos e monetizando seu padrão de consumo. O Gimbo
+rejeita esse modelo:
 
-- **Local-first:** all data is stored on your device in a local SQLite database — nothing is sent anywhere
-- **Portable:** export a single `.db` backup file and import it on any other device/browser to pick up where you left off
-- **Optional local backup:** point Gimbo at a folder on disk (e.g. one synced by Google Drive/Dropbox/OneDrive) and it writes a backup there automatically after every change
-- **Offline-capable:** works with no internet connection once installed as a PWA
-- **No lock-in:** export your data at any time as a portable SQLite file
-
----
-
-## Try it
-
-A **demo mode** with synthetic data and persistence disabled is available — useful to explore the UI without creating a ledger. Build/run with `VITE_DEMO_MODE=true` (see [Getting Started](#getting-started)).
+- **Local-first:** todo o dado fica no seu dispositivo, num banco SQLite local — nada é enviado a lugar nenhum
+- **Portátil:** exporte um único arquivo de backup `.db` e importe em qualquer outro dispositivo/navegador para continuar de onde parou
+- **Backup automático opcional:** aponte o Gimbo para uma pasta em disco (ex.: uma sincronizada pelo Google Drive/Dropbox/OneDrive) e ele grava um backup lá a cada mudança
+- **Sync opcional via nuvem própria:** conecte sua própria conta do Google Drive (OAuth2) para sincronizar entre dispositivos sem servidor do Gimbo no meio — o app só lê/escreve um arquivo `.db` na sua conta
+- **Funciona offline:** instalado como PWA, funciona sem conexão
+- **Sem aprisionamento:** exporte seus dados a qualquer momento como um arquivo SQLite portátil
 
 ---
 
-## Getting Started (feedback / testing)
+## Funcionalidades
 
-> **Prerequisites:** Node.js 22 and npm.
+- **Lançamentos** — receitas, despesas, transferências e pagamento de fatura, com categorias hierárquicas, tags, parcelamento e recorrência
+- **Dashboard** — resumo do mês, saldo por conta, utilização dos cartões, donut de despesas por categoria, últimos lançamentos
+- **Cartões de crédito** — motor de fatura virtual (fechamento/vencimento, saldo em aberto, limite disponível), página dedicada por cartão com histórico de faturas
+- **Relatórios avançados** — 5 visões analíticas: Categorias, Fluxo de Caixa (projeção ±3 meses), Contas, Tags e Faturas
+- **Patrimônio Líquido** — ativos menos passivos, com breakdown por conta e evolução histórica
+- **Saúde Financeira** — dívida total comprometida, peso no orçamento em relação à renda, reserva de emergência recomendada
+- **Caixinhas** — metas financeiras declaradas (viagem, reforma, teto de gasto mensal), com receita automática opcional "Quadrantes" que gera 4 caixinhas por mês
+- **Backup & Sync em 3 níveis** — só o navegador (OPFS), pasta local com escrita automática (File System Access API), ou sync multi-dispositivo via Google Drive (OAuth2, sem servidor do Gimbo)
+- **PWA responsiva** — instalável em desktop e mobile, mesma base de código, navegação adaptada para telas pequenas
+- **Reporte de bugs integrado** — snapshot seguro de contexto (nunca valores financeiros, nomes ou IDs de entidades) anexado a um link pré-preenchido do GitHub Issues
+
+---
+
+## Experimente
+
+Um **modo demo** com dados sintéticos e persistência desabilitada está disponível — útil para
+explorar a interface sem criar um cofre de verdade. Rode com `VITE_DEMO_MODE=true` (veja
+[Como rodar localmente](#como-rodar-localmente)).
+
+---
+
+## Como rodar localmente
+
+> **Pré-requisitos:** Node.js 22 e npm.
 
 ```bash
-# 1. Clone the repository
+# 1. Clone o repositório
 git clone git@github.com:dassan/gimbo.git
 cd gimbo/app
 
-# 2. Install dependencies
-npm install
+# 2. Instale as dependências
+npm install --legacy-peer-deps
 
-# 3. Start the dev server
+# 3. Suba o servidor de desenvolvimento
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) — the Onboarding screen will guide you through creating your first ledger or importing an existing `.db` backup.
+Abra [http://localhost:5173](http://localhost:5173) — a tela de Onboarding vai guiar você na
+criação do primeiro cofre ou na importação de um backup `.db` existente.
 
-### Demo mode
+### Modo demo
 
 ```bash
 VITE_DEMO_MODE=true npm run dev
 ```
 
-Loads a synthetic dataset on startup and disables persistence — every mutation is a no-op, so you can click around freely. A yellow banner indicates demo mode is active.
+Carrega um dataset sintético na inicialização e desabilita a persistência — toda mutação vira
+no-op, então dá pra clicar à vontade. Um banner amarelo indica que o modo demo está ativo.
 
-### Dev helpers (development only)
+### Helpers de desenvolvimento (apenas em dev)
 
-Two URL query parameters are available when running `npm run dev` (no-ops in production builds):
+Dois query parameters funcionam ao rodar `npm run dev` (viram no-op em builds de produção):
 
-| URL | Effect |
+| URL | Efeito |
 |-----|--------|
-| `http://localhost:5173/?devSeed` | Wipes the local database and loads the synthetic seed dataset (`public/dev/seed.json`). Lands on the dashboard. |
-| `http://localhost:5173/?devReset` | Wipes the local database, clears the workspace settings and any configured backup folder, and redirects to Onboarding. |
+| `http://localhost:5173/?devSeed` | Apaga o banco local e carrega o dataset sintético de seed (`public/dev/seed.json`). Cai no dashboard. |
+| `http://localhost:5173/?devReset` | Apaga o banco local, limpa as preferências de workspace e qualquer pasta de backup configurada, e redireciona para o Onboarding. |
 
-After the action completes, the parameter is removed from the URL via `history.replaceState`.
+Depois da ação, o parâmetro é removido da URL via `history.replaceState`.
 
-### Reporting issues
+### Reportar problemas
 
-Found a bug or have a suggestion? Open an issue on GitHub:
+Achou um bug ou tem uma sugestão? Abra uma issue no GitHub:
 
 **[github.com/dassan/gimbo/issues](https://github.com/dassan/gimbo/issues)**
 
-The app also has a built-in **bug report** dialog (Settings → Preferences) that attaches a privacy-safe snapshot — recent navigation, action types, and error stack traces, **never** financial values, names, or entity IDs — and opens a pre-filled GitHub issue for you.
+O app também tem um diálogo de **reporte de bugs** embutido (Configurações → Preferências) que
+anexa um snapshot seguro — navegação recente, tipos de ação e stack traces de erro, **nunca**
+valores financeiros, nomes ou IDs de entidades — e abre uma issue pré-preenchida no GitHub.
 
-### Build for production
+### Build de produção
 
 ```bash
-npm run build      # outputs to app/dist/
-npm run preview    # serve the production build locally
+npm run build      # gera em app/dist/
+npm run preview    # serve o build de produção localmente
 ```
 
-The `dist/` folder is a fully static PWA — serve it from any static host (GitHub Pages, Netlify, Cloudflare Pages, Vercel) or open `index.html` directly in a modern browser.
+A pasta `dist/` é um PWA totalmente estático — sirva a partir de qualquer host estático (GitHub
+Pages, Cloudflare Pages, Netlify, Vercel) ou abra `index.html` diretamente num navegador moderno.
 
 ---
 
-## Browser Compatibility
+## Compatibilidade de navegadores
 
-| Feature | Chrome / Edge | Firefox | Safari |
-|---------|:---:|:---:|:---:|
-| Core app (SQLite via OPFS) | ✅ | ✅ | ✅ |
-| PWA install | ✅ | ✅ | ✅ |
-| Automatic local-folder backup (File System Access API) | ✅ | ❌ | ❌ |
+| Funcionalidade | Chrome / Edge | Firefox | Safari |
+|---|:---:|:---:|:---:|
+| App principal (SQLite via OPFS) | ✅ | ✅ | ✅ |
+| Instalação como PWA | ✅ | ✅ | ✅ |
+| Backup automático em pasta local (File System Access API) | ✅ | ❌ | ❌ |
+| Sync via Google Drive (OAuth2) | ✅ | ✅ | ✅ |
 
-The core app stores its database in the browser's **Origin Private File System (OPFS)**, available in all modern browsers — no special permissions required.
+O app guarda o banco no **Origin Private File System (OPFS)** do navegador, disponível em todos os
+navegadores modernos — sem permissões especiais.
 
-The **optional** "Backup & Sync → local folder" feature (Settings) uses the **File System Access API** to write a backup file to a folder you choose every time data changes. This API is Chrome/Edge-only; on Firefox and Safari this option is hidden and you can still back up manually via **Export** (Settings → Data).
+A opção **"Backup & Sync → pasta local"** (Configurações) usa a **File System Access API** para
+escrever um backup na pasta escolhida a cada mudança de dado. Essa API é exclusiva de Chrome/Edge;
+no Firefox e Safari essa opção fica oculta e o backup manual via **Exportar** (Configurações →
+Dados) continua disponível. Já o sync via **Google Drive** não depende dessa API — funciona em
+qualquer navegador com suporte a OAuth2/fetch.
 
 ---
 
-## Contributing
+## Contribuindo
 
-### Tech Stack
+### Stack tecnológico
 
-| Layer | Technology | Version |
-|-------|-----------|---------|
+| Camada | Tecnologia | Versão |
+|---|---|---|
 | Framework | React | 19.x |
-| Routing | React Router | 7.x |
+| Roteamento | React Router | 7.x |
 | Build | Vite | 8.x |
-| Language | TypeScript (strict) | 6.x |
-| Styling | Tailwind CSS | 4.x |
-| State | Zustand | 5.x |
-| Validation | Zod | 4.x |
-| Database | SQLite via `wa-sqlite` (WASM) + OPFS | 1.x |
-| Charts | Recharts | 3.x |
+| Linguagem | TypeScript (strict) | 6.x |
+| Estilo | Tailwind CSS | 4.x |
+| Estado | Zustand | 5.x |
+| Validação | Zod | 4.x |
+| Banco de dados | SQLite via `wa-sqlite` (WASM) + OPFS | 1.x |
+| Gráficos | Recharts | 3.x |
 | i18n | i18next + react-i18next | 26.x / 17.x |
 | PWA | vite-plugin-pwa | 1.x |
-| Icons | Lucide React | 1.x |
-| Unit tests | Vitest + Testing Library | 3.x / 16.x |
-| E2E tests | Playwright | 1.x (Chromium desktop + mobile) |
+| Ícones | Lucide React | 1.x |
+| Testes unitários | Vitest + Testing Library | 3.x / 16.x |
+| Testes E2E | Playwright | 1.x (Chromium desktop + mobile) |
 | Lint | ESLint (flat config) | 9.x |
 | Formatter | Prettier | 3.x |
+| Deploy | Cloudflare Pages (via `wrangler`) | 4.x |
 
-**Node.js 22** is required (matches CI).
+**Node.js 22** é requerido (mesma versão do CI).
 
-### Project Structure
+### Estrutura do projeto
 
 ```
 gimbo/
 ├── .github/
 │   └── workflows/
-│       ├── ci.yml          # type-check → lint → format → unit tests → build
-│       └── audit.yml       # weekly dependency audit
+│       ├── ci.yml          # type-check → lint → format → testes unitários → build → E2E
+│       └── audit.yml       # auditoria semanal de dependências
 ├── plan/
-│   ├── PRD.md              # Product Requirements Document
-│   ├── ARCHITECTURE.md     # Stack, data model, persistence, storage architecture
-│   ├── BACKLOG.md          # Bugs (B-XX), improvements (M-XX), credit card (CC-XX), reports (R-XX)
-│   ├── REPORTS.md          # Advanced analytics epic (Categorias/CashFlow/Contas/Tags/Faturas)
-│   ├── CREDIT_CARD.md       # Credit card module decisions and spec
-│   ├── METRICS.md           # Telemetry & bug report system decisions
-│   ├── SYNC_SCENARIOS.md    # Persistence / sync edge-case scenarios
-│   └── RULES.md             # Human + AI development workflow
+│   ├── PRD.md              # Requisitos de produto (features F-1 a F-30)
+│   ├── ARCHITECTURE.md     # Stack, modelo de dados, arquitetura de persistência
+│   ├── BACKLOG.md          # Bugs (B-XX), melhorias (M-XX), cartão (CC-XX), relatórios (R-XX), backup (BK-XX), sync (CS-XX), caixinhas (BX-XX)
+│   ├── REPORTS.md          # Épico do módulo analítico (Categorias/CashFlow/Contas/Tags/Faturas)
+│   ├── CREDIT_CARD.md      # Decisões e arquitetura do módulo de cartão de crédito
+│   ├── FINANCIAL_HEALTH.md # Decisões de produto da tela de Saúde Financeira
+│   ├── BUDGETS.md          # Decisões de produto/UX das Caixinhas
+│   ├── METRICS.md          # Telemetria local e Bug Report System
+│   ├── SYNC_SCENARIOS.md   # Cenários de sincronização e recuperação
+│   └── RULES.md            # Workflow de desenvolvimento IA + humano
 ├── design/
-│   ├── DESIGN.md            # "Fluid Ledger" design system (single source of truth)
-│   └── *.png                # Screen mockups
+│   ├── DESIGN.md            # Sistema de design "Fluid Ledger" (fonte única)
+│   └── *.png                # Mockups de telas
 └── app/
     ├── src/
-    │   ├── App.tsx              # Startup, hydration, route guard, error boundary
-    │   ├── types/index.ts        # All TypeScript entity definitions
+    │   ├── App.tsx              # Startup, hidratação, route guard, error boundary
+    │   ├── types/index.ts        # Todas as entidades TypeScript
     │   ├── lib/
-    │   │   ├── utils.ts            # cn(), formatCurrency(), parseDateLocal(), invoice engine, balance helpers
-    │   │   ├── backupDir.ts        # File System Access folder backup (handle persisted via idb)
-    │   │   ├── demo.ts             # Demo mode flag + synthetic data loader
-    │   │   ├── telemetry.ts        # In-memory event ring buffer + bug report snapshot builder
-    │   │   └── i18n/                # i18next config + pt-BR / en-US locales
-    │   ├── services/
-    │   │   └── storage/
-    │   │       ├── StorageService.ts   # Typed API used by the app (main thread)
-    │   │       ├── worker.ts           # Web Worker: wa-sqlite + OPFS, runs migrations
-    │   │       └── migrations/*.sql    # Incremental SQLite schema (v1.sql .. v7.sql)
+    │   │   ├── utils.ts            # cn(), formatCurrency(), parseDateLocal(), motor de fatura virtual
+    │   │   ├── backupDir.ts        # Backup em pasta local via File System Access API
+    │   │   ├── budgetRecipes.ts    # Receita "Quadrantes" das Caixinhas
+    │   │   ├── cloudSync/          # Merge multi-dispositivo, Google Drive, pasta compartilhada
+    │   │   ├── demo.ts             # Flag de modo demo + carregador de dados sintéticos
+    │   │   ├── telemetry.ts        # Ring buffer de eventos + snapshot de bug report
+    │   │   └── i18n/                # Config i18next + locales pt-BR / en-US
+    │   ├── services/storage/
+    │   │   ├── StorageService.ts   # API tipada usada pelo app (thread principal)
+    │   │   ├── worker.ts           # Web Worker: wa-sqlite + OPFS, roda as migrações
+    │   │   └── migrations/*.sql    # Schema físico incremental do SQLite
     │   ├── store/
-    │   │   ├── useDataStore.ts         # Ledger data + mutations + debounced persistence
-    │   │   └── useWorkspaceStore.ts    # UI preferences (theme, locale, defaultView, shadows, net worth)
-    │   ├── hooks/
-    │   │   └── useTrackNavigation.ts   # Records route changes for telemetry
+    │   │   ├── useDataStore.ts         # Dados do cofre + mutações + persistência debounced
+    │   │   └── useWorkspaceStore.ts    # Preferências de UI (tema, idioma, ordenação, shadows)
     │   ├── components/
     │   │   ├── AppLayout.tsx           # Shell: Navbar + Outlet + FAB + drawers + banners
-    │   │   ├── Navbar.tsx               # Top nav (desktop) + bottom nav (mobile)
-    │   │   ├── FAB.tsx                  # Floating "new transaction" button
-    │   │   ├── TransactionDrawer.tsx    # Slide-in form for creating/editing transactions
-    │   │   ├── DatePicker.tsx           # Custom date picker (native on mobile, calendar popup on desktop)
-    │   │   ├── PeriodSelector.tsx       # Month / custom range picker with saved periods
-    │   │   ├── WelcomeModal.tsx         # First-run privacy & backup explainer
-    │   │   ├── BugReportDialog.tsx      # Opt-in bug report with telemetry snapshot
-    │   │   ├── ErrorBoundary.tsx        # Catches render errors, offers bug report
-    │   │   └── Toast.tsx                # Dismissible notification banner
+    │   │   ├── TransactionDrawer.tsx    # Formulário de criação/edição de lançamento
+    │   │   ├── WelcomeModal.tsx         # Explicador de privacidade e backup no primeiro uso
+    │   │   ├── BugReportDialog.tsx      # Reporte opt-in com snapshot de telemetria
+    │   │   └── ErrorBoundary.tsx        # Captura erros de render, oferece reporte
     │   ├── pages/
-    │   │   ├── Onboarding/      # Create a new ledger or import a .db backup
-    │   │   ├── Dashboard/       # Monthly summary, accounts, cards, donut, recent transactions
-    │   │   ├── Transactions/    # Cash-flow ledger (excludes credit-card charges)
-    │   │   ├── Analytics/       # 5-tab shell: Categorias, CashFlow, Contas, Tags, Faturas
-    │   │   ├── CreditCard/      # Invoice detail for one credit card account
-    │   │   ├── NetWorth/        # Assets − liabilities, with valuation history
-    │   │   ├── Settings/        # Accounts & Cards, Categories, Tags, Profile, Preferences, Backup & Sync, History
-    │   │   ├── About/           # App info, test coverage, architecture summary
-    │   │   ├── Docs/            # Static help pages (why local storage, local backup, cloud sync roadmap)
-    │   │   └── Legal/           # Privacy policy, terms of service
-    │   └── test/
-    │       ├── fixtures/       # makeDataFile(), makeCreditAccount(), makeInstallmentGroup()
-    │       ├── lib/             # Tests for utils + storage schema
-    │       ├── store/           # Tests for useDataStore mutations
-    │       └── components/      # Component tests
-    └── e2e/                     # Playwright end-to-end specs
+    │   │   ├── Onboarding/      # Criar novo cofre ou importar backup .db
+    │   │   ├── Dashboard/       # Resumo mensal, contas, cartões, donut, lançamentos recentes
+    │   │   ├── Transactions/    # Extrato de caixa (exclui cobranças de cartão)
+    │   │   ├── Analytics/       # 5 abas: Categorias, CashFlow, Contas, Tags, Faturas
+    │   │   ├── CreditCard/      # Detalhe de fatura de um cartão
+    │   │   ├── NetWorth/        # Patrimônio líquido, com histórico de avaliação
+    │   │   ├── Health/          # Saúde financeira: dívida, comprometimento, reserva
+    │   │   ├── Budgets/         # Caixinhas: lista, detalhe, receita Quadrantes
+    │   │   ├── Settings/        # Contas e Cartões, Categorias, Tags, Perfil, Preferências, Backup & Sync, Histórico
+    │   │   ├── Docs/            # Páginas estáticas de ajuda (storage local, backup, sync via nuvem)
+    │   │   └── Legal/           # Política de privacidade, termos de uso
+    │   └── test/                # fixtures, testes de lib/store/componentes
+    └── e2e/                     # Specs E2E do Playwright
 ```
 
-### Data Model
+### Modelo de dados
 
-The ledger is stored in a local SQLite database (one table per entity). The same data is also represented in memory as a `DataFile` object, validated with Zod (`schemaVersion` currently **9**):
+O cofre é persistido num banco SQLite local (uma tabela por entidade), também representado em
+memória como um `DataFile` validado com Zod. Entidades principais: `accounts`, `categories`,
+`tags`, `transactions`, `valuations`, `budgets`, `auditLog`. O schema evolui de forma aditiva e
+idempotente — cada versão migra automaticamente a anterior. Modelo completo, decisões de
+arquitetura e o motor de fatura virtual estão documentados em [`plan/ARCHITECTURE.md`](plan/ARCHITECTURE.md).
 
-```typescript
-interface DataFile {
-  schemaVersion: number
-  user: { name: string; email: string; createdAt: string; updatedAt: string }
-  settings: { fileCreatedAt: string; fileUpdatedAt: string; auditLogRetentionLimit: number | null }
-  accounts: Account[]
-  categories: Category[]
-  tags: Tag[]
-  transactions: Transaction[]
-  valuations: Valuation[]
-  auditLog: AuditEntry[]
-  deletedIds: string[]       // tombstones — entities explicitly deleted on this device
-  savedPeriods: SavedPeriod[] // named custom date ranges saved from the Reports period picker
-}
+### Quality gates
 
-interface Account {
-  id: string
-  name: string
-  type: 'RETAIL' | 'SAVINGS' | 'CREDIT' | 'CRYPTO' | 'FOREX' | 'ASSET' | 'STOCKS' | 'OTHER'
-  balance: number            // opening balance — never shown directly, current balance is derived
-  includeInBalance: boolean
-  creditMetadata?: { limit: number; closingDay: number; dueDay: number } // CREDIT accounts only
-  issuerIcon?: string         // institution key, e.g. 'nubank', 'itau', 'generic'
-  archived?: boolean          // hidden from selectors/lists, still counted in balances and totals
-}
-
-interface Transaction {
-  id: string
-  accountId: string
-  categoryId: string
-  amount: number
-  type: 'INCOME' | 'EXPENSE' | 'TRANSFER' | 'CREDIT_PAYMENT'
-  date: string                // ISO 8601, always interpreted via parseDateLocal()
-  description: string
-  isPaid: boolean
-  tags: string[]
-  installment?: { parentId: string; currentIndex: number; total: number }
-  recurrence?: { frequency: 'weekly' | 'biweekly' | 'monthly'; parentId: string; endDate?: string }
-  transferAccountId?: string  // TRANSFER destination, or CREDIT_PAYMENT funding account
-  referenceMonth?: string     // "YYYY-MM" — the invoice this CREDIT-account entry belongs to
-  invoiceDueDate?: string     // "YYYY-MM-DD" — authoritative due date captured at sync time
-}
-```
-
-`Category`, `Tag`, `Valuation`, `SavedPeriod` and `AuditEntry` are smaller supporting types — see `src/types/index.ts` for the full definitions.
-
-`schemaVersion` is validated on every load. Files at older versions are migrated automatically (each step is an additive, idempotent change); files from a future version are rejected with a user-visible error.
-
-**`nexus_workspace`** (localStorage) — UI preferences, never leaves the browser:
-
-```jsonc
-{
-  "theme": "system | light | dark",
-  "locale": "pt-BR | en-US",
-  "defaultView": "dashboard",
-  "useAmbientShadows": false,
-  "netWorthIncludeHidden": true
-}
-```
-
-### Architecture Highlights
-
-**Data flow:**
-
-```
-User action
-  → store mutation (e.g. addTransaction())
-  → mutate(): structuredClone → apply change → push audit log entry
-  → debounce 300ms → storage.replaceAll(data) — writes the whole SQLite DB via the worker
-  → (if a backup folder is configured) write a copy via the File System Access API
-```
-
-**Storage:**
-
-```
-Main Thread
-  StorageService (src/services/storage/StorageService.ts)
-    └── postMessage ───────────────────────────────────► Worker
-                                              (storage/worker.ts)
-                                              wa-sqlite + OPFS VFS
-                                              gimbo.db (OPFS root)
-    ◄── onmessage (result | error) ──────────────────── Worker
-```
-
-- The worker keeps a sequential message queue — mutations never interleave.
-- `replaceAll()` rewrites every table inside a single SQL transaction.
-- Export → `exportBlob()` (WAL checkpoint, then read the OPFS file as a `Blob`).
-- Import → `importBlob()` (closes the DB, overwrites the OPFS file, reopens, runs pending migrations).
-
-**Date parsing — always use `parseDateLocal()`:**
-
-`new Date("2026-04-01")` creates UTC midnight. In UTC− timezones, calling `.getMonth()` returns the previous day's month. Every date comparison against `tx.date` must go through `parseDateLocal(dateStr)` from `@/lib/utils`.
-
-**Virtual invoice engine (`lib/utils.ts`):**
-
-Credit card invoices are not stored as a separate entity — they are computed at runtime from `creditMetadata.closingDay`/`dueDay` plus each transaction's `referenceMonth`/`invoiceDueDate` (when set by sync). Key pure functions: `getInvoicePeriod`, `getTxInvoicePeriod`, `getInvoiceDueDate`, `getOpenCreditBalance`, `getInvoiceTotal`, `getInvoicePaid`, `getInvoiceStatus`, `getEffectiveCashFlowDate`. All use `parseDateLocal` internally.
-
-`getEffectiveCashFlowDate` is used exclusively in cash-flow charts to shift credit-card expenses to the invoice due date. Category breakdowns always use `tx.date` directly. `CREDIT_PAYMENT` is excluded from Income × Expense totals (it's liability settlement, not cash flow).
-
-### Quality Gates
-
-Run all checks before opening a PR — CI executes the same commands:
+Rode todas as checagens antes de abrir um PR — o CI executa os mesmos comandos, na mesma ordem:
 
 ```bash
 cd app
 
-npm run format:check       # Prettier
-npm run lint                # ESLint
 npx tsc -b --noEmit          # TypeScript strict
-npx vitest run --coverage    # 548 unit tests (21 files) — threshold: 80% lines/functions
-npx playwright test          # 44 E2E tests (5 specs) — desktop + mobile Chromium
+npm run lint                  # ESLint
+npm run format:check          # Prettier
+npx vitest run --coverage     # testes unitários
+npm run build                 # build de produção
+npx playwright test           # testes E2E — desktop + mobile Chromium
 ```
 
-Current coverage: **~97% statements**.
+Cobertura atual: **~96% statements** (testes unitários). Os testes E2E cobrem os fluxos principais
+de onboarding, lançamentos, cartão de crédito, caixinhas, persistência e navegação mobile.
 
-### Commit Convention
+### Convenção de commits
 
 ```
-<type>: <imperative description in lowercase>
+<tipo>: <descrição imperativa em minúsculas>
 ```
 
-| Type | Use |
-|------|-----|
-| `feat:` | New feature |
-| `fix:` | Bug fix |
-| `test:` | Tests only |
-| `style:` | Formatting (no logic change) |
-| `refactor:` | Refactor without behaviour change |
-| `docs:` | Documentation |
-| `chore:` | Config, CI, dependencies |
+| Tipo | Uso |
+|---|---|
+| `feat:` | Nova funcionalidade |
+| `fix:` | Correção de bug |
+| `test:` | Só testes |
+| `style:` | Formatação (sem mudança de lógica) |
+| `refactor:` | Refatoração sem mudança de comportamento |
+| `docs:` | Documentação |
+| `chore:` | Config, CI, dependências |
 
-Reference the relevant ID when applicable: `feat: M-54 barra colapsável de filtro de categoria`. IDs are tracked in [`plan/BACKLOG.md`](plan/BACKLOG.md) (`M-XX` improvements, `B-XX` bugs, `CC-XX` credit card, `R-XX` reports).
+Referencie o ID relevante quando aplicável: `feat: M-54 barra colapsável de filtro de categoria`.
+IDs são rastreados em [`plan/BACKLOG.md`](plan/BACKLOG.md) (`M-XX` melhorias, `B-XX` bugs, `CC-XX`
+cartão de crédito, `R-XX` relatórios, `BK-XX`/`CS-XX` backup e sync, `BX-XX` caixinhas).
 
-### Development Rules (summary)
+### Regras de desenvolvimento (resumo)
 
-- **CI is the arbiter** — green pipeline = done; red pipeline = session stops
-- **Read before proposing** — never suggest changes to files you haven't read
-- **No `TODO` in code** — open a `BACKLOG.md` entry instead
-- **One feature per PR** — makes review and rollback straightforward
-- **No `console.log` in production code**
-- Bugs and improvements are tracked in [`plan/BACKLOG.md`](plan/BACKLOG.md)
-- Full workflow documented in [`plan/RULES.md`](plan/RULES.md)
+- **O CI é o árbitro** — pipeline verde = pronto; pipeline vermelho = sessão para
+- **Ler antes de propor** — nunca sugerir mudanças em arquivos não lidos
+- **Sem `TODO` no código** — vira entrada em `BACKLOG.md`
+- **Uma feature por PR** — mantém review e rollback simples
+- **Sem `console.log` em código de produção**
+- Bugs e melhorias são rastreados em [`plan/BACKLOG.md`](plan/BACKLOG.md)
+- Workflow completo documentado em [`plan/RULES.md`](plan/RULES.md)
 
 ---
 
 ## Roadmap
 
-The current release is feature-complete for **single-device use** across desktop and mobile browsers (responsive PWA, installable, offline-capable). Optional local-folder backup (Chrome/Edge) covers most desktop users without any cloud account.
+O release atual é completo para uso em **múltiplos dispositivos** — desktop e mobile, com sync
+opcional via nuvem própria (Google Drive) ou pasta local compartilhada, sem servidor do Gimbo em
+nenhum ponto do fluxo.
 
-Planned next:
+Planejado a seguir:
 
-- **Cloud Sync (Nível 2)** — end-to-end, opaque sync of the SQLite database to the user's own Google Drive or Dropbox via OAuth2 PKCE (no Gimbo server). Additive merge by UUID; last-write-wins on edits. See `CS-XX` items in `plan/BACKLOG.md`.
-- **Analytics on mobile** — the Reports section currently shows a "coming soon" placeholder on small screens (`MB-08`); full responsive charts are planned.
+- **Dropbox** como segundo provedor de sync via nuvem, ao lado do Google Drive
+- **Analytics responsivo no mobile** — só a aba Categorias tem versão mobile por ora; Fluxo de Caixa, Contas, Tags e Faturas ainda não
 
-Out of scope for the current cycle:
+Fora de escopo para o ciclo atual:
 
-- Automated Open Banking / bank import
-- Native mobile app (iOS / Android) — the mobile strategy is a responsive PWA
-- Chargebacks / reversals beyond the existing credit-card refund model
+- Open Banking / importação bancária automatizada
+- App mobile nativo (iOS/Android) — a estratégia mobile é PWA responsiva
+- Estornos além do modelo de reembolso de cartão já existente
 
 ---
 
-## Licence
+## Licença
 
 MIT.

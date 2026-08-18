@@ -7,7 +7,7 @@ Como parte da expansão corporativa e analítica do **Gimbo**, o antigo fluxo po
 
 ## Estrutura Ágil (User Stories)
 
-### 1. Navegação e Seletor de Período Global
+### 1. Navegação e Seletor de Período Global ✅ (R-01 a R-03 — resolvido)
 
 **User Story:** Como um usuário avançado, eu quero navegar intuitivamente entre diferentes tipos de relatórios e manipular as datas no topo, para que minhas análises alterem imediatamente sem precisar recarregar toda a interface.
 
@@ -19,7 +19,7 @@ Como parte da expansão corporativa e analítica do **Gimbo**, o antigo fluxo po
 
 ---
 
-### 2. Personalização Visual (Feature Toggle de Elevação)
+### 2. Personalização Visual (Feature Toggle de Elevação) ✅ (R-04 a R-06 — resolvido)
 
 **User Story:** Como um usuário sensível à densidade de informações gráficas, eu quero ativar ou desativar o efeito visual de profundidade ("Ambient Shadows") nos gráficos e contêineres, para que eu tenha desde uma UI totalmente sólida (`Flat`) até um ambiente flutuante de foco refinado.
 
@@ -30,7 +30,7 @@ Como parte da expansão corporativa e analítica do **Gimbo**, o antigo fluxo po
 
 ---
 
-### 3. Visão: Cash Flow (Entradas x Saídas)
+### 3. Visão: Cash Flow (Entradas x Saídas) ✅ (R-07, R-08 — resolvido)
 
 **User Story:** Como analista das minhas finanças, quero visualizar um comparativo imediato entre o que ganhei (Receita) e o que perdi (Despesa) temporalmente, mas fundamentalmente enxergando uma sobreposição linha contínua, para que eu visualize o "Saldo Acumulado" final perfeitamente.
 
@@ -41,7 +41,7 @@ Como parte da expansão corporativa e analítica do **Gimbo**, o antigo fluxo po
 
 ---
 
-### 4. Visão: Relatório de Categorias (Drill-Down Mode)
+### 4. Visão: Relatório de Categorias (Drill-Down Mode) ✅ (R-09, R-10 — resolvido)
 
 **User Story:** Como administrador das despesas centrais, quero enxergar grandes blocos de despesas através de representações setoriais (Doughnut charts) que me permitam explorar o miolo daquele agrupador para saber com exatamente o que o montante foi gasto.
 
@@ -73,7 +73,7 @@ Como parte da expansão corporativa e analítica do **Gimbo**, o antigo fluxo po
 
 ---
 
-### 7. View: Faturas de Cartão de Crédito (R-17, R-18)
+### 7. View: Faturas de Cartão de Crédito ✅ (R-17, R-18 — resolvido)
 
 **User Story:** Como usuário com um ou mais cartões de crédito, quero visualizar a evolução das minhas faturas mês a mês em um gráfico de barras, para entender como o gasto em crédito cresce ou diminui ao longo do tempo e comparar o peso de cada cartão no total mensal.
 
@@ -97,7 +97,8 @@ Como parte da expansão corporativa e analítica do **Gimbo**, o antigo fluxo po
 - `TagsView.test.tsx` — 19 testes: seções, chips, percentual, empty state, OR/AND toggle, limpar filtro
 - `PeriodSelector.test.tsx` — 15 testes: arrows, dropdown, menus, onChange, custom range picker
 
-**Total: 473 testes** (era 399, +74)
+**Total no momento da conclusão de R-15/R-16: 473 testes** (era 399, +74) — número histórico, não a
+contagem atual do projeto; ver `CLAUDE.md` ("Estado Atual") para o total corrente.
 
 ---
 

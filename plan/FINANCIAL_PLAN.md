@@ -8,6 +8,15 @@
 > Ler em conjunto com `plan/PRD.md` (seção "Melhorias e features em aberto") e `plan/ARCHITECTURE.md`
 > (modelo de dados e motor de fatura).
 
+> **Nota (2026-08-18):** a análise e a proposta `PL-01` a `PL-12` abaixo motivaram a decisão de
+> arquitetura registrada em `plan/BUDGETS.md` §5.6, mas a implementação que de fato aconteceu
+> (`BX-01` a `BX-11`, ver `plan/BACKLOG.md`) diverge deste roadmap: não existe entidade `Goal`,
+> não existe "Fotografia" por categoria Fixo/Variável/Sazonal, não existe motor de projeção
+> semanal de saldo. O termo **"Quadrantes" foi reaproveitado** para uma feature diferente da
+> proposta aqui — a receita automática de Caixinhas que gera 4 caixinhas por mês, uma por
+> intervalo fixo de dias (não o motor de projeção semanal célula-a-célula descrito em `PL-06`/
+> `PL-07`). `PL-01` a `PL-12` continuam não implementados.
+
 ---
 
 ## 1. Visão Geral do Método

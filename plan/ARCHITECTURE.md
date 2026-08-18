@@ -48,7 +48,7 @@
 MyFinanceApp/
 ├── .github/workflows/           # CI (ci.yml) + auditoria semanal (audit.yml)
 ├── plan/
-│   ├── PRD.md                   # Requisitos de produto (features F-1 a F-28)
+│   ├── PRD.md                   # Requisitos de produto (features F-1 a F-30)
 │   ├── BACKLOG.md               # Bugs (B-XX), melhorias (M-XX), cartão (CC-XX), relatórios (R-XX)
 │   ├── RULES.md                 # Workflow IA + humano
 │   ├── ARCHITECTURE.md          # Este arquivo
@@ -58,7 +58,7 @@ MyFinanceApp/
 │   ├── METRICS.md               # Telemetria local e Bug Report System (F-26)
 │   ├── STORAGE.md               # Histórico da decisão JSON/FSA → SQLite/OPFS
 │   ├── NET_WORTH.md             # Handoff de implementação do Patrimônio Líquido (F-24)
-│   └── BUDGETS.md               # Caixinhas (F-30) — protótipo visual, decisões e pendências
+│   └── BUDGETS.md               # Caixinhas (F-30, implementada) — decisões de produto e UX
 ├── design/
 │   ├── DESIGN.md                 # Sistema de design "Fluid Ledger" (fonte única)
 │   └── *.png                     # Mockups de telas
@@ -74,6 +74,9 @@ MyFinanceApp/
 │   │   │   ├── backupDir.ts      # File System Access: handle de pasta de backup local (BK-02/03)
 │   │   │   ├── demo.ts           # isDemoMode() + loadDemoData() (F-25)
 │   │   │   ├── telemetry.ts      # Ring buffer de eventos seguros + buildBugReportSnapshot() (F-26)
+│   │   │   ├── budgetRecipes.ts  # Receita "Quadrantes" — geração/associação/arquivamento automáticos (F-30)
+│   │   │   ├── cloudSync/        # Sync multi-dispositivo (F-28 Nível 2): merge.ts, googleAuth.ts, googleDrive.ts,
+│   │   │   │                     # folderSyncService.ts, syncService.ts, syncScheduler.ts, deviceId.ts, provider.ts
 │   │   │   ├── i18n/             # Config i18next + locales (pt-BR, en-US)
 │   │   │   └── storage/
 │   │   │       └── schema.ts     # Schemas Zod + factories + applyRetention() + migrações em memória
@@ -82,7 +85,7 @@ MyFinanceApp/
 │   │   │       ├── index.ts          # Singleton `storage` (StorageService)
 │   │   │       ├── StorageService.ts # API tipada usada pela app (main thread)
 │   │   │       ├── worker.ts         # Web Worker: wa-sqlite + OPFS, runMigrations()
-│   │   │       └── migrations/       # v1.sql .. v7.sql — schema físico incremental
+│   │   │       └── migrations/       # v1.sql .. v12.sql — schema físico incremental
 │   │   ├── store/
 │   │   │   ├── useDataStore.ts  # Dados financeiros + mutações + persistência debounced
 │   │   │   └── useWorkspaceStore.ts # Preferências UI (tema, locale, shadows, net worth)
@@ -100,13 +103,16 @@ MyFinanceApp/
 │   │   │   ├── ErrorBoundary.tsx     # Captura exceções → trackError() + botão "Reportar" (F-26)
 │   │   │   └── Toast.tsx         # Toast de notificação
 │   │   ├── pages/
+│   │   │   ├── Landing/         # Página "/" pré-onboarding (não autenticado/sem cofre carregado)
 │   │   │   ├── Onboarding/      # Criar novo cofre ou importar backup .db
 │   │   │   ├── Dashboard/       # Cards mensais + Minhas Contas + Meus Cartões + donut + recentes
 │   │   │   ├── Transactions/    # Extrato de caixa (sem cartões) + resumo de gastos
 │   │   │   ├── Analytics/       # Shell com 5 views: index.tsx + CategoriasView, CashFlowView, ContasView, TagsView, FaturasView
-│   │   │   ├── Budgets/         # Caixinhas (F-30) — PROTÓTIPO mockado: lista, detalhe, modal (mock.ts)
+│   │   │   │                    # (mobile: só Categorias é responsiva — MB-18; as outras 4 seguem MB-08, aberto)
+│   │   │   ├── Budgets/         # Caixinhas (F-30) — lista, detalhe, TransactionPicker, receita Quadrantes
 │   │   │   ├── CreditCard/      # Detalhe de fatura: período, lançamentos, filtro/busca, "Pagar Agora"
 │   │   │   ├── NetWorth/        # Patrimônio líquido: ativos − passivos, valuations
+│   │   │   ├── Health/          # Saúde Financeira (F-29): dívida comprometida, peso no orçamento, reserva de emergência
 │   │   │   ├── Settings/        # Contas e Cartões, Categorias, Tags, Perfil, Preferências, Backup & Sync, Histórico
 │   │   │   ├── About/           # Sobre o Gimbo: cobertura de testes, arquitetura
 │   │   │   ├── Docs/            # Páginas estáticas de ajuda (por que storage local, backup local, cloud sync)
@@ -134,10 +140,13 @@ Ação do usuário
   → store atualizado com o novo `data`
 ```
 
-Não há "sync" no sentido de merge entre dispositivos — cada dispositivo tem seu próprio banco
-SQLite local. Backup/restore é feito via export/import de um arquivo `.db` (ou automaticamente
-para uma pasta local configurada). Sync multi-dispositivo via nuvem está no roadmap (ver
-"Roadmap de Backup & Sync" abaixo).
+Cada dispositivo mantém seu próprio banco SQLite local — não existe um "arquivo principal" único.
+Backup/restore é feito via export/import de um arquivo `.db`, automaticamente para uma pasta local
+configurada (Nível 1), ou via sync multi-dispositivo por nuvem própria do usuário (Nível 2, Google
+Drive — implementado e validado em produção; Dropbox planejado). O sync não é um "arquivo mestre"
+sendo escrito por vários dispositivos — é um motor de **merge aditivo** (`lib/cloudSync/merge.ts`)
+que funde os `.db` de cada dispositivo por `updatedAt`/UUID a cada pull. Ver "Roadmap de Backup &
+Sync" abaixo.
 
 ---
 
@@ -262,25 +271,25 @@ banner de reconexão (`backupPermState === 'prompt' | 'denied'`).
   distinção explícita para não passar a falsa impressão de que a pasta local já resolve
   multi-dispositivo.
 
-### Nível 2 — Sync Multi-Dispositivo (planejado, `CS-01..CS-20`)
+### Nível 2 — Sync Multi-Dispositivo (Fases 0-2 resolvidas, Fase 3 planejada — `CS-01..CS-20`)
 
 > **Roadmap em fases (decidido em 2026-07-24 — ver `FABLE-BRAINSTORM.md`, `SYNC_SCENARIOS.md`
 > Partes 2 e 3, e `SPEC.md` Fase 16):** o motor de merge é **único** e o transporte é **plugável**.
 >
-> | Fase | Transporte | Entrega |
-> |------|-----------|---------|
-> | **0** | — | Motor de merge (`updatedAt` + `merge.ts` + testes) |
-> | **1** | Pasta compartilhada, **um `.db` por dispositivo** | Multi-desktop, sem OAuth |
-> | **2** | Google Drive API (OAuth2 PKCE) | **Desbloqueia mobile** |
-> | **3** | Dropbox | 2º provider |
+> | Fase | Transporte | Entrega | Status |
+> |------|-----------|---------|--------|
+> | **0** | — | Motor de merge (`updatedAt` + `merge.ts` + testes) | ✅ resolvido 2026-07-24 |
+> | **1** | Pasta compartilhada, **um `.db` por dispositivo** | Multi-desktop, sem OAuth | ✅ resolvido 2026-07-24 |
+> | **2** | Google Drive API (OAuth2 PKCE + client secret bundlado) | **Desbloqueia mobile** | ✅ resolvido e validado em produção 2026-07-25 |
+> | **3** | Dropbox | 2º provider | planejado, demand-driven |
 >
-> **Fase 1 (`CS-13..CS-17`)** — cada dispositivo escreve exclusivamente
+> **Fase 1 (`CS-13..CS-17`, resolvido)** — cada dispositivo escreve exclusivamente
 > `<pasta>/gimbo/device-<uuid>.db`; o merge acontece em nível de aplicação ao ler os arquivos
 > dos outros. **Um escritor por arquivo** elimina a cópia-em-conflito do Nível 1 por construção.
 > `deviceId` persistido no OPFS; snapshot `.db` completo (não oplog); escopo desktop apenas
-> (File System Access API). Cenários `S-16` a `S-20`.
+> (File System Access API). Cenários `S-16` a `S-20`. Implementado em `folderSyncService.ts`.
 
-**Fase 2/3** — sincronização ponta-a-ponta entre dispositivos via Google Drive ou Dropbox do
+**Fase 2 (resolvida)** — sincronização ponta-a-ponta entre dispositivos via Google Drive do
 próprio usuário, sem servidor Gimbo:
 
 ```
@@ -292,15 +301,23 @@ Desktop PWA (SQLite/OPFS)  ──pull/push──►  Drive
 Mobile PWA  (SQLite/OPFS)  ──pull/push──►  Drive
 ```
 
-- **OAuth2 PKCE** no browser — sem backend, sem servidor Gimbo.
+- **OAuth2 PKCE + `client_secret` bundlado** no browser — sem backend, sem servidor Gimbo próprio.
+  Achado que corrigiu o design original: clientes OAuth "Aplicativo da Web" do Google exigem
+  `client_secret` mesmo com PKCE — não existe tipo de cliente que aceite `redirect_uri` HTTPS de
+  produção e dispense o secret. `VITE_GOOGLE_CLIENT_SECRET` é bundlado no build público (ver
+  comentário em `googleAuth.ts` sobre por que isso não compromete a segurança real do fluxo).
 - **Pull ao abrir** → comparar `modifiedTime` do Drive com timestamp local → merge se necessário.
 - **Push após mutações** → debounce → upload do `.db`.
-- **Merge:** aditivo por UUID. Edições: último `updatedAt` vence (requer adicionar `updatedAt` a
-  `Transaction`/`Account`/`Category`/`Tag` — `CS-04`). Deleções: `deletedIds` (já no schema).
-  Duplicatas offline: ambas sobrevivem, usuário remove manualmente.
+- **Merge:** aditivo por UUID. Edições: último `updatedAt` vence (`updatedAt` em
+  `Transaction`/`Account`/`Category`/`Tag`/`Budget` — `CS-04`). Deleções: `deletedIds` (já no
+  schema). Duplicatas offline: ambas sobrevivem, usuário remove manualmente.
 
-Módulos planejados em `src/lib/cloudSync/` (googleAuth, googleDrive, dropboxAuth, dropboxDrive,
-merge, syncService) — ver itens `CS-01` a `CS-12` em `plan/BACKLOG.md`.
+Módulos implementados em `src/lib/cloudSync/`: `merge.ts` (Fase 0), `folderSyncService.ts` +
+`folderProvider.ts` + `multiDeviceMode.ts` (Fase 1), `googleAuth.ts` + `googleDrive.ts` (Fase 2),
+mais `syncService.ts`/`syncScheduler.ts`/`deviceId.ts`/`provider.ts` (orquestração comum a todas as
+fases via a interface `CloudProvider`). **Fase 3 (Dropbox)** ainda não tem módulo — `dropboxAuth.ts`/
+`dropboxDrive.ts` não existem no código, só implementariam `CloudProvider` quando `CS-11`/`CS-12`
+forem iniciados. Ver itens `CS-01` a `CS-20` em `plan/BACKLOG.md`.
 
 ---
 
@@ -318,13 +335,17 @@ merge, syncService) — ver itens `CS-01` a `CS-12` em `plan/BACKLOG.md`.
 
 ## Modelo de Dados
 
-### `DataFile` (schema v9)
+### `DataFile`
+
+> Interface completa — a fonte de verdade é sempre `app/src/types/index.ts`; o número exato de
+> `CURRENT_SCHEMA_VERSION` (`lib/storage/schema.ts`) não é fixado em prosa aqui de propósito, ver
+> "Versionamento do Schema" abaixo.
 
 ```typescript
 interface DataFile {
-  schemaVersion: number        // atualmente 9
-  user: User                    // { name, email, createdAt, updatedAt }
-  settings: Settings            // { fileCreatedAt, fileUpdatedAt, auditLogRetentionLimit: number | null }
+  schemaVersion: number
+  user: User                    // { name, createdAt, updatedAt }
+  settings: Settings            // { fileCreatedAt, fileUpdatedAt, auditLogRetentionLimit, quadrantesEnabled }
   accounts: Account[]
   categories: Category[]
   tags: Tag[]
@@ -333,6 +354,7 @@ interface DataFile {
   auditLog: AuditEntry[]
   deletedIds: string[]           // tombstones de entidades deletadas neste device (B-11)
   savedPeriods: SavedPeriod[]    // M-45: períodos customizados salvos no seletor de Relatórios
+  budgets: Budget[]              // F-30: caixinhas
 }
 ```
 
@@ -345,9 +367,12 @@ interface Account {
   type: AccountType
   balance: number               // saldo inicial — nunca exibido diretamente
   includeInBalance: boolean
-  creditMetadata?: CreditMetadata // apenas contas CREDIT
+  creditMetadata?: CreditMetadata   // apenas contas CREDIT
+  loanMetadata?: LoanMetadata       // apenas contas LOAN (HE-04)
+  reserveMetadata?: ReserveMetadata // apenas contas RETAIL/SAVINGS marcadas como reserva de emergência (HE-14)
   issuerIcon?: string             // 'nubank' | 'itau' | 'bradesco' | 'inter' | 'santander' | 'caixa' | 'generic' | undefined (M-34)
   archived?: boolean               // M-42: oculta de seletores/listas, mas continua contando em saldos/totais
+  updatedAt?: string               // ISO 8601 — timestamp LWW do motor de merge (CS-04)
 }
 
 interface CreditMetadata {
@@ -356,6 +381,15 @@ interface CreditMetadata {
   dueDay: number       // 1–31
 }
 
+interface LoanMetadata {          // HE-04: empréstimo/financiamento fora de cartão como passivo de 1ª classe
+  outstandingBalance: number       // mantido manualmente pelo usuário, sem amortização automática no v1
+  monthlyPayment: number
+  remainingInstallments: number
+  interestRate?: number            // % a.m., opcional
+}
+
+type ReserveMetadata = Record<string, never>  // HE-14: presença = sinal; sem campos obrigatórios no v1
+
 interface Category {
   id: string
   parentId: string | null
@@ -363,18 +397,21 @@ interface Category {
   icon: string
   color: string
   type: CategoryType
+  updatedAt?: string     // ISO 8601 — timestamp LWW do motor de merge (CS-04)
 }
 
 interface Tag {
   id: string
   name: string
   color: string
+  updatedAt?: string     // ISO 8601 — timestamp LWW do motor de merge (CS-04)
 }
 
 interface Installment {
   parentId: string     // UUID da primeira parcela do grupo
   currentIndex: number // 1-based
   total: number        // mínimo 2
+  purchaseDate?: string // YYYY-MM-DD — data da compra original, igual em todas as parcelas do grupo (M-64)
 }
 
 type RecurrenceFrequency = 'weekly' | 'biweekly' | 'monthly'
@@ -400,6 +437,9 @@ interface Transaction {
   transferAccountId?: string       // TRANSFER: conta destino; CREDIT_PAYMENT: conta pagadora
   referenceMonth?: string          // "YYYY-MM" — fatura à qual o lançamento (em conta CREDIT) está associado (B-18)
   invoiceDueDate?: string           // "YYYY-MM-DD" — vencimento autoritativo da fatura, capturado na origem (CC-33)
+  updatedAt?: string                // ISO 8601 — timestamp LWW do motor de merge (CS-04)
+  createdAt?: string                 // ISO 8601 — quando o lançamento foi criado, distinto de `date` (B-24)
+  budgetIds?: string[]                // UUID[] — vínculo N:N com Budget, mesmo padrão de `tags` (F-30/BX-03)
 }
 
 interface Valuation {
@@ -420,15 +460,35 @@ interface AuditEntry {
   id: string
   timestamp: string     // ISO 8601
   action: AuditAction    // 'CREATE' | 'UPDATE' | 'DELETE'
-  entity: AuditEntity     // 'account' | 'category' | 'tag' | 'transaction' | 'user' | 'savedPeriod'
+  entity: AuditEntity     // 'account' | 'category' | 'tag' | 'transaction' | 'user' | 'savedPeriod' | 'budget'
   entityId: string
   summary: string        // texto legível, gerado no idioma ativo no momento da mutação
+}
+
+type BudgetKind = 'expense' | 'income'      // F-30: despesa = target é teto; receita = target é piso
+type BudgetPeriod =
+  | { mode: 'date'; date: string }                    // YYYY-MM-DD
+  | { mode: 'range'; start: string; end: string }      // YYYY-MM-DD cada
+
+interface Budget {                // F-30 (Caixinhas) — plan/BUDGETS.md §2
+  id: string
+  name: string
+  emoji: string
+  color: string
+  kind: BudgetKind
+  target: number
+  period: BudgetPeriod
+  archivedAt?: string    // ISO 8601 — ausente = ativa; setado pela receita Quadrantes ou por ação manual
+  recipeSlug?: string     // 'quadrantes' — ausente para caixinhas manuais
+  recipeSlot?: number      // 1-4 — só presente junto de recipeSlug
+  updatedAt?: string        // ISO 8601 — timestamp LWW do motor de merge (CS-04)
+  createdAt?: string         // ISO 8601 — quando a caixinha foi criada (ordenação "Criação", BX-06/U-3)
 }
 ```
 
 ### Enums
 
-- `AccountType`: `RETAIL | SAVINGS | CREDIT | CRYPTO | FOREX | ASSET | STOCKS | OTHER`
+- `AccountType`: `RETAIL | SAVINGS | CREDIT | CRYPTO | FOREX | ASSET | STOCKS | LOAN | OTHER`
 - `TransactionType`: `INCOME | EXPENSE | TRANSFER | CREDIT_PAYMENT`
 - `CategoryType`: `INCOME | EXPENSE`
 
@@ -438,15 +498,25 @@ interface AuditEntry {
 interface WorkspaceFile {
   theme: 'light' | 'dark' | 'system'
   locale: 'pt-BR' | 'en-US'
+  currency: 'BRL' | 'USD'                          // B-25: independente do locale, mas sobrescrevível
   defaultView: string
   useAmbientShadows: boolean
-  netWorthIncludeHidden: boolean // inclui contas com includeInBalance=false no Patrimônio (default true)
+  netWorthIncludeHidden: boolean                    // D3: inclui contas com includeInBalance=false (default true)
+  monthlyIncomeOverride?: number                     // HE-09/D1: renda confirmada pelo usuário
+  incomeWindowMonths: 3 | 6 | 9 | 12                  // HE-09: janela de retrospecto da sugestão de renda (default 6)
+  monthlyCostOverride?: number                        // HE-12/D7: custo mensal confirmado pelo usuário
+  reserveTargetMonths: 3 | 6 | 9 | 12                   // HE-16: meta em meses da reserva recomendada (default 6)
+  budgetSortBy: 'deadline' | 'progress' | 'name' | 'createdAt' // F-30/BX-06 (U-3), default 'createdAt'
 }
 ```
 
 ### Versionamento do Schema
 
-- `CURRENT_SCHEMA_VERSION = 9` (em `lib/storage/schema.ts`)
+- `CURRENT_SCHEMA_VERSION` (em `lib/storage/schema.ts`) versiona o `DataFile` em memória; sobe a
+  cada campo novo — ver `CLAUDE.md` seção "Estado Atual" para o valor corrente e o histórico dos
+  bumps mais recentes (não duplicado aqui de propósito, para não ficar obsoleto de novo).
+- `PRAGMA user_version` versiona o DDL físico do SQLite (`services/storage/migrations/*.sql`) —
+  os dois números **não coincidem** (bumps de campo opcional não exigem `.sql` novo).
 - Arquivos com versão antiga são migrados automaticamente; arquivos de versão futura lançam `SchemaVersionError`
 - Migrações são bumps idempotentes (campos opcionais não exigem backfill):
   - **v1→v2**: `creditMetadata` (Account) e `installment` (Transaction)
@@ -771,19 +841,19 @@ para deploys públicos de demonstração (sem persistência).
 
 ### Cobertura Atual
 
-- **548 testes unitários** — 21 arquivos (`src/test/{components,lib,store}`)
-- **44 testes E2E** — 5 specs (`e2e/*.spec.ts`), em dois perfis Playwright: `chromium` (desktop) e `mobile-chrome`
-- Cobertura: ~97% statements
+- **841 testes unitários** — 31 arquivos (`src/test/{components,lib,store}`)
+- **59 testes E2E** — 7 specs (`e2e/*.spec.ts`), em dois perfis Playwright: `chromium` (desktop) e `mobile-chrome`
+- Cobertura: ~96% statements
 
 ### Testes Unitários (Vitest)
 
 - Ambiente: `jsdom`, setup: `src/test/setup.ts`
-- Factories: `makeDataFile()` (schemaVersion 9), `makeCreditAccount()`, `makeInstallmentGroup()`
+- Factories: `makeDataFile()`, `makeCreditAccount()`, `makeInstallmentGroup()`, `makeBudget()`
 - Threshold: 80% linhas e funções para arquivos críticos
 
 ### Testes E2E (Playwright)
 
-- Specs: `creditCard.spec.ts`, `mobile.spec.ts`, `onboarding.spec.ts`, `persistence.spec.ts`, `transaction.spec.ts`
+- Specs: `budgets.spec.ts`, `creditCard.spec.ts`, `landing.spec.ts`, `mobile.spec.ts`, `onboarding.spec.ts`, `persistence.spec.ts`, `transaction.spec.ts`
 - Em `DEV`, `window.__storage.replaceAll(data)` é usado para semear o SQLite antes de cada cenário (ver `services/storage/index.ts`)
 
 ### Scripts de Qualidade
@@ -822,7 +892,7 @@ cd app && npx playwright test
 sync_gimbo.py [--start <data> | --window-months N] [--end <data>] [--base gimbo.db] [--out gimbo.db]
   1. autentica (HTTP Basic; token via env ORGANIZZE_TOKEN, email via ORGANIZZE_EMAIL/--email)
   2. busca categorias, contas, cartões e lançamentos mês a mês no horizonte [start, end]
-  3. converte em memória → (incremental: funde no --base) → escreve gimbo.db (user_version=11)
+  3. converte em memória → (incremental: funde no --base) → escreve gimbo.db (user_version=12)
 ```
 
 O `gimbo.db` gerado já inclui a coluna `accounts.archived` (M-42/M-51), `accounts.is_reserve`

@@ -1,12 +1,13 @@
 # Caixinhas (Budgets) — F-30
 
 > Histórico de produto e design da feature **Caixinhas** (rotas `/budgets` e `/budgets/:budgetId`).
-> Estado atual: **UI ainda mockada** (telas leem de `app/src/pages/Budgets/mock.ts`, nenhuma
-> mutação real, nenhum teste de UI) **mas a entidade `Budget` já existe no `DataFile`** desde
-> `BX-03` — schema, migração SQLite (v11) e persistência (`worker.ts`/`StorageService.ts`)
-> resolvidos. Store (`useDataStore`) e telas ainda não foram religadas a ela (`BX-04`/`BX-05`).
-> Branch: `dassan/caixinhas` (3 commits, ainda **não publicada**).
-> Última atualização: 2026-08-10.
+> Estado atual: **implementada e resolvida** — épico completo `BX-01` a `BX-11` (entidade `Budget`
+> real no `DataFile`, CRUD via `useDataStore`, telas reais em `pages/Budgets/*` sem `mock.ts`,
+> receita "Quadrantes" automática, sync/merge multi-dispositivo, dados de demo e testes E2E). A
+> branch `dassan/caixinhas` já foi mergeada em `main` (PR #10) e não existe mais separadamente.
+> Última atualização: 2026-08-12 (ver `plan/BACKLOG.md`, seção "Caixinhas — F-30", para o histórico
+> completo de resolução). O restante deste documento é o registro histórico das decisões de
+> produto/UX que guiaram a implementação — continua válido como referência de "por quê".
 
 ---
 
@@ -195,7 +196,7 @@ modelos próprios (ex.: os "Quadrantes") são implementadas como **receitas** �
 habilitados em Preferências, que criam e mantêm um conjunto de caixinhas automaticamente. Isso evita
 introduzir uma segunda entidade de orçamento no schema.
 
-#### Receita "Quadrantes" (primeira receita, ainda não implementada)
+#### Receita "Quadrantes" (primeira receita, implementada em `BX-07`/`BX-08`)
 
 Toggle em **Preferências** (Settings), reaproveitando o padrão visual já existente do toggle de
 retenção do audit log (`Settings/index.tsx` — label + descrição + switch, dentro da seção
@@ -346,5 +347,7 @@ apontamento pra fase/item correspondente.
 
 ## 7. Estado de qualidade
 
-`npm run format:check`, `npm run lint` e `npx tsc -b --noEmit` limpos. Os 756 testes unitários
-existentes continuam passando (nenhum novo foi escrito — não há lógica de dados a testar ainda).
+Épico completo (`BX-01` a `BX-11`) implementado com testes unitários (derivações, receita
+Quadrantes, `useDataStore`, merge) e E2E (`e2e/budgets.spec.ts`, 3 cenários × 2 projetos
+Playwright). Números atuais de teste/cobertura em `CLAUDE.md` ("Estado Atual") — não duplicados
+aqui para não ficarem obsoletos a cada mudança.
