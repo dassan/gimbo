@@ -198,7 +198,7 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 > eram sempre sobrescritas com um valor constante, no caso de `created_at`), então nenhum dos dois
 > precisou de `.sql` novo.
 
-Todas as features do PRD (F-1 a F-29, com F-28 no Nível 1) implementadas. Módulo de Cartão de Crédito completo (CC-01 a CC-34 — CC-34 resolvido junto do M-64, via `created_at` do Organizze como chave de agrupamento). Melhorias M-01 a M-64 resolvidas (M-61 parcial — 4 vulnerabilidades altas via `esbuild`/`vite` do `vitest`, exigem bump major); M-65 registrado como futuro. Relatórios avançados R-01 a R-18 resolvidos.
+Todas as features do PRD (F-1 a F-29, com F-28 no Nível 1) implementadas. Módulo de Cartão de Crédito completo (CC-01 a CC-34 — CC-34 resolvido junto do M-64, via `created_at` do Organizze como chave de agrupamento). Melhorias M-01 a M-64 resolvidas (M-61 resolvido em 2026-08-18 — ver nota abaixo); M-65 registrado como futuro. Relatórios avançados R-01 a R-18 resolvidos.
 
 Features concluídas desde 2026-05-27:
 - **F-24** — Patrimônio Líquido: `/net-worth`, stat cards, breakdown por conta, gráfico AreaChart (NW-01 a NW-07)
@@ -236,6 +236,17 @@ Features concluídas desde 2026-05-27:
 > Deploy (Cloudflare Pages) e `app/wrangler.jsonc` referem-se ao projeto de deploy, não ao nome do
 > repositório GitHub — os dois podem divergir (`gimbo` vs. `gimbo-app`) sem que isso seja um erro.
 
+> **M-61 resolvido em 2026-08-18.** As 16 vulnerabilidades acumuladas desde a última passada (a
+> premissa de que faltava um bump major do `vitest` estava desatualizada — o projeto já estava em
+> `vite@8`/`vitest@3.2.x`) foram corrigidas com `npm audit fix --legacy-peer-deps`, 14/16 in-range
+> sem tocar `package.json`. As 2 restantes não tinham fix upstream e vinham só de
+> `@vite-pwa/assets-generator` (gerador de ícones PWA usado uma única vez no F-27, não referenciado
+> em nenhum script/CI) — **removido** de `devDependencies`; os ícones já gerados continuam em
+> `app/public/icons/`, e o pacote pode ser rodado sob demanda via `npx` se precisar regenerá-los.
+> Resta 1 vulnerabilidade baixa de `esbuild` vendorizada internamente pelo próprio `vite@8.2.1`
+> (Windows-only, dev server apenas, abaixo do gate `--audit-level=high` do CI) — sem como corrigir
+> sem esperar um patch novo do Vite; não é um item de ação.
+
 Itens em aberto:
 - **F-30 — Caixinhas (budgets):** existe apenas como **protótipo visual mockado** na branch
   `dassan/caixinhas` (rotas `/budgets` e `/budgets/:budgetId`, dados em `pages/Budgets/mock.ts`).
@@ -246,7 +257,6 @@ Itens em aberto:
 - **MB-08** — Analytics responsivo para mobile (média prioridade)
 - **BK-04** — Banner de re-permissão da pasta de backup no startup (média prioridade)
 - **M-63b** — Gráfico de tendência (passado real + futuro projetado) no Patrimônio Líquido (baixa; a fatia de Saúde Financeira do M-63 já foi resolvida)
-- **M-61** — 4 vulnerabilidades altas via `esbuild`/`vite` do `vitest`; exigem bump major do `vitest` (parcial)
 - **M-65** — WebDAV como transporte de sync adicional (baixa, demand-driven — adiado em 2026-07-24)
 - **F-28 Nível 2** — Sync multi-dispositivo (CS-01 a CS-20) — demand-driven, ver roadmap abaixo. **Fases 0, 1 e 2 resolvidas** (motor de merge + multi-desktop via pasta compartilhada em 2026-07-24, CS-19/CS-04/CS-05/CS-10a e CS-13 a CS-17; Google Drive em 2026-07-25, CS-01 a CS-03 e CS-06 a CS-09, validado ponta-a-ponta contra a API real). **Achado que corrigiu o design original:** clientes OAuth "Aplicativo da Web" do Google exigem `client_secret` mesmo com PKCE — não existe tipo de cliente que aceite `redirect_uri` HTTPS de produção **e** dispense o secret. `VITE_GOOGLE_CLIENT_SECRET` passou a ser bundlada no build público (ver comentário em `googleAuth.ts` sobre por que isso não compromete a segurança real do fluxo).
 
