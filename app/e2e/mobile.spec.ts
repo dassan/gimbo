@@ -196,3 +196,38 @@ test('settings mobile: list → section → back, and browser back also returns 
   await page.getByRole('link', { name: 'Voltar' }).click()
   await expect(page).toHaveURL(/\/settings$/)
 })
+
+// ─── Vault name menu — mobile-only entry point to Settings (MB-17) ────────────
+
+test('vault menu: tapping the vault name pill opens a menu that links to Configurações', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, 'The vault pill only opens a menu below the sm breakpoint')
+
+  await seedSqlite(page, dataFile)
+  await page.goto('/dashboard')
+
+  const vaultPill = page.getByRole('button', { name: 'E2E User' })
+  await vaultPill.click()
+
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'Configurações' }).click()
+
+  await expect(page).toHaveURL(/\/settings$/)
+  await expect(dialog).not.toBeVisible()
+})
+
+test('vault menu: tapping the vault name pill on desktop does not open a menu', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!!isMobile, 'Desktop-only assertion — the gear icon already covers Settings there')
+
+  await seedSqlite(page, dataFile)
+  await page.goto('/dashboard')
+
+  await page.getByRole('button', { name: 'E2E User' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+})

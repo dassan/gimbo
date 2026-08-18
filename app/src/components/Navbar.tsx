@@ -8,10 +8,12 @@ import {
   Receipt,
   Plus,
   PiggyBank,
+  BarChart2,
   Cloud,
   CloudOff,
   DatabaseBackup,
   RefreshCw,
+  X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useDataStore } from '@/store/useDataStore'
@@ -31,12 +33,15 @@ const NAV_ITEMS = [
 // Bottom navigation items for mobile (MB-02)
 // MB-13: Analytics swapped for Budgets — Analytics isn't mobile-ready yet (MB-08, "coming
 // soon" placeholder) while Budgets already is (MB-01..07) and had no way to reach it on mobile
-// (MB-09). Analytics has no mobile entry point at all now — nothing lost, since the page itself
-// was just a placeholder there.
+// (MB-09).
+// MB-17: the 5th slot (hardcoded Settings button) moved into a tap-to-open menu on the vault
+// name pill — freeing the slot for Analytics to return to the bottom nav. Analytics itself is
+// still just a "coming soon" placeholder on mobile (MB-08, unresolved), same as before MB-13.
 const BOTTOM_NAV_ITEMS = [
   { to: '/dashboard', key: 'nav.dashboard', icon: Home },
   { to: '/transactions', key: 'nav.transactions', icon: Receipt },
   { to: '/budgets', key: 'nav.budgets', icon: PiggyBank },
+  { to: '/analytics', key: 'nav.analytics', icon: BarChart2 },
 ]
 
 interface NavbarProps {
@@ -62,6 +67,16 @@ export default function Navbar({ vaultName = '', onNewTransaction }: NavbarProps
     void loadBackupDirHandle().then((handle) => setHasLocalBackupDir(handle !== null))
   }, [])
   const backupLastSaved = localStorage.getItem('gimbo_backup_last_saved')
+
+  // MB-17: vault name pill opens a small menu, mobile only — the desktop gear button already
+  // covers Settings there, so the pill stays inert above the `sm` breakpoint (640px, same cutoff
+  // as the `sm:hidden`/`hidden sm:flex` classes used throughout this component).
+  const [vaultMenuOpen, setVaultMenuOpen] = useState(false)
+  const handleVaultPillClick = () => {
+    if (window.innerWidth < 640) {
+      setVaultMenuOpen(true)
+    }
+  }
 
   return (
     <>
@@ -161,14 +176,64 @@ export default function Navbar({ vaultName = '', onNewTransaction }: NavbarProps
             <Settings size={18} strokeWidth={1.5} />
           </button>
 
-          <div
+          <button
+            type="button"
+            onClick={handleVaultPillClick}
             title={vaultName}
             className="flex h-8 max-w-[100px] sm:max-w-[160px] min-w-0 items-center rounded-full bg-primary px-3 text-[11px] font-semibold text-white"
           >
             <span className="truncate">{vaultName}</span>
-          </div>
+          </button>
         </div>
       </header>
+
+      {/* ── Mobile vault menu (MB-17) — opened by tapping the vault name pill ─── */}
+      {vaultMenuOpen && (
+        <div className="sm:hidden fixed inset-0 z-[60]">
+          <div
+            className="absolute inset-0 bg-on-surface/20 backdrop-blur-sm"
+            onClick={() => setVaultMenuOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="vault-menu-title"
+            className="absolute bottom-0 left-0 right-0 rounded-t-2xl border-t border-outline-variant bg-surface-container-low"
+            style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+          >
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="h-1 w-10 rounded-full bg-on-surface/15" />
+            </div>
+            <div className="flex items-center justify-between px-6 pt-2 pb-3">
+              <h2
+                id="vault-menu-title"
+                className="truncate text-base font-semibold text-on-surface"
+              >
+                {vaultName}
+              </h2>
+              <button
+                onClick={() => setVaultMenuOpen(false)}
+                aria-label={t('common.close')}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface/50 hover:bg-surface-container-high"
+              >
+                <X size={18} strokeWidth={2} />
+              </button>
+            </div>
+            <div className="px-2 pb-4">
+              <button
+                onClick={() => {
+                  setVaultMenuOpen(false)
+                  void navigate('/settings')
+                }}
+                className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium text-on-surface hover:bg-surface-container-high"
+              >
+                <Settings size={18} strokeWidth={1.75} className="text-on-surface/60" />
+                {t('nav.settings')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Mobile bottom navigation bar (MB-02) ───────────────────────────── */}
       {/* hidden on sm+ — shown only on mobile viewports */}
@@ -212,7 +277,7 @@ export default function Navbar({ vaultName = '', onNewTransaction }: NavbarProps
             </button>
           </div>
 
-          {/* Right items: Budgets */}
+          {/* Right items: Budgets + Analytics (MB-17) */}
           {BOTTOM_NAV_ITEMS.slice(2).map(({ to, key, icon: Icon }) => (
             <NavLink
               key={to}
@@ -232,21 +297,6 @@ export default function Navbar({ vaultName = '', onNewTransaction }: NavbarProps
               )}
             </NavLink>
           ))}
-
-          {/* Settings */}
-          <button
-            onClick={() => {
-              void navigate('/settings')
-            }}
-            aria-label={t('nav.settings')}
-            className={cn(
-              'flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
-              'text-on-surface/40'
-            )}
-          >
-            <Settings size={22} strokeWidth={1.5} />
-            <span>{t('nav.settings')}</span>
-          </button>
         </div>
       </nav>
     </>

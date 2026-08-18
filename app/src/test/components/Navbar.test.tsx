@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Navbar from '@/components/Navbar'
 import { loadBackupDirHandle } from '@/lib/backupDir'
@@ -46,20 +46,45 @@ describe('Navbar', () => {
     expect(screen.getAllByText('nav.budgets').length).toBeGreaterThanOrEqual(1)
   })
 
-  it('does not render analytics in the mobile bottom nav (MB-13)', () => {
+  it('renders analytics in both the desktop top bar and the mobile bottom nav (MB-17)', () => {
     render(<Navbar vaultName="Family Vault" />)
-    // Analytics still shows once, in the desktop top bar — just not duplicated in the bottom nav
-    expect(screen.getAllByText('nav.analytics').length).toBe(1)
+    // MB-13 removed analytics from the bottom nav; MB-17 brought it back once the settings
+    // slot moved into the vault-name menu, freeing a slot for it.
+    expect(screen.getAllByText('nav.analytics').length).toBe(2)
   })
 
-  it('renders settings button(s) — one in desktop top bar, one in mobile bottom nav', async () => {
+  it('renders one settings button (desktop top bar) — the mobile one moved into the vault menu (MB-17)', async () => {
     render(<Navbar vaultName="Family Vault" />)
-    // MB-02: two settings buttons rendered (desktop hidden via CSS, mobile hidden via CSS).
-    // Both are present in the DOM; visibility is controlled by Tailwind responsive classes.
     const settingsBtns = screen.getAllByRole('button', { name: 'nav.settings' })
-    expect(settingsBtns.length).toBeGreaterThanOrEqual(1)
-    // Clicking the first one should not throw
+    expect(settingsBtns.length).toBe(1)
+    // Clicking it should not throw
     await userEvent.click(settingsBtns[0])
+  })
+
+  it('opens a vault menu with a settings entry when the vault pill is tapped on mobile (MB-17)', async () => {
+    const originalInnerWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 375 })
+
+    render(<Navbar vaultName="Family Vault" />)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByTitle('Family Vault'))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('button', { name: 'nav.settings' })).toBeInTheDocument()
+
+    Object.defineProperty(window, 'innerWidth', {
+      writable: true,
+      configurable: true,
+      value: originalInnerWidth,
+    })
+  })
+
+  it('does not open the vault menu when the pill is clicked on desktop widths (MB-17)', async () => {
+    Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 1280 })
+
+    render(<Navbar vaultName="Family Vault" />)
+    await userEvent.click(screen.getByTitle('Family Vault'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('does not show the local-backup badge when no backup folder is configured', async () => {
