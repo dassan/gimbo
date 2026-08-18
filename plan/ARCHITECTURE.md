@@ -753,7 +753,7 @@ ErrorBoundary.componentDidCatch()
 
 GitHub Issues via link pré-preenchido — zero backend, zero token:
 ```
-https://github.com/dassan/gimbo-app/issues/new?title=...&body=...&labels=bug
+https://github.com/dassan/gimbo/issues/new?title=...&body=...&labels=bug
 ```
 
 ---

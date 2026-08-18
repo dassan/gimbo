@@ -32,8 +32,8 @@ A **demo mode** with synthetic data and persistence disabled is available — us
 
 ```bash
 # 1. Clone the repository
-git clone git@github.com:dassan/gimbo-app.git
-cd gimbo-app/app
+git clone git@github.com:dassan/gimbo.git
+cd gimbo/app
 
 # 2. Install dependencies
 npm install
@@ -67,7 +67,7 @@ After the action completes, the parameter is removed from the URL via `history.r
 
 Found a bug or have a suggestion? Open an issue on GitHub:
 
-**[github.com/dassan/gimbo-app/issues](https://github.com/dassan/gimbo-app/issues)**
+**[github.com/dassan/gimbo/issues](https://github.com/dassan/gimbo/issues)**
 
 The app also has a built-in **bug report** dialog (Settings → Preferences) that attaches a privacy-safe snapshot — recent navigation, action types, and error stack traces, **never** financial values, names, or entity IDs — and opens a pre-filled GitHub issue for you.
 
@@ -124,7 +124,7 @@ The **optional** "Backup & Sync → local folder" feature (Settings) uses the **
 ### Project Structure
 
 ```
-gimbo-app/
+gimbo/
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml          # type-check → lint → format → unit tests → build

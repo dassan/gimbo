@@ -221,6 +221,21 @@ Features concluídas desde 2026-05-27:
 > manualmente no Google Cloud Console. Qualquer outra allowlist amarrada ao domínio (CORS, CSP
 > `connect-src`, webhooks) merece a mesma checagem antes de assumir que aponta para o lugar certo.
 
+> **Repositório migrado de `dassan/gimbo-app` (privado) para `dassan/gimbo` (público) em
+> 2026-08-18.** O histórico de commits foi reescrito para remover dados financeiros pessoais reais
+> (nome completo de familiar, saldos/faturas de cartão, nomes de empregadores, fragmento de
+> endereço) que estavam espalhados em revisões antigas de `plan/BACKLOG.md` e em
+> `scripts/sync_gimbo.py`. O repo novo foi criado **do zero, sem compartilhar objetos git** com o
+> antigo — não é um `push --force` no mesmo repo — porque uma PR squash-merged (#1, nunca
+> incorporada a `main`) continha extratos bancários OFX reais e permanece acessível via
+> `refs/pull/1/head` no GitHub para sempre, fora do alcance de qualquer reescrita de histórico
+> local. `dassan/gimbo-app` está **aposentado e deve permanecer privado para sempre** — não
+> reabrir, não tornar público, não apontar deploy/CI para lá. Uma sessão futura que notar a
+> divergência de histórico entre os dois repos (commits diferentes, sem ancestral comum) não deve
+> tentar "reconciliar" ou reescrever nada — é o resultado esperado e intencional da migração.
+> Deploy (Cloudflare Pages) e `app/wrangler.jsonc` referem-se ao projeto de deploy, não ao nome do
+> repositório GitHub — os dois podem divergir (`gimbo` vs. `gimbo-app`) sem que isso seja um erro.
+
 Itens em aberto:
 - **F-30 — Caixinhas (budgets):** existe apenas como **protótipo visual mockado** na branch
   `dassan/caixinhas` (rotas `/budgets` e `/budgets/:budgetId`, dados em `pages/Budgets/mock.ts`).
