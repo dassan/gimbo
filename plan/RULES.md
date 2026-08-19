@@ -79,7 +79,12 @@ raiz/
 ```
 
 **Regras do loop:**
-- **Uma feature por PR** — facilita revisão e rollback
+- **Uma branch por tópico** (`dassan/<tópico>`) — agrupa todo um esforço relacionado e pode acumular
+  vários itens do backlog antes de virar PR. Revisado em 2026-08-19; a regra anterior era "uma
+  feature por PR". Nesta fase de construção, um tópico (segurança, mobile, sync) rende uma série de
+  itens pequenos e interdependentes que sai mais barato revisar juntos. Ver `CLAUDE.md` → Git.
+- **Um item do backlog por commit** — é o commit que carrega o ID e o "porquê"; é ele que dá
+  rollback e histórico legível
 - **CI verde antes de merge** — sem exceções
 - **Nenhum `TODO` no código** — vai para o `BACKLOG.md`
 

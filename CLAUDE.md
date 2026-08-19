@@ -116,7 +116,23 @@ Falha de backup em pasta jamais interrompe o fluxo principal.
 
 Tipos: `feat:` | `fix:` | `test:` | `style:` | `refactor:` | `docs:` | `chore:`
 Referência obrigatória ao ID (M-XX, B-XX, CC-XX, R-XX, BK-XX, HE-XX, CS-XX, MB-XX, SEC-XX) quando aplicável.
-Uma feature por commit/PR. CI verde obrigatório. Nenhum `TODO` no código.
+CI verde obrigatório. Nenhum `TODO` no código.
+
+### Branch por tópico (revisado em 2026-08-19)
+
+**Uma branch por tópico**, não por feature — `dassan/<tópico>` (ex.: `dassan/security-audit`,
+`dassan/landing-page`, `dassan/sync-mobile`). Um tópico agrupa todo um esforço relacionado e pode
+acumular vários itens do backlog antes de virar PR; a branch só fecha quando o tópico fecha.
+
+**Um item por commit continua valendo.** É o commit que carrega o ID (`SEC-03`, `MB-08`…) e o
+"porquê" — a granularidade que dá rollback e leitura de histórico. O que mudou foi só o escopo da
+branch, não o do commit.
+
+> A regra anterior era "uma feature por commit/PR". Foi revisada porque, nesta fase de construção
+> da aplicação, features isoladas raramente descrevem bem o trabalho real: um tópico como segurança
+> ou responsividade mobile rende uma série de itens pequenos e interdependentes, que revisar juntos
+> é mais barato do que abrir uma PR por item. Reavaliar quando o app estabilizar e as mudanças
+> passarem a ser majoritariamente incrementais.
 
 ---
 
