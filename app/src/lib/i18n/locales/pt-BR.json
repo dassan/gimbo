@@ -410,7 +410,8 @@
     "syncModeBadgeMobile": "Desktop + celular",
     "syncModeConfirmSwitchFromGoogle": "Trocar de método desconecta seu Google Drive. Confirmar?",
     "syncModeConfirmButton": "Confirmar troca",
-    "syncModeCancelButton": "Cancelar"
+    "syncModeCancelButton": "Cancelar",
+    "importErrorNewerSchema": "Este backup foi criado por uma versão mais nova do Gimbo. Atualize o app e tente de novo — seus dados atuais não foram alterados."
   },
   "creditCard": {
     "invoicePeriod": "Período da Fatura",

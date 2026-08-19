@@ -118,14 +118,7 @@ export default function App() {
   if (!hydrated) return null
 
   if (initError) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface p-8 text-center">
-        <p className="text-sm font-semibold text-on-surface">
-          Não foi possível carregar seus dados
-        </p>
-        <p className="max-w-xs text-xs text-on-surface/50">{initError}</p>
-      </div>
-    )
+    return <BootFailure message={initError} />
   }
 
   const isLoaded = data !== null
@@ -165,5 +158,71 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </ErrorBoundary>
+  )
+}
+
+/**
+ * SEC-06 — tela de falha de boot, com resgate dos dados.
+ *
+ * Um cofre que não abre (schema de versão futura, migration que não aplicou, arquivo corrompido)
+ * antes deixava os dados trancados no OPFS sem nenhuma superfície para tirá-los de lá — o usuário
+ * via só uma mensagem de erro. O botão abaixo baixa os bytes crus do `gimbo.db` **antes** de
+ * qualquer tentativa de reparo, que é a ordem que importa: reparar primeiro pode destruir a única
+ * cópia existente.
+ *
+ * Usa `storage.exportRawBlob()`, que no worker é despachado fora da fila e não depende do `init()`
+ * ter concluído — a fila encadeia a partir do `initPromise` e ficaria inutilizável aqui.
+ *
+ * Strings fixas em pt-BR de propósito, seguindo o que esta tela já fazia: a falha pode ocorrer
+ * antes de o i18n inicializar, e um resgate que renderiza chaves cruas não ajuda ninguém.
+ */
+function BootFailure({ message }: { message: string }) {
+  const [state, setState] = useState<'idle' | 'working' | 'done' | 'error'>('idle')
+
+  async function handleRescue() {
+    setState('working')
+    try {
+      const blob = await storage.exportRawBlob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `gimbo-resgate-${new Date().toISOString().slice(0, 10)}.db`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      setState('done')
+    } catch {
+      setState('error')
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-surface p-8 text-center">
+      <p className="text-sm font-semibold text-on-surface">Não foi possível carregar seus dados</p>
+      <p className="max-w-xs text-xs text-on-surface/50">{message}</p>
+      <p className="max-w-sm text-xs text-on-surface/70">
+        Seus dados continuam guardados neste navegador. Baixe uma cópia de segurança antes de tentar
+        qualquer reparo — ela pode ser importada de volta depois.
+      </p>
+      <button
+        onClick={() => void handleRescue()}
+        disabled={state === 'working'}
+        className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:brightness-110 active:scale-[0.97] disabled:opacity-60"
+      >
+        {state === 'working' ? 'Preparando…' : 'Baixar cópia de segurança'}
+      </button>
+      {state === 'done' && (
+        <p className="text-xs text-on-surface/50">
+          Cópia baixada. Guarde o arquivo antes de qualquer outra ação.
+        </p>
+      )}
+      {state === 'error' && (
+        <p className="text-xs text-tertiary">
+          Não foi possível ler o arquivo do navegador. Se você tiver um backup em pasta ou na nuvem,
+          use-o para restaurar.
+        </p>
+      )}
+    </div>
   )
 }

@@ -19,6 +19,7 @@ import v9Schema from './migrations/v9.sql?raw'
 import v10Schema from './migrations/v10.sql?raw'
 import v11Schema from './migrations/v11.sql?raw'
 import v12Schema from './migrations/v12.sql?raw'
+import { ERR_DB_UNREADABLE, ERR_SCHEMA_TOO_NEW } from './errors'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
 
@@ -144,6 +145,10 @@ type RawDataFile = {
 let sqlite3: SQLiteAPI
 let db: number // opaque database pointer returned by open_v2
 
+// SEC-06: só o resgate consulta isto. `db`/`sqlite3` ficam indefinidos se o `init()` falhar, e é
+// exatamente nesse cenário que o resgate precisa rodar — daí uma flag em vez de checar `db`.
+let dbReady = false
+
 const DB_FILENAME = 'gimbo.db'
 
 // Highest PRAGMA user_version this build knows how to migrate. CS-15 (folderSyncService)
@@ -172,53 +177,75 @@ async function init(): Promise<void> {
 
   db = await sqlite3.open_v2(DB_FILENAME)
   await runMigrationsOn(db)
+  dbReady = true
 }
 
+// Ordem de aplicação das migrations. Substituiu uma escada de 12 `if (version < N)` para que a
+// aplicação seja um laço — é o que torna viável envolver cada passo numa transação (SEC-06).
+// Ao adicionar `vN.sql`: incluir aqui E bumpar MAX_KNOWN_DB_VERSION acima (e o sync_gimbo.py,
+// ver "Armadilha recorrente" no CLAUDE.md).
+const MIGRATIONS: ReadonlyArray<readonly [version: number, sql: string]> = [
+  [1, v1Schema],
+  [2, v2Schema],
+  [3, v3Schema],
+  [4, v4Schema],
+  [5, v5Schema],
+  [6, v6Schema],
+  [7, v7Schema],
+  [8, v8Schema],
+  [9, v9Schema],
+  [10, v10Schema],
+  [11, v11Schema],
+  [12, v12Schema],
+]
+
 // Applies pending migrations to an arbitrary db pointer — the main `db` on every open, or a
-// scratch db opened from a peer's bytes (CS-15's readForeignDataFile, which never touches `db`).
+// scratch db opened from a peer's bytes (CS-15's readForeignDataFile, which never touches `db`),
+// ou a cópia em staging de um import (SEC-05).
+//
+// SEC-06 — duas garantias que a versão anterior não dava:
+//
+// 1. **Cada migration roda numa transação.** Os arquivos `vN.sql` usam `ALTER TABLE ... ADD COLUMN`,
+//    que o SQLite não suporta com `IF NOT EXISTS`, e terminam com `PRAGMA user_version = N`. Sem
+//    transação, uma interrupção entre o ALTER e o PRAGMA (aba fechada, quota de OPFS, crash do
+//    worker) deixava a coluna criada e a versão desatualizada — no boot seguinte o mesmo ALTER
+//    rodava de novo e falhava com `duplicate column name`, **em definitivo**, com o cofre trancado
+//    no OPFS. O SQLite tem DDL transacional e o `user_version` vive no header do arquivo, então
+//    ambos entram no mesmo COMMIT: ou a migration inteira valeu, ou nada dela valeu.
+//    (Verificado que nenhum `vN.sql` abre transação própria — envolvê-los é seguro.)
+//
+// 2. **Guarda de versão futura.** Antes só o caminho de peer comparava contra MAX_KNOWN_DB_VERSION;
+//    o boot e o import abriam um arquivo de versão desconhecida e liam com o schema velho.
 async function runMigrationsOn(dbPtr: number): Promise<void> {
   // WAL mode gives better read concurrency and enables clean export via checkpoint.
-  // This is idempotent — safe to call on every open.
+  // This is idempotent — safe to call on every open. Fica fora da transação de propósito:
+  // `PRAGMA journal_mode` não pode ser trocado dentro de uma.
   await sqlite3.run(dbPtr, 'PRAGMA journal_mode=WAL')
 
   const { rows } = await sqlite3.execWithParams(dbPtr, 'PRAGMA user_version')
   const version = (rows[0]?.[0] ?? 0) as number
 
-  if (version < 1) {
-    await sqlite3.run(dbPtr, v1Schema)
+  if (version > MAX_KNOWN_DB_VERSION) {
+    throw new Error(
+      `${ERR_SCHEMA_TOO_NEW}: banco na versão ${version}, este build migra até ${MAX_KNOWN_DB_VERSION}`
+    )
   }
-  if (version < 2) {
-    await sqlite3.run(dbPtr, v2Schema)
-  }
-  if (version < 3) {
-    await sqlite3.run(dbPtr, v3Schema)
-  }
-  if (version < 4) {
-    await sqlite3.run(dbPtr, v4Schema)
-  }
-  if (version < 5) {
-    await sqlite3.run(dbPtr, v5Schema)
-  }
-  if (version < 6) {
-    await sqlite3.run(dbPtr, v6Schema)
-  }
-  if (version < 7) {
-    await sqlite3.run(dbPtr, v7Schema)
-  }
-  if (version < 8) {
-    await sqlite3.run(dbPtr, v8Schema)
-  }
-  if (version < 9) {
-    await sqlite3.run(dbPtr, v9Schema)
-  }
-  if (version < 10) {
-    await sqlite3.run(dbPtr, v10Schema)
-  }
-  if (version < 11) {
-    await sqlite3.run(dbPtr, v11Schema)
-  }
-  if (version < 12) {
-    await sqlite3.run(dbPtr, v12Schema)
+
+  for (const [target, sql] of MIGRATIONS) {
+    if (version >= target) continue
+
+    await sqlite3.run(dbPtr, 'BEGIN')
+    try {
+      await sqlite3.run(dbPtr, sql)
+      await sqlite3.run(dbPtr, 'COMMIT')
+    } catch (err) {
+      try {
+        await sqlite3.run(dbPtr, 'ROLLBACK')
+      } catch {
+        // Já desfeita pelo próprio erro, ou transação nunca aberta — nada a liberar.
+      }
+      throw err
+    }
   }
 }
 
@@ -236,29 +263,155 @@ async function exportDb(): Promise<ArrayBuffer> {
   return file.arrayBuffer()
 }
 
-async function importDb(data: ArrayBuffer): Promise<void> {
-  // Close the database to release Web Locks held by the VFS.
-  await sqlite3.close(db)
-
-  // Write the imported bytes to OPFS, replacing the current database.
-  const root = await navigator.storage.getDirectory()
-  const fileHandle = await root.getFileHandle(DB_FILENAME, { create: true })
-  const writable = await fileHandle.createWritable()
-  await writable.write(data)
-  await writable.close()
-
-  // Remove stale WAL / journal files to avoid corruption on next open.
-  for (const suffix of ['-wal', '-journal'] as const) {
+// Remove um arquivo do OPFS junto de seus acompanhantes de journal. Best-effort: a ausência de
+// `-wal`/`-journal` é o caso comum, não um erro.
+async function removeDbFiles(root: FileSystemDirectoryHandle, name: string): Promise<void> {
+  for (const suffix of ['', '-wal', '-journal'] as const) {
     try {
-      await root.removeEntry(DB_FILENAME + suffix)
+      await root.removeEntry(name + suffix)
     } catch {
-      // File not present — nothing to do.
+      // Não existe — nada a fazer.
     }
   }
+}
 
-  // Reopen and apply any pending migrations (e.g. import from an older version).
-  db = await sqlite3.open_v2(DB_FILENAME)
-  await runMigrationsOn(db)
+async function readFileBytes(root: FileSystemDirectoryHandle, name: string): Promise<ArrayBuffer> {
+  const handle = await root.getFileHandle(name)
+  return (await handle.getFile()).arrayBuffer()
+}
+
+async function writeFileBytes(
+  root: FileSystemDirectoryHandle,
+  name: string,
+  bytes: ArrayBuffer
+): Promise<void> {
+  const handle = await root.getFileHandle(name, { create: true })
+  const writable = await handle.createWritable()
+  await writable.write(bytes)
+  await writable.close()
+}
+
+/**
+ * Import de backup — **replace total** do cofre.
+ *
+ * SEC-05: a versão anterior fechava o banco e sobrescrevia `gimbo.db` no OPFS **antes** de saber
+ * se os bytes recebidos eram sequer um SQLite válido. Um `.db` truncado, corrompido, ou capturado
+ * no meio de uma escrita do cliente de nuvem apagava permanentemente todo o histórico financeiro,
+ * e a UI só exibia "arquivo corrompido" depois que os dados já tinham sumido.
+ *
+ * Agora o cofre atual só é tocado depois que a cópia recebida provou, num arquivo separado, que:
+ * abre como SQLite, não vem de uma versão futura do schema, migra até a atual, e contém um
+ * DataFile efetivamente legível (não só um arquivo que "abre"). É o mesmo padrão que
+ * `readForeignDataFile` (CS-15) já usava para peers — este caminho é que não o reusava.
+ *
+ * A promoção final ainda copia bytes, então guarda-se um snapshot do cofre atual como rede: se a
+ * troca falhar no meio, o snapshot é restaurado e o usuário fica exatamente como estava.
+ */
+async function importDb(data: ArrayBuffer): Promise<void> {
+  const root = await navigator.storage.getDirectory()
+  const stagingName = `import-staging-${crypto.randomUUID()}.db`
+  const rollbackName = `import-rollback-${crypto.randomUUID()}.db`
+
+  // ── 1. Materializa os bytes recebidos fora do caminho do cofre ───────────────
+  try {
+    await writeFileBytes(root, stagingName, data)
+  } catch (err) {
+    await removeDbFiles(root, stagingName)
+    throw new Error(`${ERR_DB_UNREADABLE}: falha ao gravar o arquivo recebido (${String(err)})`)
+  }
+
+  // ── 2. Valida a cópia: abre, guarda de versão, migra e lê de verdade ─────────
+  let stagingDb: number
+  try {
+    stagingDb = await sqlite3.open_v2(stagingName)
+  } catch {
+    await removeDbFiles(root, stagingName)
+    throw new Error(`${ERR_DB_UNREADABLE}: o arquivo não é um banco SQLite válido`)
+  }
+
+  let migratedBytes: ArrayBuffer
+  try {
+    // `runMigrationsOn` já lança ERR_SCHEMA_TOO_NEW quando o user_version é maior que este build
+    // conhece, e cada migration roda em transação (SEC-06).
+    await runMigrationsOn(stagingDb)
+
+    // Abrir não é o suficiente: um arquivo pode ser SQLite válido e mesmo assim não conter o
+    // schema do Gimbo. Ler o DataFile é o que prova que a importação vai resultar em algo usável.
+    const parsed = await readDataFileFromDb(stagingDb)
+    if (!parsed) {
+      throw new Error(`${ERR_DB_UNREADABLE}: o arquivo não contém dados do Gimbo`)
+    }
+
+    // Consolida o WAL da migração dentro do próprio arquivo, para promover um único blob coerente.
+    await sqlite3.run(stagingDb, 'PRAGMA wal_checkpoint(FULL)')
+    await sqlite3.close(stagingDb)
+    migratedBytes = await readFileBytes(root, stagingName)
+  } catch (err) {
+    try {
+      await sqlite3.close(stagingDb)
+    } catch {
+      // Já fechado pelo caminho feliz acima, ou nunca totalmente aberto.
+    }
+    await removeDbFiles(root, stagingName)
+    throw err instanceof Error && String(err.message).startsWith('GIMBO_')
+      ? err
+      : new Error(`${ERR_DB_UNREADABLE}: ${String(err)}`)
+  }
+
+  // ── 3. Snapshot do cofre atual, para poder desfazer a troca ──────────────────
+  await sqlite3.run(db, 'PRAGMA wal_checkpoint(FULL)')
+  await sqlite3.close(db)
+  let haveRollback = false
+  try {
+    await writeFileBytes(root, rollbackName, await readFileBytes(root, DB_FILENAME))
+    haveRollback = true
+  } catch {
+    // Cofre ainda inexistente (import no onboarding) — não há o que desfazer.
+  }
+
+  // ── 4. Promove a cópia validada ──────────────────────────────────────────────
+  try {
+    await writeFileBytes(root, DB_FILENAME, migratedBytes)
+    // WAL/journal antigos descrevem o banco anterior; deixá-los corromperia a próxima abertura.
+    for (const suffix of ['-wal', '-journal'] as const) {
+      try {
+        await root.removeEntry(DB_FILENAME + suffix)
+      } catch {
+        // Não existe — nada a fazer.
+      }
+    }
+    db = await sqlite3.open_v2(DB_FILENAME)
+    await runMigrationsOn(db)
+  } catch (err) {
+    // A troca falhou no meio. Devolve o cofre ao estado anterior antes de propagar.
+    if (haveRollback) {
+      try {
+        await writeFileBytes(root, DB_FILENAME, await readFileBytes(root, rollbackName))
+        for (const suffix of ['-wal', '-journal'] as const) {
+          try {
+            await root.removeEntry(DB_FILENAME + suffix)
+          } catch {
+            // Não existe — nada a fazer.
+          }
+        }
+        db = await sqlite3.open_v2(DB_FILENAME)
+        await runMigrationsOn(db)
+      } catch {
+        // Restauração falhou também. Preserva o snapshot em disco em vez de apagá-lo no `finally`
+        // — é a única cópia dos dados do usuário neste ponto, e o resgate do SEC-06 a alcança.
+        await removeDbFiles(root, stagingName)
+        throw new Error(
+          `${ERR_DB_UNREADABLE}: falha ao importar e ao restaurar; cópia do cofre anterior preservada em "${rollbackName}" no OPFS`
+        )
+      }
+    }
+    await removeDbFiles(root, stagingName)
+    await removeDbFiles(root, rollbackName)
+    throw err
+  }
+
+  await removeDbFiles(root, stagingName)
+  await removeDbFiles(root, rollbackName)
 }
 
 // ─── replaceAll ───────────────────────────────────────────────────────────────
@@ -810,6 +963,34 @@ async function clearAll(): Promise<void> {
   }
 }
 
+/**
+ * SEC-06 — resgate: lê os bytes crus de `gimbo.db` direto do OPFS.
+ *
+ * Existe para o cenário em que o app não inicializa: schema de uma versão futura, migration que
+ * não aplica, arquivo corrompido. Antes disso, um boot quebrado deixava o cofre trancado no OPFS
+ * sem nenhuma superfície para tirá-lo de lá.
+ *
+ * Por isso não depende de nada que o `init()` produz — nem do ponteiro `db`, nem do `sqlite3` —
+ * e é despachada **fora da fila** (ver o message handler abaixo): `_queue` encadeia a partir do
+ * `initPromise`, então um init rejeitado envenena a fila justamente quando o resgate é necessário.
+ *
+ * Ressalva: sem o SQLite disponível não dá para consolidar o WAL, então o arquivo pode não conter
+ * as últimas transações se elas ainda estiverem só no `-wal`. Quando o banco está saudável faz-se
+ * o checkpoint antes de ler; quando não está, os bytes crus são o melhor disponível — e muito
+ * melhor do que nada.
+ */
+async function exportRawBytes(): Promise<ArrayBuffer> {
+  if (dbReady) {
+    try {
+      await sqlite3.run(db, 'PRAGMA wal_checkpoint(FULL)')
+    } catch {
+      // Best-effort: se o checkpoint falhar, seguimos com os bytes que houver em disco.
+    }
+  }
+  const root = await navigator.storage.getDirectory()
+  return readFileBytes(root, DB_FILENAME)
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 async function dispatch(method: string, args: unknown[]): Promise<unknown> {
@@ -858,6 +1039,18 @@ function enqueue(fn: () => Promise<unknown>): Promise<unknown> {
 
 self.addEventListener('message', (event: MessageEvent<WorkerRequest>) => {
   const { id, method, args } = event.data
+
+  // SEC-06: o resgate contorna a fila de propósito. `_queue` encadeia a partir do `initPromise`,
+  // então um `init()` rejeitado — o exato cenário em que o resgate é chamado — faria a tarefa
+  // nunca rodar. Também não toca em `sqlite3`/`db` quando o init não completou.
+  if (method === 'exportRawBytes') {
+    void exportRawBytes()
+      .then((result) => self.postMessage({ id, result } satisfies WorkerResponse, [result]))
+      .catch((err: unknown) => {
+        self.postMessage({ id, error: String(err) } satisfies WorkerResponse)
+      })
+    return
+  }
 
   void enqueue(() => dispatch(method, args))
     .then((result) => {
