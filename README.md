@@ -297,4 +297,6 @@ Fora de escopo para o ciclo atual:
 
 ## Licença
 
-MIT.
+MIT — ver [`LICENSE`](LICENSE).
+
+O app publicado embute código de terceiros cujas licenças exigem que o aviso de copyright acompanhe a redistribuição. As atribuições estão em [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) — todas permissivas (MIT, ISC, SIL OFL 1.1), nenhuma GPL/AGPL/SSPL.
