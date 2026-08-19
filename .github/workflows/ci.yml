@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# SEC-02 — menor privilégio para o GITHUB_TOKEN. Sem este bloco o token herda o default do
+# repositório, que num repo público dá escopo de escrita a todo job disparado por PR. Nenhum job
+# aqui escreve no repo (o upload do relatório do Playwright usa a API de artefatos, não `contents`).
+permissions:
+  contents: read
+
 jobs:
   quality:
     name: Type-check, Lint, Format, Test, Build

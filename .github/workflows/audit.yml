@@ -5,6 +5,11 @@ on:
     - cron: '0 9 * * 1' # Every Monday at 09:00 UTC
   workflow_dispatch:
 
+# SEC-02 — menor privilégio para o GITHUB_TOKEN. Este workflow só instala deps e roda `npm audit`;
+# não precisa de escrita alguma.
+permissions:
+  contents: read
+
 jobs:
   audit:
     name: npm audit
