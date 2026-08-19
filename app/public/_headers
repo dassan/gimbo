@@ -1,0 +1,42 @@
+# SEC-03 — Headers de segurança para o Cloudflare Workers Static Assets.
+#
+# Este arquivo é servido pelo Workers Static Assets (o projeto não tem Worker script — `main`
+# ausente em wrangler.jsonc — então TODA resposta é uma resposta de asset e a ressalva da doc
+# sobre "headers não se aplicam a respostas geradas pelo seu Worker" não vale aqui).
+# Vite copia `public/` para `dist/`, que é o diretório de assets que o `wrangler deploy` publica.
+#
+# Aplicado a `/*` de propósito, e não só ao HTML: o script do Web Worker (`/assets/worker-*.js`)
+# também precisa receber a CSP, porque é ele que baixa e compila o WASM do wa-sqlite — sem
+# `'wasm-unsafe-eval'` e `connect-src 'self'` no contexto do worker, o SQLite não inicializa.
+#
+# Antes de mexer na CSP, saiba o que quebra:
+#   'wasm-unsafe-eval'          → sem isso o wa-sqlite não compila o WASM e o app não abre
+#   worker-src 'self' blob:     → o worker do SQLite e o service worker do PWA
+#   style-src 'unsafe-inline'   → ~56 usos de `style={{...}}` no código + estilos inline do Recharts
+#   connect-src googleapis      → OAuth + Drive API (lib/cloudSync/googleAuth.ts, googleDrive.ts)
+#
+# NÃO adicionar Cross-Origin-Embedder-Policy: o app não usa SharedArrayBuffer (o
+# OriginPrivateFileSystemVFS é assíncrono), então COEP não traria benefício algum aqui.
+#
+# Nenhuma origem de terceiro é permitida fora do Google OAuth/Drive em `connect-src`, e essas só
+# são contatadas depois que o usuário conecta o sync explicitamente. A fonte Inter é self-hospedada
+# desde o SEC-15 — se alguém reintroduzir um `@import` de fonte externa, a tipografia quebra sob
+# esta CSP, e a correção é self-hospedar, não afrouxar `style-src`/`font-src`.
+#
+# VIOLAÇÃO ESPERADA — NÃO "CORRIGIR" COM 'unsafe-eval':
+# O console reporta uma violação `script-src ... eval` por carga de página, vinda do Zod v4. É a
+# feature-detection dele (`try { Function('') } catch {}`) escolhendo entre o caminho JIT e o
+# `jitless` — a mesma que ele já usa para detectar Cloudflare Workers. A CSP bloqueia, o try/catch
+# captura, e o Zod cai no jitless de forma transparente. Validado em 2026-08-19 com o build de demo
+# mode sob esta CSP: `validateDataFile()` processou as 1344 transações da fixture e o dashboard
+# renderizou os valores calculados, com zero pageerror. O custo é uma validação um pouco mais lenta;
+# adicionar 'unsafe-eval' para silenciar o aviso destruiria boa parte do valor da CSP.
+
+/*
+  Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://oauth2.googleapis.com https://www.googleapis.com https://accounts.google.com; worker-src 'self' blob:; manifest-src 'self'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Cross-Origin-Opener-Policy: same-origin
+  Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()

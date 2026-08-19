@@ -571,6 +571,18 @@ export class StorageService {
     return new Blob([buffer], { type: 'application/x-sqlite3' })
   }
 
+  /**
+   * SEC-06 — resgate: bytes crus de `gimbo.db`, sem depender de o banco ter inicializado.
+   *
+   * Só para o caminho de falha de boot (ver a tela de `initError` em `App.tsx`). No fluxo normal
+   * use `exportBlob()`, que passa pela fila e faz checkpoint do WAL com o banco aberto. Este aqui
+   * é despachado fora da fila no worker justamente porque um `init()` rejeitado a inutiliza.
+   */
+  async exportRawBlob(): Promise<Blob> {
+    const buffer = await this.call<ArrayBuffer>('exportRawBytes')
+    return new Blob([buffer], { type: 'application/x-sqlite3' })
+  }
+
   async importBlob(blob: Blob): Promise<void> {
     const buffer = await blob.arrayBuffer()
     // Transfer the ArrayBuffer to the worker to avoid copying.

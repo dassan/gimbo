@@ -1,5 +1,22 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
+
+/* SEC-15 — Inter self-hospedada. Antes daqui saía um `@import` para fonts.googleapis.com, que
+   entregava IP/User-Agent/Referer de toda visita ao Google antes de qualquer ação do usuário —
+   contradição direta com a promessa "sem servidor, sem nuvem" do produto. Procedência do arquivo,
+   licença (OFL 1.1) e como atualizar: app/public/fonts/README.md.
+
+   Um arquivo só para os 4 pesos: é fonte variável com eixo `wght` contínuo, daí `font-weight: 400 700`.
+   O `unicode-range` espelha o do subset `latin` do Google — mantenha os dois em sincronia ao
+   atualizar o arquivo, senão o browser pede a fonte para caracteres que ela não contém. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/inter-latin-var.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 @theme {
   /* ── Typography ──────────────────────────────────────────── */

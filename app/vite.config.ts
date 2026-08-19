@@ -26,7 +26,10 @@ export default defineConfig({
   },
   plugins: [basicSsl(), react(), tailwindcss(), VitePWA({
     registerType: 'autoUpdate',
-    includeAssets: ['favicon.ico', 'favicon.svg', 'icons/*.png'],
+    // SEC-15: a fonte precisa entrar no precache. Antes disso o app offline não tinha Inter
+    // nenhuma — vinha do Google (inalcançável offline) e `.woff2` não está no globPatterns
+    // default do plugin, então nada era precacheado e a tipografia caía para system-ui.
+    includeAssets: ['favicon.ico', 'favicon.svg', 'icons/*.png', 'fonts/inter-latin-var.woff2'],
     manifest: {
       name: 'Gimbo — Finanças Pessoais',
       short_name: 'Gimbo',

@@ -11,6 +11,25 @@ import {
   getGoogleAccountEmail,
 } from '@/lib/cloudSync/googleAuth'
 
+// SEC-04 — o refresh token passou a viver cifrado no IndexedDB (`secretStore`), que o jsdom não
+// implementa. Estes testes exercitam a **lógica de auth** — PKCE, guarda de CSRF por `state`,
+// refresh, expiração local, revogação —, não a mecânica de cifragem; essa depende de IndexedDB e
+// WebCrypto reais e é coberta em browser por `e2e/authStorage.spec.ts`. O duplo em memória abaixo
+// tem a mesma semântica do módulo real, incluindo devolver null para segredo ausente.
+const { secretVault } = vi.hoisted(() => ({ secretVault: new Map<string, string>() }))
+
+vi.mock('@/lib/cloudSync/secretStore', () => ({
+  putSecret: (name: string, value: string) => {
+    secretVault.set(name, value)
+    return Promise.resolve()
+  },
+  getSecret: (name: string) => Promise.resolve(secretVault.get(name) ?? null),
+  deleteSecret: (name: string) => {
+    secretVault.delete(name)
+    return Promise.resolve()
+  },
+}))
+
 function mockFetchOk(body: unknown) {
   return vi.fn().mockResolvedValue({
     ok: true,
@@ -34,6 +53,7 @@ let assignMock: ReturnType<typeof vi.fn>
 beforeEach(() => {
   localStorage.clear()
   sessionStorage.clear()
+  secretVault.clear()
   // jsdom's window.location.assign isn't configurable, so it can't be spied on directly —
   // replace the whole object with a plain stand-in that has a mockable assign().
   assignMock = vi.fn()
@@ -201,5 +221,112 @@ describe('revokeGoogleAuth', () => {
 
   it('is a no-op when not connected', async () => {
     await expect(revokeGoogleAuth()).resolves.toBeUndefined()
+  })
+})
+
+// ─── SEC-04 ───────────────────────────────────────────────────────────────────
+
+describe('SEC-04 — onde os tokens ficam', () => {
+  async function connect() {
+    await initiateGoogleAuth()
+    const state = sessionStorage.getItem('gimbo_google_oauth_state')!
+    global.fetch = mockFetchOk({
+      access_token: 'access-1',
+      refresh_token: 'refresh-1',
+      expires_in: 3600,
+    })
+    await handleGoogleCallback('auth-code', state)
+  }
+
+  it('nenhum token vai para o localStorage', async () => {
+    await connect()
+
+    // Varre o localStorage inteiro, não só a chave conhecida: o ponto do item é que o segredo não
+    // esteja em lugar algum onde um `JSON.stringify(localStorage)` o alcance.
+    const dump = JSON.stringify(localStorage)
+    expect(dump).not.toContain('refresh-1')
+    expect(dump).not.toContain('access-1')
+  })
+
+  it('o refresh token vai para o cofre cifrado, e o access token não é persistido', async () => {
+    await connect()
+    expect(secretVault.get('google_refresh_token')).toBe('refresh-1')
+    expect([...secretVault.values()]).not.toContain('access-1')
+  })
+
+  it('o metadado guardado é suficiente para a UI e inútil para um atacante', async () => {
+    await connect()
+    const meta = JSON.parse(localStorage.getItem('gimbo_google_auth_meta')!) as Record<
+      string,
+      unknown
+    >
+    expect(meta.connected).toBe(true)
+    expect(Object.values(meta).join(' ')).not.toContain('refresh-1')
+  })
+
+  it('recusa o refresh token depois do teto de idade e exige reconexão', async () => {
+    await connect()
+    const THIRTY_ONE_DAYS = 31 * 24 * 60 * 60 * 1000
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + THIRTY_ONE_DAYS)
+    global.fetch = mockFetchOk({ access_token: 'nunca-usado', expires_in: 3600 })
+
+    await expect(refreshGoogleToken()).rejects.toThrow(/expired by local policy/)
+    expect(googleNeedsReconnect()).toBe(true)
+    // O segredo é destruído junto: um token que a política local recusa não deve continuar em disco.
+    expect(secretVault.get('google_refresh_token')).toBeUndefined()
+  })
+
+  it('dentro do teto de idade o refresh continua funcionando', async () => {
+    await connect()
+    const TWENTY_NINE_DAYS = 29 * 24 * 60 * 60 * 1000
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + TWENTY_NINE_DAYS)
+    global.fetch = mockFetchOk({ access_token: 'access-2', expires_in: 3600 })
+
+    await expect(refreshGoogleToken()).resolves.toBe('access-2')
+    expect(googleNeedsReconnect()).toBe(false)
+  })
+
+  it('revokeGoogleAuth apaga o segredo do cofre', async () => {
+    await connect()
+    global.fetch = vi.fn().mockResolvedValue({ ok: true } as Response)
+
+    await revokeGoogleAuth()
+    expect(secretVault.get('google_refresh_token')).toBeUndefined()
+    expect(isGoogleConnected()).toBe(false)
+  })
+})
+
+describe('SEC-04 — migração do formato antigo', () => {
+  it('descarta os tokens em texto claro e pede reconexão, em vez de reaproveitá-los', () => {
+    // Estado de um usuário que conectou antes desta mudança: tokens em texto claro no localStorage.
+    localStorage.setItem(
+      'gimbo_google_auth',
+      JSON.stringify({
+        accessToken: 'antigo-access',
+        refreshToken: 'antigo-refresh',
+        expiresAt: Date.now() + 3_600_000,
+        email: 'pessoa@example.com',
+      })
+    )
+
+    // Qualquer acessor dispara a migração — ela é síncrona porque só toca localStorage.
+    expect(isGoogleConnected()).toBe(true)
+
+    // A chave antiga some, com os tokens junto: um refresh token que ficou exposto em texto claro
+    // deve ser rotacionado, não migrado.
+    expect(localStorage.getItem('gimbo_google_auth')).toBeNull()
+    expect(JSON.stringify(localStorage)).not.toContain('antigo-refresh')
+    expect(JSON.stringify(localStorage)).not.toContain('antigo-access')
+
+    // O e-mail sobrevive só para a UI conseguir dizer qual conta reconectar.
+    expect(getGoogleAccountEmail()).toBe('pessoa@example.com')
+    expect(googleNeedsReconnect()).toBe(true)
+  })
+
+  it('um blob antigo ilegível ainda assim é apagado', () => {
+    localStorage.setItem('gimbo_google_auth', 'isto nao e json')
+    expect(isGoogleConnected()).toBe(true)
+    expect(localStorage.getItem('gimbo_google_auth')).toBeNull()
+    expect(googleNeedsReconnect()).toBe(true)
   })
 })

@@ -16,10 +16,18 @@ export interface BugReportDialogProps {
 
 const GITHUB_ISSUES_URL = 'https://github.com/dassan/gimbo/issues/new'
 
+// SEC-08: `includeErrors` vem **desmarcado** por padrão, diferente dos demais.
+//
+// O destino deste snapshot é um issue pré-preenchido em `github.com/dassan/gimbo`, que desde a
+// abertura do repositório é world-readable e indexável. Os outros grupos carregam rota, nome de
+// ação e contagens — nada identificável. `recentErrors` carrega `error.stack`, que é o único campo
+// capaz de trazer estrutura interna e, dependendo do erro, fragmentos de dado do usuário na
+// mensagem. Quem precisar dele marca conscientemente; o preview do JSON logo abaixo mostra
+// exatamente o que vai junto.
 const DEFAULT_OPTIONS: SnapshotOptions = {
   includeNavigation: true,
   includeActions: true,
-  includeErrors: true,
+  includeErrors: false,
   includePerformance: true,
   includeDataShape: true,
 }

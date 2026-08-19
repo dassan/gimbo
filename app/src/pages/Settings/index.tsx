@@ -87,6 +87,7 @@ import {
 } from '@/lib/utils'
 import { AUDIT_RETENTION_DEFAULT } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
+import { ERR_SCHEMA_TOO_NEW, hasErrorMarker } from '@/services/storage/errors'
 import Toast from '@/components/Toast'
 import type {
   Account,
@@ -190,6 +191,9 @@ type ImportResult =
 
 const IMPORT_ERROR_CODES = {
   CORRUPT: 'ERR_RESTORE_004',
+  // SEC-06: arquivo escrito por um build mais novo do app. Distinto de "corrompido" porque a ação
+  // do usuário é outra — atualizar o app, não procurar outro backup.
+  NEWER_SCHEMA: 'ERR_RESTORE_005',
 } as const
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -554,11 +558,14 @@ export default function Settings() {
       const imported = await storage.loadDataFile()
       if (imported) loadData(imported)
       setImportResult({ status: 'success' })
-    } catch {
+    } catch (err) {
+      // SEC-05: a partir daqui o cofre atual está garantidamente intacto — o import só toca
+      // `gimbo.db` depois de a cópia recebida provar que abre, migra e contém dados legíveis.
+      const tooNew = hasErrorMarker(err, ERR_SCHEMA_TOO_NEW)
       setImportResult({
         status: 'error',
-        message: t('settings.importErrorCorrupt'),
-        code: IMPORT_ERROR_CODES.CORRUPT,
+        message: tooNew ? t('settings.importErrorNewerSchema') : t('settings.importErrorCorrupt'),
+        code: tooNew ? IMPORT_ERROR_CODES.NEWER_SCHEMA : IMPORT_ERROR_CODES.CORRUPT,
       })
     }
   }

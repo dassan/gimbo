@@ -11,6 +11,8 @@ import {
   type SafeEvent,
   type SnapshotOptions,
   type DataShape,
+  truncateStack,
+  summarizeUserAgent,
 } from '@/lib/telemetry'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -269,5 +271,79 @@ describe('buildBugReportSnapshot', () => {
     const snap = buildBugReportSnapshot(ALL_ON)
     expect(snap.recentActions).toHaveLength(20)
     expect((snap.recentActions[19] as { name: string }).name).toBe('action_24')
+  })
+})
+
+// ─── SEC-08 ───────────────────────────────────────────────────────────────────
+
+describe('SEC-08 — redução do que vai para um issue público', () => {
+  it('truncateStack mantém a mensagem e os 3 primeiros frames, sinalizando o corte', () => {
+    const stack = [
+      'Error: algo quebrou',
+      '    at parseDateLocal (utils.ts:10:5)',
+      '    at getInvoiceTotal (utils.ts:99:3)',
+      '    at Dashboard (Dashboard.tsx:42:1)',
+      '    at renderWithHooks (react-dom.js:1:1)',
+      '    at mountIndeterminateComponent (react-dom.js:2:2)',
+    ].join('\n')
+
+    const out = truncateStack(stack)
+    expect(out).toContain('Error: algo quebrou')
+    expect(out).toContain('parseDateLocal')
+    expect(out).toContain('Dashboard.tsx')
+    expect(out).not.toContain('mountIndeterminateComponent')
+    expect(out).toContain('+2 frames omitidos')
+  })
+
+  it('truncateStack não inventa marcador quando não há o que cortar', () => {
+    const stack = 'Error: curto\n    at a (x.ts:1:1)'
+    expect(truncateStack(stack)).not.toContain('omitidos')
+  })
+
+  it('truncateStack lida com stack sem linha de mensagem', () => {
+    const stack = ['    at a (x.ts:1:1)', '    at b (x.ts:2:2)'].join('\n')
+    const out = truncateStack(stack)
+    expect(out).toContain('at a')
+    expect(out).toContain('at b')
+  })
+
+  it('summarizeUserAgent reduz a família + versão maior', () => {
+    const chrome =
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    const firefox = 'Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0'
+    const safari =
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15'
+
+    expect(summarizeUserAgent(chrome)).toBe('Chrome 120')
+    expect(summarizeUserAgent(firefox)).toBe('Firefox 121')
+    expect(summarizeUserAgent(safari)).toBe('Safari 17')
+  })
+
+  it('summarizeUserAgent não confunde Edge e Opera com Chrome', () => {
+    // Ambos trazem "Chrome/" no UA — a ordem dos padrões é o que os distingue.
+    const edge =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'
+    const opera =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36 OPR/105.0.0.0'
+
+    expect(summarizeUserAgent(edge)).toBe('Edge 120')
+    expect(summarizeUserAgent(opera)).toBe('Opera 105')
+  })
+
+  it('summarizeUserAgent degrada para "desconhecido" sem vazar o UA cru', () => {
+    const exotic = 'AlgumBrowserEsquisito/1.0 (identificador-muito-especifico-do-aparelho)'
+    expect(summarizeUserAgent(exotic)).toBe('desconhecido')
+  })
+
+  it('o snapshot não carrega mais o User-Agent cru', () => {
+    const snap = buildBugReportSnapshot({
+      includeNavigation: true,
+      includeActions: true,
+      includeErrors: true,
+      includePerformance: true,
+      includeDataShape: false,
+    })
+    expect(snap.browser).not.toBe(navigator.userAgent)
+    expect(snap.browser.length).toBeLessThan(30)
   })
 })

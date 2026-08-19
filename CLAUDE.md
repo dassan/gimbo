@@ -25,7 +25,7 @@ Workflow de desenvolvimento IA + humano definido em `plan/RULES.md`.
 |-----------|---------|---------|
 | Arquitetura | `plan/ARCHITECTURE.md` | Stack, estrutura de diretórios, modelo de dados, APIs, fluxos de persistência, testes |
 | Requisitos de produto | `plan/PRD.md` | Features F-1 a F-30, critérios de aceite |
-| Backlog | `plan/BACKLOG.md` | Bugs (B-XX), melhorias (M-XX), cartão (CC-XX), relatórios (R-XX), backup (BK-XX), sync (CS-XX) |
+| Backlog | `plan/BACKLOG.md` | Bugs (B-XX), melhorias (M-XX), cartão (CC-XX), relatórios (R-XX), backup (BK-XX), sync (CS-XX), segurança (SEC-XX) |
 | Especificação técnica | `plan/SPEC.md` | Tasks de implementação por fase (TASK-XX); Fase 16 = sync multi-dispositivo |
 | Cartão de crédito | `plan/CREDIT_CARD.md` | Decisões de produto e desafios técnicos do módulo CC |
 | Cenários de sync | `plan/SYNC_SCENARIOS.md` | 20 cenários: SQLite atual (S-01..07), multi-desktop por pasta (S-16..20), nuvem (S-08..15) |
@@ -115,8 +115,24 @@ Falha de backup em pasta jamais interrompe o fluxo principal.
 ```
 
 Tipos: `feat:` | `fix:` | `test:` | `style:` | `refactor:` | `docs:` | `chore:`
-Referência obrigatória ao ID (M-XX, B-XX, CC-XX, R-XX, BK-XX, HE-XX, CS-XX, MB-XX) quando aplicável.
-Uma feature por commit/PR. CI verde obrigatório. Nenhum `TODO` no código.
+Referência obrigatória ao ID (M-XX, B-XX, CC-XX, R-XX, BK-XX, HE-XX, CS-XX, MB-XX, SEC-XX) quando aplicável.
+CI verde obrigatório. Nenhum `TODO` no código.
+
+### Branch por tópico (revisado em 2026-08-19)
+
+**Uma branch por tópico**, não por feature — `dassan/<tópico>` (ex.: `dassan/security-audit`,
+`dassan/landing-page`, `dassan/sync-mobile`). Um tópico agrupa todo um esforço relacionado e pode
+acumular vários itens do backlog antes de virar PR; a branch só fecha quando o tópico fecha.
+
+**Um item por commit continua valendo.** É o commit que carrega o ID (`SEC-03`, `MB-08`…) e o
+"porquê" — a granularidade que dá rollback e leitura de histórico. O que mudou foi só o escopo da
+branch, não o do commit.
+
+> A regra anterior era "uma feature por commit/PR". Foi revisada porque, nesta fase de construção
+> da aplicação, features isoladas raramente descrevem bem o trabalho real: um tópico como segurança
+> ou responsividade mobile rende uma série de itens pequenos e interdependentes, que revisar juntos
+> é mais barato do que abrir uma PR por item. Reavaliar quando o app estabilizar e as mudanças
+> passarem a ser majoritariamente incrementais.
 
 ---
 
@@ -248,6 +264,11 @@ Features concluídas desde 2026-05-27:
 > sem esperar um patch novo do Vite; não é um item de ação.
 
 Itens em aberto:
+- **SEC-01 a SEC-16** — Auditoria de segurança pré-open-source (2026-08-18/19, branch `dassan/security-audit`) — ver `plan/BACKLOG.md` seção "Segurança — Auditoria Pré-Open-Source (SEC)". **0 Critical, 2 High, 3 Medium, 4 Low, 5 Info**, mais `SEC-15`/`SEC-16` achados ao implementar e verificar as correções. Nenhum achado foi causado por tornar o código público (histórico git limpo de segredos, `.env` nunca versionado). **Resolvidos: SEC-01 a SEC-09, SEC-14 e SEC-15** — redirect URIs do OAuth verificadas, headers de segurança em produção (`app/public/_headers`, com CSP), `refresh_token` do Google fora do `localStorage` (cifrado em IndexedDB + teto de 30 dias), import que valida antes de destruir o cofre, migrations atômicas com resgate de boot, fonte Inter self-hospedada, actions fixadas por SHA, escopo do bug report reduzido, `legacy-peer-deps` removido e `THIRD-PARTY-NOTICES.md`. **Aceitos: SEC-10 a SEC-13.** **Em aberto: `SEC-16`** — separar o OAuth client de dev do de produção. Hoje há um só, acumulando as URIs de `localhost` e de `gimbo.com.br`, e o `npm run deploy` builda com o mesmo `.env` do desenvolvimento — dev e produção compartilham a credencial. A criação do segundo client é ação manual no Google Cloud Console; a divisão em `.env.development`/`.env.production` (o Vite carrega por modo) é a parte deste repositório. > **O `SEC-01` foi resolvido com ressalva:** as URIs de `localhost` seguem registradas por decisão do mantenedor, para não interromper o desenvolvimento — risco baixo (o redirect entrega o código na máquina da própria vítima, sob HTTPS autoassinado), e o `SEC-16` elimina o trade-off por construção. Confirmado que **não há resquício do domínio antigo da Vercel** na allowlist.
+> **Nada disso está em produção até rodar `npm run deploy`** — os headers e a fonte self-hospedada só valem no build publicado.
+
+- **Cofre protegido por senha** — épico separado, decidido em 2026-08-19: bloqueio por senha com expiração por inatividade, e criptografia em repouso. **Reverte parcialmente o `X-1` do `PRD.md`** ("Criptografia do arquivo local", hoje listado como fora de escopo permanente) e encosta no `CS-18`. Ainda não desenhado — decisão pendente: se o backup exportado continua abrível em qualquer ferramenta SQLite ou vira blob opaco.
+
 - **MB-08** — Analytics responsivo para mobile (média prioridade; parcial — aba Categorias resolvida em `MB-18`, as outras 4 abas — CashFlow, Contas, Tags, Faturas — seguem sem versão mobile)
 - **BK-04** — Banner de re-permissão da pasta de backup no startup (média prioridade)
 - **M-63b** — Gráfico de tendência (passado real + futuro projetado) no Patrimônio Líquido (baixa; a fatia de Saúde Financeira do M-63 já foi resolvida)
