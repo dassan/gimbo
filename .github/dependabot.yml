@@ -1,0 +1,30 @@
+# SEC-07 — contrapartida do pinning por SHA nos workflows.
+#
+# Fixar `uses:` num commit fecha o vetor de tag móvel (um comprometimento do repositório da action
+# permitiria reapontar `v4` para código malicioso, que rodaria com o GITHUB_TOKEN do job), mas
+# congela as actions em versões que envelhecem em silêncio. O Dependabot devolve o caminho de
+# atualização: abre PR bumpando o SHA e o comentário de versão junto, mantendo o pinning.
+version: 2
+updates:
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    commit-message:
+      prefix: 'chore'
+    labels:
+      - 'dependencies'
+
+  # As dependências npm continuam sendo acompanhadas pelo `npm audit` semanal
+  # (.github/workflows/audit.yml, gate em --audit-level=high). O Dependabot aqui cobre só
+  # atualizações de segurança, para não gerar ruído de bump de versão a cada semana num projeto
+  # de mantenedor único.
+  - package-ecosystem: 'npm'
+    directory: '/app'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 0 # 0 = só alertas/PRs de segurança, nunca bumps de rotina
+    commit-message:
+      prefix: 'chore'
+    labels:
+      - 'dependencies'
