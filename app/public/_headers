@@ -13,12 +13,15 @@
 #   'wasm-unsafe-eval'          → sem isso o wa-sqlite não compila o WASM e o app não abre
 #   worker-src 'self' blob:     → o worker do SQLite e o service worker do PWA
 #   style-src 'unsafe-inline'   → ~56 usos de `style={{...}}` no código + estilos inline do Recharts
-#   fonts.googleapis/gstatic    → `src/index.css` importa a fonte Inter do Google (ver SEC-15)
 #   connect-src googleapis      → OAuth + Drive API (lib/cloudSync/googleAuth.ts, googleDrive.ts)
 #
 # NÃO adicionar Cross-Origin-Embedder-Policy: o app não usa SharedArrayBuffer (o
-# OriginPrivateFileSystemVFS é assíncrono), então COEP não traz benefício e quebraria o
-# carregamento da fonte do Google.
+# OriginPrivateFileSystemVFS é assíncrono), então COEP não traria benefício algum aqui.
+#
+# Nenhuma origem de terceiro é permitida fora do Google OAuth/Drive em `connect-src`, e essas só
+# são contatadas depois que o usuário conecta o sync explicitamente. A fonte Inter é self-hospedada
+# desde o SEC-15 — se alguém reintroduzir um `@import` de fonte externa, a tipografia quebra sob
+# esta CSP, e a correção é self-hospedar, não afrouxar `style-src`/`font-src`.
 #
 # VIOLAÇÃO ESPERADA — NÃO "CORRIGIR" COM 'unsafe-eval':
 # O console reporta uma violação `script-src ... eval` por carga de página, vinda do Zod v4. É a
@@ -30,7 +33,7 @@
 # adicionar 'unsafe-eval' para silenciar o aviso destruiria boa parte do valor da CSP.
 
 /*
-  Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://oauth2.googleapis.com https://www.googleapis.com https://accounts.google.com; worker-src 'self' blob:; manifest-src 'self'
+  Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://oauth2.googleapis.com https://www.googleapis.com https://accounts.google.com; worker-src 'self' blob:; manifest-src 'self'
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer
