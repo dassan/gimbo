@@ -25,7 +25,7 @@ Workflow de desenvolvimento IA + humano definido em `plan/RULES.md`.
 |-----------|---------|---------|
 | Arquitetura | `plan/ARCHITECTURE.md` | Stack, estrutura de diretórios, modelo de dados, APIs, fluxos de persistência, testes |
 | Requisitos de produto | `plan/PRD.md` | Features F-1 a F-30, critérios de aceite |
-| Backlog | `plan/BACKLOG.md` | Bugs (B-XX), melhorias (M-XX), cartão (CC-XX), relatórios (R-XX), backup (BK-XX), sync (CS-XX) |
+| Backlog | `plan/BACKLOG.md` | Bugs (B-XX), melhorias (M-XX), cartão (CC-XX), relatórios (R-XX), backup (BK-XX), sync (CS-XX), segurança (SEC-XX) |
 | Especificação técnica | `plan/SPEC.md` | Tasks de implementação por fase (TASK-XX); Fase 16 = sync multi-dispositivo |
 | Cartão de crédito | `plan/CREDIT_CARD.md` | Decisões de produto e desafios técnicos do módulo CC |
 | Cenários de sync | `plan/SYNC_SCENARIOS.md` | 20 cenários: SQLite atual (S-01..07), multi-desktop por pasta (S-16..20), nuvem (S-08..15) |
@@ -115,7 +115,7 @@ Falha de backup em pasta jamais interrompe o fluxo principal.
 ```
 
 Tipos: `feat:` | `fix:` | `test:` | `style:` | `refactor:` | `docs:` | `chore:`
-Referência obrigatória ao ID (M-XX, B-XX, CC-XX, R-XX, BK-XX, HE-XX, CS-XX, MB-XX) quando aplicável.
+Referência obrigatória ao ID (M-XX, B-XX, CC-XX, R-XX, BK-XX, HE-XX, CS-XX, MB-XX, SEC-XX) quando aplicável.
 Uma feature por commit/PR. CI verde obrigatório. Nenhum `TODO` no código.
 
 ---
@@ -248,6 +248,7 @@ Features concluídas desde 2026-05-27:
 > sem esperar um patch novo do Vite; não é um item de ação.
 
 Itens em aberto:
+- **SEC-01 a SEC-14** — Auditoria de segurança pré-open-source (2026-08-18, commit `5672bb7`) — ver `plan/BACKLOG.md` seção "Segurança — Auditoria Pré-Open-Source (SEC)". **0 Critical, 2 High, 3 Medium, 4 Low, 5 Info; nada bloqueou a publicação** — nenhum achado foi causado por tornar o código público (histórico git limpo de segredos, `.env` nunca versionado). Prioridades: `SEC-01` (auditar redirect URIs do OAuth client — único controle de acesso restante, dado que o `client_secret` é público por construção) e `SEC-02` (`permissions: contents: read` no CI) antes/junto da publicação; `SEC-03` (não existe **nenhum** header de segurança em produção — sem CSP, `frame-ancestors`, HSTS) e `SEC-04` (`refresh_token` do Google em `localStorage`) são os dois High; `SEC-05`/`SEC-06` são perda irreversível de dados **sem atacante envolvido** (import destrói o cofre antes de validar; migrations não-atômicas com `ALTER TABLE` não-idempotente podem impedir o boot em definitivo).
 - **MB-08** — Analytics responsivo para mobile (média prioridade; parcial — aba Categorias resolvida em `MB-18`, as outras 4 abas — CashFlow, Contas, Tags, Faturas — seguem sem versão mobile)
 - **BK-04** — Banner de re-permissão da pasta de backup no startup (média prioridade)
 - **M-63b** — Gráfico de tendência (passado real + futuro projetado) no Patrimônio Líquido (baixa; a fatia de Saúde Financeira do M-63 já foi resolvida)
