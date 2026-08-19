@@ -32,7 +32,37 @@
 # renderizou os valores calculados, com zero pageerror. O custo é uma validação um pouco mais lenta;
 # adicionar 'unsafe-eval' para silenciar o aviso destruiria boa parte do valor da CSP.
 
+# SEC-17 — `no-transform` impede a Cloudflare de injetar o beacon do Web Analytics.
+#
+# Descoberto ao validar o deploy do SEC-03: a produção estava servindo
+# `static.cloudflareinsights.com/beacon.min.js` em toda carga de página. A injeção **não vem do
+# build** (o `dist/index.html` não tem nenhuma referência) — é feita pelo proxy da Cloudflare, e só
+# para requisições com cara de browser, o que é por que passou despercebida (um `curl` simples não
+# a vê; com `User-Agent`/`Accept` de navegador, aparece).
+#
+# A doc da Cloudflare é explícita: "If you have a Cache-Control header set to `public, no-transform`,
+# Cloudflare proxy will not be able to modify the original payload of the website. Therefore, the
+# Beacon script will not be automatically injected to your site."
+#
+# Isto é a camada versionada; a correção de raiz é desligar em Web Analytics → Manage site →
+# Disable, no painel. As duas juntas de propósito: um toggle de painel é invisível para o
+# repositório e pode ser reativado sem ninguém notar — foi assim que a allowlist de redirect_uri
+# ficou desatualizada no incidente da Vercel (ver CLAUDE.md).
+#
+# O valor de `max-age`/`must-revalidate` abaixo **reproduz exatamente o que o Workers Assets já
+# servia** para todos os caminhos (verificado por `curl` em `/`, `/assets/*.js`, `/fonts/*.woff2` e
+# `/sw.js` antes da mudança). Só `no-transform` é novo — nada de caching muda aqui.
+#
+# Efeito colateral aceito: `no-transform` também desliga outras transformações da Cloudflare
+# (Rocket Loader, Email Obfuscation, Polish). Neutro ou desejável neste app — o Rocket Loader, em
+# particular, seria bloqueado pela CSP.
+#
+# > O cache uniforme de `max-age=0` para assets com hash no nome é um desperdício conhecido e está
+# > registrado como `M-70` (performance, não segurança). Ao resolvê-lo, manter `no-transform` no
+# > caminho do HTML.
+
 /*
+  Cache-Control: public, max-age=0, must-revalidate, no-transform
   Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://oauth2.googleapis.com https://www.googleapis.com https://accounts.google.com; worker-src 'self' blob:; manifest-src 'self'
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
