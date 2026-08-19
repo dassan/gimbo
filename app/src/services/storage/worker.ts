@@ -404,6 +404,18 @@ async function importDb(data: ArrayBuffer): Promise<void> {
           `${ERR_DB_UNREADABLE}: falha ao importar e ao restaurar; cópia do cofre anterior preservada em "${rollbackName}" no OPFS`
         )
       }
+    } else {
+      // Sem snapshot (não havia cofre antes — import no onboarding). Nada a restaurar, mas o
+      // ponteiro `db` acabou de ser fechado na fase 3: sem reabrir, toda operação seguinte
+      // falharia até um reload, mesmo o erro sendo recuperável. Best-effort de propósito — se
+      // nem isso funcionar, o erro original abaixo continua sendo o que descreve a falha.
+      try {
+        db = await sqlite3.open_v2(DB_FILENAME)
+        await runMigrationsOn(db)
+      } catch {
+        // Worker segue inutilizável até um reload; o erro propagado abaixo já diz ao usuário
+        // que o import falhou, e não havia dados a perder neste caminho.
+      }
     }
     await removeDbFiles(root, stagingName)
     await removeDbFiles(root, rollbackName)
