@@ -52,11 +52,16 @@ describe('BugReportDialog — render', () => {
     expect(screen.getByRole('textbox')).toBeInTheDocument()
   })
 
-  it('renders all 5 snapshot option checkboxes', () => {
+  it('renders all 5 snapshot option checkboxes, com "erros" desmarcado por padrão (SEC-08)', () => {
     renderDialog()
     const checkboxes = screen.getAllByRole('checkbox')
     expect(checkboxes).toHaveLength(5)
-    expect(checkboxes.every((cb) => (cb as HTMLInputElement).checked)).toBe(true)
+
+    // 4 marcados + `includeErrors` desmarcado: o stack trace é o único campo capaz de levar
+    // estrutura interna e fragmentos de dado do usuário para um issue público, então entra por
+    // escolha consciente. A ordem segue a de DEFAULT_OPTIONS.
+    const checked = checkboxes.map((cb) => (cb as HTMLInputElement).checked)
+    expect(checked).toEqual([true, true, false, true, true])
   })
 
   it('renders the privacy badge', () => {
@@ -177,11 +182,25 @@ describe('BugReportDialog — submit', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('URL includes captured errors in snapshot when errors are present', async () => {
+  it('SEC-08: erros capturados NÃO vão na URL enquanto a opção estiver desmarcada', async () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
     trackError(new Error('ReferenceError: x is not defined'))
 
     renderDialog()
+    await userEvent.type(screen.getByRole('textbox'), 'got an error')
+    await userEvent.click(screen.getByRole('button', { name: 'bugReport.submit' }))
+
+    const url = openSpy.mock.calls[0][0] as string
+    expect(decodeUrl(url)).not.toContain('ReferenceError: x is not defined')
+  })
+
+  it('SEC-08: erros vão na URL depois de o usuário marcar a opção conscientemente', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+    trackError(new Error('ReferenceError: x is not defined'))
+
+    renderDialog()
+    // Terceiro checkbox = includeErrors, na ordem de DEFAULT_OPTIONS.
+    await userEvent.click(screen.getAllByRole('checkbox')[2])
     await userEvent.type(screen.getByRole('textbox'), 'got an error')
     await userEvent.click(screen.getByRole('button', { name: 'bugReport.submit' }))
 
