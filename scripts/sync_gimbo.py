@@ -13,7 +13,9 @@ Dois modos de operacao:
 
   SNAPSHOT (default) — sem --window-months
     Reescreve o arquivo inteiro com exatamente a janela [start, end]. Nao acumula
-    historico; --base preserva apenas saldos de conta. Ideal para a carga inicial e
+    historico; das transacoes antigas nao sobra nada. Os campos de conta editados a mao
+    (`balance`, `include_in_balance`, `archived`) sobrevivem se --base for passado — a
+    preservacao vale nos dois modos, nao so no incremental. Ideal para a carga inicial e
     para reconciliacoes completas periodicas.
 
   INCREMENTAL — com --window-months N
@@ -39,6 +41,12 @@ Decisoes de projeto (acordadas):
     existentes vem do --base (o toggle do Gimbo e que vale).
   - Recorrencia: cada ocorrencia do Organizze entra como transacao avulsa (fiel ao extrato);
     as colunas recurrence_* ficam NULL (transacoes vindas da base conservam seus valores).
+  - Timestamps das transacoes (B-32): `created_at` vem do Organizze (quando o lancamento foi
+    criado la) e `updated_at` e o timestamp do run. Sao coisas diferentes de proposito — o
+    primeiro alimenta o "Ultimos Lancamentos" do Dashboard (ordenado por createdAt, B-24), o
+    segundo e a chave LWW do merge multi-dispositivo (CS-19). Transacoes preservadas do --base
+    conservam o `created_at` que ja tinham, entao um cofre montado antes do B-32 so tem os
+    timestamps corretos nas transacoes dentro da janela ate rodar um snapshot completo.
 
 Uso:
   set ORGANIZZE_TOKEN=...           (PowerShell: $env:ORGANIZZE_TOKEN="...")
@@ -223,6 +231,19 @@ def parse_date_str(s: str):
         return datetime.strptime(str(s)[:10], "%Y-%m-%d").date()
     except ValueError:
         return None
+
+
+def organizze_created_at(t, fallback: str) -> str:
+    """`created_at` do lancamento no Organizze -> `createdAt` do Gimbo (B-24/B-32).
+
+    A API v2 devolve ISO 8601 com offset (ex.: '2026-08-19T20:18:32.000-03:00'), que o
+    `new Date()` do app interpreta corretamente mesmo convivendo com os timestamps naive
+    gravados pelo proprio Gimbo. Formato inesperado (ex.: 'DD/MM/YYYY') viraria `Invalid Date`
+    e quebraria a ordenacao -> cai no fallback. O fallback (timestamp do run) tambem cobre o
+    campo ausente: `transactions.created_at` e NOT NULL no schema do Gimbo.
+    """
+    raw = str(t.get("created_at") or "").strip()
+    return raw if parse_date_str(raw) else fallback
 
 
 def months_back(d: date, n: int) -> date:
@@ -677,7 +698,12 @@ def build_transactions(lancamentos, account_id_map, card_id_map, category_id_map
                 "installment_purchase_date": inst_purchase_date,
                 "recurrence_parent_id": None, "recurrence_frequency": None, "recurrence_end_date": None,
                 "reference_month": reference_month, "invoice_due_date": invoice_due_date,
-                "created_at": ts, "updated_at": ts,
+                # B-32: `created_at` = quando o lancamento nasceu no Organizze (alimenta o
+                # "Ultimos Lancamentos" do Dashboard, ordenado por createdAt — B-24). Ja
+                # `updated_at` continua sendo o timestamp do run de proposito: e a chave LWW
+                # do merge multi-dispositivo (CS-19), e o snapshot recem-sincronizado precisa
+                # vencer o que estiver no cofre.
+                "created_at": organizze_created_at(t, ts), "updated_at": ts,
             }
         )
 
