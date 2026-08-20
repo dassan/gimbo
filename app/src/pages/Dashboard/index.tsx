@@ -12,6 +12,7 @@ import {
   CreditCard,
   Bitcoin,
   ArrowLeftRight,
+  ArrowRightLeft,
   Briefcase,
   MoreHorizontal,
   Banknote,
@@ -502,7 +503,7 @@ function RecentTransactionsList({
   return (
     <div className="space-y-1">
       {recentTxs.map((tx) => (
-        <TransactionRow key={tx.id} tx={tx} data={data} />
+        <TransactionRow key={tx.id} tx={tx} data={data} t={t} />
       ))}
     </div>
   )
@@ -571,25 +572,50 @@ function DonutSection({
 function TransactionRow({
   tx,
   data,
+  t,
 }: {
   tx: Transaction
   data: NonNullable<ReturnType<typeof useDataStore.getState>['data']>
+  t: (key: string) => string
 }) {
   const cat = data.categories.find((c) => c.id === tx.categoryId)
   const acc = data.accounts.find((a) => a.id === tx.accountId)
   const isIncome = tx.type === 'INCOME'
+  const isTransfer = tx.type === 'TRANSFER'
   const isCreditPayment = tx.type === 'CREDIT_PAYMENT'
+  // TRANSFER: destination account. CREDIT_PAYMENT: the funded card is `acc` and the money
+  // comes from transferAccountId (shown as "<funding account> → <card>").
+  const destAcc =
+    isTransfer || isCreditPayment ? data.accounts.find((a) => a.id === tx.transferAccountId) : null
   const dateStr = parseDateLocal(tx.date).toLocaleDateString('pt-BR', {
     day: '2-digit',
     month: 'short',
   })
 
+  // Fallback title when the tx has no description — same rule as the Transactions page
+  const typeTitle = isTransfer
+    ? t('transactions.transferTitle')
+    : isCreditPayment
+      ? t('transactions.creditPayment')
+      : cat?.name
+
+  // Transfers/payments describe the money path; everything else shows category · account
+  const subtitle = isTransfer
+    ? `${acc?.name ?? '—'} → ${destAcc?.name ?? '—'}`
+    : isCreditPayment
+      ? `${destAcc?.name ?? '—'} → ${acc?.name ?? '—'}`
+      : [cat?.name, acc?.name].filter(Boolean).join(' · ')
+
   return (
     <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-surface-container-low transition-colors">
-      {/* Icon: CreditCard neutral for CREDIT_PAYMENT, category avatar otherwise */}
-      {isCreditPayment ? (
+      {/* Icon: neutral for TRANSFER/CREDIT_PAYMENT, category avatar otherwise */}
+      {isTransfer || isCreditPayment ? (
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface-container-high text-on-surface/50">
-          <CreditCard size={16} strokeWidth={1.5} />
+          {isCreditPayment ? (
+            <CreditCard size={16} strokeWidth={1.5} />
+          ) : (
+            <ArrowRightLeft size={16} strokeWidth={1.5} />
+          )}
         </div>
       ) : (
         <div
@@ -604,10 +630,10 @@ function TransactionRow({
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-on-surface truncate">
           {/* eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing */}
-          {tx.description || cat?.name || '—'}
+          {tx.description || typeTitle || '—'}
         </p>
-        <p className="text-xs text-on-surface/40 mt-0.5">
-          {isCreditPayment ? acc?.name : `${cat?.name} · ${acc?.name}`} · {dateStr}
+        <p className="text-xs text-on-surface/40 mt-0.5 truncate">
+          {subtitle ? `${subtitle} · ${dateStr}` : dateStr}
         </p>
       </div>
 
@@ -616,10 +642,16 @@ function TransactionRow({
         <span
           className={cn(
             'text-sm font-semibold',
-            isIncome ? 'text-primary' : isCreditPayment ? 'text-on-surface/60' : 'text-tertiary'
+            isIncome
+              ? 'text-primary'
+              : isTransfer
+                ? 'text-on-surface/50'
+                : isCreditPayment
+                  ? 'text-on-surface/60'
+                  : 'text-tertiary'
           )}
         >
-          {isIncome ? '+' : '-'}
+          {isTransfer ? '' : isIncome ? '+' : '-'}
           {formatCurrency(tx.amount)}
         </span>
         {tx.isPaid ? (
