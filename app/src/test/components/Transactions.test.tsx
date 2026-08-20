@@ -519,7 +519,7 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
     expect(screen.getByText('Pagamento fatura')).toBeInTheDocument()
   })
 
-  it('does not include CREDIT account in the filter dropdown', () => {
+  it('does not include CREDIT account in the filter dropdown', async () => {
     const retailAccount = makeRetailAccount({ name: 'Nubank Conta' })
     const creditAccount = makeCreditAccount({ name: 'Nubank Cartão' })
 
@@ -528,6 +528,7 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
     })
 
     render(<Transactions />)
+    await userEvent.click(screen.getByLabelText('transactions.filters'))
 
     // The accounts filter dropdown should list the retail account but not the credit account
     expect(screen.getByText('Nubank Conta')).toBeInTheDocument()
@@ -535,7 +536,7 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
   })
 
   // M-42: archived accounts are hidden from the filter dropdown by default
-  it('does not include an archived account in the filter dropdown', () => {
+  it('does not include an archived account in the filter dropdown', async () => {
     const activeAccount = makeRetailAccount({ name: 'Conta Ativa' })
     const archivedAccount = makeRetailAccount({
       id: 'acc-old',
@@ -548,6 +549,7 @@ describe('Transactions — M-26: cash-flow ledger filters', () => {
     })
 
     render(<Transactions />)
+    await userEvent.click(screen.getByLabelText('transactions.filters'))
 
     expect(screen.getByText('Conta Ativa')).toBeInTheDocument()
     expect(screen.queryByText('Conta Antiga')).not.toBeInTheDocument()

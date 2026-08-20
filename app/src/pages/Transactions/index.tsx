@@ -312,67 +312,57 @@ export default function Transactions() {
   return (
     <>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-6 sm:pt-8 pb-20 lg:pb-8">
-        {/* ── Period selector ───────────────────────────────────────────────── */}
-        {/* Search moved below the "include unpaid" toggle in the summary panel, freeing up this
-            row. sm:-ml-2 compensates the chevron button's own hit-area padding so the arrow tip
-            lines up with the list content's left edge below, instead of the button's box edge. */}
-        <div className="mb-4 sm:mb-6 sm:-ml-2">
-          <PeriodSelector value={period} onChange={setPeriod} />
-        </div>
-
-        {/* ── Filter bar — desktop only, wraps at narrower lg widths ─────────── */}
-        <div className="hidden lg:flex flex-wrap items-center gap-2 sm:gap-3 mb-4 sm:mb-5">
-          {filterConfigs.map((f) => (
-            <FilterDropdown
-              key={f.key}
-              className="flex-1 min-w-[140px]"
-              label={f.label}
-              value={f.value}
-              onChange={f.onChange}
-              options={f.options}
-            />
-          ))}
-        </div>
-
-        {/* ── MB-11: mobile — search stays visible, the 4 filters + toggle collapse behind
-            a single icon into a bottom-sheet modal (avoids the filter row eating the header). ── */}
-        <div className="flex lg:hidden items-center gap-2 mb-4">
-          <div className="relative flex-1">
-            <Search
-              size={15}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
-            />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('transactions.searchPlaceholder')}
-              className="w-full rounded-xl border border-outline-variant bg-surface-container-low py-2.5 pl-8 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
-            />
+        {/* ── Period selector + search/filters ────────────────────────────────
+            MB-11's mobile pattern (search stays visible, the 4 filters + toggle collapse
+            behind a single icon into a bottom-sheet modal) now shared by desktop too: from lg
+            up, this row sits alongside the period selector, right-aligned. Same grid-cols-
+            [1fr_280px]/gap-6 as the content grid below, so the search bar's left edge lines up
+            with the summary sidebar's left edge instead of just floating at the row's end. */}
+        <div className="mb-4 sm:mb-6 flex flex-col gap-4 sm:gap-6 lg:grid lg:grid-cols-[1fr_280px] lg:items-center lg:gap-6">
+          {/* -ml-2 compensates the chevron button's own hit-area padding so the arrow tip
+              lines up with the list content's left edge below, instead of the button's box edge. */}
+          <div className="sm:-ml-2">
+            <PeriodSelector value={period} onChange={setPeriod} />
           </div>
-          <button
-            onClick={() => setFiltersOpen(true)}
-            aria-label={t('transactions.filters')}
-            className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-outline-variant bg-surface-container-low text-on-surface/60"
-          >
-            <Filter size={16} strokeWidth={1.75} />
-            {activeFilterCount > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-white">
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
+
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search
+                size={15}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
+              />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={t('transactions.searchPlaceholder')}
+                className="w-full rounded-xl border border-outline-variant bg-surface-container-low py-2.5 pl-8 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <button
+              onClick={() => setFiltersOpen(true)}
+              aria-label={t('transactions.filters')}
+              className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-outline-variant bg-surface-container-low text-on-surface/60"
+            >
+              <Filter size={16} strokeWidth={1.75} />
+              {activeFilterCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
 
-        {/* ── MB-11: mobile filters modal (bottom sheet) ──────────────────────── */}
+        {/* ── MB-11: filters modal (bottom sheet), shared by every breakpoint ──── */}
         {filtersOpen && (
-          <div className="lg:hidden fixed inset-0 z-50">
+          <div className="fixed inset-0 z-50">
             <div
               className="absolute inset-0 bg-on-surface/20 backdrop-blur-sm"
               onClick={() => setFiltersOpen(false)}
             />
-            <div className="absolute bottom-0 left-0 right-0 max-h-[85dvh] overflow-y-auto rounded-t-2xl border-t border-outline-variant bg-surface-container-low">
-              <div className="flex justify-center pt-3 pb-1">
+            <div className="absolute bottom-0 left-0 right-0 max-h-[85dvh] overflow-y-auto rounded-t-2xl border-t border-outline-variant bg-surface-container-low lg:inset-0 lg:m-auto lg:h-fit lg:max-h-[80vh] lg:w-full lg:max-w-md lg:rounded-2xl lg:border">
+              <div className="flex justify-center pt-3 pb-1 lg:hidden">
                 <div className="h-1 w-10 rounded-full bg-on-surface/15" />
               </div>
               <div className="flex items-center justify-between px-6 pt-2 pb-4">
@@ -578,21 +568,6 @@ export default function Transactions() {
                   />
                 </span>
               </button>
-
-              {/* Search — moved below the toggle to free up the header row above the list */}
-              <div className="relative">
-                <Search
-                  size={15}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
-                />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder={t('transactions.searchPlaceholder')}
-                  className="w-full rounded-xl border border-outline-variant bg-surface-container-low py-2 pl-8 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
             </div>
           </div>
         </div>
