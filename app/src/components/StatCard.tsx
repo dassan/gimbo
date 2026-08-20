@@ -25,7 +25,7 @@ export default function StatCard({
   return (
     <div
       className={cn(
-        'rounded-2xl p-5',
+        'rounded-2xl p-3',
         isHighlight
           ? isNegative
             ? 'bg-tertiary text-white'
@@ -34,14 +34,14 @@ export default function StatCard({
         !isHighlight && shadowClass
       )}
     >
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-2">
         <span className={cn('label', isHighlight ? 'text-white/60' : 'text-on-surface/40')}>
           {label}
         </span>
         {icon && (
           <span
             className={cn(
-              'flex h-7 w-7 items-center justify-center rounded-full',
+              'flex h-6 w-6 items-center justify-center rounded-full',
               variant === 'income'
                 ? 'bg-primary/10 text-primary'
                 : variant === 'expense'
@@ -55,7 +55,7 @@ export default function StatCard({
       </div>
       <p
         className={cn(
-          'text-2xl font-bold tabular-nums',
+          'text-xl font-bold tabular-nums',
           isHighlight ? 'text-white' : variant === 'income' ? 'text-primary' : 'text-tertiary'
         )}
       >

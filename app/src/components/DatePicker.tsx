@@ -33,6 +33,21 @@ function buildMonthGrid(year: number, month: number): (Date | null)[] {
   return cells
 }
 
+// Parses the same dd/mm/yyyy format displayValue renders, so typed text always round-trips
+// with what's shown. Rejects overflow like 31/02 instead of letting Date roll it into March.
+function parseTypedDate(text: string): string | null {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text.trim())
+  if (!match) return null
+  const day = Number(match[1])
+  const month = Number(match[2])
+  const year = Number(match[3])
+  const date = new Date(year, month - 1, day)
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null
+  }
+  return formatDateStr(date)
+}
+
 export default function DatePicker({
   value,
   onChange,
@@ -48,6 +63,13 @@ export default function DatePicker({
   const [viewMonth, setViewMonth] = useState(reference.getMonth())
   const containerRef = useRef<HTMLDivElement>(null)
 
+  const displayValue = value ? parseDateLocal(value).toLocaleDateString('pt-BR') : ''
+  // Manual typing (desktop): free text while focused so partial input like "01/0" isn't
+  // clobbered by the canonical displayValue on every keystroke — the input shows this buffer
+  // only while focused, falling back to the always-fresh displayValue otherwise.
+  const [isFocused, setIsFocused] = useState(false)
+  const [text, setText] = useState(displayValue)
+
   useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
@@ -59,11 +81,24 @@ export default function DatePicker({
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  function handleOpen() {
+  function handleFocus() {
     const ref = value ? parseDateLocal(value) : new Date()
     setViewYear(ref.getFullYear())
     setViewMonth(ref.getMonth())
-    setOpen((v) => !v)
+    setText(displayValue)
+    setIsFocused(true)
+    setOpen(true)
+  }
+
+  function handleTextChange(next: string) {
+    setText(next)
+    const iso = parseTypedDate(next)
+    if (!iso) return
+    if ((min !== undefined && iso < min) || (max !== undefined && iso > max)) return
+    onChange(iso)
+    const d = parseDateLocal(iso)
+    setViewYear(d.getFullYear())
+    setViewMonth(d.getMonth())
   }
 
   function handleSelectDay(date: Date) {
@@ -99,7 +134,6 @@ export default function DatePicker({
     return raw.charAt(0).toUpperCase() + raw.slice(1)
   })()
 
-  const displayValue = value ? parseDateLocal(value).toLocaleDateString('pt-BR') : ''
   const todayDateStr = todayStr()
   const todayDisabled =
     (min !== undefined && todayDateStr < min) || (max !== undefined && todayDateStr > max)
@@ -115,13 +149,21 @@ export default function DatePicker({
         onChange={(e) => onChange(e.target.value)}
         className={cn(className, 'w-full', 'lg:opacity-0 lg:pointer-events-none')}
       />
-      <button
-        type="button"
-        onClick={handleOpen}
-        className={cn(className, 'hidden lg:absolute lg:inset-0 lg:flex lg:items-center')}
-      >
-        <span className="flex-1 text-left truncate">{displayValue}</span>
-      </button>
+      {/* Desktop-only overlay: a real text input (types in the same dd/mm/yyyy format it
+          displays) instead of a read-only button, so far-off dates don't require paging
+          through the calendar month by month. Focusing it also opens the calendar below,
+          keeping click-to-pick available side by side with typing. */}
+      <input
+        type="text"
+        inputMode="numeric"
+        aria-label={ariaLabel ? `${ariaLabel} manual` : undefined}
+        value={isFocused ? text : displayValue}
+        placeholder="dd/mm/aaaa"
+        onFocus={handleFocus}
+        onBlur={() => setIsFocused(false)}
+        onChange={(e) => handleTextChange(e.target.value)}
+        className={cn(className, 'hidden lg:absolute lg:inset-0 lg:block')}
+      />
 
       {open && (
         <div

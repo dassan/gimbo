@@ -1,5 +1,5 @@
 ﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import Dashboard from '@/pages/Dashboard'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '@/test/fixtures/dataFile'
@@ -522,5 +522,84 @@ describe('Dashboard — M-42: archived accounts', () => {
 
     expect(screen.getByText('Cartão Ativo')).toBeInTheDocument()
     expect(screen.queryByText('Cartão Antigo')).not.toBeInTheDocument()
+  })
+})
+
+// ─── Últimos Lançamentos: TRANSFER / CREDIT_PAYMENT rows ──────────────────────
+
+describe('Dashboard — recent transactions: transfer rows', () => {
+  it('shows the transfer path and the type fallback title instead of "undefined"', () => {
+    const origin = makeRetailAccount({ id: 'acc-a', name: 'Conta A' })
+    const dest = makeRetailAccount({ id: 'acc-b', name: 'Conta B' })
+    const transfer = makeTransaction({
+      id: 'tx-transfer',
+      type: 'TRANSFER',
+      accountId: 'acc-a',
+      transferAccountId: 'acc-b',
+      categoryId: undefined,
+      description: '',
+      amount: 500,
+      date: todayStr,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [origin, dest], transactions: [transfer] }),
+    })
+
+    render(<Dashboard />)
+
+    expect(screen.getByText('transactions.transferTitle')).toBeInTheDocument()
+    expect(screen.getByText(/Conta A → Conta B/)).toBeInTheDocument()
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument()
+  })
+
+  it('keeps the transfer amount unsigned (money is not leaving the vault)', () => {
+    const origin = makeRetailAccount({ id: 'acc-a', name: 'Conta A' })
+    const dest = makeRetailAccount({ id: 'acc-b', name: 'Conta B' })
+    const transfer = makeTransaction({
+      id: 'tx-transfer',
+      type: 'TRANSFER',
+      accountId: 'acc-a',
+      transferAccountId: 'acc-b',
+      categoryId: undefined,
+      description: 'Reserva',
+      amount: 500,
+      date: todayStr,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [origin, dest], transactions: [transfer] }),
+    })
+
+    render(<Dashboard />)
+
+    // Scope to the row itself: the account list also renders the (negative) balance
+    const row = screen.getByText('Reserva').closest('div.flex.items-center.gap-3')
+    expect(row).not.toBeNull()
+    expect(within(row as HTMLElement).getByText('R$ 500,00')).toBeInTheDocument()
+  })
+
+  it('shows the funding account → card path for a credit card payment', () => {
+    const funding = makeRetailAccount({ id: 'acc-a', name: 'Conta A' })
+    const card = makeCreditAccount({ id: 'acc-credit', name: 'Cartão 1' })
+    const payment = makeTransaction({
+      id: 'tx-payment',
+      type: 'CREDIT_PAYMENT',
+      accountId: 'acc-credit',
+      transferAccountId: 'acc-a',
+      categoryId: undefined,
+      description: '',
+      amount: 300,
+      date: todayStr,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [funding, card], transactions: [payment] }),
+    })
+
+    render(<Dashboard />)
+
+    expect(screen.getByText('transactions.creditPayment')).toBeInTheDocument()
+    expect(screen.getByText(/Conta A → Cartão 1/)).toBeInTheDocument()
   })
 })

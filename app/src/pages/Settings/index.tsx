@@ -181,7 +181,9 @@ function accountTypeIcon(type: AccountType): React.ReactNode {
 type ModalState =
   | { open: false }
   | { open: true; account: Account | null; defaultType?: AccountType }
-type CategoryModalState = { open: false } | { open: true; category: Category | null }
+type CategoryModalState =
+  | { open: false }
+  | { open: true; category: Category | null; defaultType?: CategoryType }
 type TagModalState = { open: false } | { open: true; tag: Tag | null }
 
 type ImportResult =
@@ -1010,58 +1012,41 @@ export default function Settings() {
               })()}
 
             {/* Categories */}
-            {activeSection === 'categories' && (
-              <Section title={t('settings.categories')}>
-                <div className="space-y-2 mb-4">
-                  {data.categories.length === 0 && (
-                    <p className="py-4 text-center text-sm text-on-surface/40">
-                      {t('common.noData')}
-                    </p>
-                  )}
-                  {data.categories
-                    .filter((c) => !c.parentId)
-                    .map((parent) => (
-                      <div key={parent.id}>
-                        <button
-                          onClick={() => setCategoryModal({ open: true, category: parent })}
-                          className="flex w-full items-center gap-3 rounded-2xl bg-surface-container px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
-                        >
-                          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
-                            <span className="text-primary">{categoryIcon(parent.icon)}</span>
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-sm font-semibold text-on-surface">{parent.name}</p>
-                            <p className="text-xs text-on-surface/40">
-                              {parent.type === 'INCOME'
-                                ? t('settings.categoryTypeIncome')
-                                : t('settings.categoryTypeExpense')}
-                            </p>
-                          </div>
-                        </button>
-                        {data.categories
-                          .filter((c) => c.parentId === parent.id)
-                          .map((child) => (
-                            <button
-                              key={child.id}
-                              onClick={() => setCategoryModal({ open: true, category: child })}
-                              className="ml-6 mt-1 flex w-full items-center gap-3 rounded-xl bg-surface-container-low px-4 py-3 text-left hover:bg-surface-container-high transition-colors"
-                            >
-                              <div className="h-1.5 w-1.5 rounded-full bg-on-surface/20" />
-                              <p className="text-sm text-on-surface/70">{child.name}</p>
-                            </button>
-                          ))}
-                      </div>
-                    ))}
-                </div>
-                <button
-                  onClick={() => setCategoryModal({ open: true, category: null })}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
-                >
-                  <Plus size={16} strokeWidth={2.5} />
-                  {t('settings.newCategory')}
-                </button>
-              </Section>
-            )}
+            {activeSection === 'categories' &&
+              (() => {
+                // Income | expense categories side by side on large screens; stacked below lg —
+                // same layout as accounts/cards above (M-39).
+                const incomeCategories = data.categories.filter(
+                  (c) => !c.parentId && c.type === 'INCOME'
+                )
+                const expenseCategories = data.categories.filter(
+                  (c) => !c.parentId && c.type === 'EXPENSE'
+                )
+                return (
+                  <Section title={t('settings.categories')}>
+                    <div className="grid gap-6 lg:grid-cols-2 items-start">
+                      <CategoryColumn
+                        label={t('settings.categoryTypeIncome')}
+                        categories={incomeCategories}
+                        allCategories={data.categories}
+                        onAdd={() =>
+                          setCategoryModal({ open: true, category: null, defaultType: 'INCOME' })
+                        }
+                        onSelect={(category) => setCategoryModal({ open: true, category })}
+                      />
+                      <CategoryColumn
+                        label={t('settings.categoryTypeExpense')}
+                        categories={expenseCategories}
+                        allCategories={data.categories}
+                        onAdd={() =>
+                          setCategoryModal({ open: true, category: null, defaultType: 'EXPENSE' })
+                        }
+                        onSelect={(category) => setCategoryModal({ open: true, category })}
+                      />
+                    </div>
+                  </Section>
+                )
+              })()}
 
             {/* Tags */}
             {activeSection === 'tags' && (
@@ -1699,6 +1684,7 @@ export default function Settings() {
       {categoryModal.open && (
         <AddCategoryModal
           category={categoryModal.category}
+          defaultType={categoryModal.defaultType}
           topLevelCategories={data.categories.filter((c) => !c.parentId)}
           defaultColor={TAG_COLORS[data.categories.length % TAG_COLORS.length]}
           onSave={handleSaveCategory}
@@ -2327,10 +2313,77 @@ function AddTagModal({
   )
 }
 
+// ─── CategoryColumn ─────────────────────────────────────────────────────────────
+
+function CategoryColumn({
+  label,
+  categories,
+  allCategories,
+  onAdd,
+  onSelect,
+}: {
+  label: string
+  categories: Category[]
+  allCategories: Category[]
+  onAdd: () => void
+  onSelect: (category: Category) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-on-surface/40">
+          {label}
+        </p>
+        <button
+          onClick={onAdd}
+          className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-on-surface/50 hover:bg-surface-container-high hover:text-on-surface transition-colors active:scale-[0.97]"
+        >
+          <Plus size={13} strokeWidth={2.5} />
+          {t('settings.newCategory')}
+        </button>
+      </div>
+      <div className="space-y-2">
+        {categories.length === 0 && (
+          <p className="py-4 text-center text-sm text-on-surface/40">{t('common.noData')}</p>
+        )}
+        {categories.map((parent) => (
+          <div key={parent.id}>
+            <button
+              onClick={() => onSelect(parent)}
+              className="flex w-full items-center gap-3 rounded-2xl bg-surface-container px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+                <span className="text-primary">{categoryIcon(parent.icon)}</span>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-on-surface">{parent.name}</p>
+              </div>
+            </button>
+            {allCategories
+              .filter((c) => c.parentId === parent.id)
+              .map((child) => (
+                <button
+                  key={child.id}
+                  onClick={() => onSelect(child)}
+                  className="ml-6 mt-1 flex w-full items-center gap-3 rounded-xl bg-surface-container-low px-4 py-3 text-left hover:bg-surface-container-high transition-colors"
+                >
+                  <div className="h-1.5 w-1.5 rounded-full bg-on-surface/20" />
+                  <p className="text-sm text-on-surface/70">{child.name}</p>
+                </button>
+              ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ─── AddCategoryModal ─────────────────────────────────────────────────────────
 
 function AddCategoryModal({
   category,
+  defaultType = 'EXPENSE',
   topLevelCategories,
   defaultColor,
   onSave,
@@ -2338,6 +2391,7 @@ function AddCategoryModal({
   onClose,
 }: {
   category: Category | null
+  defaultType?: CategoryType
   topLevelCategories: Category[]
   defaultColor: string
   onSave: (
@@ -2356,7 +2410,7 @@ function AddCategoryModal({
   const [name, setName] = useState(category?.name ?? '')
   const [icon, setIcon] = useState(category?.icon ?? 'tag')
   const [parentId, setParentId] = useState<string | null>(category?.parentId ?? null)
-  const [type, setType] = useState<CategoryType>(category?.type ?? 'EXPENSE')
+  const [type, setType] = useState<CategoryType>(category?.type ?? defaultType)
   const [color, setColor] = useState(category?.color ?? defaultColor)
   const [confirmDelete, setConfirmDelete] = useState(false)
 

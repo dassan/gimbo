@@ -55,9 +55,9 @@ describe('DatePicker — M-47', () => {
     const onChange = vi.fn()
     render(<DatePicker value="2026-06-10" onChange={onChange} className={CLASS_NAME} />)
 
-    expect(screen.getByText('10/06/2026')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('10/06/2026')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('10/06/2026'))
+    fireEvent.focus(screen.getByDisplayValue('10/06/2026'))
     expect(screen.getByText('Junho de 2026')).toBeInTheDocument()
   })
 
@@ -65,7 +65,7 @@ describe('DatePicker — M-47', () => {
     const onChange = vi.fn()
     render(<DatePicker value="2026-06-10" onChange={onChange} className={CLASS_NAME} />)
 
-    fireEvent.click(screen.getByText('10/06/2026'))
+    fireEvent.focus(screen.getByDisplayValue('10/06/2026'))
     fireEvent.click(screen.getByRole('button', { name: '20' }))
 
     expect(onChange).toHaveBeenCalledWith('2026-06-20')
@@ -76,7 +76,7 @@ describe('DatePicker — M-47', () => {
     const onChange = vi.fn()
     render(<DatePicker value="2026-06-10" onChange={onChange} className={CLASS_NAME} />)
 
-    fireEvent.click(screen.getByText('10/06/2026'))
+    fireEvent.focus(screen.getByDisplayValue('10/06/2026'))
     fireEvent.click(screen.getByRole('button', { name: 'next-month' }))
     expect(screen.getByText('Julho de 2026')).toBeInTheDocument()
 
@@ -91,7 +91,7 @@ describe('DatePicker — M-47', () => {
       <DatePicker value="2026-06-10" onChange={onChange} min="2026-06-10" className={CLASS_NAME} />
     )
 
-    fireEvent.click(screen.getByText('10/06/2026'))
+    fireEvent.focus(screen.getByDisplayValue('10/06/2026'))
     expect(screen.getByRole('button', { name: '9' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '10' })).not.toBeDisabled()
   })
@@ -100,7 +100,7 @@ describe('DatePicker — M-47', () => {
     const onChange = vi.fn()
     render(<DatePicker value="2026-06-10" onChange={onChange} className={CLASS_NAME} />)
 
-    fireEvent.click(screen.getByText('10/06/2026'))
+    fireEvent.focus(screen.getByDisplayValue('10/06/2026'))
     fireEvent.click(screen.getByText('transactions.today'))
 
     expect(onChange).toHaveBeenCalledWith('2026-06-15')
@@ -116,10 +116,53 @@ describe('DatePicker — M-47', () => {
       </div>
     )
 
-    fireEvent.click(screen.getByText('10/06/2026'))
+    fireEvent.focus(screen.getByDisplayValue('10/06/2026'))
     expect(screen.getByText('Junho de 2026')).toBeInTheDocument()
 
     fireEvent.mouseDown(screen.getByText('outside'))
     expect(screen.queryByText('Junho de 2026')).not.toBeInTheDocument()
+  })
+
+  it('typing a full dd/mm/yyyy date commits onChange without using the calendar', () => {
+    const onChange = vi.fn()
+    render(<DatePicker value="2026-06-10" onChange={onChange} className={CLASS_NAME} />)
+
+    const input = screen.getByDisplayValue('10/06/2026')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: '25/12/2020' } })
+
+    expect(onChange).toHaveBeenCalledWith('2020-12-25')
+  })
+
+  it('rejects an invalid typed date (no onChange) and reverts to the canonical value on blur', () => {
+    const onChange = vi.fn()
+    render(<DatePicker value="2026-06-10" onChange={onChange} className={CLASS_NAME} />)
+
+    const input = screen.getByDisplayValue('10/06/2026')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: '31/02/2026' } })
+    expect(onChange).not.toHaveBeenCalled()
+
+    fireEvent.blur(input)
+    expect(screen.getByDisplayValue('10/06/2026')).toBeInTheDocument()
+  })
+
+  it('ignores a typed date outside the min/max bounds', () => {
+    const onChange = vi.fn()
+    render(
+      <DatePicker
+        value="2026-06-10"
+        onChange={onChange}
+        min="2026-06-01"
+        max="2026-06-30"
+        className={CLASS_NAME}
+      />
+    )
+
+    const input = screen.getByDisplayValue('10/06/2026')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: '01/07/2026' } })
+
+    expect(onChange).not.toHaveBeenCalled()
   })
 })
