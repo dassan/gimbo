@@ -618,15 +618,16 @@ function DateGroup({
   const yesterday = new Date(today)
   yesterday.setDate(today.getDate() - 1)
 
-  // The weekday-based label already spells out the full date ("Wednesday, July 22") — a
-  // second short date next to it is pure duplication. "Today"/"Yesterday" carry no date of
-  // their own, so they still get the short date alongside them.
-  const isRelativeLabel =
-    date.toDateString() === today.toDateString() || date.toDateString() === yesterday.toDateString()
+  // "Today"/"Yesterday" carry no date of their own, so the short date is appended to the same
+  // label — matching the weekday-based label, which already spells out the full date
+  // ("Wednesday, July 22") in one continuous run of text/style.
+  const shortDate = date.toLocaleDateString(i18n.language, { day: 'numeric', month: 'long' })
 
   let label: string
-  if (date.toDateString() === today.toDateString()) label = t('transactions.today')
-  else if (date.toDateString() === yesterday.toDateString()) label = t('transactions.yesterday')
+  if (date.toDateString() === today.toDateString())
+    label = `${t('transactions.today')}, ${shortDate}`
+  else if (date.toDateString() === yesterday.toDateString())
+    label = `${t('transactions.yesterday')}, ${shortDate}`
   else
     label = date.toLocaleDateString(i18n.language, {
       weekday: 'long',
@@ -634,13 +635,10 @@ function DateGroup({
       month: 'long',
     })
 
-  const dateFormatted = date.toLocaleDateString(i18n.language, { day: '2-digit', month: 'short' })
-
   return (
     <div>
       <div className="flex items-center gap-3 mb-2">
         <span className="label text-xs font-semibold text-on-surface/50 uppercase">{label}</span>
-        {isRelativeLabel && <span className="text-xs text-on-surface/30">{dateFormatted}</span>}
       </div>
       <div className={cn('rounded-2xl bg-surface-container overflow-hidden', shadowClass)}>
         {txs.map((tx, i) => (
