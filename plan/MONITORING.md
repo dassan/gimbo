@@ -1,8 +1,8 @@
 # Monitoramento de Performance (dev-only)
 
 > Camada de instrumentação criada para investigar `plan/PERFORMANCE.md` (lentidão ao salvar
-> transação no cofre real) e servir como ferramenta geral para futuros gargalos. Ver `M-71` em
-> `plan/BACKLOG.md`.
+> transação no cofre real) e servir como ferramenta geral para futuros gargalos. Ver `M-71`
+> (camada), `M-72` (fix de leitura) e `M-73` (fix de escrita) em `plan/BACKLOG.md`.
 
 ## O que existe
 
@@ -25,8 +25,9 @@
 |---|---|---|
 | `store.mutate.clone` | `useDataStore.ts` → `mutate()` | `structuredClone(state.data)` do `DataFile` inteiro |
 | `store.mutate.apply` | `useDataStore.ts` → `mutate()` | a função de mutação (`fn(data)`) em si |
-| `storage.postMessage.<method>` | `StorageService.ts` → `call()` | clone síncrono implícito do `postMessage` para o Worker (sem `transfer`) |
-| `worker.<method>` | `worker.ts` → handler de `message` | tempo real de execução no Worker (fila + SQL), devolvido via campo `perf?` em `WorkerResponse` |
+| `store.mutate.diffTransactions` | `useDataStore.ts` → `debouncedApplyMutation()` | `diffTransactions()` (M-73) — compara `_lastPersisted.transactions` com o estado atual |
+| `storage.postMessage.<method>` | `StorageService.ts` → `call()` | clone síncrono implícito do `postMessage` para o Worker (sem `transfer`) — inclui `.applyMutation` (M-73) além de `.query`/`.replaceAll` |
+| `worker.<method>` | `worker.ts` → handler de `message` | tempo real de execução no Worker (fila + SQL), devolvido via campo `perf?` em `WorkerResponse` — inclui `worker.applyMutation` (M-73), o caminho comum de mutação desde então |
 
 O worker roda em outro realm JS — não enxerga o buffer de `telemetry.ts` nem o `localStorage`
 diretamente. O timing do worker fica atrás só do gate de build (sempre populado em DEV,
@@ -51,8 +52,20 @@ const result = import.meta.env.DEV ? measure('minha.metrica', () => calcularAlgo
 ```
 
 Usar o `import.meta.env.DEV ? measure(...) : <chamada direta>` explícito (não só `measure()`
-sozinho) sempre que o call site precisar ficar **completamente** fora do bundle de produção — ver
-"Verificação do bundle" abaixo para o porquê.
+sozinho) sempre que o call site for **barato de duplicar** (uma linha, uma chamada só) e precisar
+ficar **completamente** fora do bundle de produção — ver "Verificação do bundle" abaixo para o
+porquê. Esse é o padrão usado nos 3 pontos centrais (`mutate()`, `StorageService.call()`, worker).
+
+**Para `useMemo` grandes** (ex.: `Transactions/index.tsx` → `filtered`, `Analytics/index.tsx` →
+`cashFlowTransactions`, `CashFlowView.tsx` → `rows`), duplicar o corpo inteiro em dois ramos só
+pra eliminar a string do nome da métrica não vale a pena — o corpo tem dezenas de linhas e
+fecha sobre várias variáveis externas via closure; extrair pra função nomeada só pra viabilizar o
+ternário pioraria a legibilidade por um ganho de bundle irrelevante (a string do nome da métrica
+tem dezenas de bytes, sem custo de runtime, sem superfície de segurança — bem diferente do
+`__storage`/`__secretStore`, que expõem leitura/escrita real do banco). Nesses casos, `measure()`
+direto (sem o ternário) é aceitável — o nome da métrica fica como string inerte no bundle de
+produção, nunca executado (verificado: `grep` mostra a string presente, mas nenhum comportamento
+depende dela fora de DEV+toggle).
 
 Para custo de **render** (não de cálculo), preferir o `<Profiler>` nativo do React ad hoc durante
 uma sessão de debug, em vez de instrumentar com `measure()`:
@@ -105,10 +118,35 @@ tipo, então a objeção cai em cascata. O painel local + `performance.now()`/Us
 (nativo no Chrome DevTools Performance e no Firefox Profiler, sem nenhum código extra) + o export
 já existente do Bug Report são o equivalente local-first: tudo fica no dispositivo.
 
-## Próximo passo (fora do escopo desta camada)
+## Pontos de página já instrumentados
 
-Esta camada é só medição — não inclui a correção do bug de `PERFORMANCE.md`. Próximo passo:
-reproduzir com o cofre real (importado localmente) e comparar `store.mutate.clone` vs.
-`storage.postMessage.replaceAll` vs. `worker.replaceAll` no painel, para confirmar qual domina
-antes de decidir entre as correções já esboçadas em `PERFORMANCE.md` (adotar Immer em `mutate()`,
-ou serialização transferível no `postMessage`).
+Além dos pontos centrais (tabela acima), estas telas têm `useMemo` grandes instrumentados com o
+padrão `measure()` simples (sem o ternário de eliminação — ver seção acima, o custo de duplicar
+esses corpos não valia a pena):
+
+| Métrica | Onde | Roda quando |
+|---|---|---|
+| `transactions.filtered` | `pages/Transactions/index.tsx` | toda vez que a tela de Lançamentos filtra/ordena o array de transações |
+| `analytics.cashFlowTransactions` | `pages/Analytics/index.tsx` | sempre que a página de Relatórios monta (incondicional, mesmo fora da sub-aba Fluxo de Caixa) |
+| `analytics.cashFlowView.rows` | `pages/Analytics/CashFlowView.tsx` | só quando a sub-aba Fluxo de Caixa está aberta — agrupamento em baldes |
+
+Usadas pra descartar cálculo em JS como causa de uma lentidão ocasional ao trocar de aba — nos
+testes reais (`plan/PERFORMANCE.md`), as três sempre voltaram rápidas (dezenas de ms), mesmo
+durante uma reprodução lenta — o que ajudou a apontar a causa pra outro lugar (ver changelog
+abaixo).
+
+## Changelog
+
+- **M-71 (2026-08-20)** — camada criada (este documento).
+- **M-72 (2026-08-20)** — `getTransactions()` sem filtro travava 52-55s na hidratação inicial.
+  Medido com esta camada + drill-down manual via `window.__storage.query()` no console
+  (`EXPLAIN QUERY PLAN`, contagens, tempos parciais) — `GROUP BY`/`GROUP_CONCAT(DISTINCT)`
+  custava ~9ms por grupo nesse ambiente, não o volume de dado. Corrigido removendo `JOIN`/
+  `GROUP BY` da query (junta tags/caixinhas em JS) + índice composto novo. Ver `M-72` em
+  `plan/BACKLOG.md` e o capítulo correspondente em `plan/PERFORMANCE.md`.
+- **M-73 (2026-08-21)** — `replaceAll()` reescrevia a tabela `transactions` inteira (~29 mil
+  `INSERT`s sequenciais) em **toda** mutação, não só na carga — até ~1 minuto por salvamento no
+  cofre real. Corrigido com persistência por diff (`lib/storage/transactionDiff.ts` +
+  `worker.ts` `applyMutation()`) — novas métricas `store.mutate.diffTransactions`,
+  `storage.postMessage.applyMutation`, `worker.applyMutation` (tabela acima). Validado contra o
+  cofre real: 255ms a primeira gravação, 79ms as seguintes. Ver `M-73` em `plan/BACKLOG.md`.

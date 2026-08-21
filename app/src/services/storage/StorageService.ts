@@ -1,6 +1,7 @@
 import { uuid } from '@/lib/utils'
 import { measure } from '@/lib/perfMonitor'
 import { trackPerformance } from '@/lib/telemetry'
+import type { TransactionDelta } from '@/lib/storage/transactionDiff'
 import { CURRENT_SCHEMA_VERSION } from '@/lib/storage/schema'
 import type {
   Account,
@@ -687,6 +688,16 @@ export class StorageService {
   /** Atomically replace every table with the content of a DataFile. */
   replaceAll(data: DataFile): Promise<void> {
     return this.call<void>('replaceAll', [data])
+  }
+
+  /**
+   * M-73/PERFORMANCE.md: caminho rápido para mutate() — reescreve as tabelas pequenas por
+   * inteiro (baratas), mas só aplica INSERT/UPDATE/DELETE direcionados para as transações que
+   * de fato mudaram (`delta`, de `lib/storage/transactionDiff.ts`), em vez de reescrever as
+   * dezenas de milhares de linhas de `transactions` a cada mutação.
+   */
+  applyMutation(data: DataFile, delta: TransactionDelta): Promise<void> {
+    return this.call<void>('applyMutation', [data, delta])
   }
 
   /** Delete all rows from every table, leaving the schema intact. */

@@ -22,6 +22,7 @@ import {
   isCashRealized,
 } from '@/lib/utils'
 import type { Transaction, Account } from '@/types'
+import { measure } from '@/lib/perfMonitor'
 
 export interface CashFlowViewProps {
   transactions: Transaction[]
@@ -71,127 +72,134 @@ export default function CashFlowView({
     startDate.getMonth() === endDate.getMonth() &&
     endDate.getDate() === lastOfMonth
 
-  const rows = useMemo((): PeriodRow[] => {
-    // M-38: when the selected period is exactly one full calendar month, break the axis into
-    // weekly buckets (1–7, 8–14, …) for a richer view; otherwise keep one bucket per month
-    // (or, when viewMode is 'yearly', one bucket per calendar year — R-21).
-    type Bucket = { label: string; fullLabel: string; match: (d: Date) => boolean }
-    const buckets: Bucket[] = []
+  const rows = useMemo(
+    (): PeriodRow[] =>
+      measure('analytics.cashFlowView.rows', () => {
+        // M-38: when the selected period is exactly one full calendar month, break the axis into
+        // weekly buckets (1–7, 8–14, …) for a richer view; otherwise keep one bucket per month
+        // (or, when viewMode is 'yearly', one bucket per calendar year — R-21).
+        type Bucket = { label: string; fullLabel: string; match: (d: Date) => boolean }
+        const buckets: Bucket[] = []
 
-    if (isFullMonth) {
-      const y = startDate.getFullYear()
-      const m = startDate.getMonth()
-      const monthShort = new Date(y, m, 1)
-        .toLocaleDateString(i18n.language, { month: 'short' })
-        .replace('.', '')
-      for (let lo = 1; lo <= lastOfMonth; lo += 7) {
-        const hi = Math.min(lo + 6, lastOfMonth)
-        buckets.push({
-          label: `${lo}–${hi}`,
-          fullLabel: `${lo}–${hi} ${monthShort}`,
-          match: (d) =>
-            d.getFullYear() === y && d.getMonth() === m && d.getDate() >= lo && d.getDate() <= hi,
-        })
-      }
-    } else if (viewMode === 'yearly') {
-      const cur = new Date(startDate.getFullYear(), 0, 1)
-      while (cur.getFullYear() <= endDate.getFullYear()) {
-        const y = cur.getFullYear()
-        buckets.push({
-          label: String(y),
-          fullLabel: String(y),
-          // Bound by the selected range, not just the calendar year — a custom period like
-          // Jan–Aug must not pull in Sep–Dec of the same year into the "2026" bucket.
-          match: (d) => d.getFullYear() === y && d >= startDate && d <= endDate,
-        })
-        cur.setFullYear(cur.getFullYear() + 1)
-      }
-    } else {
-      const cur = new Date(startDate)
-      while (cur <= endDate) {
-        const y = cur.getFullYear()
-        const m = cur.getMonth()
-        const fullLabel = cur
-          .toLocaleDateString(i18n.language, { month: 'long', year: 'numeric' })
-          .replace(/^(.)/, (c) => c.toUpperCase())
-        buckets.push({
-          label: cur
+        if (isFullMonth) {
+          const y = startDate.getFullYear()
+          const m = startDate.getMonth()
+          const monthShort = new Date(y, m, 1)
             .toLocaleDateString(i18n.language, { month: 'short' })
             .replace('.', '')
-            .toUpperCase(),
-          fullLabel,
-          match: (d) => d.getMonth() === m && d.getFullYear() === y,
-        })
-        cur.setMonth(cur.getMonth() + 1)
-      }
-    }
-
-    // Anchor the running "Saldo" to the real opening balance (M-40): the cash accounts' balance
-    // at the start of the period. Without it the line started from zero, diverging from the
-    // statement by the whole opening balance. CREDIT accounts are excluded — their spending shows
-    // up in the flow as EXPENSE by invoice due date, not as a cash balance. The opening uses the
-    // payment model (tx.date, realized); a card charge across the boundary is counted once (by its
-    // due date in the flow, never in this opening), so there is no double-count.
-    const scopeIds = new Set(
-      accounts
-        .filter((a) => a.type !== 'CREDIT' && (accountId === undefined || a.id === accountId))
-        .map((a) => a.id)
-    )
-    let opening = accounts.filter((a) => scopeIds.has(a.id)).reduce((s, a) => s + a.balance, 0)
-    for (const tx of transactions) {
-      if (parseDateLocal(tx.date) >= startDate) continue // strictly before the period
-      if (!isCashRealized(tx)) continue
-      if (tx.type === 'TRANSFER') {
-        if (scopeIds.has(tx.accountId)) opening -= tx.amount
-        if (tx.transferAccountId && scopeIds.has(tx.transferAccountId)) opening += tx.amount
-      } else if (tx.type === 'CREDIT_PAYMENT') {
-        if (tx.transferAccountId && scopeIds.has(tx.transferAccountId)) opening -= tx.amount
-      } else if (scopeIds.has(tx.accountId)) {
-        if (tx.type === 'INCOME') opening += tx.amount
-        else if (tx.type === 'EXPENSE') opening -= tx.amount
-      }
-    }
-
-    let cumulative = opening
-    return buckets.map(({ label, fullLabel, match }) => {
-      const txs = transactions.filter((tx) => {
-        // CC-17: CREDIT_PAYMENT is liability liquidation, not income/expense
-        if (tx.type === 'CREDIT_PAYMENT') return false
-        if (accountId !== undefined && tx.accountId !== accountId) return false
-        // CC-16: project credit card expenses to invoice due date
-        const d = parseDateLocal(getEffectiveCashFlowDate(tx, accounts))
-        const isPaidOk = includeUnpaid || tx.isPaid
-        return match(d) && isPaidOk
-      })
-      // Card credits (estornos) are INCOME on a CREDIT account — net them against expenses
-      // rather than counting fake income (keeps the income bar honest).
-      let income = 0
-      let expenses = 0
-      for (const t of txs) {
-        if (t.type === 'INCOME') {
-          if (isCardCredit(t, accounts)) expenses -= t.amount
-          else income += t.amount
-        } else if (t.type === 'EXPENSE') {
-          expenses += t.amount
+          for (let lo = 1; lo <= lastOfMonth; lo += 7) {
+            const hi = Math.min(lo + 6, lastOfMonth)
+            buckets.push({
+              label: `${lo}–${hi}`,
+              fullLabel: `${lo}–${hi} ${monthShort}`,
+              match: (d) =>
+                d.getFullYear() === y &&
+                d.getMonth() === m &&
+                d.getDate() >= lo &&
+                d.getDate() <= hi,
+            })
+          }
+        } else if (viewMode === 'yearly') {
+          const cur = new Date(startDate.getFullYear(), 0, 1)
+          while (cur.getFullYear() <= endDate.getFullYear()) {
+            const y = cur.getFullYear()
+            buckets.push({
+              label: String(y),
+              fullLabel: String(y),
+              // Bound by the selected range, not just the calendar year — a custom period like
+              // Jan–Aug must not pull in Sep–Dec of the same year into the "2026" bucket.
+              match: (d) => d.getFullYear() === y && d >= startDate && d <= endDate,
+            })
+            cur.setFullYear(cur.getFullYear() + 1)
+          }
+        } else {
+          const cur = new Date(startDate)
+          while (cur <= endDate) {
+            const y = cur.getFullYear()
+            const m = cur.getMonth()
+            const fullLabel = cur
+              .toLocaleDateString(i18n.language, { month: 'long', year: 'numeric' })
+              .replace(/^(.)/, (c) => c.toUpperCase())
+            buckets.push({
+              label: cur
+                .toLocaleDateString(i18n.language, { month: 'short' })
+                .replace('.', '')
+                .toUpperCase(),
+              fullLabel,
+              match: (d) => d.getMonth() === m && d.getFullYear() === y,
+            })
+            cur.setMonth(cur.getMonth() + 1)
+          }
         }
-      }
-      const result = income - expenses
-      cumulative += result
-      const isProjected = txs.some((tx) => 'isProjected' in tx)
-      return { label, fullLabel, income, expenses, result, balance: cumulative, isProjected }
-    })
-  }, [
-    transactions,
-    accounts,
-    startDate,
-    endDate,
-    includeUnpaid,
-    accountId,
-    isFullMonth,
-    lastOfMonth,
-    viewMode,
-    i18n.language,
-  ])
+
+        // Anchor the running "Saldo" to the real opening balance (M-40): the cash accounts' balance
+        // at the start of the period. Without it the line started from zero, diverging from the
+        // statement by the whole opening balance. CREDIT accounts are excluded — their spending shows
+        // up in the flow as EXPENSE by invoice due date, not as a cash balance. The opening uses the
+        // payment model (tx.date, realized); a card charge across the boundary is counted once (by its
+        // due date in the flow, never in this opening), so there is no double-count.
+        const scopeIds = new Set(
+          accounts
+            .filter((a) => a.type !== 'CREDIT' && (accountId === undefined || a.id === accountId))
+            .map((a) => a.id)
+        )
+        let opening = accounts.filter((a) => scopeIds.has(a.id)).reduce((s, a) => s + a.balance, 0)
+        for (const tx of transactions) {
+          if (parseDateLocal(tx.date) >= startDate) continue // strictly before the period
+          if (!isCashRealized(tx)) continue
+          if (tx.type === 'TRANSFER') {
+            if (scopeIds.has(tx.accountId)) opening -= tx.amount
+            if (tx.transferAccountId && scopeIds.has(tx.transferAccountId)) opening += tx.amount
+          } else if (tx.type === 'CREDIT_PAYMENT') {
+            if (tx.transferAccountId && scopeIds.has(tx.transferAccountId)) opening -= tx.amount
+          } else if (scopeIds.has(tx.accountId)) {
+            if (tx.type === 'INCOME') opening += tx.amount
+            else if (tx.type === 'EXPENSE') opening -= tx.amount
+          }
+        }
+
+        let cumulative = opening
+        return buckets.map(({ label, fullLabel, match }) => {
+          const txs = transactions.filter((tx) => {
+            // CC-17: CREDIT_PAYMENT is liability liquidation, not income/expense
+            if (tx.type === 'CREDIT_PAYMENT') return false
+            if (accountId !== undefined && tx.accountId !== accountId) return false
+            // CC-16: project credit card expenses to invoice due date
+            const d = parseDateLocal(getEffectiveCashFlowDate(tx, accounts))
+            const isPaidOk = includeUnpaid || tx.isPaid
+            return match(d) && isPaidOk
+          })
+          // Card credits (estornos) are INCOME on a CREDIT account — net them against expenses
+          // rather than counting fake income (keeps the income bar honest).
+          let income = 0
+          let expenses = 0
+          for (const t of txs) {
+            if (t.type === 'INCOME') {
+              if (isCardCredit(t, accounts)) expenses -= t.amount
+              else income += t.amount
+            } else if (t.type === 'EXPENSE') {
+              expenses += t.amount
+            }
+          }
+          const result = income - expenses
+          cumulative += result
+          const isProjected = txs.some((tx) => 'isProjected' in tx)
+          return { label, fullLabel, income, expenses, result, balance: cumulative, isProjected }
+        })
+      }),
+    [
+      transactions,
+      accounts,
+      startDate,
+      endDate,
+      includeUnpaid,
+      accountId,
+      isFullMonth,
+      lastOfMonth,
+      viewMode,
+      i18n.language,
+    ]
+  )
 
   const hasData = rows.some((r) => r.income !== 0 || r.expenses !== 0)
 

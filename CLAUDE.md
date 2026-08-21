@@ -74,15 +74,27 @@ Sempre `t(\`accounts.${type.toLowerCase()}\`)`. Nunca exibir enum bruto.
 > anteriormente **não existem mais no código** — pertenciam à camada IndexedDB/FSA removida em
 > 2026-05-26. Os caminhos reais são:
 
+> **Revisado em 2026-08-21 (M-73):** `replaceAll()` reescrevia a tabela `transactions` inteira —
+> `DELETE`+`INSERT` linha a linha — em **toda** mutação, mesmo pra editar um campo. Pra um cofre
+> real de ~25 mil transações isso chegava a ~1 minuto por salvamento (`plan/PERFORMANCE.md`,
+> fora do controle de versão). `mutate()` agora chama `storage.applyMutation(data, delta)` via
+> `debouncedApplyMutation()` — `delta` é o diff de transações (`lib/storage/transactionDiff.ts`)
+> entre a última escrita bem-sucedida (`_lastPersisted`) e o estado atual; só as linhas que de
+> fato mudaram viram `INSERT`/`UPDATE`/`DELETE`, em lotes multi-linha. `replaceAll()` continua
+> existindo (import, restauração de backup, merge de sync) — o que mudou foi só deixar de ser o
+> caminho comum de toda mutação.
+
 | Caminho | Função | Quando |
 |---------|--------|--------|
-| Mutação normal | `storage.replaceAll(data)` | Toda mutação, via `debouncedReplaceAll()` (300ms) dentro de `mutate()` |
+| Mutação normal | `storage.applyMutation(data, delta)` | Toda mutação, via `debouncedApplyMutation()` (300ms) dentro de `mutate()` — só as transações que mudaram (M-73); tabelas pequenas continuam reescritas por inteiro |
 | Import de backup | `storage.importBlob(blob)` | Onboarding/Settings — **replace total**: fecha o DB, escreve os bytes no OPFS, reabre e roda `runMigrations()` |
 | Export / backup | `storage.exportBlob()` | Botão "Exportar" e backup automático em pasta (WAL checkpoint antes de ler) |
-| Backup em pasta | `writeBackupToDir(handle, blob)` | Após `replaceAll()`, se houver pasta configurada (`lib/backupDir.ts`) |
+| Backup em pasta | `writeBackupToDir(handle, blob)` | Após `applyMutation()`/`replaceAll()`, se houver pasta configurada (`lib/backupDir.ts`) |
+| Merge de sync | `storage.replaceAll(merged)` | `lib/cloudSync/{syncService,folderSyncService}.ts` — direto, fora de `mutate()`. Exceção reconhecida: o resultado de um merge pode tocar uma fração não-limitada de entidades, o diff degradaria pro custo de reescrita total mesmo, e testar um caminho novo no fluxo de maior risco (merge multi-dispositivo) não valia — decisão registrada no M-73 |
 
 **Nunca misturar os caminhos:** `importBlob()` é replace destrutivo e nunca deve ser usado num
-fluxo recorrente; `replaceAll()` nunca deve ser chamado fora de `mutate()`/`debouncedReplaceAll()`.
+fluxo recorrente; `replaceAll()`/`applyMutation()` nunca devem ser chamados fora de
+`mutate()`/`debouncedApplyMutation()`, com a única exceção reconhecida do merge de sync acima.
 Falha de backup em pasta jamais interrompe o fluxo principal.
 
 ---
@@ -154,7 +166,7 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 ### Código
 - **Nunca** usar `as SomeType` para contornar validação Zod
 - **Nunca** mutar estado Zustand diretamente — sempre via `mutate()`
-- **Nunca** chamar `storage.replaceAll()` fora de `mutate()`/`debouncedReplaceAll()`
+- **Nunca** chamar `storage.replaceAll()`/`storage.applyMutation()` fora de `mutate()`/`debouncedApplyMutation()` — exceção reconhecida: merge de sync (`lib/cloudSync/{syncService,folderSyncService}.ts`) chama `replaceAll()` direto, decisão registrada no M-73
 - **Nunca** chamar `storage.importBlob()` em fluxo recorrente — é replace destrutivo (só import/onboarding)
 - **Nunca** exibir `acc.balance` diretamente — o saldo é derivado das transações
 - **Nunca** usar `new Date(tx.date)` para extrair mês/ano — sempre `parseDateLocal()`
@@ -201,10 +213,10 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 
 ---
 
-## Estado Atual (2026-08-20)
+## Estado Atual (2026-08-21)
 
 **Schema em memória v17** | **Schema físico SQLite v13** (`migrations/v1..v13.sql`) | Cobertura: ~96% statements
-**880 testes unitários** (34 arquivos) + **82 testes E2E** (10 specs, perfis `chromium` e `mobile-chrome`)
+**890 testes unitários** (35 arquivos) + **84 testes E2E** (11 specs, perfis `chromium` e `mobile-chrome`)
 
 > Os dois números de schema são independentes e **não coincidem**: `CURRENT_SCHEMA_VERSION` (v17,
 > em `lib/storage/schema.ts`) versiona o `DataFile` em memória; `PRAGMA user_version` (v13)
@@ -230,6 +242,7 @@ Features concluídas desde 2026-05-27:
 - **M-62/B-22** — Camada de projeção de 10 anos no Fluxo de Caixa (Relatórios) + janela rolante de recorrências sem `endDate`
 - **M-64/CC-34** — `Installment.purchaseDate` (data de compra original em todas as parcelas, schema v10→v11) + correção definitiva do agrupamento de parcelas no sync do Organizze via `created_at` como chave de série
 - **F-30** — Caixinhas: entidade `Budget` real (N:N com `Transaction` via `budgetIds`), CRUD completo em `useDataStore`, motor de derivação (`budgetCurrent`/`budgetProgress`/`getBudgetStatus`), telas reais em `pages/Budgets/*` (sem `mock.ts`), receita automática "Quadrantes" (`lib/budgetRecipes.ts`, 4 caixinhas/mês por intervalo de dias), sync/merge multi-dispositivo, dados de demo e testes E2E (`BX-01` a `BX-11`, resolvido 2026-08-12). Bottom nav mobile tem slot próprio desde `MB-13`. Ver `plan/BUDGETS.md` e `plan/BACKLOG.md` seção "Caixinhas — F-30".
+- **M-71/M-72/M-73** (2026-08-20/21) — investigação e correção de ponta a ponta da lentidão relatada num cofre real de ~25 mil transações (`plan/PERFORMANCE.md`, fora do controle de versão). **M-71**: camada de instrumentação dev-only (`lib/perfMonitor.ts`, `PerfPanel`, atalho `Alt+Shift+P` — ver `plan/MONITORING.md`), 100% ausente do build de produção. **M-72**: `getTransactions()` sem filtro travava 52-55s na hidratação inicial — `GROUP BY`/`GROUP_CONCAT(DISTINCT)` custava ~9ms por grupo nesse ambiente (`wa-sqlite`/WASM sobre a VFS assíncrona do OPFS); reescrita sem `JOIN`/`GROUP BY` (junta tags/caixinhas em JS) + índice composto `idx_transactions_date_created` (`migrations/v13.sql`) → ~3-6s. **M-73**: `replaceAll()` reescrevia a tabela `transactions` inteira (~29 mil `INSERT`s sequenciais) em **toda** mutação, não só na carga — até ~1 minuto por salvamento; `mutate()` agora persiste por diff (`lib/storage/transactionDiff.ts` + `worker.ts` `applyMutation()`), só as transações que mudaram viram `INSERT`/`UPDATE`/`DELETE`, em lotes multi-linha — validado contra o cofre real: **255ms** a primeira gravação, **79ms** as seguintes. Ver "Caminhos de persistência" acima.
 
 > **Deploy migrado de Vercel para Cloudflare Pages (antes de 2026-08-13, data exata não registrada).**
 > `app/wrangler.jsonc` é a config de deploy atual; produção serve em `https://gimbo.com.br`. A
@@ -272,6 +285,7 @@ Itens em aberto:
 
 - **Cofre protegido por senha** — épico separado, decidido em 2026-08-19: bloqueio por senha com expiração por inatividade, e criptografia em repouso. **Reverte parcialmente o `X-1` do `PRD.md`** ("Criptografia do arquivo local", hoje listado como fora de escopo permanente) e encosta no `CS-18`. Ainda não desenhado — decisão pendente: se o backup exportado continua abrível em qualquer ferramenta SQLite ou vira blob opaco.
 
+- **M-74** — `TransactionDrawer` desvincula silenciosamente a Caixinha ao editar uma transação. Achado incidental ao validar o M-73 (`e2e/mutationDelta.spec.ts`): o formulário de edição carrega/resubmete `tags` corretamente, mas nunca leva `budgetIds` de volta — qualquer edição (mesmo só valor, sem mexer na data) apaga o vínculo com a Caixinha, silenciosamente. Bug de UI pré-existente, não relacionado a persistência; não corrigido nesta sessão (média prioridade).
 - **MB-08** — Analytics responsivo para mobile (média prioridade; parcial — aba Categorias resolvida em `MB-18`, as outras 4 abas — CashFlow, Contas, Tags, Faturas — seguem sem versão mobile)
 - **BK-04** — Banner de re-permissão da pasta de backup no startup (média prioridade)
 - **M-63b** — Gráfico de tendência (passado real + futuro projetado) no Patrimônio Líquido (baixa; a fatia de Saúde Financeira do M-63 já foi resolvida)

@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import Settings from '@/pages/Settings'
-import { useDataStore } from '@/store/useDataStore'
+import { useDataStore, __resetPersistenceBaselineForTests } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { createDefaultWorkspace } from '@/lib/storage/schema'
 import { makeDataFile } from '@/test/fixtures/dataFile'
@@ -29,6 +29,7 @@ vi.mock('@/lib/backupDir', () => ({
 vi.mock('@/services/storage', () => ({
   storage: {
     replaceAll: vi.fn().mockResolvedValue(undefined),
+    applyMutation: vi.fn().mockResolvedValue(undefined),
     exportBlob: vi.fn().mockResolvedValue(new Blob()),
     importBlob: vi.fn().mockResolvedValue(undefined),
     loadDataFile: vi.fn().mockResolvedValue(null),
@@ -42,10 +43,12 @@ globalThis.URL.revokeObjectURL = vi.fn()
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
+  __resetPersistenceBaselineForTests()
   useDataStore.setState({ data: makeDataFile() })
   useWorkspaceStore.setState({ workspace: createDefaultWorkspace() })
   vi.clearAllMocks()
   vi.mocked(storage).replaceAll.mockResolvedValue(undefined)
+  vi.mocked(storage).applyMutation.mockResolvedValue(undefined)
   vi.mocked(storage).exportBlob.mockResolvedValue(new Blob())
   vi.mocked(storage).importBlob.mockResolvedValue(undefined)
   vi.mocked(storage).loadDataFile.mockResolvedValue(null)

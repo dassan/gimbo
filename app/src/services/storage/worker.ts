@@ -151,6 +151,17 @@ let db: number // opaque database pointer returned by open_v2
 // exatamente nesse cenário que o resgate precisa rodar — daí uma flag em vez de checar `db`.
 let dbReady = false
 
+// M-73/PERFORMANCE.md: teto real de parâmetros ligados que esta build do SQLite aceita numa
+// query só — descoberto no init() via sqlite3.limit(), não chutado, com 10% de margem. Usado
+// pra dimensionar os lotes de applyTransactionDelta(). Fallback conservador se a consulta falhar
+// ou devolver algo implausível.
+let maxBoundParams = 900
+
+// SQLITE_LIMIT_VARIABLE_NUMBER — constante pública da API C do SQLite (não muda entre versões),
+// não reexportada pelo módulo principal do wa-sqlite (só por sqlite-constants.js, que não
+// importamos só por isto). Ver node_modules/wa-sqlite/src/sqlite-constants.js.
+const SQLITE_LIMIT_VARIABLE_NUMBER = 9
+
 const DB_FILENAME = 'gimbo.db'
 
 // Highest PRAGMA user_version this build knows how to migrate. CS-15 (folderSyncService)
@@ -179,6 +190,10 @@ async function init(): Promise<void> {
 
   db = await sqlite3.open_v2(DB_FILENAME)
   await runMigrationsOn(db)
+
+  const queriedLimit = sqlite3.limit(db, SQLITE_LIMIT_VARIABLE_NUMBER, -1)
+  if (queriedLimit > 0) maxBoundParams = Math.floor(queriedLimit * 0.9)
+
   dbReady = true
 }
 
@@ -439,6 +454,167 @@ async function importDb(data: ArrayBuffer): Promise<void> {
 
 // ─── replaceAll ───────────────────────────────────────────────────────────────
 
+// M-73/PERFORMANCE.md: tudo que replaceAll() reescreve por completo EXCETO
+// transactions/transaction_tags/transaction_budgets — extraído pra ser reaproveitado por
+// applyMutation() (M-73), que troca só a parte de transações por um diff direcionado. Estas
+// tabelas são pequenas (dezenas/centenas de linhas, nunca a mesma ordem de grandeza de
+// transactions) — o custo de reescrever tudo nelas a cada mutação já é baixo, não vale o risco
+// de dar CRUD direcionado pra cada uma.
+async function writeSmallTables(d: RawDataFile, ts: string): Promise<void> {
+  // Clear in dependency order (junction tables and leaves first)
+  await sqlite3.run(db, 'DELETE FROM audit_log')
+  await sqlite3.run(db, 'DELETE FROM deleted_ids')
+  await sqlite3.run(db, 'DELETE FROM valuations')
+  await sqlite3.run(db, 'DELETE FROM saved_periods')
+  await sqlite3.run(db, 'DELETE FROM budgets')
+  await sqlite3.run(db, 'DELETE FROM categories')
+  await sqlite3.run(db, 'DELETE FROM tags')
+  await sqlite3.run(db, 'DELETE FROM accounts')
+  await sqlite3.run(db, 'DELETE FROM settings')
+  await sqlite3.run(db, 'DELETE FROM users')
+
+  // user — `email` column kept physically (no DDL change) but never populated anymore, M-69
+  await sqlite3.run(
+    db,
+    "INSERT INTO users (id, name, email, created_at, updated_at) VALUES ('singleton', ?, '', ?, ?)",
+    [d.user.name, d.user.createdAt, d.user.updatedAt]
+  )
+
+  // settings
+  await sqlite3.run(
+    db,
+    "INSERT INTO settings (id, file_created_at, file_updated_at, audit_log_retention_limit, quadrantes_enabled) VALUES ('singleton', ?, ?, ?, ?)",
+    [
+      d.settings.fileCreatedAt,
+      d.settings.fileUpdatedAt,
+      d.settings.auditLogRetentionLimit,
+      d.settings.quadrantesEnabled ? 1 : 0,
+    ]
+  )
+
+  // accounts
+  for (const acc of d.accounts) {
+    await sqlite3.run(
+      db,
+      `INSERT INTO accounts
+           (id, name, type, balance, include_in_balance,
+            credit_limit, credit_closing_day, credit_due_day,
+            loan_outstanding_balance, loan_monthly_payment, loan_remaining_installments, loan_interest_rate,
+            is_reserve, issuer_icon, archived, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        acc.id,
+        acc.name,
+        acc.type,
+        acc.balance,
+        acc.includeInBalance ? 1 : 0,
+        acc.creditMetadata?.limit ?? null,
+        acc.creditMetadata?.closingDay ?? null,
+        acc.creditMetadata?.dueDay ?? null,
+        acc.loanMetadata?.outstandingBalance ?? null,
+        acc.loanMetadata?.monthlyPayment ?? null,
+        acc.loanMetadata?.remainingInstallments ?? null,
+        acc.loanMetadata?.interestRate ?? null,
+        acc.reserveMetadata ? 1 : 0,
+        acc.issuerIcon ?? null,
+        acc.archived ? 1 : 0,
+        ts,
+        acc.updatedAt ?? ts,
+      ]
+    )
+  }
+
+  // categories — parents before children to respect the self-referential FK
+  const parents = d.categories.filter((c) => !c.parentId)
+  const children = d.categories.filter((c) => c.parentId)
+  for (const cat of [...parents, ...children]) {
+    await sqlite3.run(
+      db,
+      `INSERT INTO categories (id, parent_id, name, icon, color, type, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        cat.id,
+        cat.parentId ?? null,
+        cat.name,
+        cat.icon,
+        cat.color,
+        cat.type,
+        ts,
+        cat.updatedAt ?? ts,
+      ]
+    )
+  }
+
+  // tags
+  for (const tag of d.tags) {
+    await sqlite3.run(
+      db,
+      'INSERT INTO tags (id, name, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      [tag.id, tag.name, tag.color, ts, tag.updatedAt ?? ts]
+    )
+  }
+
+  // budgets (F-30/BX-03)
+  for (const b of d.budgets ?? []) {
+    await sqlite3.run(
+      db,
+      `INSERT INTO budgets
+           (id, name, emoji, color, kind, target, period_mode, period_date, period_start, period_end,
+            archived_at, recipe_slug, recipe_slot, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        b.id,
+        b.name,
+        b.emoji,
+        b.color,
+        b.kind,
+        b.target,
+        b.period.mode,
+        b.period.mode === 'date' ? b.period.date : null,
+        b.period.mode === 'range' ? b.period.start : null,
+        b.period.mode === 'range' ? b.period.end : null,
+        b.archivedAt ?? null,
+        b.recipeSlug ?? null,
+        b.recipeSlot ?? null,
+        b.createdAt ?? ts,
+        b.updatedAt ?? ts,
+      ]
+    )
+  }
+
+  // valuations
+  for (const v of d.valuations ?? []) {
+    await sqlite3.run(
+      db,
+      'INSERT INTO valuations (id, account_id, date, market_value) VALUES (?, ?, ?, ?)',
+      [v.id, v.accountId, v.date, v.marketValue]
+    )
+  }
+
+  // saved periods (M-45)
+  for (const p of d.savedPeriods ?? []) {
+    await sqlite3.run(
+      db,
+      'INSERT INTO saved_periods (id, name, start_date, end_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [p.id, p.name, p.start, p.end, ts, ts]
+    )
+  }
+
+  // audit log
+  for (const entry of d.auditLog) {
+    await sqlite3.run(
+      db,
+      'INSERT INTO audit_log (id, timestamp, action, entity, entity_id, summary) VALUES (?, ?, ?, ?, ?, ?)',
+      [entry.id, entry.timestamp, entry.action, entry.entity, entry.entityId, entry.summary]
+    )
+  }
+
+  // tombstones
+  for (const id of d.deletedIds) {
+    await sqlite3.run(db, 'INSERT OR IGNORE INTO deleted_ids (id) VALUES (?)', [id])
+  }
+}
+
 async function replaceAll(raw: unknown): Promise<void> {
   const d = raw as RawDataFile
   // Use the settings timestamp as a stable fallback for entities that lack one
@@ -449,126 +625,9 @@ async function replaceAll(raw: unknown): Promise<void> {
     // Clear in dependency order (junction tables and leaves first)
     await sqlite3.run(db, 'DELETE FROM transaction_tags')
     await sqlite3.run(db, 'DELETE FROM transaction_budgets')
-    await sqlite3.run(db, 'DELETE FROM audit_log')
-    await sqlite3.run(db, 'DELETE FROM deleted_ids')
     await sqlite3.run(db, 'DELETE FROM transactions')
-    await sqlite3.run(db, 'DELETE FROM valuations')
-    await sqlite3.run(db, 'DELETE FROM saved_periods')
-    await sqlite3.run(db, 'DELETE FROM budgets')
-    await sqlite3.run(db, 'DELETE FROM categories')
-    await sqlite3.run(db, 'DELETE FROM tags')
-    await sqlite3.run(db, 'DELETE FROM accounts')
-    await sqlite3.run(db, 'DELETE FROM settings')
-    await sqlite3.run(db, 'DELETE FROM users')
 
-    // user — `email` column kept physically (no DDL change) but never populated anymore, M-69
-    await sqlite3.run(
-      db,
-      "INSERT INTO users (id, name, email, created_at, updated_at) VALUES ('singleton', ?, '', ?, ?)",
-      [d.user.name, d.user.createdAt, d.user.updatedAt]
-    )
-
-    // settings
-    await sqlite3.run(
-      db,
-      "INSERT INTO settings (id, file_created_at, file_updated_at, audit_log_retention_limit, quadrantes_enabled) VALUES ('singleton', ?, ?, ?, ?)",
-      [
-        d.settings.fileCreatedAt,
-        d.settings.fileUpdatedAt,
-        d.settings.auditLogRetentionLimit,
-        d.settings.quadrantesEnabled ? 1 : 0,
-      ]
-    )
-
-    // accounts
-    for (const acc of d.accounts) {
-      await sqlite3.run(
-        db,
-        `INSERT INTO accounts
-           (id, name, type, balance, include_in_balance,
-            credit_limit, credit_closing_day, credit_due_day,
-            loan_outstanding_balance, loan_monthly_payment, loan_remaining_installments, loan_interest_rate,
-            is_reserve, issuer_icon, archived, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          acc.id,
-          acc.name,
-          acc.type,
-          acc.balance,
-          acc.includeInBalance ? 1 : 0,
-          acc.creditMetadata?.limit ?? null,
-          acc.creditMetadata?.closingDay ?? null,
-          acc.creditMetadata?.dueDay ?? null,
-          acc.loanMetadata?.outstandingBalance ?? null,
-          acc.loanMetadata?.monthlyPayment ?? null,
-          acc.loanMetadata?.remainingInstallments ?? null,
-          acc.loanMetadata?.interestRate ?? null,
-          acc.reserveMetadata ? 1 : 0,
-          acc.issuerIcon ?? null,
-          acc.archived ? 1 : 0,
-          ts,
-          acc.updatedAt ?? ts,
-        ]
-      )
-    }
-
-    // categories — parents before children to respect the self-referential FK
-    const parents = d.categories.filter((c) => !c.parentId)
-    const children = d.categories.filter((c) => c.parentId)
-    for (const cat of [...parents, ...children]) {
-      await sqlite3.run(
-        db,
-        `INSERT INTO categories (id, parent_id, name, icon, color, type, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          cat.id,
-          cat.parentId ?? null,
-          cat.name,
-          cat.icon,
-          cat.color,
-          cat.type,
-          ts,
-          cat.updatedAt ?? ts,
-        ]
-      )
-    }
-
-    // tags
-    for (const tag of d.tags) {
-      await sqlite3.run(
-        db,
-        'INSERT INTO tags (id, name, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-        [tag.id, tag.name, tag.color, ts, tag.updatedAt ?? ts]
-      )
-    }
-
-    // budgets (F-30/BX-03)
-    for (const b of d.budgets ?? []) {
-      await sqlite3.run(
-        db,
-        `INSERT INTO budgets
-           (id, name, emoji, color, kind, target, period_mode, period_date, period_start, period_end,
-            archived_at, recipe_slug, recipe_slot, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          b.id,
-          b.name,
-          b.emoji,
-          b.color,
-          b.kind,
-          b.target,
-          b.period.mode,
-          b.period.mode === 'date' ? b.period.date : null,
-          b.period.mode === 'range' ? b.period.start : null,
-          b.period.mode === 'range' ? b.period.end : null,
-          b.archivedAt ?? null,
-          b.recipeSlug ?? null,
-          b.recipeSlot ?? null,
-          b.createdAt ?? ts,
-          b.updatedAt ?? ts,
-        ]
-      )
-    }
+    await writeSmallTables(d, ts)
 
     // transactions + junction rows
     for (const tx of d.transactions) {
@@ -620,38 +679,155 @@ async function replaceAll(raw: unknown): Promise<void> {
       }
     }
 
-    // valuations
-    for (const v of d.valuations ?? []) {
-      await sqlite3.run(
-        db,
-        'INSERT INTO valuations (id, account_id, date, market_value) VALUES (?, ?, ?, ?)',
-        [v.id, v.accountId, v.date, v.marketValue]
+    await sqlite3.run(db, 'COMMIT')
+  } catch (err) {
+    try {
+      await sqlite3.run(db, 'ROLLBACK')
+    } catch {
+      // Ignore rollback errors
+    }
+    throw err
+  }
+}
+
+// ─── Mutação por diff (M-73/PERFORMANCE.md) ────────────────────────────────────
+//
+// replaceAll() reescreve a tabela transactions inteira a cada mutação — para o cofre real do
+// usuário (~25 mil transações), ~29 mil INSERTs sequenciais por edição, cada um reprocessando o
+// SQL do zero (sqlite3.run() prepara e finaliza a cada chamada, sem cache de statement).
+// applyMutation() troca isso por um diff: só as linhas de transactions/transaction_tags/
+// transaction_budgets que de fato mudaram viram INSERT/UPDATE/DELETE, em lotes multi-linha.
+
+type RawTransactionDelta = { upserts: RawTransaction[]; deletedIds: string[] }
+
+const TRANSACTION_COLUMNS = 20
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
+async function applyTransactionDelta(delta: RawTransactionDelta, ts: string): Promise<void> {
+  const idBatchSize = Math.max(1, maxBoundParams)
+  const touchedIds = [...delta.deletedIds, ...delta.upserts.map((t) => t.id)]
+
+  // Junction rows são sempre apagadas e reinseridas para toda transação tocada (upsert ou
+  // delete) — mais simples que diffar associação de tag/budget separadamente, e ainda barato:
+  // o fan-out por transação é pequeno (medido no cofre real: ~0,15 tag/transação).
+  for (const idBatch of chunk(touchedIds, idBatchSize)) {
+    const placeholders = idBatch.map(() => '?').join(',')
+    await sqlite3.run(
+      db,
+      `DELETE FROM transaction_tags WHERE transaction_id IN (${placeholders})`,
+      idBatch
+    )
+    await sqlite3.run(
+      db,
+      `DELETE FROM transaction_budgets WHERE transaction_id IN (${placeholders})`,
+      idBatch
+    )
+  }
+
+  for (const idBatch of chunk(delta.deletedIds, idBatchSize)) {
+    const placeholders = idBatch.map(() => '?').join(',')
+    await sqlite3.run(db, `DELETE FROM transactions WHERE id IN (${placeholders})`, idBatch)
+  }
+
+  const transactionBatchSize = Math.max(1, Math.floor(maxBoundParams / TRANSACTION_COLUMNS))
+  const junctionBatchSize = Math.max(1, Math.floor(maxBoundParams / 2))
+
+  for (const rows of chunk(delta.upserts, transactionBatchSize)) {
+    const rowPlaceholders = rows.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',')
+    const params: SQLiteCompatibleType[] = []
+    for (const tx of rows) {
+      params.push(
+        tx.id,
+        tx.accountId,
+        tx.categoryId || null,
+        tx.amount,
+        tx.type,
+        tx.description,
+        tx.date,
+        tx.isPaid ? 1 : 0,
+        tx.transferAccountId ?? null,
+        tx.installment?.parentId ?? null,
+        tx.installment?.currentIndex ?? null,
+        tx.installment?.total ?? null,
+        tx.installment?.purchaseDate ?? null,
+        tx.recurrence?.parentId ?? null,
+        tx.recurrence?.frequency ?? null,
+        tx.recurrence?.endDate ?? null,
+        tx.referenceMonth ?? null,
+        tx.invoiceDueDate ?? null,
+        tx.createdAt ?? ts,
+        tx.updatedAt ?? ts
       )
     }
+    await sqlite3.run(
+      db,
+      `INSERT INTO transactions
+         (id, account_id, category_id, amount, type, description, date, is_paid,
+          transfer_account_id, installment_parent_id, installment_index, installment_total,
+          installment_purchase_date,
+          recurrence_parent_id, recurrence_frequency, recurrence_end_date, reference_month,
+          invoice_due_date, created_at, updated_at)
+       VALUES ${rowPlaceholders}
+       ON CONFLICT(id) DO UPDATE SET
+         account_id=excluded.account_id, category_id=excluded.category_id,
+         amount=excluded.amount, type=excluded.type, description=excluded.description,
+         date=excluded.date, is_paid=excluded.is_paid,
+         transfer_account_id=excluded.transfer_account_id,
+         installment_parent_id=excluded.installment_parent_id,
+         installment_index=excluded.installment_index,
+         installment_total=excluded.installment_total,
+         installment_purchase_date=excluded.installment_purchase_date,
+         recurrence_parent_id=excluded.recurrence_parent_id,
+         recurrence_frequency=excluded.recurrence_frequency,
+         recurrence_end_date=excluded.recurrence_end_date,
+         reference_month=excluded.reference_month, invoice_due_date=excluded.invoice_due_date,
+         updated_at=excluded.updated_at`,
+      params
+    )
 
-    // saved periods (M-45)
-    for (const p of d.savedPeriods ?? []) {
+    const tagPairs: SQLiteCompatibleType[] = []
+    const budgetPairs: SQLiteCompatibleType[] = []
+    for (const tx of rows) {
+      for (const tagId of tx.tags) tagPairs.push(tx.id, tagId)
+      for (const budgetId of tx.budgetIds ?? []) budgetPairs.push(tx.id, budgetId)
+    }
+    for (const pairBatch of chunk(tagPairs, junctionBatchSize * 2)) {
+      const placeholders = Array(pairBatch.length / 2)
+        .fill('(?,?)')
+        .join(',')
       await sqlite3.run(
         db,
-        'INSERT INTO saved_periods (id, name, start_date, end_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-        [p.id, p.name, p.start, p.end, ts, ts]
+        `INSERT INTO transaction_tags (transaction_id, tag_id) VALUES ${placeholders}`,
+        pairBatch
       )
     }
-
-    // audit log
-    for (const entry of d.auditLog) {
+    for (const pairBatch of chunk(budgetPairs, junctionBatchSize * 2)) {
+      const placeholders = Array(pairBatch.length / 2)
+        .fill('(?,?)')
+        .join(',')
       await sqlite3.run(
         db,
-        'INSERT INTO audit_log (id, timestamp, action, entity, entity_id, summary) VALUES (?, ?, ?, ?, ?, ?)',
-        [entry.id, entry.timestamp, entry.action, entry.entity, entry.entityId, entry.summary]
+        `INSERT INTO transaction_budgets (transaction_id, budget_id) VALUES ${placeholders}`,
+        pairBatch
       )
     }
+  }
+}
 
-    // tombstones
-    for (const id of d.deletedIds) {
-      await sqlite3.run(db, 'INSERT OR IGNORE INTO deleted_ids (id) VALUES (?)', [id])
-    }
+async function applyMutation(rawData: unknown, rawDelta: unknown): Promise<void> {
+  const d = rawData as RawDataFile
+  const delta = rawDelta as RawTransactionDelta
+  const ts = d.settings.fileCreatedAt || new Date().toISOString()
 
+  await sqlite3.run(db, 'BEGIN')
+  try {
+    await writeSmallTables(d, ts)
+    await applyTransactionDelta(delta, ts)
     await sqlite3.run(db, 'COMMIT')
   } catch (err) {
     try {
@@ -1032,6 +1208,8 @@ async function dispatch(method: string, args: unknown[]): Promise<unknown> {
       return importDb(args[0] as ArrayBuffer)
     case 'replaceAll':
       return replaceAll(args[0])
+    case 'applyMutation':
+      return applyMutation(args[0], args[1])
     case 'clearAll':
       return clearAll()
     case 'readPeer':

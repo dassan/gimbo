@@ -57,5 +57,8 @@ test('salvar uma transação registra métricas de mutate/postMessage no painel 
   await expect(page.getByRole('cell', { name: 'store.mutate.clone' })).toBeVisible({
     timeout: 5000,
   })
-  await expect(page.getByRole('cell', { name: /storage\.postMessage\.replaceAll/ })).toBeVisible()
+  // M-73: mutate() agora persiste via applyMutation() (diff direcionado), não mais replaceAll()
+  // (que reescrevia a tabela transactions inteira a cada mutação) — replaceAll() continua
+  // existindo, só não é mais o caminho comum de toda mutação.
+  await expect(page.getByRole('cell', { name: /storage\.postMessage\.applyMutation/ })).toBeVisible()
 })
