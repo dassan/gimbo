@@ -11,6 +11,7 @@ import {
   projectRecurringOccurrences,
   PROJECTION_HORIZON_YEARS,
 } from '@/lib/utils'
+import { measure } from '@/lib/perfMonitor'
 import PeriodSelector from '@/components/PeriodSelector'
 import type { PeriodValue } from '@/components/PeriodSelector'
 import CashFlowView from './CashFlowView'
@@ -78,14 +79,18 @@ export default function Analytics() {
   // B-22's 24-month rolling window) simply gets nothing added and renders entirely as real.
   // Scoped to CashFlowView only — the other sub-tabs are about historical breakdown, not
   // trend, and stay real-data-only.
-  const cashFlowTransactions = useMemo(() => {
-    if (!data) return []
-    const today = parseDateLocal(todayStr())
-    if (endDate <= today) return data.transactions
-    const cap = parseDateLocal(advanceMonths(todayStr(), PROJECTION_HORIZON_YEARS * 12))
-    const horizon = formatDateLocal(endDate < cap ? endDate : cap)
-    return [...data.transactions, ...projectRecurringOccurrences(data.transactions, horizon)]
-  }, [data, endDate])
+  const cashFlowTransactions = useMemo(
+    () =>
+      measure('analytics.cashFlowTransactions', () => {
+        if (!data) return []
+        const today = parseDateLocal(todayStr())
+        if (endDate <= today) return data.transactions
+        const cap = parseDateLocal(advanceMonths(todayStr(), PROJECTION_HORIZON_YEARS * 12))
+        const horizon = formatDateLocal(endDate < cap ? endDate : cap)
+        return [...data.transactions, ...projectRecurringOccurrences(data.transactions, horizon)]
+      }),
+    [data, endDate]
+  )
 
   if (!data) return null
 

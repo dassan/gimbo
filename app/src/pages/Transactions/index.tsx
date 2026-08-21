@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
+import { measure } from '@/lib/perfMonitor'
 import {
   formatCurrency,
   cn,
@@ -76,62 +77,60 @@ export default function Transactions() {
   }, [period, now])
 
   // ── Transaction filtering ─────────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    if (!data) return []
-    let txs = [...data.transactions]
+  const filtered = useMemo(
+    () =>
+      measure('transactions.filtered', () => {
+        if (!data) return []
+        let txs = [...data.transactions]
 
-    // M-26: this is the cash ledger of non-CREDIT accounts — card purchases live in
-    // /credit-card/:id and are excluded here. B-16: a CREDIT_PAYMENT IS a real cash outflow
-    // on its funding (non-CREDIT) account, so it belongs in this ledger (attributed to
-    // transferAccountId), even though its accountId is the CREDIT card.
-    txs = txs.filter((tx) => {
-      if (tx.type === 'CREDIT_PAYMENT') {
-        return tx.transferAccountId != null && !creditAccountIds.has(tx.transferAccountId)
-      }
-      return !creditAccountIds.has(tx.accountId)
-    })
+        // M-26: this is the cash ledger of non-CREDIT accounts — card purchases live in
+        // /credit-card/:id and are excluded here. B-16: a CREDIT_PAYMENT IS a real cash outflow
+        // on its funding (non-CREDIT) account, so it belongs in this ledger (attributed to
+        // transferAccountId), even though its accountId is the CREDIT card.
+        txs = txs.filter((tx) => {
+          if (tx.type === 'CREDIT_PAYMENT') {
+            return tx.transferAccountId != null && !creditAccountIds.has(tx.transferAccountId)
+          }
+          return !creditAccountIds.has(tx.accountId)
+        })
 
-    // Period filter using parseDateLocal (avoids UTC date parsing bug)
-    if (startDate && endDate) {
-      txs = txs.filter((tx) => {
-        const d = parseDateLocal(tx.date)
-        return d >= startDate && d <= endDate
-      })
-    }
+        // Period filter using parseDateLocal (avoids UTC date parsing bug)
+        if (startDate && endDate) {
+          txs = txs.filter((tx) => {
+            const d = parseDateLocal(tx.date)
+            return d >= startDate && d <= endDate
+          })
+        }
 
-    // Account filter — a CREDIT_PAYMENT belongs to its funding account (transferAccountId)
-    if (filterAccountId !== 'all')
-      txs = txs.filter((tx) => {
-        const ledgerAccountId = tx.type === 'CREDIT_PAYMENT' ? tx.transferAccountId : tx.accountId
-        return ledgerAccountId === filterAccountId
-      })
+        // Account filter — a CREDIT_PAYMENT belongs to its funding account (transferAccountId)
+        if (filterAccountId !== 'all')
+          txs = txs.filter((tx) => {
+            const ledgerAccountId =
+              tx.type === 'CREDIT_PAYMENT' ? tx.transferAccountId : tx.accountId
+            return ledgerAccountId === filterAccountId
+          })
 
-    // Status filter
-    if (filterStatus === 'paid') txs = txs.filter((tx) => tx.isPaid)
-    if (filterStatus === 'pending') txs = txs.filter((tx) => !tx.isPaid)
+        // Status filter
+        if (filterStatus === 'paid') txs = txs.filter((tx) => tx.isPaid)
+        if (filterStatus === 'pending') txs = txs.filter((tx) => !tx.isPaid)
 
-    // Type filter
-    if (filterType === 'income') txs = txs.filter((tx) => tx.type === 'INCOME')
-    if (filterType === 'expense') txs = txs.filter((tx) => tx.type === 'EXPENSE')
-    if (filterType === 'transfer') txs = txs.filter((tx) => tx.type === 'TRANSFER')
+        // Type filter
+        if (filterType === 'income') txs = txs.filter((tx) => tx.type === 'INCOME')
+        if (filterType === 'expense') txs = txs.filter((tx) => tx.type === 'EXPENSE')
+        if (filterType === 'transfer') txs = txs.filter((tx) => tx.type === 'TRANSFER')
 
-    // Search
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      txs = txs.filter((tx) => tx.description.toLowerCase().includes(q))
-    }
+        // Search
+        if (search.trim()) {
+          const q = search.toLowerCase()
+          txs = txs.filter((tx) => tx.description.toLowerCase().includes(q))
+        }
 
-    return txs.sort((a, b) => parseDateLocal(b.date).getTime() - parseDateLocal(a.date).getTime())
-  }, [
-    data,
-    filterAccountId,
-    filterStatus,
-    filterType,
-    search,
-    creditAccountIds,
-    startDate,
-    endDate,
-  ])
+        return txs.sort(
+          (a, b) => parseDateLocal(b.date).getTime() - parseDateLocal(a.date).getTime()
+        )
+      }),
+    [data, filterAccountId, filterStatus, filterType, search, creditAccountIds, startDate, endDate]
+  )
 
   // Group by date
   const grouped = useMemo(() => {

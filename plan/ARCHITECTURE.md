@@ -85,7 +85,7 @@ MyFinanceApp/
 │   │   │       ├── index.ts          # Singleton `storage` (StorageService)
 │   │   │       ├── StorageService.ts # API tipada usada pela app (main thread)
 │   │   │       ├── worker.ts         # Web Worker: wa-sqlite + OPFS, runMigrations()
-│   │   │       └── migrations/       # v1.sql .. v12.sql — schema físico incremental
+│   │   │       └── migrations/       # v1.sql .. v13.sql — schema físico incremental
 │   │   ├── store/
 │   │   │   ├── useDataStore.ts  # Dados financeiros + mutações + persistência debounced
 │   │   │   └── useWorkspaceStore.ts # Preferências UI (tema, locale, shadows, net worth)
@@ -134,11 +134,22 @@ MyFinanceApp/
 Ação do usuário
   → Método do store (ex: addTransaction())
   → mutate(): structuredClone(data) + aplica mutação + registra entrada no Audit Log
-  → debouncedReplaceAll() em 300ms
-       → storage.replaceAll(data)  — substitui todas as tabelas do SQLite numa transação
+  → debouncedApplyMutation() em 300ms
+       → diffTransactions(_lastPersisted.transactions, data.transactions)  — só o que mudou
+       → storage.applyMutation(data, delta)
+            — tabelas pequenas (accounts/categories/tags/budgets/audit_log/...) reescritas
+              por inteiro (baratas); transactions/transaction_tags/transaction_budgets só
+              recebem INSERT/UPDATE/DELETE das linhas do delta, em lotes multi-linha
        → (se houver pasta de backup configurada) escreve uma cópia via File System Access API
   → store atualizado com o novo `data`
 ```
+
+> **M-73 (2026-08-21):** até então, toda mutação chamava `storage.replaceAll(data)` — reescrita
+> completa de todas as tabelas, incluindo `transactions` inteira, linha por linha. Pra um cofre
+> real de ~25 mil transações isso chegava a ~1 minuto por salvamento (`plan/BACKLOG.md`,
+> detalhes completos). `replaceAll()` continua existindo — usado por import, restauração de
+> backup e merge de sync (`lib/cloudSync/{syncService,folderSyncService}.ts`, que chamam direto,
+> fora de `mutate()` — exceção reconhecida) — só deixou de ser o caminho comum de toda mutação.
 
 Cada dispositivo mantém seu próprio banco SQLite local — não existe um "arquivo principal" único.
 Backup/restore é feito via export/import de um arquivo `.db`, automaticamente para uma pasta local
@@ -211,10 +222,13 @@ Main Thread
 
 - **Fila sequencial no worker**: cada mensagem é enfileirada via Promise chain — mutações nunca interleiam entre awaits.
 - **WAL mode**: `PRAGMA journal_mode=WAL` — melhor concorrência de leitura; checkpoint antes de cada export.
-- **`replaceAll()`**: operação atômica em transação SQL — substitui todas as tabelas de uma vez.
+- **`temp_store = MEMORY`** (M-72): evita que b-trees temporárias de `GROUP BY`/`ORDER BY` grandes espirrem pra "arquivo" (que, sobre a VFS assíncrona, seria I/O real).
+- **`replaceAll()`**: operação atômica em transação SQL — substitui todas as tabelas de uma vez. Usado por import, restauração de backup e merge de sync — não mais pelo caminho comum de mutação (ver `applyMutation()` abaixo, M-73).
+- **`applyMutation(data, delta)`** (M-73): o caminho comum de toda mutação desde então — reescreve as tabelas pequenas por inteiro (baratas) mas só aplica `INSERT`/`UPDATE`/`DELETE` direcionado às transações que o `delta` (de `lib/storage/transactionDiff.ts`) diz que mudaram, em lotes multi-linha (tamanho descoberto via `sqlite3.limit()`). Elimina o custo de reescrever ~25 mil linhas a cada edição.
 - **`exportBlob()`**: WAL checkpoint + leitura do arquivo OPFS → `Blob` (usado tanto pelo botão "Exportar" quanto pelo backup automático em pasta local).
 - **`importBlob()`**: fecha DB, escreve bytes no OPFS, remove WAL/journal, reabre e re-executa `runMigrations()`.
 - Em modo `DEV`, o singleton `storage` é exposto em `window.__storage` para os testes E2E (Playwright) semearem o banco via `replaceAll()` antes de cada cenário.
+- **Monitoramento de performance (M-71, dev-only):** cada dispatch do worker mede seu próprio tempo e devolve via `WorkerResponse.perf`; `Alt+Shift+P` abre um painel de debug (`components/PerfPanel.tsx`) com essas métricas. 100% ausente do build de produção. Ver `plan/MONITORING.md`.
 
 ### `StorageService` — API pública
 
@@ -222,17 +236,29 @@ Main Thread
 |-------|---------|
 | Usuário | `getUser()`, `upsertUser(user)` |
 | Configurações | `getSettings()`, `upsertSettings(settings)` |
-| Contas | `getAccounts()`, `createAccount(data)`, `updateAccount(id, data)`, `deleteAccount(id)` |
-| Categorias | `getCategories()`, `createCategory(data)`, `updateCategory(id, data)`, `deleteCategory(id)` |
-| Tags | `getTags()`, `createTag(data)`, `updateTag(id, data)`, `deleteTag(id)` |
-| Transações | `getTransactions(filters?)`, `createTransaction(data)`, `updateTransaction(id, data)`, `deleteTransaction(id)`, `deleteTransactionGroup(parentId)` |
-| Audit Log | `getAuditLog()`, `addAuditEntry(entry)`, `trimAuditLog(maxEntries)` |
-| Tombstones | `getDeletedIds()`, `addDeletedId(id)` |
+| Contas (leitura) | `getAccounts()` |
+| Categorias (leitura) | `getCategories()` |
+| Tags (leitura) | `getTags()` |
+| Caixinhas (leitura) | `getBudgets()` |
+| Transações (leitura) | `getTransactions(filters?)` — sem `JOIN`/`GROUP BY` desde o M-72; tags/caixinhas juntadas em JS |
+| Audit Log | `getAuditLog()` |
+| Tombstones | `getDeletedIds()` |
 | Valuations | `getValuations()` |
 | Períodos salvos | `getSavedPeriods()` (M-45) |
 | Export/Import/Versão | `exportBlob()`, `importBlob(blob)`, `getDatabaseVersion()` |
-| Bulk | `loadDataFile()` — monta um `DataFile` completo a partir de todas as tabelas; `replaceAll(data)` — substitui tudo numa transação; `clearAll()` |
+| Bulk | `loadDataFile()` — monta um `DataFile` completo a partir de todas as tabelas; `replaceAll(data)` — substitui tudo numa transação (import/restauração/merge de sync); `applyMutation(data, delta)` — caminho comum de mutação (M-73, ver acima); `clearAll()` |
 | Lifecycle | `terminate()` |
+
+> **Camada de CRUD direcionado morta (não listada acima):** `createAccount`/`updateAccount`/
+> `deleteAccount` e equivalentes pra categories/tags/transactions, `addAuditEntry`/
+> `trimAuditLog`, `addDeletedId` **existem no código** (`StorageService.ts`) mas **não são
+> chamados por nenhum caminho do app** — achado ao investigar o M-73. Têm bugs confirmados
+> (geração de `id` própria via `uuid()` em vez de aceitar o id já escolhido pelo chamador;
+> `createTransaction`/`updateTransaction` com listas de colunas desatualizadas, faltando
+> `installment_purchase_date`/`recurrence_*`/`reference_month`/`invoice_due_date`;
+> `valuations`/`saved_periods`/`budgets` sem CRUD nenhum, só leitura) — não usar sem corrigir
+> primeiro. Decisão registrada no `M-73`: ficam como estão, sem uso, até haver motivo pra
+> corrigir ou remover.
 
 ---
 
@@ -536,9 +562,14 @@ interface WorkspaceFile {
   - `v5.sql` — coluna `invoice_due_date`
   - `v6.sql` — coluna `archived` em `accounts` (default 0)
   - `v7.sql` — tabela `saved_periods`
+  - `v13.sql` — índice composto `idx_transactions_date_created` (M-72, sem campo novo no
+    `DataFile` — só DDL físico)
 
   As migrações `v8`/`v9` do schema em memória não exigem alteração de DDL (campos já cobertos
-  pelas colunas/tabelas acima), por isso não há `v8.sql`/`v9.sql`.
+  pelas colunas/tabelas acima), por isso não há `v8.sql`/`v9.sql`. **`v8.sql` a `v12.sql` físicos
+  existem** (parcelas/empréstimo/reserva, `budgets`/`transaction_budgets` do F-30/BX-03,
+  `quadrantes_enabled` do BX-07) mas não estão itemizados aqui — lista completa e mais
+  ativamente mantida em `CLAUDE.md` → "Estado Atual" (bumps de schema).
 
 ---
 
@@ -565,19 +596,35 @@ data: DataFile | null   // null = sem cofre criado (route guard → /onboarding)
 
 ### `mutate()` / persistência
 
+> **M-73 (2026-08-21):** `debouncedReplaceAll()` virou `debouncedApplyMutation()` — persiste por
+> diff, não mais reescrevendo `transactions` inteira a cada mutação. Detalhes completos em
+> `plan/BACKLOG.md` (`M-73`); resumo abaixo.
+
 ```typescript
 function mutate(state, fn: (data: DataFile) => void, actionName?: string) {
   const data = structuredClone(state.data)
-  fn(data)                       // aplica a mutação + addAudit()
-  debouncedReplaceAll(data)       // 300ms debounce
+  fn(data)                          // aplica a mutação + addAudit()
+  debouncedApplyMutation(data)      // 300ms debounce
   if (actionName) trackAction(actionName)
   return { data }
 }
 
-function debouncedReplaceAll(data: DataFile) {
+// _lastPersisted: estado da última escrita bem-sucedida — a baseline do diff. Só avança quando
+// a escrita resolve (nunca a cada mutate(), que rodaria dentro da janela de debounce e perderia
+// mutações fundidas). loadData()/clearData()/runPeerSync() resincronizam explicitamente.
+let _lastPersisted: DataFile | null = null
+
+function debouncedApplyMutation(data: DataFile) {
   if (isDemoMode()) return       // F-25: mutações são no-op em modo demo
   // após 300ms sem novas mutações:
-  storage.replaceAll(data).then(() => _triggerLocalBackup())
+  const baseline = _lastPersisted
+  const write = baseline
+    ? storage.applyMutation(data, diffTransactions(baseline.transactions, data.transactions))
+    : storage.replaceAll(data)   // defensivo — não deveria disparar depois de loadData()
+  write.then(() => {
+    _lastPersisted = data
+    _triggerLocalBackup()
+  })
 }
 ```
 
@@ -831,7 +878,7 @@ https://github.com/dassan/gimbo/issues/new?title=...&body=...&labels=bug
 ## Modo Demo (F-25)
 
 `isDemoMode()` (`import.meta.env.VITE_DEMO_MODE === 'true'`) faz `App.tsx` carregar
-`assets/demo-data.json` via `loadDemoData()` no boot, ignorando o SQLite. `debouncedReplaceAll`
+`assets/demo-data.json` via `loadDemoData()` no boot, ignorando o SQLite. `debouncedApplyMutation`
 torna-se no-op (`useDataStore`), e `AppLayout` exibe o banner amarelo de modo demonstração. Usado
 para deploys públicos de demonstração (sem persistência).
 
@@ -841,8 +888,8 @@ para deploys públicos de demonstração (sem persistência).
 
 ### Cobertura Atual
 
-- **841 testes unitários** — 31 arquivos (`src/test/{components,lib,store}`)
-- **59 testes E2E** — 7 specs (`e2e/*.spec.ts`), em dois perfis Playwright: `chromium` (desktop) e `mobile-chrome`
+- **890 testes unitários** — 35 arquivos (`src/test/{components,lib,store}`)
+- **84 testes E2E** — 11 specs (`e2e/*.spec.ts`), em dois perfis Playwright: `chromium` (desktop) e `mobile-chrome`
 - Cobertura: ~96% statements
 
 ### Testes Unitários (Vitest)
@@ -853,7 +900,7 @@ para deploys públicos de demonstração (sem persistência).
 
 ### Testes E2E (Playwright)
 
-- Specs: `budgets.spec.ts`, `creditCard.spec.ts`, `landing.spec.ts`, `mobile.spec.ts`, `onboarding.spec.ts`, `persistence.spec.ts`, `transaction.spec.ts`
+- Specs: `authStorage.spec.ts`, `budgets.spec.ts`, `creditCard.spec.ts`, `importSafety.spec.ts`, `landing.spec.ts`, `mobile.spec.ts`, `mutationDelta.spec.ts` (M-73), `onboarding.spec.ts`, `perfMonitor.spec.ts` (M-71/72/73), `persistence.spec.ts`, `transaction.spec.ts`
 - Em `DEV`, `window.__storage.replaceAll(data)` é usado para semear o SQLite antes de cada cenário (ver `services/storage/index.ts`)
 
 ### Scripts de Qualidade
@@ -892,7 +939,7 @@ cd app && npx playwright test
 sync_gimbo.py [--start <data> | --window-months N] [--end <data>] [--base gimbo.db] [--out gimbo.db]
   1. autentica (HTTP Basic; token via env ORGANIZZE_TOKEN, email via ORGANIZZE_EMAIL/--email)
   2. busca categorias, contas, cartões e lançamentos mês a mês no horizonte [start, end]
-  3. converte em memória → (incremental: funde no --base) → escreve gimbo.db (user_version=12)
+  3. converte em memória → (incremental: funde no --base) → escreve gimbo.db (user_version=13)
 ```
 
 O `gimbo.db` gerado já inclui a coluna `accounts.archived` (M-42/M-51), `accounts.is_reserve`

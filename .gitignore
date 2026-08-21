@@ -31,6 +31,11 @@ app/dev-dist/
 # Data directory
 data/
 
+# Notas de investigação de performance — deliberadamente fora do controle de versão (ver o
+# próprio cabeçalho do arquivo). Acabou commitado sem querer no M-72 (8a9d8ea); untracked aqui
+# pra não repetir.
+plan/PERFORMANCE.md
+
 # Python bytecode cache (scripts/sync_gimbo.py)
 __pycache__/
 *.pyc

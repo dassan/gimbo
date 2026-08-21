@@ -31,11 +31,20 @@ import {
 } from '@/lib/utils'
 import { isDemoMode } from '@/lib/demo'
 import { trackAction } from '@/lib/telemetry'
+import { measure } from '@/lib/perfMonitor'
 import { applyQuadrantesRecipe, findQuadranteForDate, QUADRANTE_SLUG } from '@/lib/budgetRecipes'
+import { diffTransactions } from '@/lib/storage/transactionDiff'
 
 // ─── Debounce helper ──────────────────────────────────────────────────────────
 
 let _sqliteTimer: ReturnType<typeof setTimeout> | null = null
+
+// M-73/PERFORMANCE.md: estado da última escrita bem-sucedida no SQLite — a baseline contra a
+// qual debouncedApplyMutation() calcula o diff de transações. Só avança depois que a escrita
+// resolve (nunca a cada mutate(), que rodaria dentro da janela de debounce e perderia mutações
+// coalescidas — ver plano). Pontos que já reescrevem tudo (loadData/clearData/runPeerSync)
+// resincronizam explicitamente.
+let _lastPersisted: DataFile | null = null
 
 // CS-07: Google Drive (Fase 2) takes precedence over the Fase 1 shared-folder mode, which takes
 // precedence over the Nível 1 legacy single-file backup — only one transport pushes per mutation.
@@ -76,11 +85,28 @@ async function _triggerLocalBackup(data: DataFile) {
   }
 }
 
-function debouncedReplaceAll(data: DataFile) {
+function debouncedApplyMutation(data: DataFile) {
   if (isDemoMode()) return
   if (_sqliteTimer) clearTimeout(_sqliteTimer)
   _sqliteTimer = setTimeout(() => {
-    void storage.replaceAll(data).then(() => void _triggerLocalBackup(data))
+    const baseline = _lastPersisted
+    // Defensivo: não deveria disparar depois de loadData() já ter setado a baseline — se
+    // acontecer mesmo assim, cai pro caminho antigo (reescreve tudo) em vez de arriscar um diff
+    // contra uma baseline inexistente.
+    const write = baseline
+      ? storage.applyMutation(
+          data,
+          import.meta.env.DEV
+            ? measure('store.mutate.diffTransactions', () =>
+                diffTransactions(baseline.transactions, data.transactions)
+              )
+            : diffTransactions(baseline.transactions, data.transactions)
+        )
+      : storage.replaceAll(data)
+    void write.then(() => {
+      _lastPersisted = data
+      void _triggerLocalBackup(data)
+    })
   }, 300)
 }
 
@@ -200,8 +226,14 @@ export const useDataStore = create<DataStore>((set, get) => ({
   syncStatus: 'idle',
   lastSyncedAt: null,
 
-  loadData: (data) => set({ data }),
-  clearData: () => set({ data: null }),
+  loadData: (data) => {
+    _lastPersisted = data
+    set({ data })
+  },
+  clearData: () => {
+    _lastPersisted = null
+    set({ data: null })
+  },
 
   runPeerSync: async () => {
     // CS-07: Google Drive (Fase 2) takes precedence over the Fase 1 shared-folder mode when
@@ -219,6 +251,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
 
       if (result.status === 'merged') {
         const fresh = await storage.loadDataFile()
+        _lastPersisted = fresh ?? get().data
         set({ data: fresh ?? get().data, syncStatus: 'idle', lastSyncedAt: now() })
       } else if (result.status === 'offline') {
         set({ syncStatus: 'offline' })
@@ -622,7 +655,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
       const data = structuredClone(s.data)
       data.transactions.push(...newOccurrences)
       data.settings.fileUpdatedAt = now()
-      debouncedReplaceAll(data)
+      debouncedApplyMutation(data)
       return { data }
     }),
 
@@ -864,7 +897,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
       if (!applyQuadrantesRecipe(data.budgets, todayStr(), ts)) return {}
       addAudit(data, makeEntry('CREATE', 'budget', 'quadrantes', 'Quadrantes: lote mensal gerado'))
       data.settings.fileUpdatedAt = ts
-      debouncedReplaceAll(data)
+      debouncedApplyMutation(data)
       trackAction('quadrantes_batch_generated')
       return { data }
     }),
@@ -889,7 +922,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
       data.settings.auditLogRetentionLimit = limit
       data.auditLog = applyRetention(data.auditLog, limit)
       data.settings.fileUpdatedAt = now()
-      debouncedReplaceAll(data)
+      debouncedApplyMutation(data)
       return { data }
     }),
 
@@ -908,11 +941,21 @@ export const useDataStore = create<DataStore>((set, get) => ({
           makeEntry('CREATE', 'budget', 'quadrantes', 'Quadrantes: lote mensal gerado')
         )
       }
-      debouncedReplaceAll(data)
+      debouncedApplyMutation(data)
       trackAction('quadrantes_toggle')
       return { data }
     }),
 }))
+
+/**
+ * Reset a baseline de persistência (`_lastPersisted`) — use em testes apenas. Sem isto, o estado
+ * vaza entre testes do mesmo arquivo (módulo não é reimportado por teste) e um mutate() num
+ * teste posterior tenta `storage.applyMutation()` em vez do `storage.replaceAll()` esperado por
+ * um mock parcial. Mesmo padrão de `clearBuffer()` em lib/telemetry.ts.
+ */
+export function __resetPersistenceBaselineForTests(): void {
+  _lastPersisted = null
+}
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
@@ -927,12 +970,19 @@ function mutate(
   actionName?: string
 ): Partial<DataStore> {
   if (!state.data) return {}
-  const data = structuredClone(state.data)
-  fn(data)
+  const current = state.data
+  const data = import.meta.env.DEV
+    ? measure('store.mutate.clone', () => structuredClone(current))
+    : structuredClone(current)
+  if (import.meta.env.DEV) {
+    measure('store.mutate.apply', () => fn(data))
+  } else {
+    fn(data)
+  }
   // CS-06: syncService (Fase 2) compares this against the Drive file's modifiedTime to decide
   // whether a push is needed — it must reflect every mutation, not just file creation/import.
   data.settings.fileUpdatedAt = now()
-  debouncedReplaceAll(data)
+  debouncedApplyMutation(data)
   if (actionName) trackAction(actionName)
   return { data }
 }

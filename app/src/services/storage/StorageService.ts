@@ -1,4 +1,7 @@
 import { uuid } from '@/lib/utils'
+import { measure } from '@/lib/perfMonitor'
+import { trackPerformance } from '@/lib/telemetry'
+import type { TransactionDelta } from '@/lib/storage/transactionDiff'
 import { CURRENT_SCHEMA_VERSION } from '@/lib/storage/schema'
 import type {
   Account,
@@ -58,6 +61,7 @@ type WorkerResponse = {
   id: string
   result?: unknown
   error?: string
+  perf?: { metric: string; ms: number }
 }
 
 type QueryResult = { rows: unknown[][]; columns: string[] }
@@ -81,7 +85,8 @@ export class StorageService {
     }
     this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
     this.worker.addEventListener('message', (event: MessageEvent<WorkerResponse>) => {
-      const { id, result, error } = event.data
+      const { id, result, error, perf } = event.data
+      if (import.meta.env.DEV && perf) trackPerformance(perf.metric, perf.ms)
       const handlers = this.pending.get(id)
       if (!handlers) return
       this.pending.delete(id)
@@ -104,7 +109,13 @@ export class StorageService {
         resolve: resolve as (v: unknown) => void,
         reject,
       })
-      this.worker.postMessage({ id, method, args } satisfies WorkerRequest, transfer)
+      if (import.meta.env.DEV) {
+        measure(`storage.postMessage.${method}`, () => {
+          this.worker.postMessage({ id, method, args } satisfies WorkerRequest, transfer)
+        })
+      } else {
+        this.worker.postMessage({ id, method, args } satisfies WorkerRequest, transfer)
+      }
     })
   }
 
@@ -359,18 +370,32 @@ export class StorageService {
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
-    const rows = await this.query(
-      `SELECT t.*, GROUP_CONCAT(DISTINCT tt.tag_id) AS tag_ids,
-              GROUP_CONCAT(DISTINCT tb.budget_id) AS budget_ids
-       FROM transactions t
-       LEFT JOIN transaction_tags tt ON t.id = tt.transaction_id
-       LEFT JOIN transaction_budgets tb ON t.id = tb.transaction_id
-       ${where}
-       GROUP BY t.id
-       ORDER BY t.date DESC, t.created_at DESC`,
-      params
+    // M-72/PERFORMANCE.md: a versão anterior fazia tudo numa query só (LEFT JOIN duplo +
+    // GROUP_CONCAT(DISTINCT) + GROUP BY t.id). Medido contra um cofre real de ~25 mil
+    // transações: o JOIN/GROUP BY sozinho custou ~224s mesmo com fan-out de tags quase nulo
+    // (0,15 tag/transação) — o gargalo é o próprio agrupamento/DISTINCT nesse ambiente
+    // (wa-sqlite/WASM sobre a VFS assíncrona do OPFS), não o volume de linhas. As duas tabelas
+    // de junção são pequenas (proporcionais a vínculos reais, não a transações × transações) —
+    // buscá-las inteiras e juntar em JS é ordens de magnitude mais rápido que o JOIN+GROUP BY.
+    const [txRows, tagRows, budgetRows] = await Promise.all([
+      this.query(
+        `SELECT t.* FROM transactions t ${where} ORDER BY t.date DESC, t.created_at DESC`,
+        params
+      ),
+      this.query('SELECT transaction_id, tag_id FROM transaction_tags'),
+      this.query('SELECT transaction_id, budget_id FROM transaction_budgets'),
+    ])
+
+    const tagsByTx = groupIds(tagRows, 'tag_id')
+    const budgetsByTx = groupIds(budgetRows, 'budget_id')
+
+    return txRows.map((row) =>
+      rowToTransaction({
+        ...row,
+        tag_ids: tagsByTx.get(row.id as string)?.join(',') ?? null,
+        budget_ids: budgetsByTx.get(row.id as string)?.join(',') ?? null,
+      })
     )
-    return rows.map(rowToTransaction)
   }
 
   async createTransaction(data: CreateTransactionData): Promise<Transaction> {
@@ -665,6 +690,16 @@ export class StorageService {
     return this.call<void>('replaceAll', [data])
   }
 
+  /**
+   * M-73/PERFORMANCE.md: caminho rápido para mutate() — reescreve as tabelas pequenas por
+   * inteiro (baratas), mas só aplica INSERT/UPDATE/DELETE direcionados para as transações que
+   * de fato mudaram (`delta`, de `lib/storage/transactionDiff.ts`), em vez de reescrever as
+   * dezenas de milhares de linhas de `transactions` a cada mutação.
+   */
+  applyMutation(data: DataFile, delta: TransactionDelta): Promise<void> {
+    return this.call<void>('applyMutation', [data, delta])
+  }
+
   /** Delete all rows from every table, leaving the schema intact. */
   clearAll(): Promise<void> {
     return this.call<void>('clearAll', [])
@@ -678,6 +713,19 @@ export class StorageService {
 }
 
 // ─── Row → TypeScript mappers ─────────────────────────────────────────────────
+
+/** Agrupa linhas de uma tabela de junção (ex.: transaction_tags) por transaction_id. */
+function groupIds(rows: Row[], valueCol: string): Map<string, string[]> {
+  const map = new Map<string, string[]>()
+  for (const row of rows) {
+    const txId = row.transaction_id as string
+    const value = row[valueCol] as string
+    const list = map.get(txId)
+    if (list) list.push(value)
+    else map.set(txId, [value])
+  }
+  return map
+}
 
 function rowToUser(row: Row): User {
   return {
