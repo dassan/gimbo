@@ -5,6 +5,7 @@ import { FlaskConical, FolderSync, ShieldAlert, X } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { isDemoMode } from '@/lib/demo'
 import { useTrackNavigation } from '@/hooks/useTrackNavigation'
+import { usePerfMonitorToggle } from '@/hooks/usePerfMonitorToggle'
 import { loadBackupDirHandle, clearBackupDirHandle } from '@/lib/backupDir'
 import { isMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
 import {
@@ -17,6 +18,7 @@ import FAB from '@/components/FAB'
 import TransactionDrawer from '@/components/TransactionDrawer'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import WelcomeModal from '@/components/WelcomeModal'
+import PerfPanel from '@/components/PerfPanel'
 import type { Transaction } from '@/types'
 
 export interface AppLayoutContext {
@@ -40,6 +42,7 @@ export default function AppLayout() {
   const location = useLocation()
 
   useTrackNavigation()
+  const [perfMonitorOn, togglePerfMonitor] = usePerfMonitorToggle()
 
   useEffect(() => {
     async function checkBackupPermission() {
@@ -229,6 +232,8 @@ export default function AppLayout() {
       <TransactionDrawer open={drawerOpen} onClose={handleDrawerClose} transaction={editingTx} />
 
       {showWelcome && <WelcomeModal onClose={() => setShowWelcome(false)} />}
+
+      {import.meta.env.DEV && perfMonitorOn && <PerfPanel onClose={togglePerfMonitor} />}
     </div>
   )
 }

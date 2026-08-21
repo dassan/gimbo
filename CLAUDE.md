@@ -32,6 +32,7 @@ Workflow de desenvolvimento IA + humano definido em `plan/RULES.md`.
 | Brainstorm de sync | `plan/FABLE-BRAINSTORM.md` | Análise das 7 alternativas de sync multi-dispositivo, matriz de trade-offs, roadmap faseado e decisões |
 | Histórico de storage | `plan/STORAGE.md` | Decisão e migração JSON/FSA → SQLite/OPFS |
 | Telemetria e bug report | `plan/METRICS.md` | Decisões de privacidade, arquitetura do F-26 (Bug Report System), tasks TASK-BR-01 a BR-08 |
+| Monitoramento de performance | `plan/MONITORING.md` | Camada dev-only de instrumentação (`lib/perfMonitor.ts`, `PerfPanel`), pontos instrumentados, por que não Prometheus/Grafana (M-71) |
 | Relatórios avançados | `plan/REPORTS.md` | Épico do módulo analítico (5 views) |
 | Saúde Financeira | `plan/FINANCIAL_HEALTH.md` | Decisões de produto/design da tela `/health` (F-29), conceitos, fórmulas e pontos em aberto |
 | Caixinhas (budgets) | `plan/BUDGETS.md` | Decisões de produto/UX de `/budgets` (F-30, implementada — BX-01 a BX-11) |

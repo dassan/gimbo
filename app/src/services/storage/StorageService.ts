@@ -1,4 +1,6 @@
 import { uuid } from '@/lib/utils'
+import { measure } from '@/lib/perfMonitor'
+import { trackPerformance } from '@/lib/telemetry'
 import { CURRENT_SCHEMA_VERSION } from '@/lib/storage/schema'
 import type {
   Account,
@@ -58,6 +60,7 @@ type WorkerResponse = {
   id: string
   result?: unknown
   error?: string
+  perf?: { metric: string; ms: number }
 }
 
 type QueryResult = { rows: unknown[][]; columns: string[] }
@@ -81,7 +84,8 @@ export class StorageService {
     }
     this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
     this.worker.addEventListener('message', (event: MessageEvent<WorkerResponse>) => {
-      const { id, result, error } = event.data
+      const { id, result, error, perf } = event.data
+      if (import.meta.env.DEV && perf) trackPerformance(perf.metric, perf.ms)
       const handlers = this.pending.get(id)
       if (!handlers) return
       this.pending.delete(id)
@@ -104,7 +108,13 @@ export class StorageService {
         resolve: resolve as (v: unknown) => void,
         reject,
       })
-      this.worker.postMessage({ id, method, args } satisfies WorkerRequest, transfer)
+      if (import.meta.env.DEV) {
+        measure(`storage.postMessage.${method}`, () => {
+          this.worker.postMessage({ id, method, args } satisfies WorkerRequest, transfer)
+        })
+      } else {
+        this.worker.postMessage({ id, method, args } satisfies WorkerRequest, transfer)
+      }
     })
   }
 

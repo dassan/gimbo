@@ -31,6 +31,7 @@ import {
 } from '@/lib/utils'
 import { isDemoMode } from '@/lib/demo'
 import { trackAction } from '@/lib/telemetry'
+import { measure } from '@/lib/perfMonitor'
 import { applyQuadrantesRecipe, findQuadranteForDate, QUADRANTE_SLUG } from '@/lib/budgetRecipes'
 
 // ─── Debounce helper ──────────────────────────────────────────────────────────
@@ -927,8 +928,15 @@ function mutate(
   actionName?: string
 ): Partial<DataStore> {
   if (!state.data) return {}
-  const data = structuredClone(state.data)
-  fn(data)
+  const current = state.data
+  const data = import.meta.env.DEV
+    ? measure('store.mutate.clone', () => structuredClone(current))
+    : structuredClone(current)
+  if (import.meta.env.DEV) {
+    measure('store.mutate.apply', () => fn(data))
+  } else {
+    fn(data)
+  }
   // CS-06: syncService (Fase 2) compares this against the Drive file's modifiedTime to decide
   // whether a push is needed — it must reflect every mutation, not just file creation/import.
   data.settings.fileUpdatedAt = now()

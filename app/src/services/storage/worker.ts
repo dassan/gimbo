@@ -33,6 +33,7 @@ type WorkerResponse = {
   id: string
   result?: unknown
   error?: string
+  perf?: { metric: string; ms: number }
 }
 
 // ─── DataFile subset used by replaceAll ───────────────────────────────────────
@@ -1051,6 +1052,7 @@ function enqueue(fn: () => Promise<unknown>): Promise<unknown> {
 
 self.addEventListener('message', (event: MessageEvent<WorkerRequest>) => {
   const { id, method, args } = event.data
+  const startedAt = import.meta.env.DEV ? performance.now() : 0
 
   // SEC-06: o resgate contorna a fila de propósito. `_queue` encadeia a partir do `initPromise`,
   // então um `init()` rejeitado — o exato cenário em que o resgate é chamado — faria a tarefa
@@ -1067,6 +1069,16 @@ self.addEventListener('message', (event: MessageEvent<WorkerRequest>) => {
   void enqueue(() => dispatch(method, args))
     .then((result) => {
       const msg: WorkerResponse = { id, result }
+      if (import.meta.env.DEV) {
+        // Diferencia queries dentro de 'query'/'run' pelo início do SQL — sem isso, todo SELECT
+        // vira o mesmo rótulo genérico 'worker.query' e não dá pra saber qual statement é lento.
+        const sql = args[0]
+        const sqlHint =
+          (method === 'query' || method === 'run') && typeof sql === 'string'
+            ? `:${sql.trim().slice(0, 60).replace(/\s+/g, ' ')}`
+            : ''
+        msg.perf = { metric: `worker.${method}${sqlHint}`, ms: performance.now() - startedAt }
+      }
       if (result instanceof ArrayBuffer) {
         // Transfer ownership to avoid a costly copy across the worker boundary.
         self.postMessage(msg, [result])

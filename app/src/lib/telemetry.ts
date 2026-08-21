@@ -107,7 +107,7 @@ export function getCurrentRoute(): string {
   return _currentRoute
 }
 
-/** Reset buffer — use in tests only. */
+/** Reset buffer — use in tests, or from the dev perf panel's "clear" button. */
 export function clearBuffer(): void {
   _buffer.length = 0
   _currentRoute = '/'
