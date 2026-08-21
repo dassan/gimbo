@@ -19,6 +19,7 @@ import v9Schema from './migrations/v9.sql?raw'
 import v10Schema from './migrations/v10.sql?raw'
 import v11Schema from './migrations/v11.sql?raw'
 import v12Schema from './migrations/v12.sql?raw'
+import v13Schema from './migrations/v13.sql?raw'
 import { ERR_DB_UNREADABLE, ERR_SCHEMA_TOO_NEW } from './errors'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
@@ -157,7 +158,7 @@ const DB_FILENAME = 'gimbo.db'
 // this number was written by a newer app build and must be skipped, not partially migrated.
 // Bump this alongside every new migrations/vN.sql (same trap as data/sync_gimbo.py — see
 // CLAUDE.md "Armadilha recorrente").
-const MAX_KNOWN_DB_VERSION = 12
+const MAX_KNOWN_DB_VERSION = 13
 
 // ─── Initialization ───────────────────────────────────────────────────────────
 
@@ -198,6 +199,7 @@ const MIGRATIONS: ReadonlyArray<readonly [version: number, sql: string]> = [
   [10, v10Schema],
   [11, v11Schema],
   [12, v12Schema],
+  [13, v13Schema],
 ]
 
 // Applies pending migrations to an arbitrary db pointer — the main `db` on every open, or a
@@ -222,6 +224,14 @@ async function runMigrationsOn(dbPtr: number): Promise<void> {
   // This is idempotent — safe to call on every open. Fica fora da transação de propósito:
   // `PRAGMA journal_mode` não pode ser trocado dentro de uma.
   await sqlite3.run(dbPtr, 'PRAGMA journal_mode=WAL')
+
+  // M-71/PERFORMANCE.md: sem isto, b-trees temporárias de GROUP BY/ORDER BY (ex.:
+  // getTransactions(), que agrupa por t.id e ordena por t.date/created_at — chaves diferentes)
+  // espirram para "arquivo", e como a VFS registrada é assíncrona (OriginPrivateFileSystemVFS),
+  // cada página do temporário vira uma operação assíncrona contra o OPFS. temp_store não é
+  // persistido no arquivo do banco — precisa ser setado a cada conexão, por isso mora aqui, ao
+  // lado do journal_mode, que já roda em toda abertura.
+  await sqlite3.run(dbPtr, 'PRAGMA temp_store = MEMORY')
 
   const { rows } = await sqlite3.execWithParams(dbPtr, 'PRAGMA user_version')
   const version = (rows[0]?.[0] ?? 0) as number

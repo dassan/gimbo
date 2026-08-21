@@ -201,18 +201,20 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 
 ---
 
-## Estado Atual (2026-08-18)
+## Estado Atual (2026-08-20)
 
-**Schema em memória v17** | **Schema físico SQLite v12** (`migrations/v1..v12.sql`) | Cobertura: ~96% statements
-**841 testes unitários** (31 arquivos) + **59 testes E2E** (7 specs, perfis `chromium` e `mobile-chrome`)
+**Schema em memória v17** | **Schema físico SQLite v13** (`migrations/v1..v13.sql`) | Cobertura: ~96% statements
+**880 testes unitários** (34 arquivos) + **82 testes E2E** (10 specs, perfis `chromium` e `mobile-chrome`)
 
 > Os dois números de schema são independentes e **não coincidem**: `CURRENT_SCHEMA_VERSION` (v17,
-> em `lib/storage/schema.ts`) versiona o `DataFile` em memória; `PRAGMA user_version` (v12)
+> em `lib/storage/schema.ts`) versiona o `DataFile` em memória; `PRAGMA user_version` (v13)
 > versiona o DDL físico. Bumps de campos opcionais não exigem DDL novo — por isso o schema em
 > memória está à frente. Os bumps mais recentes vieram de F-30/Caixinhas: v14→v15 (entidade
 > `Budget` + `Transaction.budgetIds`, `BX-03`, DDL novo em `migrations/v11.sql`) e v15→v16→v17
 > (`Settings.quadrantesEnabled` + `Budget.createdAt`, `BX-07`/`BX-06`, DDL novo em
-> `migrations/v12.sql`).
+> `migrations/v12.sql`). `v12→v13` (M-72, 2026-08-20): só índice físico novo
+> (`idx_transactions_date_created`), sem campo novo no `DataFile` — `CURRENT_SCHEMA_VERSION` não
+> muda.
 
 Todas as features do PRD (F-1 a F-30, com F-28 no Nível 1) implementadas. Módulo de Cartão de Crédito completo (CC-01 a CC-34 — CC-34 resolvido junto do M-64, via `created_at` do Organizze como chave de agrupamento). Melhorias M-01 a M-64 resolvidas (M-61 resolvido em 2026-08-18 — ver nota abaixo); M-65 registrado como futuro. Relatórios avançados R-01 a R-18 resolvidos.
 

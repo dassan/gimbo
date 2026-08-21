@@ -853,7 +853,8 @@ CREATE INDEX IF NOT EXISTS idx_valuations_account ON valuations(account_id);
 CREATE INDEX IF NOT EXISTS idx_valuations_date ON valuations(date);
 CREATE INDEX IF NOT EXISTS idx_transaction_budgets_tx ON transaction_budgets(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_transaction_budgets_budget ON transaction_budgets(budget_id);
-PRAGMA user_version = 12;
+CREATE INDEX IF NOT EXISTS idx_transactions_date_created ON transactions(date DESC, created_at DESC);
+PRAGMA user_version = 13;
 """
 
 

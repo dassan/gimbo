@@ -369,18 +369,32 @@ export class StorageService {
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
-    const rows = await this.query(
-      `SELECT t.*, GROUP_CONCAT(DISTINCT tt.tag_id) AS tag_ids,
-              GROUP_CONCAT(DISTINCT tb.budget_id) AS budget_ids
-       FROM transactions t
-       LEFT JOIN transaction_tags tt ON t.id = tt.transaction_id
-       LEFT JOIN transaction_budgets tb ON t.id = tb.transaction_id
-       ${where}
-       GROUP BY t.id
-       ORDER BY t.date DESC, t.created_at DESC`,
-      params
+    // M-72/PERFORMANCE.md: a versão anterior fazia tudo numa query só (LEFT JOIN duplo +
+    // GROUP_CONCAT(DISTINCT) + GROUP BY t.id). Medido contra um cofre real de ~25 mil
+    // transações: o JOIN/GROUP BY sozinho custou ~224s mesmo com fan-out de tags quase nulo
+    // (0,15 tag/transação) — o gargalo é o próprio agrupamento/DISTINCT nesse ambiente
+    // (wa-sqlite/WASM sobre a VFS assíncrona do OPFS), não o volume de linhas. As duas tabelas
+    // de junção são pequenas (proporcionais a vínculos reais, não a transações × transações) —
+    // buscá-las inteiras e juntar em JS é ordens de magnitude mais rápido que o JOIN+GROUP BY.
+    const [txRows, tagRows, budgetRows] = await Promise.all([
+      this.query(
+        `SELECT t.* FROM transactions t ${where} ORDER BY t.date DESC, t.created_at DESC`,
+        params
+      ),
+      this.query('SELECT transaction_id, tag_id FROM transaction_tags'),
+      this.query('SELECT transaction_id, budget_id FROM transaction_budgets'),
+    ])
+
+    const tagsByTx = groupIds(tagRows, 'tag_id')
+    const budgetsByTx = groupIds(budgetRows, 'budget_id')
+
+    return txRows.map((row) =>
+      rowToTransaction({
+        ...row,
+        tag_ids: tagsByTx.get(row.id as string)?.join(',') ?? null,
+        budget_ids: budgetsByTx.get(row.id as string)?.join(',') ?? null,
+      })
     )
-    return rows.map(rowToTransaction)
   }
 
   async createTransaction(data: CreateTransactionData): Promise<Transaction> {
@@ -688,6 +702,19 @@ export class StorageService {
 }
 
 // ─── Row → TypeScript mappers ─────────────────────────────────────────────────
+
+/** Agrupa linhas de uma tabela de junção (ex.: transaction_tags) por transaction_id. */
+function groupIds(rows: Row[], valueCol: string): Map<string, string[]> {
+  const map = new Map<string, string[]>()
+  for (const row of rows) {
+    const txId = row.transaction_id as string
+    const value = row[valueCol] as string
+    const list = map.get(txId)
+    if (list) list.push(value)
+    else map.set(txId, [value])
+  }
+  return map
+}
 
 function rowToUser(row: Row): User {
   return {
