@@ -424,11 +424,8 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
           <div className="h-1 w-10 rounded-full bg-on-surface/20" />
         </div>
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 sm:py-5">
-          <h2 className="text-base font-semibold text-on-surface">
-            {isEditMode ? t('transactions.edit') : t('transactions.new')}
-          </h2>
+        {/* Header — close only; title removed (M-78), amount is the hero */}
+        <div className="flex justify-end px-5 sm:px-6 pt-3 sm:pt-4">
           <button
             onClick={onClose}
             className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface/40 hover:bg-surface-container-low transition-colors"

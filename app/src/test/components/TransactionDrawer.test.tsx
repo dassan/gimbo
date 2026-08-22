@@ -68,9 +68,10 @@ function renderDrawer(props: Partial<Parameters<typeof TransactionDrawer>[0]> = 
 // ─── Create mode ──────────────────────────────────────────────────────────────
 
 describe('TransactionDrawer — create mode', () => {
-  it('renders the "new transaction" title', () => {
+  it('does not render a header title (M-78)', () => {
     renderDrawer()
-    expect(screen.getByText('transactions.new')).toBeInTheDocument()
+    expect(screen.queryByText('transactions.new')).not.toBeInTheDocument()
+    expect(screen.queryByText('transactions.edit')).not.toBeInTheDocument()
   })
 
   it('renders the save button with type-specific label', () => {
@@ -120,9 +121,10 @@ describe('TransactionDrawer — create mode', () => {
 // ─── Edit mode ────────────────────────────────────────────────────────────────
 
 describe('TransactionDrawer — edit mode', () => {
-  it('renders the "edit transaction" title', () => {
+  it('does not render a header title (M-78)', () => {
     renderDrawer({ transaction: testTransaction })
-    expect(screen.getByText('transactions.edit')).toBeInTheDocument()
+    expect(screen.queryByText('transactions.new')).not.toBeInTheDocument()
+    expect(screen.queryByText('transactions.edit')).not.toBeInTheDocument()
   })
 
   it('pre-fills the amount field', () => {

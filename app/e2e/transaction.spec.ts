@@ -62,10 +62,7 @@ test('edit transaction: opens drawer pre-filled on row click', async ({ page }) 
   await txRow.waitFor({ state: 'visible', timeout: 5000 })
   await txRow.click()
 
-  // Drawer should open in edit mode
-  await expect(page.getByText('Editar Transação')).toBeVisible({ timeout: 3000 })
-
-  // Amount should be pre-filled (5000.00)
+  // Amount should be pre-filled (5000.00) — also the sync point for "drawer opened in edit mode"
   await expect(page.locator('input[placeholder="0,00"]')).toHaveValue('5000,00')
 
   // Description should be pre-filled
@@ -92,7 +89,9 @@ test('edit transaction: updates description and saves', async ({ page }) => {
   await txRow.waitFor({ state: 'visible', timeout: 5000 })
   await txRow.click()
 
-  await expect(page.getByText('Editar Transação')).toBeVisible({ timeout: 3000 })
+  await expect(page.getByRole('button', { name: 'Remover Transação' })).toBeVisible({
+    timeout: 3000,
+  })
 
   // Edit description
   const descInput = page.locator('input[placeholder*="Descrição"]')
@@ -125,7 +124,9 @@ test('delete transaction: removes the transaction from the list', async ({ page 
   await txRow.waitFor({ state: 'visible', timeout: 5000 })
   await txRow.click()
 
-  await expect(page.getByText('Editar Transação')).toBeVisible({ timeout: 3000 })
+  await expect(page.getByRole('button', { name: 'Remover Transação' })).toBeVisible({
+    timeout: 3000,
+  })
 
   await page.getByRole('button', { name: 'Remover Transação' }).click()
 
