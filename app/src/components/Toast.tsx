@@ -11,7 +11,11 @@ export default function Toast({ message, onDismiss, actionLabel, onAction }: Toa
   return (
     <div
       role="alert"
-      className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl bg-on-surface px-4 py-3 text-xs text-white shadow-ambient"
+      // M-76 follow-up: no mobile a bottom nav (Navbar.tsx) é `fixed bottom-0 h-16 z-50` — com o
+      // mesmo z-index, ela pintava por cima do toast (que ficava a só 24px da borda), escondendo
+      // o botão de atualizar. `bottom-[calc(...)]` sobe o toast acima da nav + safe-area; `sm:`
+      // volta ao `bottom-6` original, já que a bottom nav só existe abaixo do breakpoint `sm`.
+      className="fixed bottom-[calc(env(safe-area-inset-bottom)+5rem)] left-1/2 z-[60] flex -translate-x-1/2 items-center gap-3 rounded-xl bg-on-surface px-4 py-3 text-xs text-white shadow-ambient sm:bottom-6"
     >
       <span className="max-w-xs">{message}</span>
       {actionLabel && onAction && (
