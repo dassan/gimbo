@@ -24,4 +24,19 @@ describe('Toast', () => {
 
     expect(screen.getByRole('alert')).toBeInTheDocument()
   })
+
+  it('does not render an action button when actionLabel/onAction are omitted', () => {
+    render(<Toast message="Error" onDismiss={vi.fn()} />)
+
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+  })
+
+  it('renders and triggers the action button when provided', async () => {
+    const onAction = vi.fn()
+    render(<Toast message="Update" onDismiss={vi.fn()} actionLabel="Reload" onAction={onAction} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reload' }))
+
+    expect(onAction).toHaveBeenCalledOnce()
+  })
 })

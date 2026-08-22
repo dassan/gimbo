@@ -10,6 +10,7 @@ import { clearBackupDirHandle } from '@/lib/backupDir'
 import { startSyncPolling } from '@/lib/cloudSync/syncScheduler'
 import AppLayout from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import UpdateToast from '@/components/UpdateToast'
 import Landing from '@/pages/Landing'
 import Onboarding from '@/pages/Onboarding'
 import Dashboard from '@/pages/Dashboard'
@@ -115,49 +116,60 @@ export default function App() {
     void init()
   }, [initWorkspace, loadData, refreshRecurrenceHorizons, ensureQuadrantesBatch])
 
-  if (!hydrated) return null
+  if (!hydrated) return <UpdateToast />
 
   if (initError) {
-    return <BootFailure message={initError} />
+    return (
+      <>
+        <UpdateToast />
+        <BootFailure message={initError} />
+      </>
+    )
   }
 
   const isLoaded = data !== null
 
   return (
-    <ErrorBoundary fallback="full-page">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={isLoaded ? <Navigate to="/dashboard" replace /> : <Landing />} />
-          <Route path="/onboarding" element={<Onboarding />} />
-          <Route path="/privacy" element={<PrivacyPolicy />} />
-          <Route path="/terms" element={<TermsOfService />} />
-          <Route path="/origin" element={<NameOrigin />} />
-          <Route path="/why-local-storage" element={<WhyLocalStorage />} />
+    <>
+      <UpdateToast />
+      <ErrorBoundary fallback="full-page">
+        <BrowserRouter>
+          <Routes>
+            <Route
+              path="/"
+              element={isLoaded ? <Navigate to="/dashboard" replace /> : <Landing />}
+            />
+            <Route path="/onboarding" element={<Onboarding />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/terms" element={<TermsOfService />} />
+            <Route path="/origin" element={<NameOrigin />} />
+            <Route path="/why-local-storage" element={<WhyLocalStorage />} />
 
-          {isLoaded ? (
-            <Route element={<AppLayout />}>
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/transactions" element={<Transactions />} />
-              <Route path="/budgets" element={<Budgets />} />
-              <Route path="/budgets/:budgetId" element={<BudgetDetail />} />
-              <Route path="/analytics" element={<Analytics />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/settings/:section" element={<Settings />} />
-              <Route path="/net-worth" element={<NetWorth />} />
-              <Route path="/health" element={<Health />} />
-              <Route path="/credit-card/:accountId" element={<CreditCardPage />} />
-              <Route path="/gimbo" element={<About />} />
-              <Route path="/docs/why-browser-storage" element={<WhyBrowserStorage />} />
-              <Route path="/docs/backup-local" element={<BackupLocal />} />
-              <Route path="/docs/cloud-sync" element={<CloudSync />} />
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
-            </Route>
-          ) : (
-            <Route path="*" element={<Navigate to="/onboarding" replace />} />
-          )}
-        </Routes>
-      </BrowserRouter>
-    </ErrorBoundary>
+            {isLoaded ? (
+              <Route element={<AppLayout />}>
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/transactions" element={<Transactions />} />
+                <Route path="/budgets" element={<Budgets />} />
+                <Route path="/budgets/:budgetId" element={<BudgetDetail />} />
+                <Route path="/analytics" element={<Analytics />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/settings/:section" element={<Settings />} />
+                <Route path="/net-worth" element={<NetWorth />} />
+                <Route path="/health" element={<Health />} />
+                <Route path="/credit-card/:accountId" element={<CreditCardPage />} />
+                <Route path="/gimbo" element={<About />} />
+                <Route path="/docs/why-browser-storage" element={<WhyBrowserStorage />} />
+                <Route path="/docs/backup-local" element={<BackupLocal />} />
+                <Route path="/docs/cloud-sync" element={<CloudSync />} />
+                <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              </Route>
+            ) : (
+              <Route path="*" element={<Navigate to="/onboarding" replace />} />
+            )}
+          </Routes>
+        </BrowserRouter>
+      </ErrorBoundary>
+    </>
   )
 }
 

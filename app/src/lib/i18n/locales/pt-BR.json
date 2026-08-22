@@ -3,6 +3,10 @@
     "name": "Gimbo",
     "tagline": "Finance"
   },
+  "update": {
+    "available": "Nova versão disponível",
+    "reload": "Atualizar"
+  },
   "nav": {
     "dashboard": "Visão Geral",
     "transactions": "Lançamentos",
