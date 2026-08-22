@@ -33,6 +33,8 @@ import {
   budgetDelta,
   budgetProgress,
   getBudgetStatus,
+  buildDescriptionIndex,
+  matchDescriptionSuggestions,
 } from '@/lib/utils'
 import type { Account, Budget, Category, Transaction } from '@/types'
 
@@ -1466,5 +1468,134 @@ describe('getBudgetStatus (F-30/BX-05)', () => {
     )
     const txOver = makeTx({ amount: 1200, isPaid: true, budgetIds: ['bx-1'] })
     expect(getBudgetStatus(makeBudget({ kind: 'income', target: 1000 }), [txOver])).toBe('reached')
+  })
+})
+
+describe('buildDescriptionIndex (M-80)', () => {
+  it('groups occurrences of the same description case-insensitively', () => {
+    const index = buildDescriptionIndex([
+      makeTx({ description: 'Padaria' }),
+      makeTx({ description: 'padaria' }),
+      makeTx({ description: 'PADARIA' }),
+    ])
+    expect(index).toHaveLength(1)
+    expect(index[0].count).toBe(3)
+  })
+
+  it('uses the category/account/tags of the most recent occurrence, not the most frequent', () => {
+    const index = buildDescriptionIndex([
+      makeTx({
+        description: 'Farmácia',
+        date: '2026-01-01',
+        categoryId: 'cat-old',
+        accountId: 'acc-old',
+        tags: ['tag-old'],
+      }),
+      makeTx({
+        description: 'Farmácia',
+        date: '2026-01-01',
+        categoryId: 'cat-old',
+        accountId: 'acc-old',
+        tags: ['tag-old'],
+      }),
+      makeTx({
+        description: 'Farmácia',
+        date: '2026-06-15',
+        categoryId: 'cat-new',
+        accountId: 'acc-new',
+        tags: ['tag-new'],
+      }),
+    ])
+    expect(index).toHaveLength(1)
+    expect(index[0]).toMatchObject({
+      categoryId: 'cat-new',
+      accountId: 'acc-new',
+      tags: ['tag-new'],
+      lastDate: '2026-06-15',
+    })
+  })
+
+  it('keeps the canonical casing of the most recent occurrence', () => {
+    const index = buildDescriptionIndex([
+      makeTx({ description: 'padaria', date: '2026-01-01' }),
+      makeTx({ description: 'Padaria do Zé', date: '2026-06-15' }),
+    ])
+    // Different text ("Padaria do Zé" vs "padaria") normalizes to different keys — two groups.
+    expect(index).toHaveLength(2)
+    const padaria = index.find((s) => s.description.toLowerCase() === 'padaria')
+    expect(padaria?.description).toBe('padaria')
+  })
+
+  it('excludes TRANSFER and CREDIT_PAYMENT — description is not user-authored/comparable', () => {
+    const index = buildDescriptionIndex([
+      makeTx({ type: 'TRANSFER', description: 'Reserva' }),
+      makeTx({ type: 'CREDIT_PAYMENT', description: 'Pagamento fatura' }),
+    ])
+    expect(index).toHaveLength(0)
+  })
+
+  it('excludes empty or whitespace-only descriptions', () => {
+    const index = buildDescriptionIndex([
+      makeTx({ description: '' }),
+      makeTx({ description: '  ' }),
+    ])
+    expect(index).toHaveLength(0)
+  })
+})
+
+describe('matchDescriptionSuggestions (M-80)', () => {
+  const index = buildDescriptionIndex([
+    makeTx({ description: 'Padaria Central', date: '2026-01-01' }),
+    makeTx({ description: 'Padaria Central', date: '2026-02-01' }),
+    makeTx({ description: 'Padaria Central', date: '2026-03-01' }),
+    makeTx({ description: 'Academia Bem-Estar', date: '2026-01-01' }),
+    makeTx({ description: 'Farmácia São Paulo', date: '2026-05-01' }),
+  ])
+
+  it('returns no suggestions for an empty query', () => {
+    expect(matchDescriptionSuggestions(index, '')).toEqual([])
+  })
+
+  it('matches by substring, case-insensitively', () => {
+    const result = matchDescriptionSuggestions(index, 'central')
+    expect(result.map((s) => s.description)).toEqual(['Padaria Central'])
+  })
+
+  it('ranks a prefix match above a mid-string match', () => {
+    // "Bem" is a mid-string match for "Academia Bem-Estar" and a prefix match for nothing else
+    // here — add a description where the query is both a prefix (one group) and mid-string
+    // (another) to exercise the ordering.
+    const withOverlap = buildDescriptionIndex([
+      makeTx({ description: 'Estacionamento Norte', date: '2026-01-01' }),
+      makeTx({ description: 'Norte Supermercado', date: '2026-01-01' }),
+    ])
+    const result = matchDescriptionSuggestions(withOverlap, 'norte')
+    expect(result.map((s) => s.description)).toEqual(['Norte Supermercado', 'Estacionamento Norte'])
+  })
+
+  it('breaks ties by count, then by most recent date', () => {
+    const result = matchDescriptionSuggestions(index, 'a')
+    // "Academia Bem-Estar" is the only description starting with "a" — prefix match ranks
+    // first regardless of count. Among the remaining mid-string matches, "Padaria Central"
+    // (count 3) outranks "Farmácia São Paulo" (count 1).
+    expect(result.map((s) => s.description)).toEqual([
+      'Academia Bem-Estar',
+      'Padaria Central',
+      'Farmácia São Paulo',
+    ])
+  })
+
+  it('breaks a count tie by most recent date', () => {
+    const tied = buildDescriptionIndex([
+      makeTx({ description: 'Loja Vetor', date: '2026-01-01' }),
+      makeTx({ description: 'Loja Zeta', date: '2026-06-01' }),
+    ])
+    const result = matchDescriptionSuggestions(tied, 'loja')
+    expect(result.map((s) => s.description)).toEqual(['Loja Zeta', 'Loja Vetor'])
+  })
+
+  it('respects the limit', () => {
+    const result = matchDescriptionSuggestions(index, 'a', 2)
+    expect(result).toHaveLength(2)
   })
 })

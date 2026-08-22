@@ -966,3 +966,66 @@ export function getBudgetStatus(budget: Budget, transactions: Transaction[]): Bu
   if (p >= 0.8) return 'warning'
   return 'onTrack'
 }
+
+// M-80: "fill from history" description autocomplete (TransactionDrawer).
+export interface DescriptionSuggestion {
+  description: string // canonical text — casing of the most recent occurrence in the group
+  count: number
+  lastDate: string // ISO 8601 — of the most recent occurrence
+  categoryId: string
+  accountId: string
+  tags: string[]
+}
+
+/**
+ * Groups EXPENSE/INCOME transactions by normalized description (trim + lowercase). TRANSFER
+ * and CREDIT_PAYMENT are excluded — a transfer's account pair doesn't map onto a single
+ * "account" suggestion, and a card payment's description isn't user-authored. Each group's
+ * category/account/tags come from its most recent occurrence, not the most frequent
+ * combination — "how I last categorized this" tracks a re-split or renamed category better
+ * than a running majority would.
+ */
+export function buildDescriptionIndex(transactions: Transaction[]): DescriptionSuggestion[] {
+  const groups = new Map<string, DescriptionSuggestion>()
+  for (const tx of transactions) {
+    if (tx.type !== 'EXPENSE' && tx.type !== 'INCOME') continue
+    const trimmed = tx.description.trim()
+    if (!trimmed) continue
+    const key = trimmed.toLowerCase()
+    const existing = groups.get(key)
+    const isMoreRecent =
+      !existing || parseDateLocal(tx.date).getTime() > parseDateLocal(existing.lastDate).getTime()
+    groups.set(key, {
+      description: isMoreRecent ? trimmed : existing.description,
+      count: (existing?.count ?? 0) + 1,
+      lastDate: isMoreRecent ? tx.date : existing.lastDate,
+      categoryId: isMoreRecent ? tx.categoryId : existing.categoryId,
+      accountId: isMoreRecent ? tx.accountId : existing.accountId,
+      tags: isMoreRecent ? tx.tags : existing.tags,
+    })
+  }
+  return Array.from(groups.values())
+}
+
+/**
+ * Ranks description-history suggestions for a partial query: prefix matches before
+ * mid-string matches, then most-used before most-recently-used as the tiebreaker.
+ */
+export function matchDescriptionSuggestions(
+  index: DescriptionSuggestion[],
+  query: string,
+  limit = 5
+): DescriptionSuggestion[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+  return index
+    .filter((s) => s.description.toLowerCase().includes(q))
+    .sort((a, b) => {
+      const aPrefix = a.description.toLowerCase().startsWith(q)
+      const bPrefix = b.description.toLowerCase().startsWith(q)
+      if (aPrefix !== bPrefix) return aPrefix ? -1 : 1
+      if (b.count !== a.count) return b.count - a.count
+      return parseDateLocal(b.lastDate).getTime() - parseDateLocal(a.lastDate).getTime()
+    })
+    .slice(0, limit)
+}

@@ -21,12 +21,19 @@ import {
   todayStr,
   sortCategoriesHierarchical,
   filterArchivedAccounts,
+  buildDescriptionIndex,
+  matchDescriptionSuggestions,
 } from '@/lib/utils'
+import type { DescriptionSuggestion } from '@/lib/utils'
 import DatePicker from '@/components/DatePicker'
 import Select from '@/components/Select'
 import MobileSheet from '@/components/MobileSheet'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import type { Transaction, TransactionType, RecurrenceFrequency } from '@/types'
+
+// M-80: minimum characters typed before the description autocomplete opens — short queries
+// (1 char) match too broadly to be useful and add noise.
+const DESCRIPTION_SUGGESTION_MIN_CHARS = 2
 
 export interface TransactionDrawerProps {
   open: boolean
@@ -84,6 +91,11 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   const amountInputRef = useRef<HTMLInputElement>(null)
   const tagMenuRef = useRef<HTMLDivElement>(null)
   const [showTagMenu, setShowTagMenu] = useState(false)
+
+  // M-80: description autocomplete ("fill from history")
+  const descMenuRef = useRef<HTMLDivElement>(null)
+  const [showDescSuggestions, setShowDescSuggestions] = useState(false)
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1)
 
   const [type, setType] = useState<TxType>('EXPENSE')
   const [amount, setAmount] = useState(0)
@@ -203,6 +215,8 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
       setRecurrenceEndDate('')
       setShowRecurrenceDeleteModal(false)
       setShowTagMenu(false)
+      setShowDescSuggestions(false)
+      setActiveSuggestionIndex(-1)
     }
   }, [open, transaction, data, activeAccounts, activeNonCreditAccounts])
 
@@ -214,11 +228,14 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
     }
   }, [open])
 
-  // Close tag menu when clicking outside
+  // Close tag menu / description suggestions when clicking outside
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (tagMenuRef.current && !tagMenuRef.current.contains(e.target as Node)) {
         setShowTagMenu(false)
+      }
+      if (descMenuRef.current && !descMenuRef.current.contains(e.target as Node)) {
+        setShowDescSuggestions(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -246,6 +263,31 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
     setInstallmentsEnabled(false)
     setInstallmentCount(2)
     setRecurrenceEnabled(false)
+    // M-80: suggestions are scoped to the current type — stale matches don't carry over
+    setShowDescSuggestions(false)
+    setActiveSuggestionIndex(-1)
+  }
+
+  // Shared by the manual account Select and the description-suggestion autofill (M-80): reset
+  // installment state and hide isPaid when the newly picked account is CREDIT.
+  function handleAccountChange(newAccountId: string) {
+    setAccountId(newAccountId)
+    setInstallmentsEnabled(false)
+    setInstallmentCount(2)
+    const newAccount = (data?.accounts ?? []).find((a) => a.id === newAccountId)
+    if (newAccount?.type === 'CREDIT') setIsPaid(false)
+  }
+
+  // M-80: fill category/account/tags from a past occurrence of the same description. Amount
+  // is deliberately left untouched — it's rarely the same twice, and the amount field is the
+  // first thing the user fills in anyway (auto-focused on open).
+  function selectDescriptionSuggestion(s: DescriptionSuggestion) {
+    setDescription(s.description)
+    setCategoryId(s.categoryId)
+    if (s.accountId !== accountId) handleAccountChange(s.accountId)
+    setSelectedTags(s.tags)
+    setShowDescSuggestions(false)
+    setActiveSuggestionIndex(-1)
   }
 
   function handleAmountInput(e: React.ChangeEvent<HTMLInputElement>) {
@@ -390,6 +432,45 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   // CC-23: Per-installment amount for hint
   const perInstallmentAmount = installmentCount >= 2 ? amount / installmentCount : 0
 
+  // M-80: description autocomplete — create mode only (avoids surprise-overwriting an existing
+  // transaction's category/account/tags while the user is just tweaking its description), and
+  // scoped to the current type so a suggestion's categoryId is always valid for the visible
+  // category list (EXPENSE/INCOME categories are disjoint — TRANSFER/CREDIT_PAYMENT don't have
+  // one at all, and their two-account layout doesn't map onto a single "account" suggestion).
+  const canSuggestDescriptions = !isEditMode && (type === 'EXPENSE' || type === 'INCOME')
+  const descriptionIndex = useMemo(
+    () =>
+      canSuggestDescriptions
+        ? buildDescriptionIndex((data?.transactions ?? []).filter((tx) => tx.type === type))
+        : [],
+    [canSuggestDescriptions, data, type]
+  )
+  const descriptionSuggestions = useMemo(
+    () => matchDescriptionSuggestions(descriptionIndex, description),
+    [descriptionIndex, description]
+  )
+  const showDescDropdown =
+    showDescSuggestions &&
+    description.trim().length >= DESCRIPTION_SUGGESTION_MIN_CHARS &&
+    descriptionSuggestions.length > 0
+
+  function handleDescriptionKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!showDescDropdown) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setActiveSuggestionIndex((i) => (i + 1) % descriptionSuggestions.length)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setActiveSuggestionIndex((i) => (i <= 0 ? descriptionSuggestions.length - 1 : i - 1))
+    } else if (e.key === 'Enter' && activeSuggestionIndex >= 0) {
+      e.preventDefault()
+      selectDescriptionSuggestion(descriptionSuggestions[activeSuggestionIndex])
+    } else if (e.key === 'Escape') {
+      setShowDescSuggestions(false)
+      setActiveSuggestionIndex(-1)
+    }
+  }
+
   return (
     <>
       {/* Backdrop */}
@@ -471,18 +552,57 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
             </div>
           )}
 
-          {/* Description */}
-          <div>
+          {/* Description — M-80: autocomplete from history when creating an EXPENSE/INCOME */}
+          <div className="relative" ref={descMenuRef}>
             <label className="label text-on-surface/40 block mb-2">
               {t('transactions.description')}
             </label>
             <input
               type="text"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => {
+                setDescription(e.target.value)
+                setActiveSuggestionIndex(-1)
+                if (canSuggestDescriptions) setShowDescSuggestions(true)
+              }}
+              onFocus={() => canSuggestDescriptions && setShowDescSuggestions(true)}
+              onKeyDown={handleDescriptionKeyDown}
               placeholder={t('transactions.descriptionPlaceholder')}
+              autoComplete="off"
               className="w-full rounded-xl bg-surface-container-low px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
             />
+            {showDescDropdown && (
+              <div
+                role="listbox"
+                aria-label={t('transactions.description')}
+                className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto rounded-xl bg-surface-container-high border border-outline-variant shadow-ambient p-1.5"
+              >
+                {descriptionSuggestions.map((s, i) => {
+                  const cat = (data?.categories ?? []).find((c) => c.id === s.categoryId)
+                  const acc = (data?.accounts ?? []).find((a) => a.id === s.accountId)
+                  return (
+                    <button
+                      key={s.description}
+                      type="button"
+                      role="option"
+                      aria-selected={i === activeSuggestionIndex}
+                      onClick={() => selectDescriptionSuggestion(s)}
+                      className={cn(
+                        'flex w-full flex-col items-start gap-0.5 rounded-xl px-4 py-2.5 text-left transition-colors hover:bg-surface-container-high',
+                        i === activeSuggestionIndex && 'bg-surface-container-high'
+                      )}
+                    >
+                      <span className="text-sm text-on-surface">{s.description}</span>
+                      {(cat ?? acc) && (
+                        <span className="text-xs text-on-surface/40">
+                          {[cat?.name, acc?.name].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           {/* Date + isPaid (isPaid shown inline for INCOME/EXPENSE only, hidden while
@@ -617,15 +737,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
               </label>
               <Select
                 value={accountId}
-                onChange={(newAccountId) => {
-                  setAccountId(newAccountId)
-                  // Reset installment toggle when account changes
-                  setInstallmentsEnabled(false)
-                  setInstallmentCount(2)
-                  // Hide isPaid when switching to a CREDIT account
-                  const newAccount = (data?.accounts ?? []).find((a) => a.id === newAccountId)
-                  if (newAccount?.type === 'CREDIT') setIsPaid(false)
-                }}
+                onChange={handleAccountChange}
                 ariaLabel={t('transactions.account')}
                 placeholder={t('common.noData')}
                 options={filterArchivedAccounts(data?.accounts ?? [], accountId).map((a) => ({
