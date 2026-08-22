@@ -948,16 +948,12 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
           )}
         </div>
 
-        {/* Footer CTA
-            max-sm:pb-20 (80px) only in edit mode: clears the delete button (rendered below
-            the save button) above the fixed bottom nav. Create mode has no delete button, so
-            it doesn't need that extra clearance — reclaiming it helps Tags fit above the fold. */}
-        <div
-          className={cn(
-            'px-6 pb-8 pt-4 border-t border-surface-container-low space-y-3',
-            isEditMode ? 'max-sm:pb-20' : 'max-sm:pb-6'
-          )}
-        >
+        {/* Footer CTA — the sheet is a full-height overlay that paints above the bottom nav
+            (both z-50, but this <aside> mounts later in AppLayout's JSX), so the footer only
+            needs to clear the device's own safe area (home indicator), not the nav's height —
+            M-79: the old flat max-sm:pb-20 for edit mode left a dead gap below "Remover
+            Transação" once the nav-clearance rationale stopped applying. */}
+        <div className="px-6 pb-8 pt-4 border-t border-surface-container-low space-y-3 max-sm:pb-[max(env(safe-area-inset-bottom),24px)]">
           {!isEditMode && (
             // Keyboard shortcut hint is meaningless on mobile (no physical Enter key) — hiding
             // it there reclaims a full line of the sheet's permanently-visible footer.
