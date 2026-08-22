@@ -53,8 +53,8 @@ test('edit transaction: opens drawer pre-filled on row click', async ({ page }) 
   // The fixture has one transaction "Salário Janeiro" in January 2024 — switch to a custom range to see it
   await page.getByRole('button', { name: 'period-selector' }).click()
   await page.getByRole('menuitem', { name: 'Escolher período' }).click()
-  await page.getByLabel('custom-start-date').fill('2024-01-01')
-  await page.getByLabel('custom-end-date').fill('2024-12-31')
+  await page.getByLabel('custom-start-date', { exact: true }).fill('2024-01-01')
+  await page.getByLabel('custom-end-date', { exact: true }).fill('2024-12-31')
   await page.getByRole('button', { name: 'Ok' }).click()
 
   // Click the transaction row
@@ -84,8 +84,8 @@ test('edit transaction: updates description and saves', async ({ page }) => {
 
   await page.getByRole('button', { name: 'period-selector' }).click()
   await page.getByRole('menuitem', { name: 'Escolher período' }).click()
-  await page.getByLabel('custom-start-date').fill('2024-01-01')
-  await page.getByLabel('custom-end-date').fill('2024-12-31')
+  await page.getByLabel('custom-start-date', { exact: true }).fill('2024-01-01')
+  await page.getByLabel('custom-end-date', { exact: true }).fill('2024-12-31')
   await page.getByRole('button', { name: 'Ok' }).click()
 
   const txRow = page.locator('[role="button"]').filter({ hasText: 'Salário Janeiro' })
@@ -117,8 +117,8 @@ test('delete transaction: removes the transaction from the list', async ({ page 
 
   await page.getByRole('button', { name: 'period-selector' }).click()
   await page.getByRole('menuitem', { name: 'Escolher período' }).click()
-  await page.getByLabel('custom-start-date').fill('2024-01-01')
-  await page.getByLabel('custom-end-date').fill('2024-12-31')
+  await page.getByLabel('custom-start-date', { exact: true }).fill('2024-01-01')
+  await page.getByLabel('custom-end-date', { exact: true }).fill('2024-12-31')
   await page.getByRole('button', { name: 'Ok' }).click()
 
   const txRow = page.locator('[role="button"]').filter({ hasText: 'Salário Janeiro' })

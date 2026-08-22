@@ -110,8 +110,8 @@ test('analytics: EXPENSE on CREDIT account appears in due-date month, not purcha
   // Switch to a custom range to see all transactions
   await page.getByRole('button', { name: 'period-selector' }).click()
   await page.getByRole('menuitem', { name: 'Escolher período' }).click()
-  await page.getByLabel('custom-start-date').fill('2024-01-01')
-  await page.getByLabel('custom-end-date').fill('2024-12-31')
+  await page.getByLabel('custom-start-date', { exact: true }).fill('2024-01-01')
+  await page.getByLabel('custom-end-date', { exact: true }).fill('2024-12-31')
   await page.getByRole('button', { name: 'Ok' }).click()
 
   // INCOME on RETAIL appears in the ledger (M-26: CREDIT account transactions live in /credit-card/:id)
@@ -196,8 +196,8 @@ test('installments: creating 3x installment generates 3 ledger rows with correct
   // Switch to a wide custom range to see all installment periods
   await page.getByRole('button', { name: 'period-selector' }).click()
   await page.getByRole('menuitem', { name: 'Escolher período' }).click()
-  await page.getByLabel('custom-start-date').fill('2020-01-01')
-  await page.getByLabel('custom-end-date').fill('2030-12-31')
+  await page.getByLabel('custom-start-date', { exact: true }).fill('2020-01-01')
+  await page.getByLabel('custom-end-date', { exact: true }).fill('2030-12-31')
   await page.getByRole('button', { name: 'Ok' }).click()
 
   // All 3 installment rows must appear with correct suffixes
@@ -374,8 +374,8 @@ test('credit payment: CREDIT_PAYMENT does not appear as income or expense in Das
 
   // The Despesas stat card must show R$ 0,00 — CREDIT_PAYMENT is NOT an EXPENSE.
   // Stat cards are rendered in order: Receitas (nth 0), Despesas (nth 1), Saldo (nth 2).
-  // Each card has exactly one <p class="text-2xl font-bold ..."> for the amount.
-  const statAmounts = page.locator('p.text-2xl.font-bold')
+  // Each card has exactly one <p class="text-xl font-bold ..."> for the amount.
+  const statAmounts = page.locator('p.text-xl.font-bold')
   // nth(1) = Despesas stat card value
   await expect(statAmounts.nth(1)).toContainText('0,00')
 })
