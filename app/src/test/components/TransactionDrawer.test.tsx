@@ -872,3 +872,105 @@ describe('TransactionDrawer — Tags dropdown', () => {
     })
   })
 })
+
+// ─── M-80: Description autocomplete ("fill from history") ─────────────────────
+
+describe('TransactionDrawer — description autocomplete (M-80)', () => {
+  const otherAccount = {
+    id: 'acc-2',
+    name: 'Carteira',
+    type: 'RETAIL' as const,
+    balance: 0,
+    includeInBalance: true,
+  }
+  const otherCategory = {
+    id: 'cat-2',
+    parentId: null,
+    name: 'Transporte',
+    icon: 'car',
+    color: '#00FF00',
+    type: 'EXPENSE' as const,
+  }
+  const pastTx: Transaction = {
+    id: 'tx-past',
+    accountId: 'acc-2',
+    categoryId: 'cat-2',
+    amount: 42,
+    type: 'EXPENSE',
+    date: '2026-06-01',
+    description: 'Padaria Central',
+    isPaid: true,
+    tags: ['tag-1'],
+  }
+
+  beforeEach(() => {
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [testAccount, otherAccount],
+        categories: [testCategory, otherCategory],
+        tags: [testTag1, testTag2],
+        transactions: [pastTx],
+      }),
+    })
+  })
+
+  it('does not show suggestions before the minimum character count', async () => {
+    renderDrawer()
+    const descInput = screen.getByPlaceholderText('transactions.descriptionPlaceholder')
+    await userEvent.type(descInput, 'P')
+    expect(screen.queryByText('Padaria Central')).not.toBeInTheDocument()
+  })
+
+  it('shows a matching suggestion with its category/account hint once past the minimum', async () => {
+    renderDrawer()
+    const descInput = screen.getByPlaceholderText('transactions.descriptionPlaceholder')
+    await userEvent.type(descInput, 'Pad')
+    expect(screen.getByText('Padaria Central')).toBeInTheDocument()
+    expect(screen.getByText('Transporte · Carteira')).toBeInTheDocument()
+  })
+
+  it('selecting a suggestion fills category, account and tags but leaves the amount untouched', async () => {
+    renderDrawer()
+    const amountInput = screen.getByPlaceholderText('0,00')
+    await userEvent.clear(amountInput)
+    await userEvent.type(amountInput, '5000') // R$ 50,00
+
+    const descInput = screen.getByPlaceholderText('transactions.descriptionPlaceholder')
+    await userEvent.type(descInput, 'Pad')
+    await userEvent.click(screen.getByText('Padaria Central'))
+
+    expect(descInput).toHaveValue('Padaria Central')
+    expect(amountInput).toHaveValue('50,00')
+    expect(screen.getByText('#urgente')).toBeInTheDocument() // tag chip from the suggestion
+
+    const [accountSelect, categorySelect] = screen.getAllByRole('combobox')
+    expect(accountSelect).toHaveDisplayValue('Carteira')
+    expect(categorySelect).toHaveDisplayValue('Transporte')
+  })
+
+  it('does not offer suggestions in edit mode', async () => {
+    renderDrawer({ transaction: testTransaction })
+    const descInput = screen.getByDisplayValue('Almoço')
+    await userEvent.clear(descInput)
+    await userEvent.type(descInput, 'Pad')
+    expect(screen.queryByText('Padaria Central')).not.toBeInTheDocument()
+  })
+
+  it('ArrowDown + Enter selects the active suggestion via keyboard', async () => {
+    renderDrawer()
+    const descInput = screen.getByPlaceholderText('transactions.descriptionPlaceholder')
+    await userEvent.type(descInput, 'Pad')
+    await userEvent.keyboard('{ArrowDown}{Enter}')
+    expect(descInput).toHaveValue('Padaria Central')
+  })
+
+  it('Escape closes the dropdown without selecting anything', async () => {
+    renderDrawer()
+    const descInput = screen.getByPlaceholderText('transactions.descriptionPlaceholder')
+    await userEvent.type(descInput, 'Pad')
+    expect(screen.getByText('Padaria Central')).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByText('Padaria Central')).not.toBeInTheDocument()
+    expect(descInput).toHaveValue('Pad')
+  })
+})
