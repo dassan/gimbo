@@ -12,14 +12,24 @@ const currentMonth = todayISO.slice(0, 7)
 
 const fixture = {
   schemaVersion: 2,
-  user: { name: 'E2E Delta', createdAt: '2024-01-01T00:00:00.000Z', updatedAt: '2024-01-01T00:00:00.000Z' },
+  user: {
+    name: 'E2E Delta',
+    createdAt: '2024-01-01T00:00:00.000Z',
+    updatedAt: '2024-01-01T00:00:00.000Z',
+  },
   settings: {
     fileCreatedAt: '2024-01-01T00:00:00.000Z',
     fileUpdatedAt: '2024-01-01T00:00:00.000Z',
     auditLogRetentionLimit: 200,
   },
   accounts: [
-    { id: 'acc-delta-1', name: 'Conta Delta', type: 'RETAIL', balance: 1000, includeInBalance: true },
+    {
+      id: 'acc-delta-1',
+      name: 'Conta Delta',
+      type: 'RETAIL',
+      balance: 1000,
+      includeInBalance: true,
+    },
   ],
   categories: [
     {
@@ -116,24 +126,28 @@ test('editar, criar e apagar transações persistem corretamente via applyMutati
   const taggedRow = page.locator('[role="button"]').filter({ hasText: 'Seed com tag e caixinha' })
   await taggedRow.waitFor({ state: 'visible', timeout: 5000 })
   await taggedRow.click()
-  await expect(page.getByText('Editar Transação')).toBeVisible({ timeout: 3000 })
+  await expect(page.getByRole('button', { name: 'Remover Transação' })).toBeVisible({
+    timeout: 3000,
+  })
   const amountInput = page.locator('input[placeholder="0,00"]')
   await amountInput.clear()
   await amountInput.fill('999,00')
   await page.getByRole('button', { name: 'Salvar Alterações →' }).click()
-  await expect(
-    page.locator('.fixed.inset-0.z-50').first()
-  ).toHaveClass(/pointer-events-none/, { timeout: 3000 })
+  await expect(page.locator('.fixed.inset-0.z-50').first()).toHaveClass(/pointer-events-none/, {
+    timeout: 3000,
+  })
 
   // ── DELETE ──
   const toDeleteRow = page.locator('[role="button"]').filter({ hasText: 'Seed a apagar' })
   await toDeleteRow.waitFor({ state: 'visible', timeout: 5000 })
   await toDeleteRow.click()
-  await expect(page.getByText('Editar Transação')).toBeVisible({ timeout: 3000 })
+  await expect(page.getByRole('button', { name: 'Remover Transação' })).toBeVisible({
+    timeout: 3000,
+  })
   await page.getByRole('button', { name: 'Remover Transação' }).click()
-  await expect(
-    page.locator('.fixed.inset-0.z-50').first()
-  ).toHaveClass(/pointer-events-none/, { timeout: 3000 })
+  await expect(page.locator('.fixed.inset-0.z-50').first()).toHaveClass(/pointer-events-none/, {
+    timeout: 3000,
+  })
 
   // ── ADD (via FAB) ──
   await page.getByRole('button', { name: 'Nova Transação' }).click()
@@ -141,16 +155,19 @@ test('editar, criar e apagar transações persistem corretamente via applyMutati
   await newAmountInput.waitFor({ state: 'visible', timeout: 5000 })
   await newAmountInput.fill('321,00')
   await page.getByRole('button', { name: 'Salvar Despesa' }).click()
-  await expect(
-    page.locator('.fixed.inset-0.z-50').first()
-  ).toHaveClass(/pointer-events-none/, { timeout: 3000 })
+  await expect(page.locator('.fixed.inset-0.z-50').first()).toHaveClass(/pointer-events-none/, {
+    timeout: 3000,
+  })
 
   // Espera a escrita direcionada (debounce de 300ms + applyMutation) realmente terminar antes
   // de recarregar — sem isso o reload poderia ler o SQLite ainda não atualizado.
   await expect
-    .poll(async () => (await queryOne<{ n: number }>(page, 'SELECT COUNT(*) as n FROM transactions')).n, {
-      timeout: 5000,
-    })
+    .poll(
+      async () => (await queryOne<{ n: number }>(page, 'SELECT COUNT(*) as n FROM transactions')).n,
+      {
+        timeout: 5000,
+      }
+    )
     .toBe(3) // 3 seeds - 1 apagada + 1 nova = 3
 
   await page.reload()
@@ -203,7 +220,7 @@ test('editar, criar e apagar transações persistem corretamente via applyMutati
   // ── Linha nova: existe com o valor certo ──
   const added = await queryOne<{ n: number }>(
     page,
-    "SELECT COUNT(*) as n FROM transactions WHERE amount = 321"
+    'SELECT COUNT(*) as n FROM transactions WHERE amount = 321'
   )
   expect(added.n).toBe(1)
 })
