@@ -155,8 +155,8 @@ test('transactions page: transaction list is always visible', async ({ page }) =
 
   await page.getByRole('button', { name: 'period-selector' }).click()
   await page.getByRole('menuitem', { name: 'Escolher período' }).click()
-  await page.getByLabel('custom-start-date').fill('2024-01-01')
-  await page.getByLabel('custom-end-date').fill('2024-12-31')
+  await page.getByLabel('custom-start-date', { exact: true }).fill('2024-01-01')
+  await page.getByLabel('custom-end-date', { exact: true }).fill('2024-12-31')
   await page.getByRole('button', { name: 'Ok' }).click()
 
   // Transaction row should be visible on both mobile and desktop
