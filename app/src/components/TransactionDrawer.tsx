@@ -23,6 +23,9 @@ import {
   filterArchivedAccounts,
 } from '@/lib/utils'
 import DatePicker from '@/components/DatePicker'
+import Select from '@/components/Select'
+import MobileSheet from '@/components/MobileSheet'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import type { Transaction, TransactionType, RecurrenceFrequency } from '@/types'
 
 export interface TransactionDrawerProps {
@@ -67,6 +70,7 @@ const TYPE_CONFIG: Record<TxType, { label: string; color: string; bg: string; bt
 
 export default function TransactionDrawer({ open, onClose, transaction }: TransactionDrawerProps) {
   const { t } = useTranslation()
+  const isMobile = useIsMobile()
   const data = useDataStore((s) => s.data)
   const addTransaction = useDataStore((s) => s.addTransaction)
   const updateTransaction = useDataStore((s) => s.updateTransaction)
@@ -539,26 +543,17 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                   <CreditCard size={12} />
                   {t('transactions.cardToPay')}
                 </label>
-                <div className="relative">
-                  <select
-                    value={accountId}
-                    onChange={(e) => setAccountId(e.target.value)}
-                    className="w-full appearance-none rounded-xl bg-surface-container-low py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-                  >
-                    {filterArchivedAccounts(creditAccounts, accountId).map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                    {filterArchivedAccounts(creditAccounts, accountId).length === 0 && (
-                      <option value="">{t('common.noData')}</option>
-                    )}
-                  </select>
-                  <ChevronDown
-                    size={16}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface/40 pointer-events-none"
-                  />
-                </div>
+                <Select
+                  value={accountId}
+                  onChange={setAccountId}
+                  ariaLabel={t('transactions.cardToPay')}
+                  placeholder={t('common.noData')}
+                  options={filterArchivedAccounts(creditAccounts, accountId).map((a) => ({
+                    value: a.id,
+                    label: a.name,
+                  }))}
+                  className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                />
               </div>
 
               {/* Pay from */}
@@ -566,26 +561,16 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                 <label className="label text-on-surface/40 block mb-2">
                   {t('transactions.payFrom')}
                 </label>
-                <div className="relative">
-                  <select
-                    value={transferAccountId}
-                    onChange={(e) => setTransferAccountId(e.target.value)}
-                    className="w-full appearance-none rounded-xl bg-surface-container-low py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-                  >
-                    {filterArchivedAccounts(nonCreditAccounts, transferAccountId).map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                    {filterArchivedAccounts(nonCreditAccounts, transferAccountId).length === 0 && (
-                      <option value="">{t('common.noData')}</option>
-                    )}
-                  </select>
-                  <ChevronDown
-                    size={16}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface/40 pointer-events-none"
-                  />
-                </div>
+                <Select
+                  value={transferAccountId}
+                  onChange={setTransferAccountId}
+                  ariaLabel={t('transactions.payFrom')}
+                  placeholder={t('common.noData')}
+                  options={filterArchivedAccounts(nonCreditAccounts, transferAccountId).map(
+                    (a) => ({ value: a.id, label: a.name })
+                  )}
+                  className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                />
               </div>
             </>
           ) : type === 'TRANSFER' ? (
@@ -596,26 +581,17 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                 <label className="label text-on-surface/40 block mb-2">
                   {t('transactions.transferFrom')}
                 </label>
-                <div className="relative">
-                  <select
-                    value={accountId}
-                    onChange={(e) => setAccountId(e.target.value)}
-                    className="w-full appearance-none rounded-xl bg-surface-container-low py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-                  >
-                    {filterArchivedAccounts(nonCreditAccounts, accountId).map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                    {filterArchivedAccounts(nonCreditAccounts, accountId).length === 0 && (
-                      <option value="">{t('common.noData')}</option>
-                    )}
-                  </select>
-                  <ChevronDown
-                    size={16}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface/40 pointer-events-none"
-                  />
-                </div>
+                <Select
+                  value={accountId}
+                  onChange={setAccountId}
+                  ariaLabel={t('transactions.transferFrom')}
+                  placeholder={t('common.noData')}
+                  options={filterArchivedAccounts(nonCreditAccounts, accountId).map((a) => ({
+                    value: a.id,
+                    label: a.name,
+                  }))}
+                  className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                />
               </div>
 
               {/* To account */}
@@ -623,30 +599,17 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                 <label className="label text-on-surface/40 block mb-2">
                   {t('transactions.transferTo')}
                 </label>
-                <div className="relative">
-                  <select
-                    value={transferAccountId}
-                    onChange={(e) => setTransferAccountId(e.target.value)}
-                    className="w-full appearance-none rounded-xl bg-surface-container-low py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-                  >
-                    {filterArchivedAccounts(
-                      nonCreditAccounts.filter((a) => a.id !== accountId),
-                      transferAccountId
-                    ).map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                    {filterArchivedAccounts(
-                      nonCreditAccounts.filter((a) => a.id !== accountId),
-                      transferAccountId
-                    ).length === 0 && <option value="">{t('common.noData')}</option>}
-                  </select>
-                  <ChevronDown
-                    size={16}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface/40 pointer-events-none"
-                  />
-                </div>
+                <Select
+                  value={transferAccountId}
+                  onChange={setTransferAccountId}
+                  ariaLabel={t('transactions.transferTo')}
+                  placeholder={t('common.noData')}
+                  options={filterArchivedAccounts(
+                    nonCreditAccounts.filter((a) => a.id !== accountId),
+                    transferAccountId
+                  ).map((a) => ({ value: a.id, label: a.name }))}
+                  className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                />
               </div>
             </>
           ) : (
@@ -655,35 +618,25 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
               <label className="label text-on-surface/40 block mb-2">
                 {t('transactions.account')}
               </label>
-              <div className="relative">
-                <select
-                  value={accountId}
-                  onChange={(e) => {
-                    const newAccountId = e.target.value
-                    setAccountId(newAccountId)
-                    // Reset installment toggle when account changes
-                    setInstallmentsEnabled(false)
-                    setInstallmentCount(2)
-                    // Hide isPaid when switching to a CREDIT account
-                    const newAccount = (data?.accounts ?? []).find((a) => a.id === newAccountId)
-                    if (newAccount?.type === 'CREDIT') setIsPaid(false)
-                  }}
-                  className="w-full appearance-none rounded-xl bg-surface-container-low py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  {filterArchivedAccounts(data?.accounts ?? [], accountId).map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                  {filterArchivedAccounts(data?.accounts ?? [], accountId).length === 0 && (
-                    <option value="">{t('common.noData')}</option>
-                  )}
-                </select>
-                <ChevronDown
-                  size={16}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface/40 pointer-events-none"
-                />
-              </div>
+              <Select
+                value={accountId}
+                onChange={(newAccountId) => {
+                  setAccountId(newAccountId)
+                  // Reset installment toggle when account changes
+                  setInstallmentsEnabled(false)
+                  setInstallmentCount(2)
+                  // Hide isPaid when switching to a CREDIT account
+                  const newAccount = (data?.accounts ?? []).find((a) => a.id === newAccountId)
+                  if (newAccount?.type === 'CREDIT') setIsPaid(false)
+                }}
+                ariaLabel={t('transactions.account')}
+                placeholder={t('common.noData')}
+                options={filterArchivedAccounts(data?.accounts ?? [], accountId).map((a) => ({
+                  value: a.id,
+                  label: a.name,
+                }))}
+                className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+              />
             </div>
           )}
 
@@ -765,23 +718,16 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                     <label className="label text-on-surface/40 block mb-2">
                       {t('transactions.installmentCount')}
                     </label>
-                    <div className="relative">
-                      <select
-                        value={installmentCount}
-                        onChange={(e) => setInstallmentCount(parseInt(e.target.value, 10))}
-                        className="w-full appearance-none rounded-xl bg-surface-container-high py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-                      >
-                        {INSTALLMENT_COUNT_OPTIONS.map((n) => (
-                          <option key={n} value={n}>
-                            {n}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        size={16}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface/40 pointer-events-none"
-                      />
-                    </div>
+                    <Select
+                      value={String(installmentCount)}
+                      onChange={(v) => setInstallmentCount(parseInt(v, 10))}
+                      ariaLabel={t('transactions.installmentCount')}
+                      options={INSTALLMENT_COUNT_OPTIONS.map((n) => ({
+                        value: String(n),
+                        label: String(n),
+                      }))}
+                      className="rounded-xl bg-surface-container-high py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                    />
                   </div>
                   {amount > 0 && (
                     <p className="text-xs text-on-surface/50">
@@ -849,24 +795,19 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
               <label className="label text-on-surface/40 block mb-2">
                 {t('transactions.category')}
               </label>
-              <div className="relative">
-                <select
-                  value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
-                  className="w-full appearance-none rounded-xl bg-surface-container-low py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  <option value="">{t('transactions.category')}</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.parentId ? `— ${c.name}` : c.name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  size={16}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface/40 pointer-events-none"
-                />
-              </div>
+              <Select
+                value={categoryId}
+                onChange={setCategoryId}
+                ariaLabel={t('transactions.category')}
+                options={[
+                  { value: '', label: t('transactions.category') },
+                  ...categories.map((c) => ({
+                    value: c.id,
+                    label: c.parentId ? `— ${c.name}` : c.name,
+                  })),
+                ]}
+                className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+              />
             </div>
           )}
 
@@ -895,35 +836,50 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                   />
                 </button>
 
-                {showTagMenu && (
-                  <div className="absolute z-20 mt-1 w-full rounded-xl bg-surface-container-high border border-outline-variant shadow-ambient overflow-hidden">
-                    {(data?.tags ?? []).filter((tag) => !selectedTags.includes(tag.id)).length ===
-                    0 ? (
+                {(() => {
+                  const availableTags = (data?.tags ?? []).filter(
+                    (tag) => !selectedTags.includes(tag.id)
+                  )
+                  const tagOptions =
+                    availableTags.length === 0 ? (
                       <p className="px-4 py-3 text-sm text-center text-on-surface/40">
                         {t('transactions.tagsAllSelected')}
                       </p>
                     ) : (
-                      <div className="max-h-48 overflow-y-auto">
-                        {(data?.tags ?? [])
-                          .filter((tag) => !selectedTags.includes(tag.id))
-                          .map((tag) => (
-                            <button
-                              key={tag.id}
-                              type="button"
-                              onClick={() => toggleTag(tag.id)}
-                              className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-on-surface hover:bg-surface-container-low transition-colors"
-                            >
-                              <span
-                                className="h-2.5 w-2.5 rounded-full shrink-0"
-                                style={{ backgroundColor: tag.color }}
-                              />
-                              #{tag.name}
-                            </button>
-                          ))}
+                      availableTags.map((tag) => (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          onClick={() => toggleTag(tag.id)}
+                          className="flex w-full items-center gap-2.5 rounded-xl px-4 py-2.5 text-sm text-on-surface hover:bg-surface-container-high transition-colors"
+                        >
+                          <span
+                            className="h-2.5 w-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: tag.color }}
+                          />
+                          #{tag.name}
+                        </button>
+                      ))
+                    )
+
+                  return isMobile ? (
+                    <MobileSheet
+                      open={showTagMenu}
+                      onClose={() => setShowTagMenu(false)}
+                      role="group"
+                      ariaLabel={t('transactions.tags')}
+                      contentClassName="px-3 pb-2"
+                    >
+                      {tagOptions}
+                    </MobileSheet>
+                  ) : (
+                    showTagMenu && (
+                      <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-xl bg-surface-container-high border border-outline-variant shadow-ambient p-1.5">
+                        {tagOptions}
                       </div>
-                    )}
-                  </div>
-                )}
+                    )
+                  )
+                })()}
               </div>
 
               {/* Selected tags chips */}

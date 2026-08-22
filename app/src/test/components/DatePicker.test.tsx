@@ -36,7 +36,7 @@ describe('DatePicker — M-47', () => {
     expect(input.value).toBe('2026-06-10')
   })
 
-  it('calls onChange when the native input changes (mobile path)', () => {
+  it('calls onChange when the hidden native input changes directly', () => {
     const onChange = vi.fn()
     render(
       <DatePicker
@@ -164,5 +164,82 @@ describe('DatePicker — M-47', () => {
     fireEvent.change(input, { target: { value: '01/07/2026' } })
 
     expect(onChange).not.toHaveBeenCalled()
+  })
+})
+
+// ─── dassan/ui-adjustments: mobile bottom sheet (replaces the old native-picker fallback) ────
+
+function mockMobileViewport() {
+  vi.spyOn(window, 'matchMedia').mockImplementation(
+    (query: string) =>
+      ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        dispatchEvent: () => false,
+      }) as unknown as MediaQueryList
+  )
+}
+
+describe('DatePicker — mobile bottom sheet (dassan/ui-adjustments)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('renders a themed trigger button instead of the native picker', () => {
+    mockMobileViewport()
+    const onChange = vi.fn()
+    render(
+      <DatePicker
+        value="2026-06-10"
+        onChange={onChange}
+        className={CLASS_NAME}
+        ariaLabel="my-date"
+      />
+    )
+
+    const trigger = screen.getByRole('button', { name: 'my-date trigger' })
+    expect(trigger).toHaveTextContent('10/06/2026')
+  })
+
+  it('opens a bottom sheet with the calendar on tap', () => {
+    mockMobileViewport()
+    const onChange = vi.fn()
+    render(<DatePicker value="2026-06-10" onChange={onChange} className={CLASS_NAME} />)
+
+    fireEvent.click(screen.getByText('10/06/2026'))
+    expect(screen.getByText('Junho de 2026')).toBeInTheDocument()
+  })
+
+  it('selecting a day calls onChange and closes the sheet', () => {
+    mockMobileViewport()
+    const onChange = vi.fn()
+    render(<DatePicker value="2026-06-10" onChange={onChange} className={CLASS_NAME} />)
+
+    fireEvent.click(screen.getByText('10/06/2026'))
+    fireEvent.click(screen.getByRole('button', { name: '20' }))
+
+    expect(onChange).toHaveBeenCalledWith('2026-06-20')
+    expect(screen.queryByText('Junho de 2026')).not.toBeInTheDocument()
+  })
+
+  it('tapping the backdrop closes the sheet', () => {
+    mockMobileViewport()
+    const onChange = vi.fn()
+    const { container } = render(
+      <DatePicker value="2026-06-10" onChange={onChange} className={CLASS_NAME} />
+    )
+
+    fireEvent.click(screen.getByText('10/06/2026'))
+    expect(screen.getByText('Junho de 2026')).toBeInTheDocument()
+
+    const backdrop = container.querySelector('.fixed.inset-0.z-40')
+    expect(backdrop).not.toBeNull()
+    fireEvent.click(backdrop as Element)
+    expect(screen.queryByText('Junho de 2026')).not.toBeInTheDocument()
   })
 })

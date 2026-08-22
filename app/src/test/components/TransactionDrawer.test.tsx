@@ -1,4 +1,4 @@
-﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
+﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import TransactionDrawer from '@/components/TransactionDrawer'
@@ -753,5 +753,120 @@ describe('TransactionDrawer — M-42: archived accounts', () => {
     renderDrawer({ transaction: { ...testTransaction, accountId: 'acc-archived' } })
     const [accountSelect] = screen.getAllByRole('combobox')
     expect(accountSelect).toHaveDisplayValue('Conta Arquivada')
+  })
+})
+
+// ─── dassan/ui-adjustments: Tags dropdown — desktop panel + mobile bottom sheet ─────────────
+
+const testTag1 = { id: 'tag-1', name: 'urgente', color: '#FF0000' }
+const testTag2 = { id: 'tag-2', name: 'trabalho', color: '#00FF00' }
+
+function mockMobileViewport() {
+  vi.spyOn(window, 'matchMedia').mockImplementation(
+    (query: string) =>
+      ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        dispatchEvent: () => false,
+      }) as unknown as MediaQueryList
+  )
+}
+
+describe('TransactionDrawer — Tags dropdown', () => {
+  beforeEach(() => {
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [testAccount],
+        categories: [testCategory],
+        tags: [testTag1, testTag2],
+      }),
+    })
+  })
+
+  it('does not render the tags field when there are no tags in the vault', () => {
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [testAccount], categories: [testCategory], tags: [] }),
+    })
+    renderDrawer()
+    expect(screen.queryByText('transactions.tagsPlaceholder')).not.toBeInTheDocument()
+  })
+
+  it('desktop: opens a panel listing every tag and selecting one adds a chip', async () => {
+    renderDrawer()
+    await userEvent.click(screen.getByText('transactions.tagsPlaceholder'))
+
+    expect(screen.getByText('#urgente')).toBeInTheDocument()
+    expect(screen.getByText('#trabalho')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('#urgente'))
+
+    // Chip appears, and the picked tag drops out of the open panel's option list
+    expect(screen.getAllByText('#urgente')).toHaveLength(1)
+    expect(screen.getByText('#trabalho')).toBeInTheDocument()
+  })
+
+  it('desktop: shows "all selected" once every tag has been picked', async () => {
+    renderDrawer()
+    await userEvent.click(screen.getByText('transactions.tagsPlaceholder'))
+    await userEvent.click(screen.getByText('#urgente'))
+    await userEvent.click(screen.getByText('#trabalho'))
+
+    expect(screen.getByText('transactions.tagsAllSelected')).toBeInTheDocument()
+  })
+
+  it('removing a chip drops the tag and it is offered again the next time the panel opens', async () => {
+    renderDrawer()
+    await userEvent.click(screen.getByText('transactions.tagsPlaceholder'))
+    await userEvent.click(screen.getByText('#urgente'))
+
+    await userEvent.click(screen.getByLabelText('Remover urgente'))
+    expect(screen.queryByLabelText('Remover urgente')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('transactions.tagsPlaceholder'))
+    expect(screen.getByText('#urgente')).toBeInTheDocument()
+  })
+
+  describe('mobile bottom sheet', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('opens a themed bottom sheet instead of the desktop panel', async () => {
+      mockMobileViewport()
+      renderDrawer()
+      await userEvent.click(screen.getByText('transactions.tagsPlaceholder'))
+
+      const sheet = screen.getByRole('group', { name: 'transactions.tags' })
+      expect(within(sheet).getByText('#urgente')).toBeInTheDocument()
+      expect(within(sheet).getByText('#trabalho')).toBeInTheDocument()
+    })
+
+    it('selecting a tag in the sheet adds a chip and keeps the sheet open', async () => {
+      mockMobileViewport()
+      renderDrawer()
+      await userEvent.click(screen.getByText('transactions.tagsPlaceholder'))
+      await userEvent.click(screen.getByText('#urgente'))
+
+      expect(screen.getAllByText('#urgente')).toHaveLength(1)
+      expect(screen.getByRole('group', { name: 'transactions.tags' })).toBeInTheDocument()
+    })
+
+    it('tapping the backdrop closes the sheet', async () => {
+      mockMobileViewport()
+      const { container } = renderDrawer()
+      await userEvent.click(screen.getByText('transactions.tagsPlaceholder'))
+      expect(screen.getByRole('group', { name: 'transactions.tags' })).toBeInTheDocument()
+
+      const backdrop = container.querySelector('.fixed.inset-0.z-40')
+      expect(backdrop).not.toBeNull()
+      await userEvent.click(backdrop as Element)
+
+      expect(screen.queryByRole('group', { name: 'transactions.tags' })).not.toBeInTheDocument()
+    })
   })
 })
