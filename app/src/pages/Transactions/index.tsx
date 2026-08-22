@@ -28,7 +28,7 @@ import {
 import PeriodSelector from '@/components/PeriodSelector'
 import type { PeriodValue } from '@/components/PeriodSelector'
 import type { AppLayoutContext } from '@/components/AppLayout'
-import type { Transaction } from '@/types'
+import type { Account, Category, Tag, Transaction } from '@/types'
 
 export default function Transactions() {
   const { t } = useTranslation()
@@ -58,6 +58,28 @@ export default function Transactions() {
     if (!data) return new Set<string>()
     return new Set(data.accounts.filter((a) => a.type === 'CREDIT').map((a) => a.id))
   }, [data])
+
+  // M-75/PERFORMANCE.md: DateGroup/TxRow used to receive the whole `data: DataFile` as a prop —
+  // with a large vault (~25k transactions), every mutation clones the entire DataFile
+  // (structuredClone in mutate()), so every row instance got a referentially-new multi-MB prop on
+  // every save. In dev builds React's "Components ⚛" instrumentation deep-diffs changed props for
+  // its performance track, and diffing that giant object once per rendered row was the actual
+  // source of the 20-50s freeze reported at that scale (production builds don't carry this
+  // instrumentation — measured sub-second there). These small lookup Maps replace the `data` prop:
+  // still rebuilt on every mutation (same reason), but cheap because accounts/categories/tags are
+  // tiny compared to transactions.
+  const categoriesById = useMemo(
+    () => new Map(data ? data.categories.map((c) => [c.id, c] as const) : []),
+    [data]
+  )
+  const accountsById = useMemo(
+    () => new Map(data ? data.accounts.map((a) => [a.id, a] as const) : []),
+    [data]
+  )
+  const tagsById = useMemo(
+    () => new Map(data ? data.tags.map((tag) => [tag.id, tag] as const) : []),
+    [data]
+  )
 
   // ── Compute date range from PeriodSelector state ────────────────────────
   const { startDate, endDate } = useMemo(() => {
@@ -447,7 +469,9 @@ export default function Transactions() {
                   key={dateKey}
                   dateKey={dateKey}
                   txs={txs}
-                  data={data}
+                  categoriesById={categoriesById}
+                  accountsById={accountsById}
+                  tagsById={tagsById}
                   onEditTx={openTransactionDrawer}
                   shadowClass={shadowClass}
                 />
@@ -601,13 +625,17 @@ export default function Transactions() {
 function DateGroup({
   dateKey,
   txs,
-  data,
+  categoriesById,
+  accountsById,
+  tagsById,
   onEditTx,
   shadowClass,
 }: {
   dateKey: string
   txs: Transaction[]
-  data: NonNullable<ReturnType<typeof useDataStore.getState>['data']>
+  categoriesById: Map<string, Category>
+  accountsById: Map<string, Account>
+  tagsById: Map<string, Tag>
   onEditTx: (tx: Transaction) => void
   shadowClass: string
 }) {
@@ -641,7 +669,15 @@ function DateGroup({
       </div>
       <div className={cn('rounded-2xl bg-surface-container overflow-hidden', shadowClass)}>
         {txs.map((tx, i) => (
-          <TxRow key={tx.id} tx={tx} data={data} isLast={i === txs.length - 1} onEdit={onEditTx} />
+          <TxRow
+            key={tx.id}
+            tx={tx}
+            categoriesById={categoriesById}
+            accountsById={accountsById}
+            tagsById={tagsById}
+            isLast={i === txs.length - 1}
+            onEdit={onEditTx}
+          />
         ))}
       </div>
     </div>
@@ -652,26 +688,30 @@ function DateGroup({
 
 function TxRow({
   tx,
-  data,
+  categoriesById,
+  accountsById,
+  tagsById,
   isLast,
   onEdit,
 }: {
   tx: Transaction
-  data: NonNullable<ReturnType<typeof useDataStore.getState>['data']>
+  categoriesById: Map<string, Category>
+  accountsById: Map<string, Account>
+  tagsById: Map<string, Tag>
   isLast: boolean
   onEdit: (tx: Transaction) => void
 }) {
   const { t } = useTranslation()
-  const cat = data.categories.find((c) => c.id === tx.categoryId)
-  const acc = data.accounts.find((a) => a.id === tx.accountId)
+  const cat = categoriesById.get(tx.categoryId)
+  const acc = accountsById.get(tx.accountId)
   const isIncome = tx.type === 'INCOME'
   const isTransfer = tx.type === 'TRANSFER'
   const isCreditPayment = tx.type === 'CREDIT_PAYMENT'
-  const txTags = data.tags.filter((tag) => tx.tags.includes(tag.id))
+  const txTags = [...tagsById.values()].filter((tag) => tx.tags.includes(tag.id))
   // TRANSFER: destination account. CREDIT_PAYMENT: the funded card is `acc` and the money
   // comes from transferAccountId (shown as "<funding account> → <card>").
   const destAcc =
-    isTransfer || isCreditPayment ? data.accounts.find((a) => a.id === tx.transferAccountId) : null
+    isTransfer || isCreditPayment ? accountsById.get(tx.transferAccountId ?? '') : null
 
   const typeTitle = isTransfer
     ? t('transactions.transferTitle')
