@@ -25,7 +25,12 @@ export default defineConfig({
     format: 'es',
   },
   plugins: [basicSsl(), react(), tailwindcss(), VitePWA({
-    registerType: 'autoUpdate',
+    // M-76: 'prompt' + registro manual via `virtual:pwa-register/react` (UpdateToast.tsx) —
+    // com 'autoUpdate' o SW novo assumia sozinho (skipWaiting+clientsClaim) sem nenhum aviso,
+    // e uma aba aberta há muito tempo podia ficar rodando JS antigo contra chunks que o SW novo
+    // já não tinha mais precacheados. 'prompt' só ativa o SW novo quando o usuário confirma.
+    registerType: 'prompt',
+    injectRegister: null,
     // SEC-15: a fonte precisa entrar no precache. Antes disso o app offline não tinha Inter
     // nenhuma — vinha do Google (inalcançável offline) e `.woff2` não está no globPatterns
     // default do plugin, então nada era precacheado e a tipografia caía para system-ui.

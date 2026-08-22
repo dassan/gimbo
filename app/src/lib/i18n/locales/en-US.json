@@ -3,6 +3,10 @@
     "name": "Gimbo",
     "tagline": "Finance"
   },
+  "update": {
+    "available": "New version available",
+    "reload": "Reload"
+  },
   "nav": {
     "dashboard": "Overview",
     "transactions": "Ledger",
