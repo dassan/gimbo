@@ -74,6 +74,7 @@ describe('CreditCardPage — M-31: spending summary in right column', () => {
 
     render(<CreditCardPage />)
 
+    // dassan/mobile-invoice-filter: spending summary is desktop-only (dropped from mobile)
     expect(screen.getByText('creditCard.spendingSummary')).toBeInTheDocument()
     expect(screen.getByText('common.total')).toBeInTheDocument()
   })
@@ -177,22 +178,42 @@ describe('CreditCardPage — M-54: collapsible category filter', () => {
     setupTwoCategories()
     render(<CreditCardPage />)
 
+    // Desktop sidebar pill (visible label)
     expect(screen.getByText('creditCard.filterPlaceholder')).toBeInTheDocument()
+    // dassan/mobile-invoice-filter: mobile has no sidebar — filtering is behind a header
+    // icon toggle instead (same aria-label, no visible text)
+    expect(screen.getByLabelText('creditCard.filterPlaceholder')).toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     // Both transactions visible (no filter applied)
     expect(screen.getByText('Mercado')).toBeInTheDocument()
     expect(screen.getByText('Uber')).toBeInTheDocument()
   })
 
+  it('reveals the search + category filter via the mobile header toggle', () => {
+    setupTwoCategories()
+    render(<CreditCardPage />)
+
+    // dassan/mobile-invoice-filter: clicking the header icon (not the desktop sidebar pill)
+    // opens a compact search + category panel right below the header
+    fireEvent.click(screen.getByLabelText('creditCard.filterPlaceholder'))
+    const searchInputs = screen.getAllByPlaceholderText('creditCard.searchPlaceholder')
+    expect(searchInputs.length).toBeGreaterThan(0)
+
+    fireEvent.change(searchInputs[0], { target: { value: 'merc' } })
+
+    expect(screen.getByText('Mercado')).toBeInTheDocument()
+    expect(screen.queryByText('Uber')).not.toBeInTheDocument()
+  })
+
   it('expands to show a category select on click, and filters the list on selection', () => {
     setupTwoCategories()
     render(<CreditCardPage />)
 
-    fireEvent.click(screen.getByText('creditCard.filterPlaceholder'))
-    const select = screen.getByRole('combobox')
-    expect(select).toBeInTheDocument()
+    fireEvent.click(screen.getAllByText('creditCard.filterPlaceholder')[0])
+    const selects = screen.getAllByRole('combobox')
+    expect(selects.length).toBeGreaterThan(0)
 
-    fireEvent.change(select, { target: { value: 'cat-food' } })
+    fireEvent.change(selects[0], { target: { value: 'cat-food' } })
 
     expect(screen.getByText('Mercado')).toBeInTheDocument()
     expect(screen.queryByText('Uber')).not.toBeInTheDocument()
@@ -202,11 +223,11 @@ describe('CreditCardPage — M-54: collapsible category filter', () => {
     setupTwoCategories()
     render(<CreditCardPage />)
 
-    fireEvent.click(screen.getByText('creditCard.filterPlaceholder'))
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'cat-food' } })
+    fireEvent.click(screen.getAllByText('creditCard.filterPlaceholder')[0])
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'cat-food' } })
     expect(screen.queryByText('Uber')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByLabelText('creditCard.allCategories'))
+    fireEvent.click(screen.getAllByLabelText('creditCard.allCategories')[0])
 
     expect(screen.getByText('Mercado')).toBeInTheDocument()
     expect(screen.getByText('Uber')).toBeInTheDocument()
@@ -218,34 +239,34 @@ describe('CreditCardPage — M-54: collapsible category filter', () => {
     setupTwoCategories()
     render(<CreditCardPage />)
 
-    fireEvent.click(screen.getByText('creditCard.filterPlaceholder'))
-    const searchInput = screen.getByPlaceholderText('creditCard.searchPlaceholder')
-    expect(searchInput).toBeInTheDocument()
+    fireEvent.click(screen.getAllByText('creditCard.filterPlaceholder')[0])
+    const searchInputs = screen.getAllByPlaceholderText('creditCard.searchPlaceholder')
+    expect(searchInputs.length).toBeGreaterThan(0)
 
-    fireEvent.change(searchInput, { target: { value: 'merc' } })
+    fireEvent.change(searchInputs[0], { target: { value: 'merc' } })
 
     expect(screen.getByText('Mercado')).toBeInTheDocument()
     expect(screen.queryByText('Uber')).not.toBeInTheDocument()
     // The collapsed bar reflects the active search query
-    expect(screen.getByText('merc')).toBeInTheDocument()
+    expect(screen.getAllByText('merc').length).toBeGreaterThan(0)
   })
 
   it('clears both the search and category filters via the "x" button', () => {
     setupTwoCategories()
     render(<CreditCardPage />)
 
-    fireEvent.click(screen.getByText('creditCard.filterPlaceholder'))
-    fireEvent.change(screen.getByPlaceholderText('creditCard.searchPlaceholder'), {
+    fireEvent.click(screen.getAllByText('creditCard.filterPlaceholder')[0])
+    fireEvent.change(screen.getAllByPlaceholderText('creditCard.searchPlaceholder')[0], {
       target: { value: 'merc' },
     })
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'cat-food' } })
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'cat-food' } })
     expect(screen.queryByText('Uber')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByLabelText('creditCard.allCategories'))
+    fireEvent.click(screen.getAllByLabelText('creditCard.allCategories')[0])
 
     expect(screen.getByText('Mercado')).toBeInTheDocument()
     expect(screen.getByText('Uber')).toBeInTheDocument()
-    expect(screen.getByText('creditCard.filterPlaceholder')).toBeInTheDocument()
+    expect(screen.getAllByText('creditCard.filterPlaceholder').length).toBeGreaterThan(0)
   })
 })
 
@@ -260,7 +281,9 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
 
     render(<CreditCardPage />)
 
-    expect(screen.getByText('creditCard.payNow')).toBeInTheDocument()
+    // dassan/detalhes-cartao: the button is rendered in both the mobile and desktop
+    // summary card layouts
+    expect(screen.getAllByText('creditCard.payNow').length).toBeGreaterThan(0)
   })
 
   it('opens PayInvoiceModal when "Pagar Agora" is clicked', () => {
@@ -274,7 +297,7 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
     // Modal should not be visible before click
     expect(screen.queryByText('creditCard.payInvoice')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('creditCard.payNow'))
+    fireEvent.click(screen.getAllByText('creditCard.payNow')[0])
 
     // Modal title and confirm button appear
     expect(screen.getAllByText('creditCard.payInvoice').length).toBeGreaterThanOrEqual(1)
@@ -287,7 +310,7 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
     })
 
     render(<CreditCardPage />)
-    fireEvent.click(screen.getByText('creditCard.payNow'))
+    fireEvent.click(screen.getAllByText('creditCard.payNow')[0])
 
     // Reference month label key is rendered in the modal
     expect(screen.getByText('creditCard.referenceMonth')).toBeInTheDocument()
@@ -308,7 +331,7 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
     })
 
     render(<CreditCardPage />)
-    fireEvent.click(screen.getByText('creditCard.payNow'))
+    fireEvent.click(screen.getAllByText('creditCard.payNow')[0])
 
     // Retail account appears as an option
     expect(screen.getByText('NuConta')).toBeInTheDocument()
@@ -323,7 +346,7 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
     })
 
     render(<CreditCardPage />)
-    fireEvent.click(screen.getByText('creditCard.payNow'))
+    fireEvent.click(screen.getAllByText('creditCard.payNow')[0])
     expect(screen.getAllByText('creditCard.payInvoice').length).toBeGreaterThanOrEqual(1)
 
     // Click the X close button
@@ -348,7 +371,7 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
     const addTransactionSpy = vi.spyOn(useDataStore.getState(), 'addTransaction')
 
     render(<CreditCardPage />)
-    fireEvent.click(screen.getByText('creditCard.payNow'))
+    fireEvent.click(screen.getAllByText('creditCard.payNow')[0])
 
     // Click the confirm button (same text as modal title)
     const confirmButtons = screen.getAllByText('creditCard.payInvoice')
@@ -423,7 +446,7 @@ describe('CreditCardPage — Option 2: credits and invoice payment cycle', () =>
 
     const addTransactionSpy = vi.spyOn(useDataStore.getState(), 'addTransaction')
     render(<CreditCardPage />)
-    fireEvent.click(screen.getByText('creditCard.payNow'))
+    fireEvent.click(screen.getAllByText('creditCard.payNow')[0])
     const confirmButtons = screen.getAllByText('creditCard.payInvoice')
     fireEvent.click(confirmButtons[confirmButtons.length - 1])
 
@@ -449,8 +472,9 @@ describe('CreditCardPage — Option 2: credits and invoice payment cycle', () =>
 
     render(<CreditCardPage />)
 
-    expect(screen.getByText('creditCard.statusPaid')).toBeInTheDocument()
-    expect(screen.getByText(/creditCard\.paid/)).toBeInTheDocument()
+    // dassan/detalhes-cartao: rendered in both the mobile and desktop summary card layouts
+    expect(screen.getAllByText('creditCard.statusPaid').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/creditCard\.paid/).length).toBeGreaterThan(0)
     // M-57: Pay button is hidden (not just disabled) once the invoice is fully settled
     expect(screen.queryByText('creditCard.payNow')).not.toBeInTheDocument()
   })
