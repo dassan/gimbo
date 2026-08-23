@@ -5,6 +5,8 @@ import { ChevronLeft, ChevronRight, ChevronDown, CreditCard, Filter, Search, X }
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { useOutletContext } from 'react-router-dom'
+import { useIsMobile } from '@/hooks/useIsMobile'
+import MobileSheet from '@/components/MobileSheet'
 import {
   formatCurrency,
   cn,
@@ -227,6 +229,106 @@ export default function CreditCardPage() {
     setShowPayModal(false)
   }
 
+  // dassan/detalhes-cartao: shared between the desktop sticky sidebar and the mobile
+  // collapsed-by-default disclosure, so both stay in sync without duplicating the JSX.
+  const filterBarNode = invoiceTransactions.length > 0 && (
+    <div className={cn('rounded-2xl bg-surface-container overflow-hidden', shadowClass)}>
+      <div className="flex items-center gap-1 px-4 py-3">
+        <button
+          type="button"
+          onClick={() => setFilterExpanded((v) => !v)}
+          className="flex flex-1 items-center gap-2 min-w-0 text-sm text-on-surface/60 hover:text-on-surface/80 transition-colors"
+        >
+          <Filter size={14} className="shrink-0" />
+          <span className="truncate">
+            {filterCategory !== 'all'
+              ? categoryOptions.find((c) => c.id === filterCategory)?.name
+              : searchQuery.trim()
+                ? searchQuery
+                : t('creditCard.filterPlaceholder')}
+          </span>
+          <ChevronDown
+            size={14}
+            className={cn('shrink-0 ml-auto transition-transform', filterExpanded && 'rotate-180')}
+          />
+        </button>
+        {hasActiveFilter && (
+          <button
+            type="button"
+            aria-label={t('creditCard.allCategories')}
+            onClick={clearFilters}
+            className="shrink-0 rounded-full p-1 text-on-surface/40 hover:bg-surface-container-high hover:text-on-surface/70 transition-colors"
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
+      {filterExpanded && (
+        <div className="px-4 pb-3 space-y-2">
+          <div className="relative">
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
+            />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t('creditCard.searchPlaceholder')}
+              className="w-full rounded-xl bg-surface-container-low py-2 pl-8 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+          {categoryOptions.length > 0 && (
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="w-full appearance-none rounded-xl bg-surface-container-low py-2 px-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="all">{t('creditCard.allCategories')}</option>
+              {categoryOptions.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  const spendingSummaryContent = (
+    <>
+      <div className="space-y-3">
+        {categoryTotals.map(({ name, total }) => {
+          const pct = invoiceTotal > 0 ? (total / invoiceTotal) * 100 : 0
+          return (
+            <div key={name}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-on-surface/70">{name}</span>
+                <span className="text-xs font-semibold tabular-nums text-on-surface">
+                  {formatCurrency(total)}
+                </span>
+              </div>
+              <div className="h-1.5 w-full rounded-full bg-surface-container-low overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-tertiary transition-all"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-4 pt-4 border-t border-surface-container-low flex items-center justify-between">
+        <span className="text-xs font-semibold text-on-surface">{t('common.total')}</span>
+        <span className="text-sm font-bold tabular-nums text-tertiary">
+          {formatCurrency(invoiceTotal)}
+        </span>
+      </div>
+    </>
+  )
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
       {/* ── Header: back + card name + invoice navigation ─────────────────── */}
@@ -252,6 +354,25 @@ export default function CreditCardPage() {
 
         {/* M-56: invoice period navigation, moved here from the summary card footer */}
         <div className="flex items-center gap-2">
+          {/* dassan/mobile-invoice-filter: mobile has no room for a dedicated filter sidebar
+              (the spending summary is desktop-only, M-31), so search/category filtering lives
+              behind this header toggle instead of being buried below the transaction list. */}
+          {invoiceTransactions.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setFilterExpanded((v) => !v)}
+              aria-label={t('creditCard.filterPlaceholder')}
+              aria-expanded={filterExpanded}
+              className={cn(
+                'lg:hidden flex h-8 w-8 items-center justify-center rounded-full transition-colors',
+                hasActiveFilter
+                  ? 'bg-primary/15 text-primary'
+                  : 'bg-surface-container-low text-on-surface/60 hover:bg-surface-container-high'
+              )}
+            >
+              <Search size={14} />
+            </button>
+          )}
           <button
             onClick={() => setPeriodOffset((o) => o - 1)}
             aria-label={t('creditCard.previousMonth')}
@@ -269,9 +390,144 @@ export default function CreditCardPage() {
         </div>
       </div>
 
+      {/* Mobile: search + category filter, revealed by the header toggle above */}
+      {filterExpanded && invoiceTransactions.length > 0 && (
+        <div
+          className={cn('lg:hidden rounded-2xl bg-surface-container p-4 space-y-2', shadowClass)}
+        >
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search
+                size={14}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t('creditCard.searchPlaceholder')}
+                className="w-full rounded-xl bg-surface-container-low py-2 pl-8 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            {hasActiveFilter && (
+              <button
+                type="button"
+                aria-label={t('creditCard.allCategories')}
+                onClick={clearFilters}
+                className="shrink-0 rounded-full p-1.5 text-on-surface/40 hover:bg-surface-container-high hover:text-on-surface/70 transition-colors"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          {categoryOptions.length > 0 && (
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="w-full appearance-none rounded-xl bg-surface-container-low py-2 px-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="all">{t('creditCard.allCategories')}</option>
+              {categoryOptions.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+
       {/* ── Invoice period + summary card (full width) ────────────────────── */}
-      <div className={cn('rounded-2xl bg-surface-container p-6', shadowClass)}>
-        <div className="flex items-start justify-between gap-4">
+      {/* dassan/detalhes-cartao: mobile gets its own stacked arrangement — the desktop
+          two-column layout squeezed period/limit/total/button into an unreadable block on
+          narrow screens. `sm:` matches useIsMobile's breakpoint. */}
+      <div className={cn('rounded-2xl bg-surface-container p-5 sm:p-6', shadowClass)}>
+        {/* Mobile layout */}
+        <div className="sm:hidden space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-on-surface/40 uppercase tracking-widest">
+              {t('creditCard.invoicePeriod')}
+            </p>
+            <InvoiceStatusBadge status={invoiceStatus} />
+          </div>
+          <h2 className="text-3xl font-bold text-on-surface -mt-2">{monthLabel}</h2>
+
+          {closingDateStr && dueDateStr && (
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <p className="text-[10px] text-on-surface/40 uppercase tracking-wider">
+                  {t('creditCard.closingDate')}
+                </p>
+                <p className="text-xs font-semibold text-on-surface">
+                  {parseDateLocal(closingDateStr).toLocaleDateString(i18n.language, {
+                    day: '2-digit',
+                    month: 'short',
+                  })}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] text-on-surface/40 uppercase tracking-wider">
+                  {t('creditCard.dueDate')}
+                </p>
+                <p className="text-xs font-semibold text-tertiary">
+                  {parseDateLocal(dueDateStr).toLocaleDateString(i18n.language, {
+                    day: '2-digit',
+                    month: 'short',
+                  })}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] text-on-surface/40 uppercase tracking-wider">
+                  {t('accounts.availableLimit')}
+                </p>
+                <p
+                  className={cn(
+                    'text-xs font-semibold tabular-nums',
+                    availableLimit < 0 ? 'text-tertiary' : 'text-primary'
+                  )}
+                >
+                  {formatCurrency(availableLimit)}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="border-t border-surface-container-low pt-3 space-y-1">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-on-surface/40 uppercase tracking-widest">
+                {t('dashboard.invoice')}
+              </p>
+              <p className="text-2xl font-bold tabular-nums text-on-surface">
+                {formatCurrency(invoiceTotal)}
+              </p>
+            </div>
+            {/* Option 2: payments are tracked against this period — show Pago/Restante */}
+            {invoicePaid > 0 && (
+              <div className="flex items-center justify-between text-[11px] tabular-nums">
+                <span className="text-on-surface/50">
+                  {t('creditCard.paid')} {formatCurrency(invoicePaid)}
+                </span>
+                <span className={cn(invoiceRemaining > 0.005 ? 'text-tertiary' : 'text-primary')}>
+                  {t('creditCard.remaining')} {formatCurrency(Math.max(invoiceRemaining, 0))}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* M-30: opens dedicated PayInvoiceModal instead of generic TransactionDrawer.
+              M-57: hidden (not just disabled) once the invoice is fully paid. */}
+          {invoiceStatus !== 'paid' && (
+            <button
+              onClick={() => setShowPayModal(true)}
+              className="w-full rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
+            >
+              {t('creditCard.payNow')}
+            </button>
+          )}
+        </div>
+
+        {/* Desktop layout (unchanged) */}
+        <div className="hidden sm:flex sm:items-start sm:justify-between gap-4">
           {/* Left: period info */}
           <div className="flex-1">
             <p className="label text-xs text-on-surface/40 uppercase tracking-widest mb-1">
@@ -359,10 +615,13 @@ export default function CreditCardPage() {
         </div>
       </div>
 
-      {/* ── M-31: Two-column layout: list | filter + spending summary ─────── */}
-      <div className="grid grid-cols-3 gap-6 items-start">
+      {/* ── M-31: two-column layout: list | filter + spending summary ─────── */}
+      {/* dassan/detalhes-cartao: below `lg` the sidebar collapses under the list — a 3-col
+          grid left no room for it on phones. `lg` matches Transactions' MB-11 sidebar-to-bar
+          breakpoint. */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* Left column: transaction list */}
-        <div className="col-span-2 space-y-4">
+        <div className="lg:col-span-2 space-y-4">
           {/* Transaction list */}
           <div className={cn('rounded-2xl bg-surface-container overflow-hidden', shadowClass)}>
             {filteredTransactions.length === 0 ? (
@@ -383,110 +642,17 @@ export default function CreditCardPage() {
           </div>
         </div>
 
-        {/* Right column: category filter + spending summary (sticky) */}
-        <div className="col-span-1 sticky top-8 space-y-4">
-          {/* M-54/M-55: collapsible filter bar (search + category), replaces the M-31 chips */}
-          {invoiceTransactions.length > 0 && (
-            <div className={cn('rounded-2xl bg-surface-container overflow-hidden', shadowClass)}>
-              <div className="flex items-center gap-1 px-4 py-3">
-                <button
-                  type="button"
-                  onClick={() => setFilterExpanded((v) => !v)}
-                  className="flex flex-1 items-center gap-2 min-w-0 text-sm text-on-surface/60 hover:text-on-surface/80 transition-colors"
-                >
-                  <Filter size={14} className="shrink-0" />
-                  <span className="truncate">
-                    {filterCategory !== 'all'
-                      ? categoryOptions.find((c) => c.id === filterCategory)?.name
-                      : searchQuery.trim()
-                        ? searchQuery
-                        : t('creditCard.filterPlaceholder')}
-                  </span>
-                  <ChevronDown
-                    size={14}
-                    className={cn(
-                      'shrink-0 ml-auto transition-transform',
-                      filterExpanded && 'rotate-180'
-                    )}
-                  />
-                </button>
-                {hasActiveFilter && (
-                  <button
-                    type="button"
-                    aria-label={t('creditCard.allCategories')}
-                    onClick={clearFilters}
-                    className="shrink-0 rounded-full p-1 text-on-surface/40 hover:bg-surface-container-high hover:text-on-surface/70 transition-colors"
-                  >
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
-              {filterExpanded && (
-                <div className="px-4 pb-3 space-y-2">
-                  <div className="relative">
-                    <Search
-                      size={14}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface/40"
-                    />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder={t('creditCard.searchPlaceholder')}
-                      className="w-full rounded-xl bg-surface-container-low py-2 pl-8 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
-                    />
-                  </div>
-                  {categoryOptions.length > 0 && (
-                    <select
-                      value={filterCategory}
-                      onChange={(e) => setFilterCategory(e.target.value)}
-                      className="w-full appearance-none rounded-xl bg-surface-container-low py-2 px-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/20"
-                    >
-                      <option value="all">{t('creditCard.allCategories')}</option>
-                      {categoryOptions.map((cat) => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
+        {/* Right column: category filter + spending summary (sticky, desktop-only —
+            dassan/mobile-invoice-filter: on mobile the spending summary is dropped and
+            filtering moved to the header toggle above) */}
+        <div className="hidden lg:block lg:col-span-1 lg:sticky lg:top-8 space-y-4">
+          {filterBarNode}
           {categoryTotals.length > 0 && (
             <div className={cn('rounded-2xl bg-surface-container p-6', shadowClass)}>
               <h3 className="text-sm font-semibold text-on-surface mb-4">
                 {t('creditCard.spendingSummary')}
               </h3>
-              <div className="space-y-3">
-                {categoryTotals.map(({ name, total }) => {
-                  const pct = invoiceTotal > 0 ? (total / invoiceTotal) * 100 : 0
-                  return (
-                    <div key={name}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs text-on-surface/70">{name}</span>
-                        <span className="text-xs font-semibold tabular-nums text-on-surface">
-                          {formatCurrency(total)}
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full rounded-full bg-surface-container-low overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-tertiary transition-all"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="mt-4 pt-4 border-t border-surface-container-low flex items-center justify-between">
-                <span className="text-xs font-semibold text-on-surface">{t('common.total')}</span>
-                <span className="text-sm font-bold tabular-nums text-tertiary">
-                  {formatCurrency(invoiceTotal)}
-                </span>
-              </div>
+              {spendingSummaryContent}
             </div>
           )}
         </div>
@@ -655,6 +821,7 @@ function PayInvoiceModal({
   onConfirm: (amount: number, date: string, fromAccountId: string) => void
 }) {
   const { t } = useTranslation()
+  const isMobile = useIsMobile()
 
   const [amountStr, setAmountStr] = useState(defaultAmount.toFixed(2).replace('.', ','))
   const [amount, setAmount] = useState(defaultAmount)
@@ -675,6 +842,99 @@ function PayInvoiceModal({
   }
 
   const referenceLabel = `${monthLabel} ${resolvedPeriod.year}`
+
+  // dassan/detalhes-cartao: shared between the desktop centered dialog and the mobile
+  // bottom sheet (MobileSheet), so the form itself doesn't have to be duplicated.
+  const formFields = (
+    <>
+      {/* Reference month (read-only) */}
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-on-surface/40 mb-1">
+          {t('creditCard.referenceMonth')}
+        </p>
+        <p className="text-sm font-medium text-on-surface">{referenceLabel}</p>
+      </div>
+
+      {/* Amount */}
+      <div>
+        <label className="text-[10px] font-semibold uppercase tracking-wider text-on-surface/40 block mb-2">
+          {t('transactions.amount')}
+        </label>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-on-surface/40 pointer-events-none">
+            R$
+          </span>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={amountStr}
+            onChange={handleAmountInput}
+            className="w-full rounded-xl bg-surface-container-low py-3 pl-9 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </div>
+      </div>
+
+      {/* Date */}
+      <div>
+        <label className="text-[10px] font-semibold uppercase tracking-wider text-on-surface/40 block mb-2">
+          {t('transactions.date')}
+        </label>
+        <DatePicker
+          value={date}
+          onChange={setDate}
+          className="w-full rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      {/* From account */}
+      <div>
+        <label className="text-[10px] font-semibold uppercase tracking-wider text-on-surface/40 block mb-2">
+          {t('transactions.account')}
+        </label>
+        <div className="relative">
+          <select
+            value={fromAccountId}
+            onChange={(e) => setFromAccountId(e.target.value)}
+            className="w-full appearance-none rounded-xl bg-surface-container-low py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            {nonCreditAccounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+            {nonCreditAccounts.length === 0 && <option value="">{t('common.noData')}</option>}
+          </select>
+          <ChevronDown
+            size={16}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface/40 pointer-events-none"
+          />
+        </div>
+      </div>
+
+      {/* Confirm */}
+      <button
+        onClick={() => onConfirm(amount, date, fromAccountId)}
+        disabled={amount === 0 || !fromAccountId}
+        className="w-full rounded-2xl bg-primary py-3.5 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40"
+      >
+        {t('creditCard.payInvoice')}
+      </button>
+    </>
+  )
+
+  if (isMobile) {
+    return (
+      <MobileSheet
+        open
+        onClose={onClose}
+        ariaLabel={t('creditCard.payInvoice')}
+        contentClassName="px-5 pb-6 space-y-5"
+      >
+        <h3 className="text-base font-semibold text-on-surface">{t('creditCard.payInvoice')}</h3>
+        {formFields}
+      </MobileSheet>
+    )
+  }
 
   return (
     <>
@@ -701,78 +961,7 @@ function PayInvoiceModal({
             </button>
           </div>
 
-          {/* Reference month (read-only) */}
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-on-surface/40 mb-1">
-              {t('creditCard.referenceMonth')}
-            </p>
-            <p className="text-sm font-medium text-on-surface">{referenceLabel}</p>
-          </div>
-
-          {/* Amount */}
-          <div>
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-on-surface/40 block mb-2">
-              {t('transactions.amount')}
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-on-surface/40 pointer-events-none">
-                R$
-              </span>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={amountStr}
-                onChange={handleAmountInput}
-                className="w-full rounded-xl bg-surface-container-low py-3 pl-9 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-          </div>
-
-          {/* Date */}
-          <div>
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-on-surface/40 block mb-2">
-              {t('transactions.date')}
-            </label>
-            <DatePicker
-              value={date}
-              onChange={setDate}
-              className="w-full rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
-
-          {/* From account */}
-          <div>
-            <label className="text-[10px] font-semibold uppercase tracking-wider text-on-surface/40 block mb-2">
-              {t('transactions.account')}
-            </label>
-            <div className="relative">
-              <select
-                value={fromAccountId}
-                onChange={(e) => setFromAccountId(e.target.value)}
-                className="w-full appearance-none rounded-xl bg-surface-container-low py-3 pl-4 pr-9 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                {nonCreditAccounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-                {nonCreditAccounts.length === 0 && <option value="">{t('common.noData')}</option>}
-              </select>
-              <ChevronDown
-                size={16}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface/40 pointer-events-none"
-              />
-            </div>
-          </div>
-
-          {/* Confirm */}
-          <button
-            onClick={() => onConfirm(amount, date, fromAccountId)}
-            disabled={amount === 0 || !fromAccountId}
-            className="w-full rounded-2xl bg-primary py-3.5 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97] disabled:opacity-40"
-          >
-            {t('creditCard.payInvoice')}
-          </button>
+          {formFields}
         </div>
       </div>
     </>
