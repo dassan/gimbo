@@ -1,10 +1,10 @@
 ﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import TransactionDrawer from '@/components/TransactionDrawer'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '@/test/fixtures/dataFile'
-import { getTxInvoicePeriod, invoicePeriodKey } from '@/lib/utils'
+import { getTxInvoicePeriod, invoicePeriodKey, todayStr } from '@/lib/utils'
 import type { Transaction } from '@/types'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -589,6 +589,57 @@ describe('TransactionDrawer — CC-23: installment section', () => {
     await userEvent.click(toggle)
 
     expect(screen.queryByText('transactions.isPaid')).not.toBeInTheDocument()
+  })
+})
+
+// ─── M-81: isPaid defaults to date (past/today = on, future = off) ──────────
+
+describe('TransactionDrawer — M-81: isPaid default follows date', () => {
+  it('defaults isPaid on for a new transaction (today)', () => {
+    renderDrawer()
+    const toggle = screen.getByRole('switch', { name: 'transactions.isPaid' })
+    expect(toggle).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('turns isPaid off when the date is moved to the future', () => {
+    const { container } = renderDrawer()
+    const toggle = screen.getByRole('switch', { name: 'transactions.isPaid' })
+    expect(toggle).toHaveAttribute('aria-checked', 'true')
+
+    const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement
+    const futureDate = new Date()
+    futureDate.setDate(futureDate.getDate() + 5)
+    fireEvent.change(dateInput, { target: { value: futureDate.toISOString().slice(0, 10) } })
+
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('turns isPaid back on when the date moves from the future back to today', () => {
+    const { container } = renderDrawer()
+    const toggle = screen.getByRole('switch', { name: 'transactions.isPaid' })
+    const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement
+
+    const futureDate = new Date()
+    futureDate.setDate(futureDate.getDate() + 5)
+    fireEvent.change(dateInput, { target: { value: futureDate.toISOString().slice(0, 10) } })
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+
+    fireEvent.change(dateInput, { target: { value: todayStr() } })
+    expect(toggle).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('lets the user manually re-enable isPaid on a future-dated transaction', async () => {
+    const { container } = renderDrawer()
+    const toggle = screen.getByRole('switch', { name: 'transactions.isPaid' })
+    const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement
+
+    const futureDate = new Date()
+    futureDate.setDate(futureDate.getDate() + 5)
+    fireEvent.change(dateInput, { target: { value: futureDate.toISOString().slice(0, 10) } })
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+
+    await userEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-checked', 'true')
   })
 })
 

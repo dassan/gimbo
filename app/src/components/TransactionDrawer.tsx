@@ -205,7 +205,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
         setCategoryId('')
         setDescription('')
         setSelectedTags([])
-        setIsPaid(false)
+        setIsPaid(true)
       }
       setInstallmentsEnabled(false)
       setInstallmentCount(2)
@@ -266,6 +266,15 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
     // M-80: suggestions are scoped to the current type — stale matches don't carry over
     setShowDescSuggestions(false)
     setActiveSuggestionIndex(-1)
+  }
+
+  // M-81: picking a future date defaults isPaid off (nothing to pay yet); past/today dates
+  // default it back on. The user can still flip the switch manually either way afterward.
+  // Only applies where the isPaid toggle is actually shown — CREDIT purchases force it off
+  // regardless of date (handleAccountChange), so leave those alone here.
+  function handleDateChange(newDate: string) {
+    setDate(newDate)
+    if (showIsPaidToggle) setIsPaid(newDate <= todayStr())
   }
 
   // Shared by the manual account Select and the description-suggestion autofill (M-80): reset
@@ -626,7 +635,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                 />
                 <DatePicker
                   value={date}
-                  onChange={setDate}
+                  onChange={handleDateChange}
                   className="w-full rounded-xl bg-surface-container-low py-3 pl-9 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
@@ -634,6 +643,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                 <button
                   role="switch"
                   aria-checked={isPaid}
+                  aria-label={t('transactions.isPaid')}
                   onClick={() => setIsPaid((v) => !v)}
                   className={cn(
                     'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
