@@ -445,31 +445,40 @@ export default function Health() {
         </div>
       </div>
 
-      {/* ── Callout educativo ──────────────────────────────────────────────── */}
-      <div
-        className="flex gap-3 rounded-xl p-4"
-        style={{ backgroundColor: '#FEF3DC', borderLeft: '3px solid #D4A017' }}
-      >
-        <Info
-          size={16}
-          strokeWidth={1.5}
-          className="mt-0.5 shrink-0"
-          style={{ color: '#A87B0C' }}
-        />
-        <div>
-          <p className="text-sm font-semibold" style={{ color: '#6B4E07' }}>
-            {t('health.insightTitle')}
-          </p>
-          <p className="mt-0.5 text-[13px] leading-relaxed" style={{ color: '#6B4E07' }}>
-            {t('health.insightBody')}
-          </p>
-        </div>
-      </div>
-
       {/* ── Detalhamento das dívidas (expansível) ──────────────────────────── */}
       <div className="space-y-3">
         <div className="flex items-center justify-between px-1">
-          <h2 className="text-base font-semibold text-on-surface">{t('health.detailTitle')}</h2>
+          <h2 className="flex items-center gap-1.5 text-base font-semibold text-on-surface">
+            {t('health.detailTitle')}
+            <span className="group relative inline-flex">
+              <Info
+                size={14}
+                strokeWidth={1.5}
+                className="cursor-help text-on-surface/40"
+                aria-hidden="true"
+              />
+              <div
+                role="tooltip"
+                className="pointer-events-none absolute left-0 top-full z-20 mt-2 hidden w-64 gap-3 rounded-xl p-4 shadow-lg group-hover:flex"
+                style={{ backgroundColor: '#FEF3DC', borderLeft: '3px solid #D4A017' }}
+              >
+                <Info
+                  size={16}
+                  strokeWidth={1.5}
+                  className="mt-0.5 shrink-0"
+                  style={{ color: '#A87B0C' }}
+                />
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: '#6B4E07' }}>
+                    {t('health.insightTitle')}
+                  </p>
+                  <p className="mt-0.5 text-[13px] leading-relaxed" style={{ color: '#6B4E07' }}>
+                    {t('health.insightBody')}
+                  </p>
+                </div>
+              </div>
+            </span>
+          </h2>
           {debtGroups.length > 0 && (
             <label className="flex items-center gap-2 text-xs text-on-surface/50">
               <span>{t('health.sortBy')}</span>

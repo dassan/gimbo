@@ -363,7 +363,7 @@
     "importErrorCode": "Código: {{code}}",
     "backupSync": "Backup & Sync",
     "backupLocalSection": "Pasta Local",
-    "backupLocalDesc": "Salva uma cópia do seu cofre automaticamente a cada gravação. Se a pasta estiver dentro do Google Drive, Dropbox ou OneDrive, seus dados ficam protegidos na nuvem sem configuração adicional.",
+    "backupLocalDesc": "Salva uma cópia do seu cofre automaticamente a cada gravação. Se a pasta estiver dentro do Google Drive, Dropbox ou OneDrive, seus dados ficam protegidos na nuvem sem configuração adicional. Nota: este mecanismo funciona apenas em navegadores baseados no Chromium.",
     "backupConfigure": "Configurar pasta",
     "backupRemove": "Remover",
     "backupLastSaved": "Último backup:",
