@@ -32,7 +32,12 @@ import {
 import { isDemoMode } from '@/lib/demo'
 import { trackAction } from '@/lib/telemetry'
 import { measure } from '@/lib/perfMonitor'
-import { applyQuadrantesRecipe, findQuadranteForDate, QUADRANTE_SLUG } from '@/lib/budgetRecipes'
+import {
+  applyQuadrantesRecipe,
+  refreshQuadrantesSuggestions,
+  findQuadranteForDate,
+  QUADRANTE_SLUG,
+} from '@/lib/budgetRecipes'
 import { diffTransactions } from '@/lib/storage/transactionDiff'
 
 // ─── Debounce helper ──────────────────────────────────────────────────────────
@@ -164,6 +169,12 @@ interface DataStore {
   syncStatus: 'idle' | 'syncing' | 'error' | 'offline'
   lastSyncedAt: string | null
 
+  // BX-12: ephemeral (not part of DataFile — never persisted/synced) notice count for the
+  // "sugestão de meta por histórico" fallback toast, set whenever a Quadrantes batch generation
+  // has ≥1 slot without enough history. AppLayout renders it, null = nothing to show.
+  quadrantesSuggestionFallbackCount: number | null
+  dismissQuadrantesSuggestionNotice: () => void
+
   loadData: (data: DataFile) => void
   clearData: () => void
   // CS-15: reads every peer device-*.db newer than the last recorded merge, folds them into
@@ -219,12 +230,17 @@ interface DataStore {
   setRetentionLimit: (limit: number | null) => void
   // BX-07: liga/desliga a receita Quadrantes; ligar já dispara a geração do lote corrente.
   setQuadrantesEnabled: (enabled: boolean) => void
+  // BX-12: liga/desliga a sugestão de meta por histórico; só afeta a próxima geração de slot
+  // (nunca gera lote na hora — diferente de setQuadrantesEnabled).
+  setQuadrantesInferFromHistory: (enabled: boolean) => void
 }
 
 export const useDataStore = create<DataStore>((set, get) => ({
   data: null,
   syncStatus: 'idle',
   lastSyncedAt: null,
+  quadrantesSuggestionFallbackCount: null,
+  dismissQuadrantesSuggestionNotice: () => set({ quadrantesSuggestionFallbackCount: null }),
 
   loadData: (data) => {
     _lastPersisted = data
@@ -781,7 +797,15 @@ export const useDataStore = create<DataStore>((set, get) => ({
         s,
         (d) => {
           const i = d.budgets.findIndex((b) => b.id === budget.id)
-          if (i !== -1) d.budgets[i] = { ...budget, updatedAt: now() }
+          if (i !== -1) {
+            const prev = d.budgets[i]
+            // BX-12 (revisão): editar a meta de uma caixinha de receita à mão trava a cadeia de
+            // herança em 'manual' — nenhum recálculo por histórico futuro mexe mais nesse slot,
+            // mesmo religando a flag depois (plan/BUDGETS.md §5.9.1).
+            const targetSource: Budget['targetSource'] =
+              budget.recipeSlug && budget.target !== prev.target ? 'manual' : budget.targetSource
+            d.budgets[i] = { ...budget, targetSource, updatedAt: now() }
+          }
           addAudit(
             d,
             makeEntry('UPDATE', 'budget', budget.id, buildSummary('UPDATE', 'budget', budget.name))
@@ -894,12 +918,24 @@ export const useDataStore = create<DataStore>((set, get) => ({
       if (!s.data || !s.data.settings.quadrantesEnabled) return {}
       const data = structuredClone(s.data)
       const ts = now()
-      if (!applyQuadrantesRecipe(data.budgets, todayStr(), ts)) return {}
+      const result = applyQuadrantesRecipe(
+        data.budgets,
+        data.transactions,
+        data.settings.quadrantesInferFromHistory,
+        todayStr(),
+        ts
+      )
+      if (!result.changed) return {}
       addAudit(data, makeEntry('CREATE', 'budget', 'quadrantes', 'Quadrantes: lote mensal gerado'))
       data.settings.fileUpdatedAt = ts
       debouncedApplyMutation(data)
       trackAction('quadrantes_batch_generated')
-      return { data }
+      return {
+        data,
+        ...(result.suggestionFallbackSlots.length > 0 && {
+          quadrantesSuggestionFallbackCount: result.suggestionFallbackSlots.length,
+        }),
+      }
     }),
 
   // ── User / Settings ───────────────────────────────────────────────────────
@@ -935,15 +971,68 @@ export const useDataStore = create<DataStore>((set, get) => ({
       data.settings.fileUpdatedAt = ts
       // Ligar já gera o lote do mês corrente na hora — o usuário não precisa recarregar a
       // página pra ver os 4 quadrantes aparecerem.
-      if (enabled && applyQuadrantesRecipe(data.budgets, todayStr(), ts)) {
-        addAudit(
-          data,
-          makeEntry('CREATE', 'budget', 'quadrantes', 'Quadrantes: lote mensal gerado')
+      let fallbackCount: number | undefined
+      if (enabled) {
+        const result = applyQuadrantesRecipe(
+          data.budgets,
+          data.transactions,
+          data.settings.quadrantesInferFromHistory,
+          todayStr(),
+          ts
         )
+        if (result.changed) {
+          addAudit(
+            data,
+            makeEntry('CREATE', 'budget', 'quadrantes', 'Quadrantes: lote mensal gerado')
+          )
+        }
+        if (result.suggestionFallbackSlots.length > 0) {
+          fallbackCount = result.suggestionFallbackSlots.length
+        }
       }
       debouncedApplyMutation(data)
       trackAction('quadrantes_toggle')
-      return { data }
+      return {
+        data,
+        ...(fallbackCount !== undefined && { quadrantesSuggestionFallbackCount: fallbackCount }),
+      }
+    }),
+
+  setQuadrantesInferFromHistory: (enabled) =>
+    set((s) => {
+      if (!s.data) return {}
+      const data = structuredClone(s.data)
+      const ts = now()
+      data.settings.quadrantesInferFromHistory = enabled
+      data.settings.fileUpdatedAt = ts
+
+      // BX-12 (revisão): ligar a flag recalcula na hora os quadrantes visíveis que ainda não
+      // foram confirmados manualmente — sem isso, a sugestão nunca teria efeito prático (a
+      // "primeira geração" de cada slot já passou assim que a receita foi ligada uma vez).
+      let fallbackCount: number | undefined
+      if (enabled) {
+        const result = refreshQuadrantesSuggestions(data.budgets, data.transactions, todayStr(), ts)
+        if (result.changed) {
+          addAudit(
+            data,
+            makeEntry(
+              'UPDATE',
+              'budget',
+              'quadrantes',
+              'Quadrantes: metas recalculadas pelo histórico'
+            )
+          )
+        }
+        if (result.suggestionFallbackSlots.length > 0) {
+          fallbackCount = result.suggestionFallbackSlots.length
+        }
+      }
+
+      debouncedApplyMutation(data)
+      return {
+        data,
+        ...(fallbackCount !== undefined && { quadrantesSuggestionFallbackCount: fallbackCount }),
+      }
     }),
 }))
 

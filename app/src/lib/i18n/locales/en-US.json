@@ -86,8 +86,11 @@
     "quadrantesHint": "Generates 4 budgets per month (days 1–8, 9–16, 17–24, 25–end) and auto-links expenses by date.",
     "otherBudgets": "Other budgets",
     "recipeSettings": "Recipe settings",
-    "recipeNoConfigYet": "This recipe doesn't have any additional settings yet.",
-    "backToPreferences": "Back to Preferences"
+    "backToPreferences": "Back to Preferences",
+    "quadrantesInferLabel": "Suggest target from history",
+    "quadrantesInferHint": "Immediately recomputes any target you haven't confirmed by hand, from the median of the last 6 months of expenses in each day range — just a starting point, editable anytime. Targets you've already edited are never overwritten.",
+    "suggestionFallbackToast_one": "1 quadrant had no history to suggest from — target set manually.",
+    "suggestionFallbackToast_other": "{{count}} quadrants had no history to suggest from — targets set manually."
   },
   "onboarding": {
     "headline": "Your Ledger,\nYour Freedom.",

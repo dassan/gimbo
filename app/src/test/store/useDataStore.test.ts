@@ -1374,6 +1374,63 @@ describe('updateBudget', () => {
       .updateBudget(makeBudget({ target: 2000, createdAt: '2026-01-01T00:00:00.000Z' }))
     expect(useDataStore.getState().data?.budgets[0].createdAt).toBe('2026-01-01T00:00:00.000Z')
   })
+
+  // ─── BX-12 (revisão): editar a meta trava a cadeia de herança ───────────────
+
+  it('sets targetSource to manual when the target of a recipe budget actually changes', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [
+          makeBudget({
+            target: 0,
+            targetSource: 'auto',
+            recipeSlug: 'quadrantes',
+            recipeSlot: 1,
+          }),
+        ],
+      }),
+    })
+    useDataStore.getState().updateBudget(
+      makeBudget({
+        target: 500,
+        targetSource: 'auto',
+        recipeSlug: 'quadrantes',
+        recipeSlot: 1,
+      })
+    )
+    expect(useDataStore.getState().data?.budgets[0].targetSource).toBe('manual')
+  })
+
+  it('does not touch targetSource when the target is unchanged', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [
+          makeBudget({
+            target: 500,
+            targetSource: 'auto',
+            recipeSlug: 'quadrantes',
+            recipeSlot: 1,
+          }),
+        ],
+      }),
+    })
+    useDataStore.getState().updateBudget(
+      makeBudget({
+        name: 'Novo nome',
+        target: 500,
+        targetSource: 'auto',
+        recipeSlug: 'quadrantes',
+        recipeSlot: 1,
+      })
+    )
+    expect(useDataStore.getState().data?.budgets[0].targetSource).toBe('auto')
+  })
+
+  it('never sets targetSource on a manual (non-recipe) budget', () => {
+    useDataStore.setState({ data: makeDataFile({ budgets: [makeBudget({ target: 1000 })] }) })
+    useDataStore.getState().updateBudget(makeBudget({ target: 2000 }))
+    expect(useDataStore.getState().data?.budgets[0].targetSource).toBeUndefined()
+  })
 })
 
 describe('deleteBudget', () => {
@@ -1563,6 +1620,139 @@ describe('setQuadrantesEnabled', () => {
     useDataStore.getState().setQuadrantesEnabled(false)
     expect(useDataStore.getState().data!.budgets).toHaveLength(4)
     expect(useDataStore.getState().data!.settings.quadrantesEnabled).toBe(false)
+  })
+})
+
+// ─── Sugestão de meta por histórico (F-30/BX-12) ───────────────────────────────
+
+describe('setQuadrantesInferFromHistory', () => {
+  beforeEach(() => {
+    useDataStore.setState({ quadrantesSuggestionFallbackCount: null })
+  })
+
+  it('persists the toggle', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    useDataStore.getState().setQuadrantesInferFromHistory(true)
+    expect(useDataStore.getState().data!.settings.quadrantesInferFromHistory).toBe(true)
+  })
+
+  it('does not generate new budgets when none exist yet', () => {
+    useDataStore.setState({ data: makeDataFile() })
+    useDataStore.getState().setQuadrantesInferFromHistory(true)
+    expect(useDataStore.getState().data!.budgets).toHaveLength(0)
+  })
+
+  // BX-12 (revisão) — o cenário reportado pelo usuário: a receita já está ligada (metas em 0,
+  // targetSource 'auto'), e só depois a flag é ligada. Sem o recálculo imediato, isso nunca
+  // teria efeito nenhum (a "primeira geração" já passou).
+  it('immediately recomputes existing auto-sourced budgets when turned on', () => {
+    const transactions = [
+      makeTransaction({ id: 't1', date: '2026-05-03', amount: 200, isPaid: true }),
+      makeTransaction({ id: 't2', date: '2026-06-04', amount: 100, isPaid: true }),
+      makeTransaction({ id: 't3', date: '2026-07-05', amount: 300, isPaid: true }),
+    ]
+    useDataStore.setState({
+      data: makeDataFile({
+        transactions,
+        budgets: [
+          makeBudget({
+            id: 'q-1',
+            target: 0,
+            targetSource: 'auto',
+            recipeSlug: 'quadrantes',
+            recipeSlot: 1,
+            period: { mode: 'range', start: '2026-08-01', end: '2026-08-08' },
+          }),
+        ],
+      }),
+    })
+    useDataStore.getState().setQuadrantesInferFromHistory(true)
+    expect(useDataStore.getState().data!.budgets[0].target).toBe(200) // mediana de 100/200/300
+  })
+
+  it('never touches a budget already confirmed manually (targetSource: manual)', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        transactions: [
+          makeTransaction({ id: 't1', date: '2026-07-05', amount: 999, isPaid: true }),
+        ],
+        budgets: [
+          makeBudget({
+            id: 'q-1',
+            target: 123,
+            targetSource: 'manual',
+            recipeSlug: 'quadrantes',
+            recipeSlot: 1,
+            period: { mode: 'range', start: '2026-08-01', end: '2026-08-08' },
+          }),
+        ],
+      }),
+    })
+    useDataStore.getState().setQuadrantesInferFromHistory(true)
+    expect(useDataStore.getState().data!.budgets[0].target).toBe(123)
+  })
+
+  it('reports the fallback count when an eligible budget has no history to suggest from', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        budgets: [
+          makeBudget({
+            id: 'q-1',
+            target: 0,
+            targetSource: 'auto',
+            recipeSlug: 'quadrantes',
+            recipeSlot: 1,
+            period: { mode: 'range', start: '2026-08-01', end: '2026-08-08' },
+          }),
+        ],
+      }),
+    })
+    useDataStore.getState().setQuadrantesInferFromHistory(true)
+    expect(useDataStore.getState().quadrantesSuggestionFallbackCount).toBe(1)
+  })
+})
+
+describe('quadrantesSuggestionFallbackCount notice', () => {
+  beforeEach(() => {
+    useDataStore.setState({ quadrantesSuggestionFallbackCount: null })
+  })
+
+  it('ensureQuadrantesBatch sets the fallback count when inferFromHistory is on and there is no history', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        settings: {
+          ...makeDataFile().settings,
+          quadrantesEnabled: true,
+          quadrantesInferFromHistory: true,
+        },
+      }),
+    })
+    useDataStore.getState().ensureQuadrantesBatch()
+    expect(useDataStore.getState().quadrantesSuggestionFallbackCount).toBe(4)
+  })
+
+  it('ensureQuadrantesBatch leaves the notice null when inferFromHistory is off', () => {
+    useDataStore.setState({
+      data: makeDataFile({ settings: { ...makeDataFile().settings, quadrantesEnabled: true } }),
+    })
+    useDataStore.getState().ensureQuadrantesBatch()
+    expect(useDataStore.getState().quadrantesSuggestionFallbackCount).toBeNull()
+  })
+
+  it('setQuadrantesEnabled(true) sets the fallback count the same way', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        settings: { ...makeDataFile().settings, quadrantesInferFromHistory: true },
+      }),
+    })
+    useDataStore.getState().setQuadrantesEnabled(true)
+    expect(useDataStore.getState().quadrantesSuggestionFallbackCount).toBe(4)
+  })
+
+  it('dismissQuadrantesSuggestionNotice clears the notice', () => {
+    useDataStore.setState({ quadrantesSuggestionFallbackCount: 4 })
+    useDataStore.getState().dismissQuadrantesSuggestionNotice()
+    expect(useDataStore.getState().quadrantesSuggestionFallbackCount).toBeNull()
   })
 })
 

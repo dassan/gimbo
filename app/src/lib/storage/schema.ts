@@ -5,7 +5,7 @@ import { detectBrowserLocale, defaultCurrencyForLocale } from '@/lib/storage/wor
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 17
+export const CURRENT_SCHEMA_VERSION = 19
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -36,6 +36,7 @@ const SettingsSchema = z.object({
   fileUpdatedAt: z.string(),
   auditLogRetentionLimit: z.number().nullable(),
   quadrantesEnabled: z.boolean().default(false), // F-30/BX-07; absent in older files defaults to false
+  quadrantesInferFromHistory: z.boolean().default(false), // F-30/BX-12; absent in older files defaults to false
 })
 
 const CreditMetadataSchema = z.object({
@@ -164,6 +165,7 @@ const BudgetSchema = z.object({
   recipeSlot: z.number().int().min(1).max(4).optional(),
   updatedAt: z.string().optional(), // CS-04: last-write-wins timestamp for the cloud-sync merge engine
   createdAt: z.string().optional(), // BX-06/U-3: drives the "Criação" sort, distinct from updatedAt
+  targetSource: z.enum(['auto', 'manual']).optional(), // F-30/BX-12; only meaningful with recipeSlug
 })
 
 const AuditEntrySchema = z.object({
@@ -341,6 +343,21 @@ function migrateDataFile(data: DataFile): DataFile {
     migrated = { ...migrated, schemaVersion: 17 }
   }
 
+  // v17 → v18: adds optional quadrantesInferFromHistory (Settings) — opt-in "sugerir meta pelo
+  // histórico" config for the Quadrantes recipe (F-30/BX-12). Zod-defaulted to false via
+  // DataFileSchema.parse, so existing records only need the version bump.
+  if (migrated.schemaVersion === 17) {
+    migrated = { ...migrated, schemaVersion: 18 }
+  }
+
+  // v18 → v19: adds optional targetSource (Budget) — tracks whether a recipe budget's target
+  // came from herança/sugestão ('auto') or a human edit ('manual'), F-30/BX-12 revision. No shape
+  // change beyond the bump — absent targetSource is treated as 'manual' at the call sites
+  // (conservative: never silently reinterprets old data as eligible for auto-recompute).
+  if (migrated.schemaVersion === 18) {
+    migrated = { ...migrated, schemaVersion: 19 }
+  }
+
   return migrated
 }
 
@@ -356,6 +373,7 @@ export function createEmptyDataFile(name: string): DataFile {
       fileUpdatedAt: ts,
       auditLogRetentionLimit: AUDIT_RETENTION_DEFAULT,
       quadrantesEnabled: false,
+      quadrantesInferFromHistory: false,
     },
     accounts: [],
     categories: getDefaultCategories(),

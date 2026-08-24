@@ -892,6 +892,57 @@ export function deriveMonthlyCost(
   }
 }
 
+// ─── Caixinhas — Quadrantes recipe target suggestion (F-30/BX-12) ────────────
+//
+// Same shape as deriveMonthlyCost above (median over up to windowMonths complete calendar
+// months, months without data excluded — not counted as zero — 0 months → null so the caller
+// falls back to manual entry), but bucketed by which slot's day-of-month range a transaction
+// falls in, not by the whole month. Only used on the first-ever generation of a recipeSlot
+// (plan/BUDGETS.md §5.9.1) — budgetRecipes.ts decides when to call it; this stays a pure
+// derivation with no notion of "first generation".
+
+export interface QuadranteTargetSuggestion {
+  /** null when there's no qualified expense history in the window — caller should fall back. */
+  value: number | null
+  /** How many of the last windowMonths complete calendar months had qualified expenses in this slot. */
+  confidenceMonths: number
+}
+
+function _daySlot(day: number): 1 | 2 | 3 | 4 {
+  if (day <= 8) return 1
+  if (day <= 16) return 2
+  if (day <= 24) return 3
+  return 4
+}
+
+export function suggestQuadranteTarget(
+  transactions: Transaction[],
+  slot: 1 | 2 | 3 | 4,
+  referenceDate: string,
+  windowMonths = 6
+): QuadranteTargetSuggestion {
+  const referenceMonthKey = _monthKey(referenceDate)
+
+  const sumsByMonth = new Map<string, number>()
+  for (const tx of transactions) {
+    if (tx.type !== 'EXPENSE' || !isCashRealized(tx)) continue
+    if (_daySlot(Number(tx.date.slice(8, 10))) !== slot) continue
+    const key = _monthKey(tx.date)
+    if (key >= referenceMonthKey) continue
+    sumsByMonth.set(key, (sumsByMonth.get(key) ?? 0) + tx.amount)
+  }
+
+  const monthlyValues = _monthsBefore(referenceMonthKey, windowMonths)
+    .filter((key) => sumsByMonth.has(key))
+    .map((key) => sumsByMonth.get(key) as number)
+
+  if (monthlyValues.length === 0) {
+    return { value: null, confidenceMonths: 0 }
+  }
+
+  return { value: _median(monthlyValues), confidenceMonths: monthlyValues.length }
+}
+
 /**
  * Returns the date that should be used when plotting a transaction on the
  * cash-flow chart.

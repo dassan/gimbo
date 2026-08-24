@@ -1,7 +1,9 @@
 // Configurações — subpágina de uma receita (BX-13, plan/BUDGETS.md §5.9.2).
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
-import { ChevronLeft, Sparkles } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
+import { useDataStore } from '@/store/useDataStore'
+import { cn } from '@/lib/utils'
 
 // Só existe uma receita hoje (Quadrantes) — a lista cresce quando uma segunda receita
 // for proposta, sem precisar generalizar o schema (plan/BUDGETS.md §5.9.2).
@@ -13,6 +15,8 @@ export default function RecipeSettings() {
   const { t } = useTranslation()
   const { slug } = useParams<{ slug?: string }>()
   const labelKey = slug ? RECIPE_LABEL_KEYS[slug] : undefined
+  const data = useDataStore((s) => s.data)
+  const setQuadrantesInferFromHistory = useDataStore((s) => s.setQuadrantesInferFromHistory)
 
   if (!labelKey) {
     return (
@@ -31,11 +35,38 @@ export default function RecipeSettings() {
         <h1 className="text-xl font-semibold text-on-surface">{t(labelKey)}</h1>
       </div>
 
-      {/* BX-12 (sugestão de meta por histórico) ainda não implementada — placeholder por ora. */}
-      <div className="flex flex-col items-center gap-3 rounded-2xl bg-surface-container-lowest px-6 py-16 text-center shadow-card border-[0.5px] border-surface-container-high">
-        <Sparkles size={32} strokeWidth={1.25} className="text-on-surface/25" />
-        <p className="max-w-sm text-xs text-on-surface/40">{t('budgets.recipeNoConfigYet')}</p>
-      </div>
+      {slug === 'quadrantes' && (
+        <div className="rounded-2xl bg-surface-container px-5 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm text-on-surface">{t('budgets.quadrantesInferLabel')}</p>
+              <p className="text-xs text-on-surface/40 mt-0.5">
+                {t('budgets.quadrantesInferHint')}
+              </p>
+            </div>
+            <button
+              onClick={() =>
+                setQuadrantesInferFromHistory(!data?.settings.quadrantesInferFromHistory)
+              }
+              aria-label={t('budgets.quadrantesInferLabel')}
+              aria-pressed={data?.settings.quadrantesInferFromHistory ?? false}
+              className={cn(
+                'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200',
+                data?.settings.quadrantesInferFromHistory
+                  ? 'bg-primary'
+                  : 'bg-surface-container-high'
+              )}
+            >
+              <span
+                className={cn(
+                  'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 mt-0.5',
+                  data?.settings.quadrantesInferFromHistory ? 'translate-x-5' : 'translate-x-0.5'
+                )}
+              />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

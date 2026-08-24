@@ -338,16 +338,50 @@ ver revisão em §5.6.
 - **É sugestão, não automação**: só pré-preenche o campo de meta no momento em que o usuário digitaria
   o valor manualmente; ele aceita, edita ou ignora antes de salvar. Nunca grava o `target` sem
   passar pela mesma tela/confirmação que já existe hoje.
-- **Restrita à primeira geração do slot** — nunca recalculada nas viradas de mês seguintes. A
-  herança de meta entre meses (§5.6, "cada novo lote herda o `target` da última caixinha existente
-  com aquele `recipeSlot`") continua exatamente como está; a sugestão por histórico só entra na
-  criação de uma instância nova de slot que ainda não tem de quem herdar. **Não é meta rolante** —
-  decisão explícita do mantenedor para não abrir esse escopo agora.
+- ~~Restrita à primeira geração do slot — nunca recalculada nas viradas de mês seguintes.~~
+  **Revisado abaixo (2026-08-24) — ver segunda nota de revisão.** A herança de meta entre meses
+  (§5.6, "cada novo lote herda o `target` da última caixinha existente com aquele `recipeSlot`")
+  continua intocada — a mecânica de herança em si nunca vira meta rolante — mas o *gatilho* da
+  sugestão deixou de ser "é a primeira geração do slot" (na prática, um evento único na vida
+  inteira de cada slot, quase inatingível pelo usuário — ver a nota de revisão).
 - **Fallback sem histórico suficiente**: se não houver dados o bastante no slot (conta nova, poucos
   meses de uso, ou um slot específico sem nenhum gasto na janela de 6 meses), a sugestão não é
   calculada — o campo fica vazio para preenchimento manual, com um **toast informativo** explicando o
   motivo (ex.: "Sem histórico suficiente no Quadrante 2 para sugerir uma meta — defina o valor
   manualmente."). Nunca sugere R$ 0 nem bloqueia a criação do lote.
+
+> **Resolvido em 2026-08-24 (`BX-12`, ver `plan/BACKLOG.md`).** Um ponto de "É sugestão, não
+> automação" acima mereceu uma leitura pragmática na implementação: como a geração do lote mensal já
+> era **automática e silenciosa** desde a `BX-07` (sem nenhuma tela/modal no momento da criação — o
+> usuário só vê/edita a meta depois, abrindo a caixinha), não existe um "campo" para pré-preencher
+> literalmente. A sugestão em vez disso vira o valor inicial de `target` diretamente (no lugar do `0`
+> de sempre), continuando 100% editável pelo fluxo normal de edição — nunca bloqueia nem exige
+> confirmação, mas também não pausa o boot silencioso para perguntar nada. Decisão validada com o
+> humano em `EnterPlanMode` antes da implementação.
+
+> **Revisado em 2026-08-24 (mesmo dia, `BX-12` correção) — bug real achado pelo mantenedor ao usar
+> a feature.** O gatilho original ("sugestão só na primeira geração do slot, sem `lastInstance`")
+> não é um evento que se repete a cada ativação — é uma janela **única na vida inteira de cada
+> slot**: uma vez que qualquer instância de um `recipeSlot` já existiu (mesmo arquivada, mesmo
+> excluída-e-recriada, BX-07 já garante isso), toda geração futura sempre acha um `lastInstance`
+> pra herdar, para sempre. Como a engrenagem "Sugerir meta pelo histórico" só é alcançável depois
+> que "Receita Quadrantes" já está ligada (mesma linha, `RecipeSettings.tsx`), a sequência real do
+> usuário — ligar a receita primeiro, achar a engrenagem depois — chegava sempre tarde demais: a
+> janela já tinha fechado no instante em que a receita foi ligada a primeira vez. Na prática, ligar
+> a flag depois de já usar a receita **nunca tinha efeito nenhum**.
+>
+> **Correção:** novo campo `Budget.targetSource: 'auto' | 'manual'` — `'auto'` enquanto a meta veio
+> de herança/sugestão e ninguém a confirmou à mão; `'manual'` a partir do instante em que o usuário
+> edita a meta de uma caixinha de receita (trava a cadeia pra sempre, mesmo religando a flag depois).
+> O gatilho da sugestão deixou de ser "é a primeira geração" e virou "o usuário ligou a flag agora"
+> (`setQuadrantesInferFromHistory(true)`, `lib/budgetRecipes.ts` → `refreshQuadrantesSuggestions`):
+> recalcula na hora toda caixinha Quadrantes **ativa** com `targetSource !== 'manual'`. Continua não
+> sendo meta rolante — a virada de mês (`applyQuadrantesRecipe`) segue herança pura, sem recalcular
+> nada; o recálculo só acontece nesse momento pontual, disparado pelo usuário. Schema:
+> `CURRENT_SCHEMA_VERSION` 18→19 (memória), `PRAGMA user_version` 14→15 (físico,
+> `migrations/v15.sql`). Decisão (entre duas propostas — a outra era um proxy mais simples,
+> `target === 0`) tomada com o humano: `targetSource` explícito evita o risco de sobrescrever
+> silenciosamente uma meta que o usuário genuinamente quisesse manter em R$ 0.
 
 #### 5.9.2 Tela de gestão de receitas (generaliza o toggle único de §5.6)
 

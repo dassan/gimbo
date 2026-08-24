@@ -19,6 +19,7 @@ import TransactionDrawer from '@/components/TransactionDrawer'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import WelcomeModal from '@/components/WelcomeModal'
 import PerfPanel from '@/components/PerfPanel'
+import Toast from '@/components/Toast'
 import type { Transaction } from '@/types'
 
 export interface AppLayoutContext {
@@ -73,6 +74,11 @@ export default function AppLayout() {
   const [multiDeviceBannerDismissed, setMultiDeviceBannerDismissed] = useState(false)
   const syncStatus = useDataStore((s) => s.syncStatus)
   const runPeerSync = useDataStore((s) => s.runPeerSync)
+  // F-30/BX-12: fallback toast for the Quadrantes "sugerir meta pelo histórico" config — set
+  // whenever ensureQuadrantesBatch/setQuadrantesEnabled generates a batch with ≥1 slot that had
+  // no history to suggest from.
+  const quadrantesSuggestionFallbackCount = useDataStore((s) => s.quadrantesSuggestionFallbackCount)
+  const dismissQuadrantesSuggestionNotice = useDataStore((s) => s.dismissQuadrantesSuggestionNotice)
 
   async function handleReconnectMultiDeviceSync() {
     const handle = backupHandle ?? (await loadBackupDirHandle())
@@ -206,6 +212,15 @@ export default function AppLayout() {
             <X size={14} strokeWidth={2} />
           </button>
         </div>
+      )}
+
+      {quadrantesSuggestionFallbackCount !== null && (
+        <Toast
+          message={t('budgets.suggestionFallbackToast', {
+            count: quadrantesSuggestionFallbackCount,
+          })}
+          onDismiss={dismissQuadrantesSuggestionNotice}
+        />
       )}
 
       {/* max-sm: compensate for the full nav height (h-16 = 4rem + device safe area).

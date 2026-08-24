@@ -690,11 +690,11 @@ describe('Settings — BX-13: gestão de receitas', () => {
     expect(useDataStore.getState().data?.settings.quadrantesEnabled).toBe(true)
   })
 
-  it('the gear navigates to the recipe subpage and shows the placeholder', async () => {
+  it('the gear navigates to the recipe subpage and shows its config (BX-12)', async () => {
     const user = await openPreferences()
     await user.click(screen.getByRole('link', { name: 'budgets.recipeSettings' }))
     expect(screen.getByTestId('location-display')).toHaveTextContent('/settings/recipes/quadrantes')
-    expect(screen.getByText('budgets.recipeNoConfigYet')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'budgets.quadrantesInferLabel' })).toBeInTheDocument()
   })
 
   it('the back link on the subpage returns to Preferences', async () => {
@@ -707,5 +707,24 @@ describe('Settings — BX-13: gestão de receitas', () => {
   it('an unknown recipe slug falls back to "no data"', async () => {
     renderSettings('/settings/recipes/nao-existe')
     expect(await screen.findByText('common.noData')).toBeInTheDocument()
+  })
+})
+
+// ─── Settings — BX-12: sugestão de meta por histórico ────────────────────────
+
+describe('Settings — BX-12: sugestão de meta por histórico', () => {
+  it('the toggle defaults to off', () => {
+    renderSettings('/settings/recipes/quadrantes')
+    expect(screen.getByRole('button', { name: 'budgets.quadrantesInferLabel' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
+  })
+
+  it('clicking the toggle persists settings.quadrantesInferFromHistory', async () => {
+    const user = userEvent.setup()
+    renderSettings('/settings/recipes/quadrantes')
+    await user.click(screen.getByRole('button', { name: 'budgets.quadrantesInferLabel' }))
+    expect(useDataStore.getState().data?.settings.quadrantesInferFromHistory).toBe(true)
   })
 })

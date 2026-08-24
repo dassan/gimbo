@@ -86,8 +86,11 @@
     "quadrantesHint": "Gera 4 caixinhas por mês (dias 1–8, 9–16, 17–24, 25–fim) e associa despesas automaticamente por data.",
     "otherBudgets": "Outras caixinhas",
     "recipeSettings": "Configurações da receita",
-    "recipeNoConfigYet": "Esta receita ainda não tem configurações adicionais.",
-    "backToPreferences": "Voltar para Preferências"
+    "backToPreferences": "Voltar para Preferências",
+    "quadrantesInferLabel": "Sugerir meta pelo histórico",
+    "quadrantesInferHint": "Recalcula agora as metas ainda não confirmadas manualmente, com base na mediana dos últimos 6 meses de despesas em cada intervalo de dias — só um ponto de partida, editável a qualquer momento. Metas já editadas à mão nunca são sobrescritas.",
+    "suggestionFallbackToast_one": "1 quadrante sem histórico suficiente — meta definida manualmente.",
+    "suggestionFallbackToast_other": "{{count}} quadrantes sem histórico suficiente — metas definidas manualmente."
   },
   "onboarding": {
     "headline": "Seu Ledger,\nSua Liberdade.",
