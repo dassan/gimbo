@@ -17,6 +17,7 @@ function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
       fileUpdatedAt: '2026-01-01T00:00:00.000Z',
       auditLogRetentionLimit: 200,
       quadrantesEnabled: false,
+      quadrantesInferFromHistory: false,
     },
     accounts: [],
     categories: [],
@@ -189,6 +190,7 @@ describe('mergeForSync', () => {
         fileUpdatedAt: daysAgo(3),
         auditLogRetentionLimit: 2,
         quadrantesEnabled: false,
+        quadrantesInferFromHistory: false,
       },
     })
     const remote = makeDataFile({
@@ -207,6 +209,7 @@ describe('mergeForSync', () => {
         fileUpdatedAt: '2026-01-01T00:00:00.000Z',
         auditLogRetentionLimit: 200,
         quadrantesEnabled: false,
+        quadrantesInferFromHistory: false,
       },
     })
     const remote = makeDataFile({
@@ -215,6 +218,7 @@ describe('mergeForSync', () => {
         fileUpdatedAt: '2026-03-01T00:00:00.000Z',
         auditLogRetentionLimit: 200,
         quadrantesEnabled: false,
+        quadrantesInferFromHistory: false,
       },
     })
     const result = mergeForSync(local, remote)

@@ -36,6 +36,7 @@ export interface Settings {
   fileUpdatedAt: string // ISO 8601
   auditLogRetentionLimit: number | null // null = unlimited (opt-in); default 200
   quadrantesEnabled: boolean // F-30/BX-07: opt-in "Quadrantes" recipe (plan/BUDGETS.md §5.6); default false
+  quadrantesInferFromHistory: boolean // F-30/BX-12: opt-in "sugerir meta pelo histórico" (§5.9.1); default false
 }
 
 export interface CreditMetadata {
@@ -173,6 +174,10 @@ export interface Budget {
   recipeSlot?: number // 1-4 — only set alongside recipeSlug, identifies which slot in the monthly batch
   updatedAt?: string // ISO 8601 — last-write-wins timestamp for the cloud-sync merge engine (CS-04)
   createdAt?: string // ISO 8601 — when the caixinha was created, distinct from updatedAt (drives the "Criação" sort, BX-06/U-3)
+  // F-30/BX-12: only meaningful alongside recipeSlug — 'auto' = target came from the recipe
+  // (herança or a history suggestion), never touched by a human; 'manual' = the user edited the
+  // target directly, which locks the slot out of any future auto-recompute (plan/BUDGETS.md §5.9.1)
+  targetSource?: 'auto' | 'manual'
 }
 
 // ─── Root data.json shape ─────────────────────────────────────────────────────

@@ -773,7 +773,10 @@ CREATE TABLE IF NOT EXISTS settings (
   audit_log_retention_limit INTEGER,
   -- F-30/BX-07/app schema v12: toggle da receita "Quadrantes", nunca populado pelo Organizze
   -- (mesmo motivo das colunas LOAN/reserva acima).
-  quadrantes_enabled INTEGER NOT NULL DEFAULT 0
+  quadrantes_enabled INTEGER NOT NULL DEFAULT 0,
+  -- F-30/BX-12/app schema v14: "sugerir meta pelo histórico" da receita Quadrantes, nunca
+  -- populado pelo Organizze (mesmo motivo da coluna acima).
+  quadrantes_infer_from_history INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS accounts (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL,
@@ -836,7 +839,10 @@ CREATE TABLE IF NOT EXISTS budgets (
   kind TEXT NOT NULL, target REAL NOT NULL,
   period_mode TEXT NOT NULL, period_date TEXT, period_start TEXT, period_end TEXT,
   archived_at TEXT, recipe_slug TEXT, recipe_slot INTEGER,
-  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  -- F-30/BX-12/app schema v15: 'auto'|'manual', nunca populado pelo Organizze (script não gera
+  -- caixinhas, mesma limitação já documentada em CLAUDE.md).
+  target_source TEXT
 );
 CREATE TABLE IF NOT EXISTS transaction_budgets (
   transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
@@ -854,7 +860,7 @@ CREATE INDEX IF NOT EXISTS idx_valuations_date ON valuations(date);
 CREATE INDEX IF NOT EXISTS idx_transaction_budgets_tx ON transaction_budgets(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_transaction_budgets_budget ON transaction_budgets(budget_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_date_created ON transactions(date DESC, created_at DESC);
-PRAGMA user_version = 13;
+PRAGMA user_version = 15;
 """
 
 

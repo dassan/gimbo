@@ -213,7 +213,10 @@ a v1:
   universo `EXPENSE`, não há filtro por categoria (isso exigiria a classificação `budgetType` de
   categoria, etapa `PL-01` de `FINANCIAL_PLAN.md`, fora de escopo por ora).
 - **Origem da meta**: os 4 valores são digitados manualmente pelo usuário na primeira vez que a
-  receita gera o lote do mês.
+  receita gera o lote do mês. **Sugestão opcional por histórico (2026-08-24, decisão completa em
+  §5.9):** com a configuração "Sugerir meta pelo histórico" habilitada (opt-in, default desligado), o
+  campo chega pré-preenchido com a mediana das despesas realizadas nos últimos 6 meses naquele mesmo
+  slot — só uma sugestão, o usuário aceita ou edita livremente antes de salvar.
 - **Virada de mês**: automática e silenciosa — ao carregar `/budgets` (ou no boot do app), se a
   receita estiver ativa, a checagem é "já existem caixinhas com `recipeSlug='quadrantes'` cujo
   período cobre o mês corrente?"; se não, cria as 4. Checagem por existência, não por tempo
@@ -267,13 +270,26 @@ a v1:
   é um conceito de produto (um módulo opt-in que gera caixinhas), não uma abstração técnica genérica
   na v1. Não existe registro/gestão de "receitas" plural, nem tela pra habilitar/configurar múltiplas
   receitas — é um toggle único ("Quadrantes") em Preferências, com a lógica de geração específica
-  dela. Se e quando uma segunda receita for proposta, aí sim vale generalizar.
+  dela. ~~Se e quando uma segunda receita for proposta, aí sim vale generalizar.~~
+
+  > **Revisado em 2026-08-24 — ver §5.9.** Generalizado antes de existir uma segunda receita de fato:
+  > o gatilho não foi "receita 2 chegou", foi uma segunda opção de configuração dentro da própria
+  > Quadrantes (sugestão de meta por histórico) somada à intenção declarada do mantenedor de propor
+  > outras receitas em breve (fora de escopo desta sessão, ainda em estudo — o app pretende virar
+  > ferramenta de migração para quem já tem histórico financeiro em outro app, caso de uso pessoal do
+  > próprio mantenedor com 11 anos de dados no Organizze). Decisão consciente de generalizar com N=1
+  > receita real, não N=2 — aceita porque o custo da tela em si é pequeno e a alternativa (inline em
+  > Preferências) já estava ficando apertada com uma segunda config por receita.
+
+#### Gestão de receitas (v2, decidido em 2026-08-24 — ver §5.9)
+
+Tela dedicada em Preferências, substituindo o toggle único solto: cada receita ganha uma linha
+(nome + toggle habilitar/desabilitar + ícone de engrenagem); a engrenagem abre uma subpágina de
+configurações específica daquela receita. Ver §5.9 para o desenho completo e para a primeira
+configuração real que ela hospeda (sugestão de meta por histórico, Quadrantes).
 
 #### Pendente para uma iteração futura (registrado a pedido, não priorizado)
 
-- **Gestão de receitas**: se/quando existir mais de uma receita, como o usuário administra isso —
-  uma tela própria, lista de receitas ativas/disponíveis, configuração por receita? Adiado a pedido
-  (2026-08-10): a v1 não precisa disso (ver bullet acima).
 - **Tracking de "meses bem-sucedidos"**: histórico de quantos meses o usuário ficou dentro da meta
   em cada quadrante (ou no agregado dos 4), para dar visibilidade de tendência/consistência ao longo
   do tempo. Não desenhado ainda — nem a definição de "sucesso" (ficar ≤ 100% da meta? dos 4
@@ -300,6 +316,95 @@ Um único campo cobre os dois caminhos (§5.6 automático e §5.7 manual): `arch
 8601, ausente/`undefined` = caixinha ativa. Timestamp em vez de `boolean` pelo mesmo custo de
 implementação, mas guarda "quando" de graça — útil pra ordenar/filtrar na futura tela de consulta
 de arquivadas (v2) sem precisar de outro campo depois.
+
+### 5.9 Framework de receitas + sugestão de meta por histórico (2026-08-24)
+
+Motivação de produto: o mantenedor está migrando 11 anos de histórico financeiro do Organizze para o
+Gimbo (via `scripts/sync_gimbo.py`) e pretende, em um futuro breve (ainda em estudo, fora de escopo
+desta decisão), oferecer isso como ferramenta para outras pessoas migrarem de seus controles atuais.
+Para quem já chega com histórico real, digitar a meta dos 4 Quadrantes "no escuro" desperdiça um dado
+que o app já tem. As duas decisões abaixo foram tomadas juntas porque a segunda opção de configuração
+da Quadrantes (a sugestão) é o próprio gatilho que tornou a tela de receitas genérica necessária —
+ver revisão em §5.6.
+
+#### 5.9.1 Sugestão de meta por histórico (Quadrantes)
+
+- **Opt-in, aninhado sob a receita**: só aparece/faz efeito se "Quadrantes" já estiver habilitada.
+  Configuração própria, **default desligado** — nunca muda o comportamento de quem não pediu.
+- **Método**: mediana das despesas realizadas (`EXPENSE`, `isCashRealized` — mesmo critério de P-6)
+  dentro do intervalo de dias daquele slot especificamente (ex.: Quadrante 2 = dia 9–16), uma
+  observação por mês, olhando os **últimos 6 meses**. Mediana, não média — um mês fora da curva
+  (conserto, viagem) não deve puxar a sugestão para cima ou para baixo.
+- **É sugestão, não automação**: só pré-preenche o campo de meta no momento em que o usuário digitaria
+  o valor manualmente; ele aceita, edita ou ignora antes de salvar. Nunca grava o `target` sem
+  passar pela mesma tela/confirmação que já existe hoje.
+- ~~Restrita à primeira geração do slot — nunca recalculada nas viradas de mês seguintes.~~
+  **Revisado abaixo (2026-08-24) — ver segunda nota de revisão.** A herança de meta entre meses
+  (§5.6, "cada novo lote herda o `target` da última caixinha existente com aquele `recipeSlot`")
+  continua intocada — a mecânica de herança em si nunca vira meta rolante — mas o *gatilho* da
+  sugestão deixou de ser "é a primeira geração do slot" (na prática, um evento único na vida
+  inteira de cada slot, quase inatingível pelo usuário — ver a nota de revisão).
+- **Fallback sem histórico suficiente**: se não houver dados o bastante no slot (conta nova, poucos
+  meses de uso, ou um slot específico sem nenhum gasto na janela de 6 meses), a sugestão não é
+  calculada — o campo fica vazio para preenchimento manual, com um **toast informativo** explicando o
+  motivo (ex.: "Sem histórico suficiente no Quadrante 2 para sugerir uma meta — defina o valor
+  manualmente."). Nunca sugere R$ 0 nem bloqueia a criação do lote.
+
+> **Resolvido em 2026-08-24 (`BX-12`, ver `plan/BACKLOG.md`).** Um ponto de "É sugestão, não
+> automação" acima mereceu uma leitura pragmática na implementação: como a geração do lote mensal já
+> era **automática e silenciosa** desde a `BX-07` (sem nenhuma tela/modal no momento da criação — o
+> usuário só vê/edita a meta depois, abrindo a caixinha), não existe um "campo" para pré-preencher
+> literalmente. A sugestão em vez disso vira o valor inicial de `target` diretamente (no lugar do `0`
+> de sempre), continuando 100% editável pelo fluxo normal de edição — nunca bloqueia nem exige
+> confirmação, mas também não pausa o boot silencioso para perguntar nada. Decisão validada com o
+> humano em `EnterPlanMode` antes da implementação.
+
+> **Revisado em 2026-08-24 (mesmo dia, `BX-12` correção) — bug real achado pelo mantenedor ao usar
+> a feature.** O gatilho original ("sugestão só na primeira geração do slot, sem `lastInstance`")
+> não é um evento que se repete a cada ativação — é uma janela **única na vida inteira de cada
+> slot**: uma vez que qualquer instância de um `recipeSlot` já existiu (mesmo arquivada, mesmo
+> excluída-e-recriada, BX-07 já garante isso), toda geração futura sempre acha um `lastInstance`
+> pra herdar, para sempre. Como a engrenagem "Sugerir meta pelo histórico" só é alcançável depois
+> que "Receita Quadrantes" já está ligada (mesma linha, `RecipeSettings.tsx`), a sequência real do
+> usuário — ligar a receita primeiro, achar a engrenagem depois — chegava sempre tarde demais: a
+> janela já tinha fechado no instante em que a receita foi ligada a primeira vez. Na prática, ligar
+> a flag depois de já usar a receita **nunca tinha efeito nenhum**.
+>
+> **Correção:** novo campo `Budget.targetSource: 'auto' | 'manual'` — `'auto'` enquanto a meta veio
+> de herança/sugestão e ninguém a confirmou à mão; `'manual'` a partir do instante em que o usuário
+> edita a meta de uma caixinha de receita (trava a cadeia pra sempre, mesmo religando a flag depois).
+> O gatilho da sugestão deixou de ser "é a primeira geração" e virou "o usuário ligou a flag agora"
+> (`setQuadrantesInferFromHistory(true)`, `lib/budgetRecipes.ts` → `refreshQuadrantesSuggestions`):
+> recalcula na hora toda caixinha Quadrantes **ativa** com `targetSource !== 'manual'`. Continua não
+> sendo meta rolante — a virada de mês (`applyQuadrantesRecipe`) segue herança pura, sem recalcular
+> nada; o recálculo só acontece nesse momento pontual, disparado pelo usuário. Schema:
+> `CURRENT_SCHEMA_VERSION` 18→19 (memória), `PRAGMA user_version` 14→15 (físico,
+> `migrations/v15.sql`). Decisão (entre duas propostas — a outra era um proxy mais simples,
+> `target === 0`) tomada com o humano: `targetSource` explícito evita o risco de sobrescrever
+> silenciosamente uma meta que o usuário genuinamente quisesse manter em R$ 0.
+
+#### 5.9.2 Tela de gestão de receitas (generaliza o toggle único de §5.6)
+
+- **Onde**: nova entrada em Preferências (Settings), substituindo a linha única do toggle
+  "Quadrantes" hoje solta na seção. Lista de receitas — hoje uma linha, a "Quadrantes" — cada uma
+  com: nome, toggle habilitar/desabilitar (mesmo comportamento do toggle atual, só reposicionado) e
+  um ícone de engrenagem.
+- **Engrenagem → subpágina dedicada**: clicar na engrenagem de uma receita navega para uma
+  subpágina de configurações só dela (padrão de rota a definir na implementação — provavelmente
+  `/settings` com um sub-estado, no mesmo espírito de `activeSection` já usado em `Settings/index.tsx`,
+  em vez de uma rota top-level nova). É nessa subpágina que mora, por exemplo, o toggle "Sugerir meta
+  pelo histórico" de §5.9.1 — a engrenagem só aparece/faz sentido quando a receita tem alguma
+  configuração além de ligar/desligar.
+- **Generalização deliberadamente pequena**: isso não introduz uma entidade "Receita" no schema nem
+  um registro plugável de receitas — continua sendo o mesmo conceito de produto de §5.6 (módulo
+  opt-in hardcoded). O que generaliza é só a **camada de apresentação** (lista + navegação para
+  subpágina); a lógica de geração de cada receita continua sendo código específico dela, e a
+  configuração de cada receita (ex.: `Settings.quadrantesInferFromHistory`) continua um campo próprio
+  em `Settings`, não uma entrada num bag genérico — decisão a revisitar só se/quando o número de
+  campos por receita começar a doer.
+- **Sync**: `Settings.quadrantesInferFromHistory` (nome provisório) segue o mesmo tratamento de
+  `Settings.quadrantesEnabled` — campo sincronizado entre dispositivos, não preferência local de
+  `WorkspaceFile`.
 
 ---
 

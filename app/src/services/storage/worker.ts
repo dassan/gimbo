@@ -20,6 +20,8 @@ import v10Schema from './migrations/v10.sql?raw'
 import v11Schema from './migrations/v11.sql?raw'
 import v12Schema from './migrations/v12.sql?raw'
 import v13Schema from './migrations/v13.sql?raw'
+import v14Schema from './migrations/v14.sql?raw'
+import v15Schema from './migrations/v15.sql?raw'
 import { ERR_DB_UNREADABLE, ERR_SCHEMA_TOO_NEW } from './errors'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
@@ -45,6 +47,7 @@ type RawSettings = {
   fileUpdatedAt: string
   auditLogRetentionLimit: number | null
   quadrantesEnabled: boolean
+  quadrantesInferFromHistory: boolean
 }
 type RawAccount = {
   id: string
@@ -126,6 +129,7 @@ type RawBudget = {
   recipeSlot?: number
   updatedAt?: string
   createdAt?: string
+  targetSource?: string
 }
 type RawDataFile = {
   user: RawUser
@@ -169,7 +173,7 @@ const DB_FILENAME = 'gimbo.db'
 // this number was written by a newer app build and must be skipped, not partially migrated.
 // Bump this alongside every new migrations/vN.sql (same trap as data/sync_gimbo.py — see
 // CLAUDE.md "Armadilha recorrente").
-const MAX_KNOWN_DB_VERSION = 13
+const MAX_KNOWN_DB_VERSION = 15
 
 // ─── Initialization ───────────────────────────────────────────────────────────
 
@@ -215,6 +219,8 @@ const MIGRATIONS: ReadonlyArray<readonly [version: number, sql: string]> = [
   [11, v11Schema],
   [12, v12Schema],
   [13, v13Schema],
+  [14, v14Schema],
+  [15, v15Schema],
 ]
 
 // Applies pending migrations to an arbitrary db pointer — the main `db` on every open, or a
@@ -483,12 +489,13 @@ async function writeSmallTables(d: RawDataFile, ts: string): Promise<void> {
   // settings
   await sqlite3.run(
     db,
-    "INSERT INTO settings (id, file_created_at, file_updated_at, audit_log_retention_limit, quadrantes_enabled) VALUES ('singleton', ?, ?, ?, ?)",
+    "INSERT INTO settings (id, file_created_at, file_updated_at, audit_log_retention_limit, quadrantes_enabled, quadrantes_infer_from_history) VALUES ('singleton', ?, ?, ?, ?, ?)",
     [
       d.settings.fileCreatedAt,
       d.settings.fileUpdatedAt,
       d.settings.auditLogRetentionLimit,
       d.settings.quadrantesEnabled ? 1 : 0,
+      d.settings.quadrantesInferFromHistory ? 1 : 0,
     ]
   )
 
@@ -560,8 +567,8 @@ async function writeSmallTables(d: RawDataFile, ts: string): Promise<void> {
       db,
       `INSERT INTO budgets
            (id, name, emoji, color, kind, target, period_mode, period_date, period_start, period_end,
-            archived_at, recipe_slug, recipe_slot, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            archived_at, recipe_slug, recipe_slot, created_at, updated_at, target_source)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         b.id,
         b.name,
@@ -578,6 +585,7 @@ async function writeSmallTables(d: RawDataFile, ts: string): Promise<void> {
         b.recipeSlot ?? null,
         b.createdAt ?? ts,
         b.updatedAt ?? ts,
+        b.targetSource ?? null,
       ]
     )
   }
@@ -1033,6 +1041,8 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       b.recipeSlot = r.recipe_slot as number
     if (r.updated_at !== null && r.updated_at !== undefined) b.updatedAt = r.updated_at as string
     if (r.created_at !== null && r.created_at !== undefined) b.createdAt = r.created_at as string
+    if (r.target_source !== null && r.target_source !== undefined)
+      b.targetSource = r.target_source as string
     return b
   })
 
@@ -1060,6 +1070,7 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       fileUpdatedAt: s.file_updated_at as string,
       auditLogRetentionLimit: s.audit_log_retention_limit as number | null,
       quadrantesEnabled: Boolean(s.quadrantes_enabled),
+      quadrantesInferFromHistory: Boolean(s.quadrantes_infer_from_history),
     },
     accounts,
     categories,

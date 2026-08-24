@@ -45,6 +45,7 @@ import {
   RotateCcw,
   Banknote,
   Umbrella,
+  Settings as SettingsIcon,
 } from 'lucide-react'
 import {
   loadBackupDirHandle,
@@ -252,6 +253,17 @@ const APP_SECTIONS: { key: Section; icon: React.ReactNode; labelKey: string }[] 
 ]
 const ALL_SECTIONS = [...DATA_SECTIONS, ...APP_SECTIONS]
 const SECTION_KEYS: Section[] = ALL_SECTIONS.map((s) => s.key)
+
+// F-30/BX-13: lista de receitas (plan/BUDGETS.md §5.9.2) — hoje 1 item; a engrenagem só
+// aparece quando a receita tem configuração real por trás (hasConfig).
+const RECIPES: { slug: string; labelKey: string; hintKey: string; hasConfig: boolean }[] = [
+  {
+    slug: 'quadrantes',
+    labelKey: 'budgets.quadrantesLabel',
+    hintKey: 'budgets.quadrantesHint',
+    hasConfig: true,
+  },
+]
 
 const ACTION_ICON: Record<AuditAction, React.ReactNode> = {
   CREATE: <PlusCircle size={14} className="text-primary" strokeWidth={2} />,
@@ -1183,35 +1195,49 @@ export default function Settings() {
                     </select>
                   </SettingRow>
 
-                  {/* F-30/BX-07: Quadrantes recipe toggle */}
-                  <div className="rounded-2xl bg-surface-container px-5 py-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-on-surface">{t('budgets.quadrantesLabel')}</p>
-                        <p className="text-xs text-on-surface/40 mt-0.5">
-                          {t('budgets.quadrantesHint')}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => setQuadrantesEnabled(!data?.settings.quadrantesEnabled)}
-                        aria-label={t('budgets.quadrantesLabel')}
-                        aria-pressed={data?.settings.quadrantesEnabled ?? false}
-                        className={cn(
-                          'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200',
-                          data?.settings.quadrantesEnabled
-                            ? 'bg-primary'
-                            : 'bg-surface-container-high'
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 mt-0.5',
-                            data?.settings.quadrantesEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                  {/* F-30/BX-13: lista de receitas — hoje 1 item (Quadrantes), já iterando
+                      sobre um array em vez de JSX fixo (plan/BUDGETS.md §5.9.2) */}
+                  {RECIPES.map((recipe) => (
+                    <div key={recipe.slug} className="rounded-2xl bg-surface-container px-5 py-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm text-on-surface">{t(recipe.labelKey)}</p>
+                          <p className="text-xs text-on-surface/40 mt-0.5">{t(recipe.hintKey)}</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {recipe.hasConfig && (
+                            <Link
+                              to={`/settings/recipes/${recipe.slug}`}
+                              aria-label={t('budgets.recipeSettings')}
+                              className="flex h-8 w-8 items-center justify-center rounded-xl text-on-surface/40 transition-colors hover:bg-surface-container-high hover:text-on-surface"
+                            >
+                              <SettingsIcon size={16} strokeWidth={1.5} />
+                            </Link>
                           )}
-                        />
-                      </button>
+                          <button
+                            onClick={() => setQuadrantesEnabled(!data?.settings.quadrantesEnabled)}
+                            aria-label={t(recipe.labelKey)}
+                            aria-pressed={data?.settings.quadrantesEnabled ?? false}
+                            className={cn(
+                              'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200',
+                              data?.settings.quadrantesEnabled
+                                ? 'bg-primary'
+                                : 'bg-surface-container-high'
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 mt-0.5',
+                                data?.settings.quadrantesEnabled
+                                  ? 'translate-x-5'
+                                  : 'translate-x-0.5'
+                              )}
+                            />
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ))}
 
                   {/* Audit log retention toggle */}
                   <div className="rounded-2xl bg-surface-container px-5 py-4 space-y-3">

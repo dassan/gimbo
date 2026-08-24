@@ -1,12 +1,28 @@
 import { describe, it, expect } from 'vitest'
 import {
   applyQuadrantesRecipe,
+  refreshQuadrantesSuggestions,
   findQuadranteForDate,
   quadranteRanges,
   QUADRANTE_COLOR,
   QUADRANTE_SLUG,
 } from '@/lib/budgetRecipes'
-import type { Budget } from '@/types'
+import type { Budget, Transaction } from '@/types'
+
+function makeExpense(overrides: Partial<Transaction> = {}): Transaction {
+  return {
+    id: 'tx-1',
+    accountId: 'acc-1',
+    categoryId: 'cat-1',
+    amount: 100,
+    type: 'EXPENSE',
+    date: '2026-07-05',
+    description: 'Test',
+    isPaid: true,
+    tags: [],
+    ...overrides,
+  }
+}
 
 function makeQuadrante(overrides: Partial<Budget> = {}): Budget {
   return {
@@ -47,7 +63,13 @@ describe('quadranteRanges', () => {
 describe('applyQuadrantesRecipe — geração (BX-07)', () => {
   it('generates 4 budgets on first activation, target 0, correct emoji/color/slot', () => {
     const budgets: Budget[] = []
-    const changed = applyQuadrantesRecipe(budgets, '2026-08-05', '2026-08-05T10:00:00.000Z')
+    const { changed } = applyQuadrantesRecipe(
+      budgets,
+      [],
+      false,
+      '2026-08-05',
+      '2026-08-05T10:00:00.000Z'
+    )
 
     expect(changed).toBe(true)
     expect(budgets).toHaveLength(4)
@@ -58,6 +80,7 @@ describe('applyQuadrantesRecipe — geração (BX-07)', () => {
       expect(b!.color).toBe(QUADRANTE_COLOR)
       expect(b!.kind).toBe('expense')
       expect(b!.target).toBe(0)
+      expect(b!.targetSource).toBe('auto') // BX-12 revisão: geração de verdade nunca é 'manual'
       expect(b!.recipeSlug).toBe(QUADRANTE_SLUG)
       expect(b!.archivedAt).toBeUndefined()
     }
@@ -70,8 +93,14 @@ describe('applyQuadrantesRecipe — geração (BX-07)', () => {
 
   it('is idempotent — a second call in the same month is a no-op', () => {
     const budgets: Budget[] = []
-    applyQuadrantesRecipe(budgets, '2026-08-05', '2026-08-05T10:00:00.000Z')
-    const changed = applyQuadrantesRecipe(budgets, '2026-08-20', '2026-08-20T10:00:00.000Z')
+    applyQuadrantesRecipe(budgets, [], false, '2026-08-05', '2026-08-05T10:00:00.000Z')
+    const { changed } = applyQuadrantesRecipe(
+      budgets,
+      [],
+      false,
+      '2026-08-20',
+      '2026-08-20T10:00:00.000Z'
+    )
 
     expect(changed).toBe(false)
     expect(budgets).toHaveLength(4)
@@ -92,7 +121,13 @@ describe('applyQuadrantesRecipe — geração (BX-07)', () => {
         period: { mode: 'range', start: '2026-07-09', end: '2026-07-16' },
       }),
     ]
-    const changed = applyQuadrantesRecipe(budgets, '2026-08-05', '2026-08-05T10:00:00.000Z')
+    const { changed } = applyQuadrantesRecipe(
+      budgets,
+      [],
+      false,
+      '2026-08-05',
+      '2026-08-05T10:00:00.000Z'
+    )
 
     expect(changed).toBe(true)
     const augBudgets = budgets.filter(
@@ -102,6 +137,32 @@ describe('applyQuadrantesRecipe — geração (BX-07)', () => {
     expect(augBudgets.find((b) => b.recipeSlot === 2)?.target).toBe(300)
     // Slots without a prior instance fall back to 0.
     expect(augBudgets.find((b) => b.recipeSlot === 3)?.target).toBe(0)
+  })
+
+  it('carries targetSource forward from the last instance (BX-12 revisão) — legacy data without the field defaults to manual', () => {
+    const budgets: Budget[] = [
+      makeQuadrante({
+        id: 'q-jul-1',
+        recipeSlot: 1,
+        target: 800,
+        targetSource: 'manual',
+        period: { mode: 'range', start: '2026-07-01', end: '2026-07-08' },
+      }),
+      makeQuadrante({
+        id: 'q-jul-2',
+        recipeSlot: 2,
+        target: 300,
+        targetSource: undefined, // dado antigo, de antes do campo existir
+        period: { mode: 'range', start: '2026-07-09', end: '2026-07-16' },
+      }),
+    ]
+    applyQuadrantesRecipe(budgets, [], false, '2026-08-05', '2026-08-05T10:00:00.000Z')
+
+    const augBudgets = budgets.filter(
+      (b) => b.period.mode === 'range' && b.period.start.startsWith('2026-08')
+    )
+    expect(augBudgets.find((b) => b.recipeSlot === 1)?.targetSource).toBe('manual')
+    expect(augBudgets.find((b) => b.recipeSlot === 2)?.targetSource).toBe('manual')
   })
 
   it('inherits from an archived instance, skipping months where the slot had no batch', () => {
@@ -115,7 +176,13 @@ describe('applyQuadrantesRecipe — geração (BX-07)', () => {
       }),
     ]
     // No July batch exists (simulates the app being closed for a month — no back-fill).
-    const changed = applyQuadrantesRecipe(budgets, '2026-08-05', '2026-08-05T10:00:00.000Z')
+    const { changed } = applyQuadrantesRecipe(
+      budgets,
+      [],
+      false,
+      '2026-08-05',
+      '2026-08-05T10:00:00.000Z'
+    )
 
     expect(changed).toBe(true)
     const slot1Aug = budgets.find(
@@ -137,7 +204,7 @@ describe('applyQuadrantesRecipe — geração (BX-07)', () => {
         period: { mode: 'range', start: '2026-07-09', end: '2026-07-16' },
       }),
     ]
-    applyQuadrantesRecipe(budgets, '2026-08-05', '2026-08-05T10:00:00.000Z')
+    applyQuadrantesRecipe(budgets, [], false, '2026-08-05', '2026-08-05T10:00:00.000Z')
 
     const july1 = budgets.find((b) => b.id === 'q-jul-1')
     const july2 = budgets.find((b) => b.id === 'q-jul-2')
@@ -167,7 +234,7 @@ describe('applyQuadrantesRecipe — geração (BX-07)', () => {
         period: { mode: 'range', start: '2026-07-25', end: '2026-07-31' },
       }),
     ]
-    applyQuadrantesRecipe(budgets, '2026-08-05', '2026-08-05T10:00:00.000Z')
+    applyQuadrantesRecipe(budgets, [], false, '2026-08-05', '2026-08-05T10:00:00.000Z')
 
     const augSlot2 = budgets.find(
       (b) => b.recipeSlot === 2 && b.period.mode === 'range' && b.period.start.startsWith('2026-08')
@@ -195,7 +262,13 @@ describe('applyQuadrantesRecipe — geração (BX-07)', () => {
         period: { mode: 'range', start: '2026-08-25', end: '2026-08-31' },
       }),
     ]
-    const changed = applyQuadrantesRecipe(budgets, '2026-08-20', '2026-08-20T10:00:00.000Z')
+    const { changed } = applyQuadrantesRecipe(
+      budgets,
+      [],
+      false,
+      '2026-08-20',
+      '2026-08-20T10:00:00.000Z'
+    )
 
     expect(changed).toBe(false)
     expect(budgets).toHaveLength(3)
@@ -212,9 +285,215 @@ describe('applyQuadrantesRecipe — geração (BX-07)', () => {
       period: { mode: 'range', start: '2026-01-01', end: '2026-12-31' },
     }
     const budgets: Budget[] = [manual]
-    applyQuadrantesRecipe(budgets, '2026-08-05', '2026-08-05T10:00:00.000Z')
+    applyQuadrantesRecipe(budgets, [], false, '2026-08-05', '2026-08-05T10:00:00.000Z')
 
     expect(budgets.find((b) => b.id === 'manual-1')?.archivedAt).toBeUndefined()
+  })
+})
+
+describe('applyQuadrantesRecipe — sugestão de meta por histórico (BX-12)', () => {
+  it('sugere a mediana dos últimos meses só na primeira geração de um slot, com a flag ligada', () => {
+    const transactions: Transaction[] = [
+      makeExpense({ id: 't1', date: '2026-05-03', amount: 200 }), // slot 1 (dia 1-8)
+      makeExpense({ id: 't2', date: '2026-06-04', amount: 100 }),
+      makeExpense({ id: 't3', date: '2026-07-05', amount: 300 }),
+      makeExpense({ id: 't4', date: '2026-07-12', amount: 999 }), // fora do slot 1 (dia 9-16)
+    ]
+    const budgets: Budget[] = []
+    applyQuadrantesRecipe(budgets, transactions, true, '2026-08-05', '2026-08-05T10:00:00.000Z')
+
+    expect(budgets.find((b) => b.recipeSlot === 1)?.target).toBe(200) // mediana de 100/200/300
+  })
+
+  it('herança sempre vence a sugestão — não recalcula quando já existe lastInstance', () => {
+    const transactions: Transaction[] = [
+      makeExpense({ id: 't1', date: '2026-05-03', amount: 200 }),
+      makeExpense({ id: 't2', date: '2026-06-04', amount: 100 }),
+      makeExpense({ id: 't3', date: '2026-07-05', amount: 300 }),
+    ]
+    const budgets: Budget[] = [
+      makeQuadrante({
+        id: 'q-jul-1',
+        recipeSlot: 1,
+        target: 800,
+        period: { mode: 'range', start: '2026-07-01', end: '2026-07-08' },
+      }),
+    ]
+    applyQuadrantesRecipe(budgets, transactions, true, '2026-08-05', '2026-08-05T10:00:00.000Z')
+
+    const augSlot1 = budgets.find(
+      (b) => b.recipeSlot === 1 && b.period.mode === 'range' && b.period.start.startsWith('2026-08')
+    )
+    expect(augSlot1?.target).toBe(800) // herdado — a mediana (200) nunca entra em jogo
+  })
+
+  it('reporta o slot em suggestionFallbackSlots quando não há histórico, com a flag ligada', () => {
+    const budgets: Budget[] = []
+    const { suggestionFallbackSlots } = applyQuadrantesRecipe(
+      budgets,
+      [],
+      true,
+      '2026-08-05',
+      '2026-08-05T10:00:00.000Z'
+    )
+
+    expect(suggestionFallbackSlots).toEqual([1, 2, 3, 4])
+    for (const slot of [1, 2, 3, 4]) {
+      expect(budgets.find((b) => b.recipeSlot === slot)?.target).toBe(0)
+    }
+  })
+
+  it('não reporta fallback nem sugere nada quando a flag está desligada', () => {
+    const budgets: Budget[] = []
+    const { suggestionFallbackSlots } = applyQuadrantesRecipe(
+      budgets,
+      [],
+      false,
+      '2026-08-05',
+      '2026-08-05T10:00:00.000Z'
+    )
+
+    expect(suggestionFallbackSlots).toEqual([])
+  })
+})
+
+describe('refreshQuadrantesSuggestions (BX-12 revisão)', () => {
+  it('recalcula uma caixinha ativa cujo targetSource ainda é auto', () => {
+    const transactions: Transaction[] = [
+      makeExpense({ id: 't1', date: '2026-05-03', amount: 200 }),
+      makeExpense({ id: 't2', date: '2026-06-04', amount: 100 }),
+      makeExpense({ id: 't3', date: '2026-07-05', amount: 300 }),
+    ]
+    const budgets: Budget[] = [
+      makeQuadrante({
+        id: 'q-aug-1',
+        recipeSlot: 1,
+        target: 0,
+        targetSource: 'auto',
+        period: { mode: 'range', start: '2026-08-01', end: '2026-08-08' },
+      }),
+    ]
+    const { changed, suggestionFallbackSlots } = refreshQuadrantesSuggestions(
+      budgets,
+      transactions,
+      '2026-08-05',
+      '2026-08-05T12:00:00.000Z'
+    )
+
+    expect(changed).toBe(true)
+    expect(suggestionFallbackSlots).toEqual([])
+    expect(budgets[0].target).toBe(200)
+    expect(budgets[0].updatedAt).toBe('2026-08-05T12:00:00.000Z')
+  })
+
+  it('nunca mexe numa caixinha já confirmada manualmente (targetSource: manual)', () => {
+    const transactions: Transaction[] = [makeExpense({ id: 't1', date: '2026-07-05', amount: 999 })]
+    const budgets: Budget[] = [
+      makeQuadrante({
+        id: 'q-aug-1',
+        recipeSlot: 1,
+        target: 123,
+        targetSource: 'manual',
+        period: { mode: 'range', start: '2026-08-01', end: '2026-08-08' },
+      }),
+    ]
+    const { changed } = refreshQuadrantesSuggestions(
+      budgets,
+      transactions,
+      '2026-08-05',
+      '2026-08-05T12:00:00.000Z'
+    )
+
+    expect(changed).toBe(false)
+    expect(budgets[0].target).toBe(123)
+  })
+
+  it('trata dado legado sem targetSource como manual — não recalcula', () => {
+    const transactions: Transaction[] = [makeExpense({ id: 't1', date: '2026-07-05', amount: 999 })]
+    const budgets: Budget[] = [
+      makeQuadrante({
+        id: 'q-aug-1',
+        recipeSlot: 1,
+        target: 50,
+        targetSource: undefined,
+        period: { mode: 'range', start: '2026-08-01', end: '2026-08-08' },
+      }),
+    ]
+    const { changed } = refreshQuadrantesSuggestions(
+      budgets,
+      transactions,
+      '2026-08-05',
+      '2026-08-05T12:00:00.000Z'
+    )
+
+    expect(changed).toBe(false)
+    expect(budgets[0].target).toBe(50)
+  })
+
+  it('ignora caixinhas arquivadas mesmo com targetSource auto', () => {
+    const transactions: Transaction[] = [makeExpense({ id: 't1', date: '2026-07-05', amount: 999 })]
+    const budgets: Budget[] = [
+      makeQuadrante({
+        id: 'q-jul-1',
+        recipeSlot: 1,
+        target: 0,
+        targetSource: 'auto',
+        archivedAt: '2026-08-01T00:00:00.000Z',
+        period: { mode: 'range', start: '2026-07-01', end: '2026-07-08' },
+      }),
+    ]
+    const { changed } = refreshQuadrantesSuggestions(
+      budgets,
+      transactions,
+      '2026-08-05',
+      '2026-08-05T12:00:00.000Z'
+    )
+
+    expect(changed).toBe(false)
+    expect(budgets[0].target).toBe(0)
+  })
+
+  it('reporta fallback e não mexe no target quando não há histórico suficiente', () => {
+    const budgets: Budget[] = [
+      makeQuadrante({
+        id: 'q-aug-1',
+        recipeSlot: 1,
+        target: 0,
+        targetSource: 'auto',
+        period: { mode: 'range', start: '2026-08-01', end: '2026-08-08' },
+      }),
+    ]
+    const { changed, suggestionFallbackSlots } = refreshQuadrantesSuggestions(
+      budgets,
+      [],
+      '2026-08-05',
+      '2026-08-05T12:00:00.000Z'
+    )
+
+    expect(changed).toBe(false)
+    expect(suggestionFallbackSlots).toEqual([1])
+    expect(budgets[0].target).toBe(0)
+  })
+
+  it('ignora caixinhas manuais (sem recipeSlug)', () => {
+    const manual: Budget = {
+      id: 'manual-1',
+      name: 'Viagem',
+      emoji: '✈️',
+      color: '#1B4F72',
+      kind: 'expense',
+      target: 5000,
+      period: { mode: 'range', start: '2026-08-01', end: '2026-08-31' },
+    }
+    const { changed } = refreshQuadrantesSuggestions(
+      [manual],
+      [],
+      '2026-08-05',
+      '2026-08-05T12:00:00.000Z'
+    )
+
+    expect(changed).toBe(false)
+    expect(manual.target).toBe(5000)
   })
 })
 

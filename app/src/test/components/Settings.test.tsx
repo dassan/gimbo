@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import Settings from '@/pages/Settings'
+import RecipeSettings from '@/pages/Settings/RecipeSettings'
 import { useDataStore, __resetPersistenceBaselineForTests } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { createDefaultWorkspace } from '@/lib/storage/schema'
@@ -69,6 +70,7 @@ function renderSettings(initialPath = '/settings') {
       <Routes>
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/:section" element={<Settings />} />
+        <Route path="/settings/recipes/:slug" element={<RecipeSettings />} />
         <Route path="/credit-card/:accountId" element={<div>credit-card-page-stub</div>} />
       </Routes>
     </MemoryRouter>
@@ -660,5 +662,69 @@ describe('Settings — currency preference', () => {
     await user.selectOptions(getCurrencySelect(), 'USD')
     expect(useWorkspaceStore.getState().workspace.currency).toBe('USD')
     expect(useWorkspaceStore.getState().workspace.locale).toBe('pt-BR')
+  })
+})
+
+// ─── Settings — BX-13: gestão de receitas ────────────────────────────────────
+
+describe('Settings — BX-13: gestão de receitas', () => {
+  async function openPreferences() {
+    const user = userEvent.setup()
+    renderSettings()
+    await user.click((await screen.findAllByText('settings.preferences'))[0])
+    return user
+  }
+
+  it('shows the Quadrantes row with a toggle and a settings gear', async () => {
+    await openPreferences()
+    expect(screen.getByText('budgets.quadrantesLabel')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'budgets.quadrantesLabel' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'budgets.recipeSettings' })).toBeInTheDocument()
+  })
+
+  it('the toggle still flips settings.quadrantesEnabled', async () => {
+    const user = await openPreferences()
+    const toggle = screen.getByRole('button', { name: 'budgets.quadrantesLabel' })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await user.click(toggle)
+    expect(useDataStore.getState().data?.settings.quadrantesEnabled).toBe(true)
+  })
+
+  it('the gear navigates to the recipe subpage and shows its config (BX-12)', async () => {
+    const user = await openPreferences()
+    await user.click(screen.getByRole('link', { name: 'budgets.recipeSettings' }))
+    expect(screen.getByTestId('location-display')).toHaveTextContent('/settings/recipes/quadrantes')
+    expect(screen.getByRole('button', { name: 'budgets.quadrantesInferLabel' })).toBeInTheDocument()
+  })
+
+  it('the back link on the subpage returns to Preferences', async () => {
+    const user = userEvent.setup()
+    renderSettings('/settings/recipes/quadrantes')
+    await user.click(screen.getByText('budgets.backToPreferences'))
+    expect(screen.getByTestId('location-display')).toHaveTextContent('/settings/preferences')
+  })
+
+  it('an unknown recipe slug falls back to "no data"', async () => {
+    renderSettings('/settings/recipes/nao-existe')
+    expect(await screen.findByText('common.noData')).toBeInTheDocument()
+  })
+})
+
+// ─── Settings — BX-12: sugestão de meta por histórico ────────────────────────
+
+describe('Settings — BX-12: sugestão de meta por histórico', () => {
+  it('the toggle defaults to off', () => {
+    renderSettings('/settings/recipes/quadrantes')
+    expect(screen.getByRole('button', { name: 'budgets.quadrantesInferLabel' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
+  })
+
+  it('clicking the toggle persists settings.quadrantesInferFromHistory', async () => {
+    const user = userEvent.setup()
+    renderSettings('/settings/recipes/quadrantes')
+    await user.click(screen.getByRole('button', { name: 'budgets.quadrantesInferLabel' }))
+    expect(useDataStore.getState().data?.settings.quadrantesInferFromHistory).toBe(true)
   })
 })

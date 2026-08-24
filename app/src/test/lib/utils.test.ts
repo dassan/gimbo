@@ -19,6 +19,7 @@ import {
   getDebtBreakdown,
   deriveMonthlyIncome,
   deriveMonthlyCost,
+  suggestQuadranteTarget,
   getReserveBalance,
   invoicePeriodKey,
   filterArchivedAccounts,
@@ -836,6 +837,84 @@ describe('deriveMonthlyCost (HE-12, D7)', () => {
     })
     const result = deriveMonthlyCost([cardInstallment])
     expect(result).toEqual({ value: 3000, confidenceMonths: 1, isEstimate: true })
+  })
+})
+
+describe('suggestQuadranteTarget (F-30/BX-12)', () => {
+  const referenceDate = '2026-08-05'
+
+  it('returns null with 0 confidence when there is no history in the slot', () => {
+    expect(suggestQuadranteTarget([], 1, referenceDate)).toEqual({
+      value: null,
+      confidenceMonths: 0,
+    })
+  })
+
+  it('computes the median (not the average) over months that had data in the slot', () => {
+    const transactions = [
+      makeTx({ date: '2026-05-03', amount: 100, isPaid: true }),
+      makeTx({ date: '2026-06-04', amount: 200, isPaid: true }),
+      makeTx({ date: '2026-07-05', amount: 900, isPaid: true }),
+    ]
+    const result = suggestQuadranteTarget(transactions, 1, referenceDate)
+    expect(result).toEqual({ value: 200, confidenceMonths: 3 })
+  })
+
+  it('excludes months with no matching data instead of treating them as zero', () => {
+    // Only 1 of the 6 lookback months (Jul) has a slot-1 expense — the other 5 are skipped,
+    // not folded in as 0 (which would drag the median down).
+    const transactions = [makeTx({ date: '2026-07-05', amount: 500, isPaid: true })]
+    const result = suggestQuadranteTarget(transactions, 1, referenceDate)
+    expect(result).toEqual({ value: 500, confidenceMonths: 1 })
+  })
+
+  it('excludes the current (incomplete) month from the window', () => {
+    const currentMonthTx = makeTx({ date: '2026-08-03', amount: 999, isPaid: true })
+    expect(suggestQuadranteTarget([currentMonthTx], 1, referenceDate).value).toBeNull()
+  })
+
+  it('caps the lookback window at 6 complete months by default, ignoring older data', () => {
+    const tooOld = makeTx({ date: '2026-01-05', amount: 999, isPaid: true }) // 7 months back
+    expect(suggestQuadranteTarget([tooOld], 1, referenceDate).value).toBeNull()
+  })
+
+  it('ignores unpaid EXPENSE, TRANSFER and CREDIT_PAYMENT transactions', () => {
+    const unpaid = makeTx({ date: '2026-07-05', amount: 1000, isPaid: false })
+    const transfer = makeTx({
+      date: '2026-07-05',
+      amount: 1000,
+      type: 'TRANSFER',
+      transferAccountId: 'acc-other',
+    })
+    const payment = makeTx({
+      date: '2026-07-05',
+      amount: 1000,
+      type: 'CREDIT_PAYMENT',
+      transferAccountId: 'acc-other',
+    })
+    expect(suggestQuadranteTarget([unpaid, transfer, payment], 1, referenceDate).value).toBeNull()
+  })
+
+  it.each([
+    [1, '2026-07-01'],
+    [1, '2026-07-08'],
+    [2, '2026-07-09'],
+    [2, '2026-07-16'],
+    [3, '2026-07-17'],
+    [3, '2026-07-24'],
+    [4, '2026-07-25'],
+    [4, '2026-07-31'],
+  ] as const)('day %s of the month lands in slot %s (date %s)', (slot, date) => {
+    const tx = makeTx({ date, amount: 250, isPaid: true })
+    expect(suggestQuadranteTarget([tx], slot, referenceDate).value).toBe(250)
+    // A neighboring slot must not pick it up.
+    const otherSlot = ((slot % 4) + 1) as 1 | 2 | 3 | 4
+    expect(suggestQuadranteTarget([tx], otherSlot, referenceDate).value).toBeNull()
+  })
+
+  it('slot 4 still matches the last day of a short month (28-day February)', () => {
+    const tx = makeTx({ date: '2026-02-28', amount: 250, isPaid: true })
+    expect(suggestQuadranteTarget([tx], 4, '2026-08-05').value).toBe(250)
   })
 })
 

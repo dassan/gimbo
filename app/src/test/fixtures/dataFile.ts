@@ -14,6 +14,7 @@ export function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
       fileUpdatedAt: '2024-01-01T00:00:00',
       auditLogRetentionLimit: 200,
       quadrantesEnabled: false,
+      quadrantesInferFromHistory: false,
     },
     accounts: [],
     categories: [],

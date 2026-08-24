@@ -40,6 +40,7 @@ function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
       fileUpdatedAt: '2026-01-01T00:00:00.000Z',
       auditLogRetentionLimit: 200,
       quadrantesEnabled: false,
+      quadrantesInferFromHistory: false,
     },
     accounts: [],
     categories: [],
@@ -110,6 +111,7 @@ describe('pullAndMerge', () => {
           fileUpdatedAt: '2026-02-01T00:00:00.000Z',
           auditLogRetentionLimit: 200,
           quadrantesEnabled: false,
+          quadrantesInferFromHistory: false,
         },
       })
     )
@@ -174,6 +176,7 @@ describe('pushIfNeeded', () => {
             fileUpdatedAt: '2026-02-01T00:00:00.000Z',
             auditLogRetentionLimit: 200,
             quadrantesEnabled: false,
+            quadrantesInferFromHistory: false,
           },
         })
       )
@@ -192,6 +195,7 @@ describe('pushIfNeeded', () => {
             fileUpdatedAt: '2026-01-01T00:00:00.000Z',
             auditLogRetentionLimit: 200,
             quadrantesEnabled: false,
+            quadrantesInferFromHistory: false,
           },
         })
       )
