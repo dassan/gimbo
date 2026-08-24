@@ -19,6 +19,7 @@ import Budgets from '@/pages/Budgets'
 import BudgetDetail from '@/pages/Budgets/BudgetDetail'
 import Analytics from '@/pages/Analytics'
 import Settings from '@/pages/Settings'
+import RecipeSettings from '@/pages/Settings/RecipeSettings'
 import CreditCardPage from '@/pages/CreditCard'
 import About from '@/pages/About'
 import NetWorth from '@/pages/NetWorth'
@@ -154,6 +155,7 @@ export default function App() {
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/settings/:section" element={<Settings />} />
+                <Route path="/settings/recipes/:slug" element={<RecipeSettings />} />
                 <Route path="/net-worth" element={<NetWorth />} />
                 <Route path="/health" element={<Health />} />
                 <Route path="/credit-card/:accountId" element={<CreditCardPage />} />
