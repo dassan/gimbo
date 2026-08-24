@@ -363,7 +363,7 @@
     "importErrorCode": "Code: {{code}}",
     "backupSync": "Backup & Sync",
     "backupLocalSection": "Local Folder",
-    "backupLocalDesc": "Automatically saves a copy of your vault on every write. If the folder is inside Google Drive, Dropbox, or OneDrive, your data is protected in the cloud with no extra setup.",
+    "backupLocalDesc": "Automatically saves a copy of your vault on every write. If the folder is inside Google Drive, Dropbox, or OneDrive, your data is protected in the cloud with no extra setup. Note: this only works in Chromium-based browsers.",
     "backupConfigure": "Set up folder",
     "backupRemove": "Remove",
     "backupLastSaved": "Last backup:",
