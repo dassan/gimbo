@@ -870,6 +870,20 @@ async function queryRows(
   })
 }
 
+// Mirrors StorageService's groupIds() — duplicated rather than imported because that module
+// instantiates the main-thread Worker wrapper and can't be pulled into the worker bundle itself.
+function groupJoinIds(rows: Record<string, unknown>[], valueCol: string): Map<string, string[]> {
+  const map = new Map<string, string[]>()
+  for (const row of rows) {
+    const txId = row.transaction_id as string
+    const value = row[valueCol] as string
+    const list = map.get(txId)
+    if (list) list.push(value)
+    else map.set(txId, [value])
+  }
+  return map
+}
+
 // Mirrors StorageService's rowTo* mappers, but against an arbitrary db pointer instead of the
 // message-passing `this.query()` — necessary because this runs inside the worker itself, on a
 // scratch db that StorageService (main thread) never sees.
@@ -938,19 +952,35 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       : {}),
   }))
 
+  // M-72/PERFORMANCE.md: the double-LEFT-JOIN + GROUP_CONCAT(DISTINCT) + GROUP BY t.id shape
+  // this used to share with StorageService.getTransactions() cost ~224s on a real ~25k-tx vault
+  // under wa-sqlite/WASM's async OPFS VFS — the aggregation itself is the bottleneck here, not
+  // row volume. getTransactions() was rewritten to three flat queries joined in JS
+  // (StorageService.ts) but this scratch-db reader (CS-15, a separate code path since it runs
+  // inside the worker against a peer's bytes, not through the message-passing `this.query()`)
+  // was missed — confirmed live via CS-20 sync metrics: `sync.readPeerBlob` took 17.8s to parse a
+  // 14.83MB/~26k-tx peer db, slower than the 10.8s spent downloading those same bytes.
+  //
+  // CS-28: sequential, NOT Promise.all — StorageService.getTransactions() runs its three queries
+  // concurrently safely because each goes through `this.query()` → postMessage → the worker's own
+  // `enqueue()` (this file, dispatch queue), which serializes them one at a time before they ever
+  // reach wa-sqlite. This function already runs *inside* a dequeued task, calling `queryRows()`
+  // directly against the wasm instance — the async build only supports one in-flight Asyncify
+  // call at a time, and firing three concurrently corrupted its unwind state, crashing with
+  // "NotFoundError: Entry not found" → "RuntimeError: unreachable executed" on the next OPFS
+  // call from *any* subsequent operation (e.g. the following import). Confirmed reproducible.
   const txRows = await queryRows(
     dbPtr,
-    `SELECT t.*, GROUP_CONCAT(DISTINCT tt.tag_id) AS tag_ids,
-            GROUP_CONCAT(DISTINCT tb.budget_id) AS budget_ids
-     FROM transactions t
-     LEFT JOIN transaction_tags tt ON t.id = tt.transaction_id
-     LEFT JOIN transaction_budgets tb ON t.id = tb.transaction_id
-     GROUP BY t.id
-     ORDER BY t.date DESC, t.created_at DESC`
+    'SELECT t.* FROM transactions t ORDER BY t.date DESC, t.created_at DESC'
   )
+  const txTagRows = await queryRows(dbPtr, 'SELECT transaction_id, tag_id FROM transaction_tags')
+  const txBudgetRows = await queryRows(
+    dbPtr,
+    'SELECT transaction_id, budget_id FROM transaction_budgets'
+  )
+  const tagsByTx = groupJoinIds(txTagRows, 'tag_id')
+  const budgetsByTx = groupJoinIds(txBudgetRows, 'budget_id')
   const transactions: RawTransaction[] = txRows.map((r) => {
-    const tagIds = r.tag_ids as string | null
-    const budgetIds = r.budget_ids as string | null
     const tx: RawTransaction = {
       id: r.id as string,
       accountId: r.account_id as string,
@@ -960,8 +990,8 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       description: r.description as string,
       date: r.date as string,
       isPaid: Boolean(r.is_paid),
-      tags: tagIds ? tagIds.split(',') : [],
-      budgetIds: budgetIds ? budgetIds.split(',') : [],
+      tags: tagsByTx.get(r.id as string) ?? [],
+      budgetIds: budgetsByTx.get(r.id as string) ?? [],
     }
     if (r.updated_at !== null && r.updated_at !== undefined) tx.updatedAt = r.updated_at as string
     if (r.created_at !== null && r.created_at !== undefined) tx.createdAt = r.created_at as string
