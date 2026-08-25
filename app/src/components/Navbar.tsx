@@ -21,11 +21,13 @@ import { isMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
 import { isGoogleConnected } from '@/lib/cloudSync/googleAuth'
 import { loadBackupDirHandle } from '@/lib/backupDir'
 
+// Order groups day-to-day cash flow first (Visão Geral, Lançamentos, Relatórios), then the
+// broader-scope screens (Caixinhas, Patrimônio, Saúde).
 const NAV_ITEMS = [
   { to: '/dashboard', key: 'nav.dashboard' },
   { to: '/transactions', key: 'nav.transactions' },
-  { to: '/budgets', key: 'nav.budgets' },
   { to: '/analytics', key: 'nav.analytics' },
+  { to: '/budgets', key: 'nav.budgets' },
   { to: '/net-worth', key: 'nav.netWorth' },
   { to: '/health', key: 'nav.health' },
 ]
@@ -40,8 +42,8 @@ const NAV_ITEMS = [
 const BOTTOM_NAV_ITEMS = [
   { to: '/dashboard', key: 'nav.dashboard', icon: Home },
   { to: '/transactions', key: 'nav.transactions', icon: Receipt },
-  { to: '/budgets', key: 'nav.budgets', icon: PiggyBank },
   { to: '/analytics', key: 'nav.analytics', icon: BarChart2 },
+  { to: '/budgets', key: 'nav.budgets', icon: PiggyBank },
 ]
 
 interface NavbarProps {

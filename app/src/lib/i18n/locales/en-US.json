@@ -569,6 +569,7 @@
   },
   "netWorth": {
     "title": "Net Worth",
+    "subtitle": "Assets and liabilities consolidated, updated with every transaction",
     "assets": "Assets",
     "liabilities": "Liabilities",
     "netWorth": "Net Worth",

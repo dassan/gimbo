@@ -569,6 +569,7 @@
   },
   "netWorth": {
     "title": "Patrimônio Líquido",
+    "subtitle": "Ativos e passivos consolidados, atualizados a cada lançamento",
     "assets": "Ativos",
     "liabilities": "Passivos",
     "netWorth": "Patrimônio Líquido",

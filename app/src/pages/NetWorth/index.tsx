@@ -292,11 +292,16 @@ export default function NetWorth() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
-      {/* ── Page header + toggle ──────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-base font-semibold text-on-surface">{t('netWorth.title')}</h1>
+      {/* ── Page header + toggle — same title/subtitle pattern as Caixinhas e Saúde ── */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold text-on-surface">
+            {t('netWorth.title')}
+          </h1>
+          <p className="text-sm text-on-surface/50 mt-0.5">{t('netWorth.subtitle')}</p>
+        </div>
 
-        <label className="flex items-center gap-2 cursor-pointer select-none">
+        <label className="flex shrink-0 items-center gap-2 cursor-pointer select-none">
           <span className="text-xs text-on-surface/50">{t('netWorth.includeHidden')}</span>
           <button
             role="switch"
