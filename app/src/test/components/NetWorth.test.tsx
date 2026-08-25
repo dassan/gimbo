@@ -225,7 +225,28 @@ describe('NetWorth page', () => {
     })
   })
 
-  it('getTotalCreditLiability sums current + future EXPENSE for liabilities total', () => {
+  // ─── M-86: "Total Comprometido" of a CREDIT account = full open installment debt ──
+
+  it('shows total open installment debt (not just the current invoice) as Total Comprometido', () => {
+    const acc = makeCreditAccount({
+      id: 'acc-credit',
+      creditMetadata: { limit: 10000, closingDay: 28, dueDay: 10 },
+    })
+    const parcel = makeTx({
+      accountId: 'acc-credit',
+      amount: 300,
+      date: '2099-12-01',
+      installment: { parentId: 'p1', currentIndex: 1, total: 3 },
+    })
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [acc], transactions: [parcel] }),
+    })
+    render(<NetWorth />)
+    expect(screen.getByText('netWorth.totalCommitted')).toBeInTheDocument()
+    expect(document.body.textContent).toContain(formatCurrency(300))
+  })
+
+  it('a plain future EXPENSE with no installment series does not count as Total Comprometido', () => {
     const acc = makeCreditAccount({
       id: 'acc-credit',
       creditMetadata: { limit: 10000, closingDay: 28, dueDay: 10 },
@@ -235,7 +256,8 @@ describe('NetWorth page', () => {
       data: makeDataFile({ accounts: [acc], transactions: [futureTx] }),
     })
     render(<NetWorth />)
-    expect(screen.getByText('netWorth.totalCommitted')).toBeInTheDocument()
+    // Not an open installment series, and outside the current invoice period — Passivos = 0.
+    expect(document.body.textContent).toContain(formatCurrency(0))
   })
 
   // ─── HE-07: LOAN as a liability ─────────────────────────────────────────────
@@ -261,12 +283,18 @@ describe('NetWorth page', () => {
   it('sums CREDIT and LOAN balances into totalLiabilities (negative netWorth)', () => {
     const card = makeCreditAccount({ id: 'acc-credit' })
     const loan = makeLoanAccount({ id: 'acc-loan' })
-    const charge = makeTx({ accountId: 'acc-credit', amount: 500, date: todayStr() })
+    const charge = makeTx({
+      accountId: 'acc-credit',
+      amount: 500,
+      date: todayStr(),
+      installment: { parentId: 'p1', currentIndex: 1, total: 1 },
+    })
     useDataStore.setState({
       data: makeDataFile({ accounts: [card, loan], transactions: [charge] }),
     })
     render(<NetWorth />)
-    // Liabilities total: 500 (credit) + 15000 (loan) = 15500; net worth: 0 - 15500.
+    // Liabilities total: 500 (credit's open installment debt) + 15000 (loan) = 15500;
+    // net worth: 0 - 15500.
     expect(document.body.textContent).toContain(formatCurrency(15500))
   })
 
@@ -307,12 +335,92 @@ describe('NetWorth page', () => {
       archived: true,
       creditMetadata: { limit: 10000, closingDay: 28, dueDay: 10 },
     })
-    const expense = makeTx({ accountId: 'acc-old-card', amount: 700, date: todayStr() })
+    const expense = makeTx({
+      accountId: 'acc-old-card',
+      amount: 700,
+      date: todayStr(),
+      installment: { parentId: 'p1', currentIndex: 1, total: 1 },
+    })
     useDataStore.setState({
       data: makeDataFile({ accounts: [archivedCard], transactions: [expense] }),
     })
     render(<NetWorth />)
     expect(screen.queryByText('Cartão Antigo')).not.toBeInTheDocument()
     expect(document.body.textContent).toContain(formatCurrency(700))
+  })
+
+  // ─── M-85: open installment purchases on a regular account as a liability ──
+
+  it('shows an open installment series on a regular account under categoryInstallments', () => {
+    const acc = makeRetailAccount({ id: 'acc-retail', name: 'Itau Fábio' })
+    const parcel = makeTx({
+      accountId: 'acc-retail',
+      amount: 2000,
+      date: '2099-12-01',
+      installment: { parentId: 'p1', currentIndex: 1, total: 3 },
+    })
+    useDataStore.setState({ data: makeDataFile({ accounts: [acc], transactions: [parcel] }) })
+    render(<NetWorth />)
+    expect(screen.getByText('netWorth.categoryInstallments')).toBeInTheDocument()
+    // "Itau Fábio" appears twice — as an asset row (its balance) and as a liability row
+    // (its open installment series) — that duality is exactly the point of this feature.
+    expect(screen.getAllByText('Itau Fábio')).toHaveLength(2)
+    expect(screen.getByText('netWorth.totalCommitted')).toBeInTheDocument()
+    expect(screen.getByText('accounts.monthlyPayment')).toBeInTheDocument()
+    // Total committed = 2000 (this occurrence) + 2 future occurrences generated in the fixture? No —
+    // makeDataFile doesn't expand installments; only the single provided occurrence is open, so
+    // remainingTotal = 2000.
+    expect(document.body.textContent).toContain(formatCurrency(2000))
+  })
+
+  it('counts an open installment series toward totalLiabilities (net worth drops)', () => {
+    const acc = makeRetailAccount({ id: 'acc-retail', name: 'Itau Fábio', balance: 5000 })
+    const parcel = makeTx({
+      accountId: 'acc-retail',
+      amount: 2000,
+      date: '2099-12-01',
+      installment: { parentId: 'p1', currentIndex: 1, total: 3 },
+    })
+    useDataStore.setState({ data: makeDataFile({ accounts: [acc], transactions: [parcel] }) })
+    render(<NetWorth />)
+    // Assets = 5000 (initial balance, no cash-flow transactions besides the open installment
+    // itself, which is EXPENSE dated in the future and thus not yet realized/paid).
+    // Liabilities = 2000. Net worth = 5000 - 2000 = 3000.
+    expect(document.body.textContent).toContain(formatCurrency(3000))
+  })
+
+  it('hides an archived account with open installments as a row but keeps it in the total', () => {
+    const acc = makeRetailAccount({
+      id: 'acc-retail',
+      name: 'Refinanciamento Antigo',
+      archived: true,
+    })
+    const parcel = makeTx({
+      accountId: 'acc-retail',
+      amount: 900,
+      date: '2099-12-01',
+      installment: { parentId: 'p1', currentIndex: 1, total: 3 },
+    })
+    useDataStore.setState({ data: makeDataFile({ accounts: [acc], transactions: [parcel] }) })
+    render(<NetWorth />)
+    expect(screen.queryByText('Refinanciamento Antigo')).not.toBeInTheDocument()
+    expect(document.body.textContent).toContain(formatCurrency(900))
+  })
+
+  it('does not show categoryInstallments when a CREDIT account has open installments (stays categoryCredit)', () => {
+    const card = makeCreditAccount({
+      id: 'acc-credit',
+      creditMetadata: { limit: 10000, closingDay: 28, dueDay: 10 },
+    })
+    const parcel = makeTx({
+      accountId: 'acc-credit',
+      amount: 300,
+      date: '2099-12-01',
+      installment: { parentId: 'p1', currentIndex: 1, total: 3 },
+    })
+    useDataStore.setState({ data: makeDataFile({ accounts: [card], transactions: [parcel] }) })
+    render(<NetWorth />)
+    expect(screen.getByText('netWorth.categoryCredit')).toBeInTheDocument()
+    expect(screen.queryByText('netWorth.categoryInstallments')).not.toBeInTheDocument()
   })
 })

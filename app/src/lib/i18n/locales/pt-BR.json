@@ -301,6 +301,7 @@
     "wealthAccounts": "Ativos e Passivos",
     "assets": "Ativos",
     "loans": "Empréstimos",
+    "loansHint": "Parcelamentos já lançados em contas ou cartões são contabilizados automaticamente aqui e na Saúde Financeira — não é preciso duplicá-los. Use Empréstimos só para dívidas sem lançamento correspondente, como um valor emprestado informalmente por um familiar.",
     "newAsset": "Novo Ativo",
     "newLoan": "Novo Empréstimo",
     "categories": "Categorias",
@@ -585,7 +586,8 @@
     "categoryInvestments": "Investimentos e Bens",
     "categoryOther": "Outros",
     "categoryCredit": "Cartões de Crédito",
-    "categoryLoans": "Empréstimos e Financiamentos"
+    "categoryLoans": "Empréstimos e Financiamentos",
+    "categoryInstallments": "Parcelamentos em Contas"
   },
   "health": {
     "title": "Saúde Financeira",
