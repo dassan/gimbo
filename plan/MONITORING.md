@@ -1,8 +1,12 @@
-# Monitoramento de Performance (dev-only)
+# Monitoramento de Performance (dev-only, exceto sync — ver §"Métricas de Sync")
 
 > Camada de instrumentação criada para investigar `plan/PERFORMANCE.md` (lentidão ao salvar
 > transação no cofre real) e servir como ferramenta geral para futuros gargalos. Ver `M-71`
 > (camada), `M-72` (fix de leitura) e `M-73` (fix de escrita) em `plan/BACKLOG.md`.
+>
+> **A camada de sync (`lib/cloudSync/syncMetrics.ts`, `CS-20`/`CS-24`) é a exceção deliberada ao
+> "dev-only" do título** — ver a seção dedicada abaixo antes de assumir que o padrão de gate por
+> `import.meta.env.DEV` se aplica a ela.
 
 ## O que existe
 
@@ -135,6 +139,54 @@ testes reais (`plan/PERFORMANCE.md`), as três sempre voltaram rápidas (dezenas
 durante uma reprodução lenta — o que ajudou a apontar a causa pra outro lugar (ver changelog
 abaixo).
 
+## Métricas de Sync (produção, não gated por DEV)
+
+> `CS-20`/`CS-24` (2026-08-25) — criada para investigar um relato de uso real (sync via Google
+> Drive lento em minutos, revert silencioso de um lançamento) num cofre de ~25 mil transações/
+> ~14MB, reproduzido no celular do mantenedor contra a API real do Drive — algo que um dev machine
+> em localhost não reproduz. Ver `CS-24` em `plan/BACKLOG.md` para o bug de race corrigido junto.
+
+Ao contrário de tudo mais neste documento, **`lib/cloudSync/syncMetrics.ts` não é gated por
+`import.meta.env.DEV`** — chama `trackPerformance()` (`telemetry.ts`) direto, sem passar por
+`measure()`/`measureAsync()` de `perfMonitor.ts`. Motivo: a latência de rede da API do Drive é
+idêntica em build de dev e de produção (diferente do caso do `M-75`, que era puramente overhead do
+instrumental de dev do React); gatear isso por `DEV` esconderia exatamente o dado do único lugar
+onde ele precisa aparecer — o celular do usuário, em produção. Frequência também não é problema
+aqui: ao contrário de `store.mutate.*` (dispara a cada mutação), sync só roda no boot, no poll
+periódico (10-480min), no debounce de push de cada mutação e no botão manual — baixo volume para o
+ring buffer de 100 eventos de `telemetry.ts`.
+
+- **`measureSync(metric, fn)`** / **`measureSyncCompute(metric, fn)`** — variantes async/sync de
+  `perfMonitor.measure()`, sem o gate.
+- **`trackSyncBytes(metric, bytes)`** — reaproveita o campo `ms` de `PerfEvent` para carregar uma
+  contagem de bytes em vez de uma duração; toda métrica de bytes termina em `.bytes` para não
+  confundir quem ler. `PerfPanel.tsx` (dev-only) rotularia esse valor como "Xms" se aberto durante
+  uma investigação de sync — inofensivo (o painel não é o canal de consumo desta camada), mas vale
+  saber se for usá-lo para depurar sync localmente.
+
+| Métrica | Onde | O que mede |
+|---|---|---|
+| `sync.drive.findFolderId` / `sync.drive.findFileId` | `googleDrive.ts` | Busca do id da pasta/arquivo no Drive — inclui o cache hit (`localStorage`, ~0ms) e o cache miss (query real à API, dispositivo novo) na mesma métrica; a magnitude do valor distingue os dois casos |
+| `sync.drive.getMetadata` | `googleDrive.ts` | Round-trip só de metadados (`modifiedTime`) |
+| `sync.drive.getValidAccessToken` | `googleDrive.ts` | Leitura do access token (deveria ficar ~0ms — token em cache, sem rede; um valor alto aponta refresh proativo) |
+| `sync.drive.fetch401Retry` | `googleDrive.ts` | Só existe no trace quando o retry-por-401 de fato roda (`fetch → refreshGoogleToken() → fetch de novo`) — presença/duração isola o custo do refresh (CS-27) |
+| `sync.drive.download` / `.bytes` | `googleDrive.ts` | Download do `gimbo.db` do Drive — duração e tamanho |
+| `sync.drive.upload` / `.bytes` | `googleDrive.ts` | Upload do `gimbo.db` pro Drive — duração e tamanho |
+| `sync.readPeerBlob` | `syncService.ts` | Parse do blob baixado em `DataFile` (via `storage.readPeerBlob`, worker) |
+| `sync.merge` | `syncService.ts` | `mergeForSync()` puro — deve ser rápido; confirma ou descarta o merge como gargalo |
+| `sync.replaceAll` | `syncService.ts` | Escrita do resultado mesclado no OPFS local |
+| `sync.pullAndMerge.total` | `syncService.ts` | `pullAndMerge()` inteiro — só o transporte Drive |
+| `sync.runPeerSync.total` | `useDataStore.ts` | `runPeerSync()` inteiro, como o usuário percebe — inclui a reconciliação do `CS-24` |
+
+Consumo: Bug Report System (F-26) já existente, categoria "performance" do snapshot — sem UI nova.
+No celular, Configurações → "Reportar problema" → conferir/copiar o JSON. Mesma regra de
+privacidade do resto do sistema (`METRICS.md`): só nome de métrica, duração/bytes e timestamp,
+nunca nome de arquivo, `deviceId`, IDs de entidade ou valor financeiro.
+
+Escopo desta rodada: só o transporte Google Drive (Fase 2), que é o que motivou o relato. O
+transporte de pasta compartilhada (`folderSyncService.ts`, Fase 1) não foi instrumentado — mesma
+arquitetura, adicionar depois se algum dia for a fonte de um relato parecido.
+
 ## Changelog
 
 - **M-71 (2026-08-20)** — camada criada (este documento).
@@ -150,3 +202,41 @@ abaixo).
   `worker.ts` `applyMutation()`) — novas métricas `store.mutate.diffTransactions`,
   `storage.postMessage.applyMutation`, `worker.applyMutation` (tabela acima). Validado contra o
   cofre real: 255ms a primeira gravação, 79ms as seguintes. Ver `M-73` em `plan/BACKLOG.md`.
+- **CS-24 (2026-08-25)** — `runPeerSync` corrigido para não reverter mais um lançamento feito
+  durante uma sincronização em andamento (race entre o snapshot pré-pull e o `replaceAll(merged)`
+  pós-pull). Ver `CS-24` em `plan/BACKLOG.md`.
+- **CS-20 (2026-08-25)** — camada de "Métricas de Sync" criada (seção dedicada acima), motivada
+  pelo mesmo relato que originou o `CS-24` — primeira instrumentação desta família a rodar em
+  produção, não só em DEV. Ver `CS-20` em `plan/BACKLOG.md`.
+- **CS-25 (2026-08-25)** — primeira leva de dados reais coletada com a camada acima (cofre de
+  ~25 mil transações/~13,18MB) mostrou duas janelas de `sync.pullAndMerge.total` sobrepostas e
+  dois `sync.drive.upload.bytes` idênticos numa única conexão ao Google Drive — `runPeerSync()`
+  disparando duas vezes concorrentemente (boot de `App.tsx` + callback OAuth de `Settings/
+  index.tsx`, ambos no mesmo carregamento de página). Corrigido com uma guarda de reentrância em
+  `runPeerSync()`. Ver `CS-25` em `plan/BACKLOG.md` — primeiro achado de causa raiz produzido por
+  esta camada de métricas, exatamente o caso de uso que motivou o `CS-20`.
+- **CS-26 (2026-08-25)** — segunda rodada de teste real (dois browsers, ~26,5 mil transações/
+  ~14,83MB) mostrou `sync.readPeerBlob` em 17,8s, mais lento que os 10,8s do download dos mesmos
+  bytes. Causa: `readDataFileFromDb` (`worker.ts`, CS-15) nunca recebeu o fix de query do `M-72` —
+  ainda usava `LEFT JOIN` duplo + `GROUP_CONCAT(DISTINCT)` + `GROUP BY t.id` porque roda dentro do
+  worker, fora da RPC `this.query()` que `StorageService.getTransactions()` usa. Reescrito para o
+  mesmo padrão de três queries + join em JS. Sem cobertura de teste automatizado (mesma limitação
+  do `M-72`/`M-73` — wa-sqlite/OPFS real não roda em `vitest`); pendente confirmar o ganho contra
+  dado real. Ver `CS-26` em `plan/BACKLOG.md`.
+- **CS-27 (2026-08-25)** — mesma rodada: `sync.drive.getMetadata` em 9,2s, 4-8x mais lento que as
+  list-queries estruturalmente parecidas. Hipótese não confirmada: retry-por-401 em
+  `authorizedFetch`. Duas métricas novas (`sync.drive.getValidAccessToken`,
+  `sync.drive.fetch401Retry`) adicionadas só para diagnosticar — nenhuma correção de causa raiz
+  ainda, item continua aberto. Ver `CS-27` em `plan/BACKLOG.md`.
+- **CS-28 (2026-08-25)** — o `Promise.all` do `CS-26` (paralelizando as três queries de
+  `readDataFileFromDb`) corrompeu o módulo WASM do wa-sqlite (build Asyncify, uma chamada em voo
+  por vez) — crashou uma importação real do mantenedor minutos depois
+  (`NotFoundError: Entry not found` → `RuntimeError: unreachable executed`). Corrigido revertendo
+  para sequencial (`await` um de cada vez); regra registrada em `CLAUDE.md` ("Restrições" → Código)
+  para não repetir o padrão. Ver `CS-28` em `plan/BACKLOG.md`.
+- **CS-26/CS-27 confirmados (2026-08-25)** — repetição do teste de dois browsers, já com `CS-28`
+  aplicado: `worker.readPeer` caiu de 17.823,9ms para **2.570,8ms** (~6,9x), confirmando o fix do
+  `CS-26`; `sync.pullAndMerge.total` do lado que lê caiu de 48,1s para **11,4s**. `getMetadata`
+  também voltou ao normal (588,5ms, mesma ordem dos outros lookups) e `sync.drive.fetch401Retry`
+  não apareceu em nenhuma das duas coletas — `CS-27` rebaixado a baixa prioridade, provável
+  anomalia pontual de rede, não bug sistemático. Ver `CS-26`/`CS-27` em `plan/BACKLOG.md`.
