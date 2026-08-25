@@ -257,3 +257,11 @@ arquitetura, adicionar depois se algum dia for a fonte de um relato parecido.
   de merge aplicado via `applyMutation`" via `e2e/syncApplyMutation.spec.ts` (usa
   `window.__syncTest`, dev-only, mesmo padrão de `window.__storage`). Fase 2 (hash de partição
   pra acelerar a leitura do peer) ainda não implementada. Ver `CS-30` em `plan/BACKLOG.md`.
+- **CS-31 (2026-08-25)** — confirmação do `CS-30` contra dado real também revelou que
+  `sync.loadBaseline` (a releitura local que o diff precisa) custou 7,3s no Firefox — quase 29%
+  do tempo total, concentrados numa única query (`SELECT t.* FROM transactions` local). A mesma
+  chamada custou 52ms no Chrome, mesmo tamanho de cofre — descompasso Firefox×Chrome que já
+  aparecia em toda coleta desta sessão (hidratação de boot), agora nomeado explicitamente. Sem
+  correção nesta sessão; a Fase 2 já planejada (hash por partição) resolve isso pelo mesmo
+  mecanismo que resolve a leitura do peer, aplicado também ao lado local. Ver `CS-31` em
+  `plan/BACKLOG.md`.
