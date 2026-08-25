@@ -301,6 +301,7 @@
     "wealthAccounts": "Assets & Liabilities",
     "assets": "Assets",
     "loans": "Loans",
+    "loansHint": "Installment purchases already booked on accounts or cards are counted here and in Financial Health automatically — no need to duplicate them. Use Loans only for debt with no matching transaction, like money borrowed informally from a family member.",
     "newAsset": "New Asset",
     "newLoan": "New Loan",
     "categories": "Categories",
@@ -585,7 +586,8 @@
     "categoryInvestments": "Investments & Assets",
     "categoryOther": "Other",
     "categoryCredit": "Credit Cards",
-    "categoryLoans": "Loans & Financing"
+    "categoryLoans": "Loans & Financing",
+    "categoryInstallments": "Installment Purchases"
   },
   "health": {
     "title": "Financial Health",

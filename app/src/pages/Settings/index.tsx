@@ -1061,6 +1061,7 @@ export default function Settings() {
                       <AccountColumn
                         label={t('settings.loans')}
                         addLabel={t('settings.newLoan')}
+                        hint={t('settings.loansHint')}
                         onAdd={() =>
                           setModal({
                             open: true,
@@ -2709,6 +2710,7 @@ function AddCategoryModal({
 function AccountColumn({
   label,
   addLabel,
+  hint,
   onAdd,
   accounts,
   archivedAccounts,
@@ -2720,6 +2722,7 @@ function AccountColumn({
 }: {
   label: string
   addLabel: string
+  hint?: string
   onAdd: () => void
   accounts: Account[]
   archivedAccounts: Account[]
@@ -2744,6 +2747,9 @@ function AccountColumn({
           {addLabel}
         </button>
       </div>
+      {/* M-85: explains why a loan already booked as installment transactions doesn't need
+          a LOAN account too — that debt is already counted on /net-worth and /health. */}
+      {hint && <p className="mb-3 text-xs text-on-surface/40">{hint}</p>}
       <div className="space-y-2">
         {accounts.length === 0 && (
           <p className="py-4 text-center text-sm text-on-surface/40">{t('common.noData')}</p>

@@ -793,8 +793,12 @@ global "Incluir não pagos":
 ### NetWorth (`/net-worth`, F-24)
 
 - Patrimônio líquido = ativos (contas não-CREDIT com `includeInBalance`, + valuations de
-  STOCKS/CRYPTO/FOREX/ASSET) − passivos (`getTotalCreditLiability` de cada conta CREDIT)
-- Stat cards (total, ativos, passivos), breakdown por conta, gráfico de evolução (AreaChart)
+  STOCKS/CRYPTO/FOREX/ASSET) − passivos (`getTotalCreditLiability` de cada conta CREDIT +
+  `getLoanLiability` de cada conta LOAN + `getDebtBreakdown` filtrado a `kind: 'installments'`
+  para séries de parcelamento abertas em conta comum — M-85, mesmo motor que `/health` usa via
+  HE-15, evita que o usuário precise duplicar a dívida numa conta `LOAN` só para ela aparecer aqui)
+- Stat cards (total, ativos, passivos), breakdown por conta — três categorias de passivo
+  (Cartões de Crédito, Empréstimos e Financiamentos, Parcelamentos)
 - Toggle `netWorthIncludeHidden` (workspace) — inclui contas com `includeInBalance=false`
 
 ### Settings (`/settings`)

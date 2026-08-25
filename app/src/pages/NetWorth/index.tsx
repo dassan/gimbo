@@ -23,7 +23,9 @@ import {
   getCurrentInvoiceBalance,
   getTotalCreditLiability,
   getLoanLiability,
+  getDebtBreakdown,
   isCashRealized,
+  type DebtGroup,
 } from '@/lib/utils'
 import StatCard from '@/components/StatCard'
 import type { Account, AccountType, Transaction, Valuation } from '@/types'
@@ -215,8 +217,10 @@ export default function NetWorth() {
     assetCategoryTotals,
     visibleCreditAccounts,
     visibleLoanAccounts,
+    visibleInstallmentGroups,
     totalCreditLiabilities,
     totalLoanLiabilities,
+    totalInstallmentLiabilities,
     assetBalances,
     totalAssets,
     totalLiabilities,
@@ -228,8 +232,10 @@ export default function NetWorth() {
         assetCategoryTotals: emptyAssetCategoryTotals(),
         visibleCreditAccounts: [],
         visibleLoanAccounts: [],
+        visibleInstallmentGroups: [],
         totalCreditLiabilities: 0,
         totalLoanLiabilities: 0,
+        totalInstallmentLiabilities: 0,
         assetBalances: {} as Record<string, number>,
         totalAssets: 0,
         totalLiabilities: 0,
@@ -270,15 +276,32 @@ export default function NetWorth() {
       0
     )
     const totalLoanLiabilities = loanAccounts.reduce((s, acc) => s + getLoanLiability(acc), 0)
-    const totalLiabilities = totalCreditLiabilities + totalLoanLiabilities
+    // M-85: open installment purchases booked on a regular (non-CREDIT, non-LOAN) account are
+    // real debt too — same motor as /health's getDebtBreakdown (HE-15), so a financing entered
+    // parcela by parcela never needs a duplicate LOAN account just to show up here.
+    const installmentGroupsAll = getDebtBreakdown(data.transactions, assetAccounts).filter(
+      (g) => g.kind === 'installments'
+    )
+    const totalInstallmentLiabilities = installmentGroupsAll.reduce(
+      (s, g) => s + g.remainingTotal,
+      0
+    )
+    const visibleInstallmentGroups = getDebtBreakdown(
+      data.transactions,
+      visibleAssetAccounts
+    ).filter((g) => g.kind === 'installments')
+    const totalLiabilities =
+      totalCreditLiabilities + totalLoanLiabilities + totalInstallmentLiabilities
 
     return {
       assetsByCategory,
       assetCategoryTotals,
       visibleCreditAccounts,
       visibleLoanAccounts,
+      visibleInstallmentGroups,
       totalCreditLiabilities,
       totalLoanLiabilities,
+      totalInstallmentLiabilities,
       assetBalances,
       totalAssets,
       totalLiabilities,
@@ -388,7 +411,9 @@ export default function NetWorth() {
 
         {/* Liabilities column */}
         <div className="space-y-4">
-          {visibleCreditAccounts.length === 0 && visibleLoanAccounts.length === 0 ? (
+          {visibleCreditAccounts.length === 0 &&
+          visibleLoanAccounts.length === 0 &&
+          visibleInstallmentGroups.length === 0 ? (
             <div className={cn('rounded-2xl bg-surface-container p-5 sm:p-6', shadowClass)}>
               <p className="py-8 text-center text-sm text-on-surface/40">
                 {t('netWorth.noAccounts')}
@@ -438,6 +463,32 @@ export default function NetWorth() {
                         ofTotalLabel={t('netWorth.ofTotal')}
                       />
                     ))}
+                  </div>
+                </CategoryCard>
+              )}
+              {visibleInstallmentGroups.length > 0 && (
+                <CategoryCard
+                  title={t('netWorth.categoryInstallments')}
+                  total={totalInstallmentLiabilities}
+                  shadowClass={shadowClass}
+                >
+                  <div className="space-y-1">
+                    {visibleInstallmentGroups.map((group) => {
+                      const account = data.accounts.find((a) => a.id === group.accountId)
+                      if (!account) return null
+                      return (
+                        <InstallmentLiabilityRow
+                          key={group.accountId}
+                          account={account}
+                          group={group}
+                          totalLiabilities={totalLiabilities}
+                          totalCommittedLabel={t('netWorth.totalCommitted')}
+                          monthlyPaymentLabel={t('accounts.monthlyPayment')}
+                          remainingInstallmentsLabel={t('accounts.remainingInstallments')}
+                          ofTotalLabel={t('netWorth.ofTotal')}
+                        />
+                      )
+                    })}
                   </div>
                 </CategoryCard>
               )}
@@ -668,6 +719,72 @@ function LoanLiabilityRow({
           </p>
           <p className="text-sm font-bold tabular-nums text-on-surface">
             {formatCurrency(account.loanMetadata?.monthlyPayment ?? 0)}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// M-85: one row per account with an open installment series booked outside a CREDIT card
+// (e.g. a financing entered parcela by parcela on a checking account) — same DebtGroup shape
+// getDebtBreakdown already produces for /health, grouped per account like the rows above.
+function InstallmentLiabilityRow({
+  account,
+  group,
+  totalLiabilities,
+  totalCommittedLabel,
+  monthlyPaymentLabel,
+  remainingInstallmentsLabel,
+  ofTotalLabel,
+}: {
+  account: Account
+  group: DebtGroup
+  totalLiabilities: number
+  totalCommittedLabel: string
+  monthlyPaymentLabel: string
+  remainingInstallmentsLabel: string
+  ofTotalLabel: string
+}) {
+  const pct = totalLiabilities > 0 ? Math.round((group.remainingTotal / totalLiabilities) * 100) : 0
+  const issuerColor =
+    account.issuerIcon && account.issuerIcon !== 'generic'
+      ? CREDIT_ISSUER_COLORS[account.issuerIcon]
+      : undefined
+  const badgeColor = issuerColor ?? ACCOUNT_TYPE_COLORS[account.type]
+
+  return (
+    <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-surface-container-low transition-colors">
+      <div
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white"
+        style={{ backgroundColor: badgeColor }}
+      >
+        {ACCOUNT_TYPE_ICONS[account.type]}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-on-surface truncate">{account.name}</p>
+        {totalLiabilities > 0 && (
+          <p className="text-xs text-on-surface/40 mt-0.5">
+            {pct}% {ofTotalLabel} · {remainingInstallmentsLabel}: {group.longestHorizon}
+          </p>
+        )}
+      </div>
+
+      <div className="flex items-center gap-4 shrink-0">
+        <div className="text-right">
+          <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
+            {totalCommittedLabel}
+          </p>
+          <p className="text-sm font-bold tabular-nums text-tertiary">
+            {formatCurrency(group.remainingTotal)}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
+            {monthlyPaymentLabel}
+          </p>
+          <p className="text-sm font-bold tabular-nums text-on-surface">
+            {formatCurrency(group.monthly)}
           </p>
         </div>
       </div>
