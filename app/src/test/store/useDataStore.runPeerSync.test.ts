@@ -133,6 +133,33 @@ describe('runPeerSync — local edit during pull (race regression)', () => {
     expect(replaceAllMock).not.toHaveBeenCalled()
     expect(pushIfNeededMock).not.toHaveBeenCalled()
   })
+
+  it('does not re-merge/re-persist when data is replaced by an equivalent object with no real edit (CS-29 regression)', async () => {
+    // Reproduces a false positive found in production metrics: React StrictMode double-invokes
+    // App.tsx's init() effect in dev, so loadData() can re-run with a freshly deserialized (but
+    // content-identical) DataFile while a sync is in flight. That's a brand-new object reference
+    // but not a real edit — comparing by reference (the original CS-24 fix) treated it as a
+    // concurrent mutation and paid for a whole extra mergeForSync+replaceAll+pushIfNeeded cycle
+    // for nothing (an unnecessary ~7.4s replaceAll observed live). Only mutate() bumps
+    // fileUpdatedAt, so comparing that instead of `!==` correctly ignores this case.
+    const initial = makeDataFile({ transactions: [] })
+    useDataStore.getState().loadData(initial)
+
+    const remoteTx = makeTx({ id: 'remote-1' })
+    const fresh = { ...initial, transactions: [remoteTx] } as DataFile
+    loadDataFileMock.mockResolvedValue(fresh)
+    pullAndMergeMock.mockImplementation(() => {
+      // Same content, same fileUpdatedAt, but a brand-new object — not a real edit.
+      useDataStore.getState().loadData({ ...initial })
+      return Promise.resolve({ status: 'merged', peersMerged: 1 })
+    })
+
+    await useDataStore.getState().runPeerSync()
+
+    expect(useDataStore.getState().data!.transactions.map((t) => t.id)).toEqual(['remote-1'])
+    expect(replaceAllMock).not.toHaveBeenCalled()
+    expect(pushIfNeededMock).not.toHaveBeenCalled()
+  })
 })
 
 describe('runPeerSync — concurrent invocation (CS-25 regression)', () => {

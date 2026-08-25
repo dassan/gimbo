@@ -293,7 +293,18 @@ export const useDataStore = create<DataStore>((set, get) => ({
           // (reconciled === fresh) when nothing changed during the sync.
           const latestLocal = get().data
           let reconciled = fresh ?? latestLocal
-          if (fresh && latestLocal && latestLocal !== data) {
+          // CS-29: compare fileUpdatedAt, not object identity. `loadData()`/`clearData()` replace
+          // `data` with a brand-new object on every call (StrictMode's double-invoked init() being
+          // the most common trigger in practice) even when nothing actually changed — a reference
+          // check treated that as "a concurrent edit happened" and ran a whole extra
+          // mergeForSync+replaceAll+pushIfNeeded cycle for nothing (confirmed in production
+          // metrics: an unnecessary second ~7.4s replaceAll on every sync). Only `mutate()` bumps
+          // `fileUpdatedAt`, so this only fires for an actual concurrent edit, same as intended.
+          if (
+            fresh &&
+            latestLocal &&
+            latestLocal.settings.fileUpdatedAt > data.settings.fileUpdatedAt
+          ) {
             reconciled = mergeForSync(latestLocal, fresh)
             await storage.replaceAll(reconciled)
             void pushIfNeeded(reconciled)
