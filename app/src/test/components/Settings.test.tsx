@@ -479,10 +479,9 @@ function makeLoanAccount(overrides: Partial<Account> = {}): Account {
 describe('Settings — HE-05: create/edit LOAN account', () => {
   it('shows the loan metadata fields when LOAN is selected in the new-account modal', async () => {
     useDataStore.setState({ data: makeDataFile({ accounts: [], transactions: [] }) })
-    renderSettings()
+    renderSettings('/settings/wealth')
 
-    await userEvent.click(screen.getByRole('button', { name: /settings\.newAccount/i }))
-    await userEvent.selectOptions(screen.getByRole('combobox'), 'LOAN')
+    await userEvent.click(screen.getByRole('button', { name: /settings\.newLoan/i }))
 
     expect(screen.getByText('accounts.outstandingBalance')).toBeInTheDocument()
     expect(screen.getByText('accounts.monthlyPayment')).toBeInTheDocument()
@@ -492,24 +491,22 @@ describe('Settings — HE-05: create/edit LOAN account', () => {
 
   it('does not show the initial-balance field for LOAN accounts (uses outstandingBalance instead)', async () => {
     useDataStore.setState({ data: makeDataFile({ accounts: [], transactions: [] }) })
-    renderSettings()
+    renderSettings('/settings/wealth')
 
-    await userEvent.click(screen.getByRole('button', { name: /settings\.newAccount/i }))
-    await userEvent.selectOptions(screen.getByRole('combobox'), 'LOAN')
+    await userEvent.click(screen.getByRole('button', { name: /settings\.newLoan/i }))
 
     expect(screen.queryByText('accounts.initialBalance')).not.toBeInTheDocument()
   })
 
   it('saves a new LOAN account with the entered loanMetadata', async () => {
     useDataStore.setState({ data: makeDataFile({ accounts: [], transactions: [] }) })
-    renderSettings()
+    renderSettings('/settings/wealth')
 
-    await userEvent.click(screen.getByRole('button', { name: /settings\.newAccount/i }))
+    await userEvent.click(screen.getByRole('button', { name: /settings\.newLoan/i }))
     await userEvent.type(
       screen.getByPlaceholderText('settings.accountNamePlaceholder'),
       'Financiamento do apê'
     )
-    await userEvent.selectOptions(screen.getByRole('combobox'), 'LOAN')
 
     const balanceInputs = screen.getAllByPlaceholderText('R$ 0,00')
     await userEvent.type(balanceInputs[0], '20000')
@@ -537,7 +534,7 @@ describe('Settings — HE-05: create/edit LOAN account', () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [loanAccount], transactions: [] }),
     })
-    renderSettings()
+    renderSettings('/settings/wealth')
 
     await userEvent.click(screen.getByText('Financiamento do carro'))
 
@@ -552,7 +549,7 @@ describe('Settings — HE-05: create/edit LOAN account', () => {
     useDataStore.setState({
       data: makeDataFile({ accounts: [loanAccount], transactions: [] }),
     })
-    renderSettings()
+    renderSettings('/settings/wealth')
 
     expect(screen.getByText(/15\.000,00/)).toBeInTheDocument()
   })
