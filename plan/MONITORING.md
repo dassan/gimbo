@@ -174,7 +174,8 @@ ring buffer de 100 eventos de `telemetry.ts`.
 | `sync.drive.upload` / `.bytes` | `googleDrive.ts` | Upload do `gimbo.db` pro Drive — duração e tamanho |
 | `sync.readPeerBlob` | `syncService.ts` | Parse do blob baixado em `DataFile` (via `storage.readPeerBlob`, worker) |
 | `sync.merge` | `syncService.ts` | `mergeForSync()` puro — deve ser rápido; confirma ou descarta o merge como gargalo |
-| `sync.replaceAll` | `syncService.ts` | Escrita do resultado mesclado no OPFS local |
+| `sync.loadBaseline` | `syncService.ts` | Leitura do baseline fresco (`storage.loadDataFile()`) usado pelo diff — CS-30 |
+| `sync.applyMutation` | `syncService.ts` | Escrita do resultado mesclado no OPFS local, por diff (CS-30) — antes `sync.replaceAll`, reescrita total |
 | `sync.pullAndMerge.total` | `syncService.ts` | `pullAndMerge()` inteiro — só o transporte Drive |
 | `sync.runPeerSync.total` | `useDataStore.ts` | `runPeerSync()` inteiro, como o usuário percebe — inclui a reconciliação do `CS-24` |
 
@@ -248,3 +249,11 @@ arquitetura, adicionar depois se algum dia for a fonte de um relato parecido.
   em todo boot mesmo com conteúdo idêntico, disparando a reconciliação à toa. Corrigido comparando
   `settings.fileUpdatedAt` em vez de identidade — só `mutate()` avança esse timestamp. Ver `CS-29`
   em `plan/BACKLOG.md`.
+- **CS-30 (2026-08-25, Fase 1)** — os três pontos de sync que faziam `replaceAll()` (reescrita
+  total do cofre a cada sync) passaram a usar `applyMutation()` + `diffTransactions()` (mesmo
+  mecanismo do `M-73`, nunca antes usado no write-path de sync). Métrica `sync.replaceAll`
+  renomeada para `sync.applyMutation`; nova métrica `sync.loadBaseline` (leitura do baseline
+  fresco antes do diff, no ponto do Drive). Primeira cobertura automatizada da combinação "delta
+  de merge aplicado via `applyMutation`" via `e2e/syncApplyMutation.spec.ts` (usa
+  `window.__syncTest`, dev-only, mesmo padrão de `window.__storage`). Fase 2 (hash de partição
+  pra acelerar a leitura do peer) ainda não implementada. Ver `CS-30` em `plan/BACKLOG.md`.
