@@ -22,7 +22,21 @@ import v12Schema from './migrations/v12.sql?raw'
 import v13Schema from './migrations/v13.sql?raw'
 import v14Schema from './migrations/v14.sql?raw'
 import v15Schema from './migrations/v15.sql?raw'
+import v16Schema from './migrations/v16.sql?raw'
 import { ERR_DB_UNREADABLE, ERR_SCHEMA_TOO_NEW } from './errors'
+import {
+  hashRow,
+  combineHashes,
+  accountRowKey,
+  categoryRowKey,
+  tagRowKey,
+  budgetRowKey,
+  valuationRowKey,
+  savedPeriodRowKey,
+  auditEntryRowKey,
+  deletedIdRowKey,
+  transactionRowKey,
+} from '@/lib/storage/rowHash'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
 
@@ -49,7 +63,9 @@ type RawSettings = {
   quadrantesEnabled: boolean
   quadrantesInferFromHistory: boolean
 }
-type RawAccount = {
+// Exported (type-only elsewhere) so lib/storage/rowHash.ts can compute a canonical hash key per
+// row without duplicating these shapes — CS-30/CS-31 Fase 2.
+export type RawAccount = {
   id: string
   name: string
   type: string
@@ -67,7 +83,7 @@ type RawAccount = {
   archived?: boolean
   updatedAt?: string
 }
-type RawCategory = {
+export type RawCategory = {
   id: string
   parentId: string | null
   name: string
@@ -76,8 +92,8 @@ type RawCategory = {
   type: string
   updatedAt?: string
 }
-type RawTag = { id: string; name: string; color: string; updatedAt?: string }
-type RawTransaction = {
+export type RawTag = { id: string; name: string; color: string; updatedAt?: string }
+export type RawTransaction = {
   id: string
   accountId: string
   categoryId: string
@@ -96,7 +112,7 @@ type RawTransaction = {
   createdAt?: string
   budgetIds?: string[]
 }
-type RawAuditEntry = {
+export type RawAuditEntry = {
   id: string
   timestamp: string
   action: string
@@ -104,19 +120,19 @@ type RawAuditEntry = {
   entityId: string
   summary: string
 }
-type RawValuation = {
+export type RawValuation = {
   id: string
   accountId: string
   date: string
   marketValue: number
 }
-type RawSavedPeriod = {
+export type RawSavedPeriod = {
   id: string
   name: string
   start: string
   end: string
 }
-type RawBudget = {
+export type RawBudget = {
   id: string
   name: string
   emoji: string
@@ -173,7 +189,7 @@ const DB_FILENAME = 'gimbo.db'
 // this number was written by a newer app build and must be skipped, not partially migrated.
 // Bump this alongside every new migrations/vN.sql (same trap as data/sync_gimbo.py — see
 // CLAUDE.md "Armadilha recorrente").
-const MAX_KNOWN_DB_VERSION = 15
+const MAX_KNOWN_DB_VERSION = 16
 
 // ─── Initialization ───────────────────────────────────────────────────────────
 
@@ -221,6 +237,7 @@ const MIGRATIONS: ReadonlyArray<readonly [version: number, sql: string]> = [
   [13, v13Schema],
   [14, v14Schema],
   [15, v15Schema],
+  [16, v16Schema],
 ]
 
 // Applies pending migrations to an arbitrary db pointer — the main `db` on every open, or a
@@ -458,6 +475,178 @@ async function importDb(data: ArrayBuffer): Promise<void> {
   await removeDbFiles(root, rollbackName)
 }
 
+// ─── Hash de partição (CS-30/CS-31 Fase 2) ─────────────────────────────────────
+
+// Upsert de uma linha de table_hashes contra o `db` local — sempre o `db` módulo-level, nunca um
+// dbPtr de peer/scratch/staging, porque a tabela de hash existe pra o sync decidir o que ler
+// *deste* dispositivo, não pra descrever um banco alheio.
+async function upsertTableHash(
+  tableName: string,
+  partitionKey: string,
+  hash: number,
+  rowCount: number
+): Promise<void> {
+  await sqlite3.run(
+    db,
+    `INSERT INTO table_hashes (table_name, partition_key, hash_value, row_count) VALUES (?, ?, ?, ?)
+     ON CONFLICT(table_name, partition_key) DO UPDATE SET hash_value = excluded.hash_value, row_count = excluded.row_count`,
+    [tableName, partitionKey, hash, rowCount]
+  )
+}
+
+// As 8 tabelas "pequenas" — sempre hasheadas como um todo (partition_key = ''), nunca
+// particionadas por ano como transactions. settings/users ficam de fora: são singleton, sempre
+// lidos, comparar hash não economiza nada. deleted_ids entra aqui (não em transactions) porque um
+// tombstone pode apagar qualquer tipo de entidade, não só transações.
+async function refreshSmallTableHashes(d: RawDataFile, ts: string): Promise<void> {
+  // accounts/categories/tags/budgets persistem `updatedAt ?? ts` (abaixo, nas próprias inserções)
+  // quando o objeto em memória não traz um `updatedAt` — hashear o valor *não normalizado* faria
+  // o hash mudar sozinho no primeiro round-trip por loadDataFile() (que sempre volta com o
+  // fallback já preenchido), mesmo sem nenhuma edição real. Normalizar aqui do mesmo jeito que a
+  // escrita normaliza mantém o hash estável através de leitura-e-escrita-de-volta — achado via
+  // e2e/tableHashSync.spec.ts (o hash de accounts mudava sozinho depois de um applyMutation que
+  // só tocava transactions).
+  await upsertTableHash(
+    'accounts',
+    '',
+    combineHashes(
+      d.accounts.map((a) => hashRow(accountRowKey({ ...a, updatedAt: a.updatedAt ?? ts })))
+    ),
+    d.accounts.length
+  )
+  await upsertTableHash(
+    'categories',
+    '',
+    combineHashes(
+      d.categories.map((c) => hashRow(categoryRowKey({ ...c, updatedAt: c.updatedAt ?? ts })))
+    ),
+    d.categories.length
+  )
+  await upsertTableHash(
+    'tags',
+    '',
+    combineHashes(d.tags.map((t) => hashRow(tagRowKey({ ...t, updatedAt: t.updatedAt ?? ts })))),
+    d.tags.length
+  )
+  await upsertTableHash(
+    'budgets',
+    '',
+    combineHashes(
+      (d.budgets ?? []).map((b) => hashRow(budgetRowKey({ ...b, updatedAt: b.updatedAt ?? ts })))
+    ),
+    (d.budgets ?? []).length
+  )
+  await upsertTableHash(
+    'valuations',
+    '',
+    combineHashes((d.valuations ?? []).map((v) => hashRow(valuationRowKey(v)))),
+    (d.valuations ?? []).length
+  )
+  await upsertTableHash(
+    'saved_periods',
+    '',
+    combineHashes((d.savedPeriods ?? []).map((p) => hashRow(savedPeriodRowKey(p)))),
+    (d.savedPeriods ?? []).length
+  )
+  await upsertTableHash(
+    'audit_log',
+    '',
+    combineHashes(d.auditLog.map((e) => hashRow(auditEntryRowKey(e)))),
+    d.auditLog.length
+  )
+  await upsertTableHash(
+    'deleted_ids',
+    '',
+    combineHashes(d.deletedIds.map((id) => hashRow(deletedIdRowKey(id)))),
+    d.deletedIds.length
+  )
+}
+
+async function upsertTransactionYearHash(year: string, txs: RawTransaction[]): Promise<void> {
+  // combineHashes([]) === 0 — um ano que esvaziou por completo (última transação apagada) grava
+  // (hash=0, row_count=0), nunca deixa a entrada antiga (agora errada) parada em table_hashes.
+  await upsertTableHash(
+    'transactions',
+    year,
+    combineHashes(txs.map((t) => hashRow(transactionRowKey(t)))),
+    txs.length
+  )
+}
+
+// Usado por replaceAll(): já tem o array completo de transações em mãos (reescreveu tudo), então
+// agrupa por ano em memória. Precisa ainda assim consultar quais anos já tinham entrada em
+// table_hashes — um ano que existia antes e não aparece mais no array novo (todas as transações
+// daquele ano vieram deletadas pelo merge) tem que ser zerado, não deixado com o hash antigo.
+//
+// `ts`: mesma normalização de refreshSmallTableHashes — a escrita logo abaixo persiste
+// `tx.updatedAt ?? ts`/`tx.createdAt ?? ts` quando o objeto em memória não traz esses campos;
+// hashear o valor pré-fallback faria o hash mudar sozinho no primeiro round-trip por
+// loadDataFile()/refreshTransactionYearHashesFromDb (que sempre voltam com o fallback já
+// preenchido). Só relevante aqui: a variante "FromDb" já lê o estado persistido, já normalizado.
+async function refreshTransactionYearHashesFromMemory(
+  transactions: RawTransaction[],
+  ts: string
+): Promise<void> {
+  const byYear = new Map<string, RawTransaction[]>()
+  for (const raw of transactions) {
+    const tx: RawTransaction = {
+      ...raw,
+      updatedAt: raw.updatedAt ?? ts,
+      createdAt: raw.createdAt ?? ts,
+    }
+    const year = tx.date.slice(0, 4)
+    const list = byYear.get(year)
+    if (list) list.push(tx)
+    else byYear.set(year, [tx])
+  }
+  const { rows: existingYearRows } = await sqlite3.execWithParams(
+    db,
+    "SELECT DISTINCT partition_key FROM table_hashes WHERE table_name = 'transactions'"
+  )
+  const years = new Set<string>(byYear.keys())
+  for (const [year] of existingYearRows) years.add(year as string)
+  for (const year of years) {
+    await upsertTransactionYearHash(year, byYear.get(year) ?? [])
+  }
+}
+
+// Usado por applyTransactionDelta(): só os anos de fato afetados por esta mutação (fetchOldYears
+// + anos novos dos upserts) — relê cada um do `db` (já com o delta aplicado) em vez de manter um
+// array completo em memória, porque o delta não carrega o estado das linhas não tocadas.
+async function refreshTransactionYearHashesFromDb(years: Iterable<string>): Promise<void> {
+  for (const year of years) {
+    const txRows = await queryRows(db, 'SELECT * FROM transactions WHERE date LIKE ?', [`${year}%`])
+    const ids = txRows.map((r) => r.id as string)
+    const idBatchSize = Math.max(1, maxBoundParams)
+    const tagsByTx = new Map<string, string[]>()
+    const budgetsByTx = new Map<string, string[]>()
+    for (const idBatch of chunk(ids, idBatchSize)) {
+      if (idBatch.length === 0) continue
+      const placeholders = idBatch.map(() => '?').join(',')
+      const tagRows = await queryRows(
+        db,
+        `SELECT transaction_id, tag_id FROM transaction_tags WHERE transaction_id IN (${placeholders})`,
+        idBatch
+      )
+      const budgetRows = await queryRows(
+        db,
+        `SELECT transaction_id, budget_id FROM transaction_budgets WHERE transaction_id IN (${placeholders})`,
+        idBatch
+      )
+      for (const [id, list] of groupJoinIds(tagRows, 'tag_id')) tagsByTx.set(id, list)
+      for (const [id, list] of groupJoinIds(budgetRows, 'budget_id')) budgetsByTx.set(id, list)
+    }
+    const txs = txRows.map((r) =>
+      sqlRowToRawTransaction(
+        r,
+        tagsByTx.get(r.id as string) ?? [],
+        budgetsByTx.get(r.id as string) ?? []
+      )
+    )
+    await upsertTransactionYearHash(year, txs)
+  }
+}
+
 // ─── replaceAll ───────────────────────────────────────────────────────────────
 
 // M-73/PERFORMANCE.md: tudo que replaceAll() reescreve por completo EXCETO
@@ -621,6 +810,8 @@ async function writeSmallTables(d: RawDataFile, ts: string): Promise<void> {
   for (const id of d.deletedIds) {
     await sqlite3.run(db, 'INSERT OR IGNORE INTO deleted_ids (id) VALUES (?)', [id])
   }
+
+  await refreshSmallTableHashes(d, ts)
 }
 
 async function replaceAll(raw: unknown): Promise<void> {
@@ -687,6 +878,8 @@ async function replaceAll(raw: unknown): Promise<void> {
       }
     }
 
+    await refreshTransactionYearHashesFromMemory(d.transactions, ts)
+
     await sqlite3.run(db, 'COMMIT')
   } catch (err) {
     try {
@@ -719,6 +912,22 @@ function chunk<T>(arr: T[], size: number): T[][] {
 async function applyTransactionDelta(delta: RawTransactionDelta, ts: string): Promise<void> {
   const idBatchSize = Math.max(1, maxBoundParams)
   const touchedIds = [...delta.deletedIds, ...delta.upserts.map((t) => t.id)]
+
+  // CS-30/CS-31 Fase 2: precisa saber o ano *antigo* de cada linha tocada que já existia, antes
+  // de qualquer DELETE/INSERT — é a única forma de saber de qual partição de hash tirar a
+  // contribuição antiga se uma transação mudou de ano (ex.: editar a data de 31/dez pra jan do
+  // ano seguinte). Sem isso, o hash do ano antigo ficaria parado, incorreto.
+  const oldYearById = new Map<string, string>()
+  for (const idBatch of chunk(touchedIds, idBatchSize)) {
+    if (idBatch.length === 0) continue
+    const placeholders = idBatch.map(() => '?').join(',')
+    const rows = await queryRows(
+      db,
+      `SELECT id, date FROM transactions WHERE id IN (${placeholders})`,
+      idBatch
+    )
+    for (const r of rows) oldYearById.set(r.id as string, (r.date as string).slice(0, 4))
+  }
 
   // Junction rows são sempre apagadas e reinseridas para toda transação tocada (upsert ou
   // delete) — mais simples que diffar associação de tag/budget separadamente, e ainda barato:
@@ -825,6 +1034,21 @@ async function applyTransactionDelta(delta: RawTransactionDelta, ts: string): Pr
       )
     }
   }
+
+  // Anos afetados: união dos anos antigos das linhas tocadas (upsert ou delete) com os anos
+  // novos dos upserts — tipicamente 1, raramente 2 (uma transação mudando de ano). Nunca o
+  // histórico inteiro, diferente de refreshTransactionYearHashesFromMemory (replaceAll).
+  const affectedYears = new Set<string>()
+  for (const id of delta.deletedIds) {
+    const year = oldYearById.get(id)
+    if (year) affectedYears.add(year)
+  }
+  for (const tx of delta.upserts) {
+    affectedYears.add(tx.date.slice(0, 4))
+    const oldYear = oldYearById.get(tx.id)
+    if (oldYear) affectedYears.add(oldYear)
+  }
+  await refreshTransactionYearHashesFromDb(affectedYears)
 }
 
 async function applyMutation(rawData: unknown, rawDelta: unknown): Promise<void> {
@@ -882,6 +1106,61 @@ function groupJoinIds(rows: Record<string, unknown>[], valueCol: string): Map<st
     else map.set(txId, [value])
   }
   return map
+}
+
+// Maps one raw SQL row (snake_case columns, as queryRows() returns) plus its already-joined
+// tag/budget ids into a RawTransaction. Extracted out of readDataFileFromDb (CS-30/CS-31 Fase 2)
+// so applyTransactionDelta's per-year hash recompute can reuse the exact same mapping instead of
+// a second, easily-drifting reimplementation — the canonical shape a hash is computed from must
+// match the shape read from the peer/local db bit for bit.
+function sqlRowToRawTransaction(
+  r: Record<string, unknown>,
+  tags: string[],
+  budgetIds: string[]
+): RawTransaction {
+  const tx: RawTransaction = {
+    id: r.id as string,
+    accountId: r.account_id as string,
+    categoryId: (r.category_id as string | null) ?? '',
+    amount: r.amount as number,
+    type: r.type as string,
+    description: r.description as string,
+    date: r.date as string,
+    isPaid: Boolean(r.is_paid),
+    tags,
+    budgetIds,
+  }
+  if (r.updated_at !== null && r.updated_at !== undefined) tx.updatedAt = r.updated_at as string
+  if (r.created_at !== null && r.created_at !== undefined) tx.createdAt = r.created_at as string
+  if (r.transfer_account_id !== null && r.transfer_account_id !== undefined) {
+    tx.transferAccountId = r.transfer_account_id as string
+  }
+  if (r.reference_month !== null && r.reference_month !== undefined) {
+    tx.referenceMonth = r.reference_month as string
+  }
+  if (r.invoice_due_date !== null && r.invoice_due_date !== undefined) {
+    tx.invoiceDueDate = r.invoice_due_date as string
+  }
+  if (r.installment_parent_id !== null && r.installment_parent_id !== undefined) {
+    tx.installment = {
+      parentId: r.installment_parent_id as string,
+      currentIndex: r.installment_index as number,
+      total: r.installment_total as number,
+      ...(r.installment_purchase_date !== null && r.installment_purchase_date !== undefined
+        ? { purchaseDate: r.installment_purchase_date as string }
+        : {}),
+    }
+  }
+  if (r.recurrence_parent_id !== null && r.recurrence_parent_id !== undefined) {
+    tx.recurrence = {
+      frequency: r.recurrence_frequency as string,
+      parentId: r.recurrence_parent_id as string,
+      ...(r.recurrence_end_date !== null && r.recurrence_end_date !== undefined
+        ? { endDate: r.recurrence_end_date as string }
+        : {}),
+    }
+  }
+  return tx
 }
 
 // Mirrors StorageService's rowTo* mappers, but against an arbitrary db pointer instead of the
@@ -980,51 +1259,13 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
   )
   const tagsByTx = groupJoinIds(txTagRows, 'tag_id')
   const budgetsByTx = groupJoinIds(txBudgetRows, 'budget_id')
-  const transactions: RawTransaction[] = txRows.map((r) => {
-    const tx: RawTransaction = {
-      id: r.id as string,
-      accountId: r.account_id as string,
-      categoryId: (r.category_id as string | null) ?? '',
-      amount: r.amount as number,
-      type: r.type as string,
-      description: r.description as string,
-      date: r.date as string,
-      isPaid: Boolean(r.is_paid),
-      tags: tagsByTx.get(r.id as string) ?? [],
-      budgetIds: budgetsByTx.get(r.id as string) ?? [],
-    }
-    if (r.updated_at !== null && r.updated_at !== undefined) tx.updatedAt = r.updated_at as string
-    if (r.created_at !== null && r.created_at !== undefined) tx.createdAt = r.created_at as string
-    if (r.transfer_account_id !== null && r.transfer_account_id !== undefined) {
-      tx.transferAccountId = r.transfer_account_id as string
-    }
-    if (r.reference_month !== null && r.reference_month !== undefined) {
-      tx.referenceMonth = r.reference_month as string
-    }
-    if (r.invoice_due_date !== null && r.invoice_due_date !== undefined) {
-      tx.invoiceDueDate = r.invoice_due_date as string
-    }
-    if (r.installment_parent_id !== null && r.installment_parent_id !== undefined) {
-      tx.installment = {
-        parentId: r.installment_parent_id as string,
-        currentIndex: r.installment_index as number,
-        total: r.installment_total as number,
-        ...(r.installment_purchase_date !== null && r.installment_purchase_date !== undefined
-          ? { purchaseDate: r.installment_purchase_date as string }
-          : {}),
-      }
-    }
-    if (r.recurrence_parent_id !== null && r.recurrence_parent_id !== undefined) {
-      tx.recurrence = {
-        frequency: r.recurrence_frequency as string,
-        parentId: r.recurrence_parent_id as string,
-        ...(r.recurrence_end_date !== null && r.recurrence_end_date !== undefined
-          ? { endDate: r.recurrence_end_date as string }
-          : {}),
-      }
-    }
-    return tx
-  })
+  const transactions: RawTransaction[] = txRows.map((r) =>
+    sqlRowToRawTransaction(
+      r,
+      tagsByTx.get(r.id as string) ?? [],
+      budgetsByTx.get(r.id as string) ?? []
+    )
+  )
 
   const valuationRows = await queryRows(
     dbPtr,

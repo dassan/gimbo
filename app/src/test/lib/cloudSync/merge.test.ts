@@ -333,4 +333,24 @@ describe('mergeForSync', () => {
     const twice = mergeForSync(once, b)
     expect(twice).toEqual(once)
   })
+
+  // CS-30/CS-31 (Fase 2): a leitura seletiva do peer depende desta propriedade — um
+  // `remote.transactions` parcial (só as partições/anos que divergiram por hash) não pode alterar
+  // as entradas de `local` que não aparecem nele. Vale porque unionByIdLWW só itera o que está em
+  // `remote`; se um dia o merge deixar de ser "união por id" pra algo que assuma "remote é o
+  // estado completo daquele lado", este teste falha e a leitura seletiva quebraria silenciosamente.
+  it('a partial (year-scoped) remote.transactions does not alter local entries absent from it', () => {
+    const local = makeDataFile({
+      transactions: [
+        makeTx({ id: 'tx-2024', date: '2024-06-01', updatedAt: '2024-06-01T00:00:00.000Z' }),
+        makeTx({ id: 'tx-2026', date: '2026-01-01', updatedAt: '2026-01-01T00:00:00.000Z' }),
+      ],
+    })
+    // Simula uma leitura seletiva que só trouxe o ano de 2026 do peer — 2024 nunca foi lido
+    // porque seu hash já batia com o local.
+    const remote = makeDataFile({ transactions: [] })
+
+    const result = mergeForSync(local, remote)
+    expect(result.transactions.map((t) => t.id).sort()).toEqual(['tx-2024', 'tx-2026'])
+  })
 })
