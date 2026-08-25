@@ -240,3 +240,11 @@ arquitetura, adicionar depois se algum dia for a fonte de um relato parecido.
   também voltou ao normal (588,5ms, mesma ordem dos outros lookups) e `sync.drive.fetch401Retry`
   não apareceu em nenhuma das duas coletas — `CS-27` rebaixado a baixa prioridade, provável
   anomalia pontual de rede, não bug sistemático. Ver `CS-26`/`CS-27` em `plan/BACKLOG.md`.
+- **CS-29 (2026-08-25)** — teste real de dois browsers (edição no Chrome, refresh+sync no Firefox)
+  mostrou `sync.runPeerSync.total` (54,8s) 10,1s maior que `sync.pullAndMerge.total` (44,7s), sem
+  nenhuma edição concorrente real ter acontecido — a diferença batia com um `worker.replaceAll`
+  extra de 7,4s mais uma releitura completa do cofre. Causa: a reconciliação do `CS-24` comparava
+  `data` por identidade de objeto; `<StrictMode>` duplicando `init()` troca a referência de `data`
+  em todo boot mesmo com conteúdo idêntico, disparando a reconciliação à toa. Corrigido comparando
+  `settings.fileUpdatedAt` em vez de identidade — só `mutate()` avança esse timestamp. Ver `CS-29`
+  em `plan/BACKLOG.md`.
