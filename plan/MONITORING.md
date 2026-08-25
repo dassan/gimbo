@@ -265,3 +265,12 @@ arquitetura, adicionar depois se algum dia for a fonte de um relato parecido.
   correção nesta sessão; a Fase 2 já planejada (hash por partição) resolve isso pelo mesmo
   mecanismo que resolve a leitura do peer, aplicado também ao lado local. Ver `CS-31` em
   `plan/BACKLOG.md`.
+- **CS-32 (2026-08-25, Fase 2a)** — schema (`table_hashes`, migration v16) e manutenção do hash
+  por partição (FNV-1a + XOR-fold, `lib/storage/rowHash.ts`), sem nenhuma mudança de leitura
+  ainda (isso é a Fase 2b). Instrumentadas as 3 funções centrais de escrita do worker
+  (`writeSmallTables`/`applyTransactionDelta`/`replaceAll`) — nenhuma mutação em
+  `useDataStore.ts` precisou mudar. `e2e/tableHashSync.spec.ts` (novo) pegou um bug real de
+  normalização antes de qualquer leitura seletiva depender desses hashes: o fallback
+  `updatedAt ?? ts` da escrita não era espelhado no cálculo do hash, fazendo o hash de uma tabela
+  mudar sozinho no primeiro round-trip por `loadDataFile()` sem edição real — corrigido
+  normalizando os dois lados igual. Ver `CS-32` em `plan/BACKLOG.md`.
