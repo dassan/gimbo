@@ -225,7 +225,28 @@ describe('NetWorth page', () => {
     })
   })
 
-  it('getTotalCreditLiability sums current + future EXPENSE for liabilities total', () => {
+  // ─── M-86: "Total Comprometido" of a CREDIT account = full open installment debt ──
+
+  it('shows total open installment debt (not just the current invoice) as Total Comprometido', () => {
+    const acc = makeCreditAccount({
+      id: 'acc-credit',
+      creditMetadata: { limit: 10000, closingDay: 28, dueDay: 10 },
+    })
+    const parcel = makeTx({
+      accountId: 'acc-credit',
+      amount: 300,
+      date: '2099-12-01',
+      installment: { parentId: 'p1', currentIndex: 1, total: 3 },
+    })
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [acc], transactions: [parcel] }),
+    })
+    render(<NetWorth />)
+    expect(screen.getByText('netWorth.totalCommitted')).toBeInTheDocument()
+    expect(document.body.textContent).toContain(formatCurrency(300))
+  })
+
+  it('a plain future EXPENSE with no installment series does not count as Total Comprometido', () => {
     const acc = makeCreditAccount({
       id: 'acc-credit',
       creditMetadata: { limit: 10000, closingDay: 28, dueDay: 10 },
@@ -235,7 +256,8 @@ describe('NetWorth page', () => {
       data: makeDataFile({ accounts: [acc], transactions: [futureTx] }),
     })
     render(<NetWorth />)
-    expect(screen.getByText('netWorth.totalCommitted')).toBeInTheDocument()
+    // Not an open installment series, and outside the current invoice period — Passivos = 0.
+    expect(document.body.textContent).toContain(formatCurrency(0))
   })
 
   // ─── HE-07: LOAN as a liability ─────────────────────────────────────────────
@@ -261,12 +283,18 @@ describe('NetWorth page', () => {
   it('sums CREDIT and LOAN balances into totalLiabilities (negative netWorth)', () => {
     const card = makeCreditAccount({ id: 'acc-credit' })
     const loan = makeLoanAccount({ id: 'acc-loan' })
-    const charge = makeTx({ accountId: 'acc-credit', amount: 500, date: todayStr() })
+    const charge = makeTx({
+      accountId: 'acc-credit',
+      amount: 500,
+      date: todayStr(),
+      installment: { parentId: 'p1', currentIndex: 1, total: 1 },
+    })
     useDataStore.setState({
       data: makeDataFile({ accounts: [card, loan], transactions: [charge] }),
     })
     render(<NetWorth />)
-    // Liabilities total: 500 (credit) + 15000 (loan) = 15500; net worth: 0 - 15500.
+    // Liabilities total: 500 (credit's open installment debt) + 15000 (loan) = 15500;
+    // net worth: 0 - 15500.
     expect(document.body.textContent).toContain(formatCurrency(15500))
   })
 
@@ -307,7 +335,12 @@ describe('NetWorth page', () => {
       archived: true,
       creditMetadata: { limit: 10000, closingDay: 28, dueDay: 10 },
     })
-    const expense = makeTx({ accountId: 'acc-old-card', amount: 700, date: todayStr() })
+    const expense = makeTx({
+      accountId: 'acc-old-card',
+      amount: 700,
+      date: todayStr(),
+      installment: { parentId: 'p1', currentIndex: 1, total: 1 },
+    })
     useDataStore.setState({
       data: makeDataFile({ accounts: [archivedCard], transactions: [expense] }),
     })

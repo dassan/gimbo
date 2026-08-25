@@ -21,7 +21,6 @@ import {
   cn,
   parseDateLocal,
   getCurrentInvoiceBalance,
-  getTotalCreditLiability,
   getLoanLiability,
   getDebtBreakdown,
   isCashRealized,
@@ -218,6 +217,7 @@ export default function NetWorth() {
     visibleCreditAccounts,
     visibleLoanAccounts,
     visibleInstallmentGroups,
+    cardCommittedByAccount,
     totalCreditLiabilities,
     totalLoanLiabilities,
     totalInstallmentLiabilities,
@@ -233,6 +233,7 @@ export default function NetWorth() {
         visibleCreditAccounts: [],
         visibleLoanAccounts: [],
         visibleInstallmentGroups: [],
+        cardCommittedByAccount: new Map<string, number>(),
         totalCreditLiabilities: 0,
         totalLoanLiabilities: 0,
         totalInstallmentLiabilities: 0,
@@ -271,9 +272,19 @@ export default function NetWorth() {
     }
 
     const totalAssets = Object.values(assetBalances).reduce((s, v) => s + v, 0)
-    const totalCreditLiabilities = creditAccounts.reduce(
-      (s, acc) => s + getTotalCreditLiability(data.transactions, acc),
-      0
+    // M-86: "Total Comprometido" of a CREDIT account = its total open installment debt (every
+    // parcela still ahead, not just this invoice), same definition /health already uses
+    // (getDebtBreakdown, HE-15) — reused here instead of getTotalCreditLiability (current-invoice
+    // scope), which stays the basis for "Fatura atual" (getCurrentInvoiceBalance) and for
+    // available-limit math elsewhere (CreditCard page), untouched by this redefinition.
+    const cardDebtGroups = getDebtBreakdown(data.transactions, creditAccounts).filter(
+      (g) => g.kind === 'card'
+    )
+    const totalCreditLiabilities = cardDebtGroups.reduce((s, g) => s + g.remainingTotal, 0)
+    const cardCommittedByAccount = new Map(
+      getDebtBreakdown(data.transactions, visibleCreditAccounts)
+        .filter((g) => g.kind === 'card')
+        .map((g) => [g.accountId, g.remainingTotal])
     )
     const totalLoanLiabilities = loanAccounts.reduce((s, acc) => s + getLoanLiability(acc), 0)
     // M-85: open installment purchases booked on a regular (non-CREDIT, non-LOAN) account are
@@ -299,6 +310,7 @@ export default function NetWorth() {
       visibleCreditAccounts,
       visibleLoanAccounts,
       visibleInstallmentGroups,
+      cardCommittedByAccount,
       totalCreditLiabilities,
       totalLoanLiabilities,
       totalInstallmentLiabilities,
@@ -433,7 +445,7 @@ export default function NetWorth() {
                         key={acc.id}
                         account={acc}
                         currentInvoice={getCurrentInvoiceBalance(data.transactions, acc)}
-                        totalCommitted={getTotalCreditLiability(data.transactions, acc)}
+                        totalCommitted={cardCommittedByAccount.get(acc.id) ?? 0}
                         totalLiabilities={totalLiabilities}
                         currentInvoiceLabel={t('netWorth.currentInvoice')}
                         totalCommittedLabel={t('netWorth.totalCommitted')}
@@ -770,21 +782,23 @@ function InstallmentLiabilityRow({
         )}
       </div>
 
+      {/* M-86: monthly → total, same "do mês → do todo" order as LiabilityRow's Fatura
+          atual → Total Comprometido, so both card kinds read the same way. */}
       <div className="flex items-center gap-4 shrink-0">
-        <div className="text-right">
-          <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
-            {totalCommittedLabel}
-          </p>
-          <p className="text-sm font-bold tabular-nums text-tertiary">
-            {formatCurrency(group.remainingTotal)}
-          </p>
-        </div>
         <div className="text-right">
           <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
             {monthlyPaymentLabel}
           </p>
           <p className="text-sm font-bold tabular-nums text-on-surface">
             {formatCurrency(group.monthly)}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
+            {totalCommittedLabel}
+          </p>
+          <p className="text-sm font-bold tabular-nums text-tertiary">
+            {formatCurrency(group.remainingTotal)}
           </p>
         </div>
       </div>

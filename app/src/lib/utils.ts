@@ -469,14 +469,6 @@ export function getOpenCreditBalance(transactions: Transaction[], account: Accou
 }
 
 /**
- * Total liability of a CREDIT account for net-worth purposes = current invoice
- * still owed (open balance). See getOpenCreditBalance for the scoping rationale.
- */
-export function getTotalCreditLiability(transactions: Transaction[], account: Account): number {
-  return getOpenCreditBalance(transactions, account)
-}
-
-/**
  * Total liability of a LOAN account for net-worth purposes = outstandingBalance,
  * the user-maintained figure (no transaction replay — HE-06).
  */
@@ -486,12 +478,13 @@ export function getLoanLiability(account: Account): number {
 
 // ─── Financial Health — Debt Engine (HE-08) ──────────────────────────────────
 //
-// Distinct from getTotalCreditLiability (current-invoice scope only, used by
-// /net-worth): this engine answers "how much have I committed in total", the
-// F-29 insight that an installment purchase is real debt, not just this
-// month's parcela. Each installment occurrence is already a materialized
-// Transaction (one per month, see useDataStore's CC-24/CC-25 expansion) — open
-// ones are those dated today or later; past occurrences are treated as settled.
+// This engine answers "how much have I committed in total", the F-29 insight that an
+// installment purchase is real debt, not just this month's parcela. Each installment
+// occurrence is already a materialized Transaction (one per month, see useDataStore's
+// CC-24/CC-25 expansion) — open ones are those dated today or later; past occurrences
+// are treated as settled. M-86: /net-worth's "Total Comprometido" for CREDIT accounts
+// reuses this same engine (getDebtBreakdown) — getOpenCreditBalance (current-invoice
+// scope) remains the basis only for "Fatura atual" and the available-limit math.
 
 interface OpenInstallmentGroup {
   description: string // purchase description, with the "(X/N)" suffix stripped (HE-10)

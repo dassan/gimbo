@@ -11,7 +11,6 @@ import {
   getInvoiceStatus,
   getInvoiceTotal,
   getTxInvoicePeriod,
-  getTotalCreditLiability,
   getLoanLiability,
   getTotalCommittedDebt,
   getMonthlyCommitment,
@@ -285,68 +284,6 @@ describe('getCurrentInvoiceBalance', () => {
     const todayStr = today.toISOString().slice(0, 10)
     const tx = makeTx({ accountId: 'other-acc', amount: 999, date: todayStr })
     expect(getCurrentInvoiceBalance([tx], account)).toBe(0)
-  })
-})
-
-describe('getTotalCreditLiability', () => {
-  it('returns 0 when account has no creditMetadata', () => {
-    const account = makeAccount({ creditMetadata: undefined, type: 'RETAIL' })
-    expect(getTotalCreditLiability([makeTx()], account)).toBe(0)
-  })
-
-  it('returns 0 for an account with no transactions', () => {
-    expect(getTotalCreditLiability([], makeAccount())).toBe(0)
-  })
-
-  it('includes current-period EXPENSE transactions', () => {
-    // closingDay=28 ensures today (day 1–28) stays in the current invoice period
-    const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 28, dueDay: 10 } })
-    const today = new Date().toISOString().slice(0, 10)
-    const tx = makeTx({ amount: 500, date: today })
-    expect(getTotalCreditLiability([tx], account)).toBe(500)
-  })
-
-  it('excludes future-period EXPENSE (scoped to the current invoice)', () => {
-    const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 20, dueDay: 10 } })
-    const tx = makeTx({ amount: 300, date: '2099-12-01' })
-    expect(getTotalCreditLiability([tx], account)).toBe(0)
-  })
-
-  it('excludes past-period EXPENSE (past invoices assumed settled)', () => {
-    const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 20, dueDay: 10 } })
-    const tx = makeTx({ amount: 400, date: '2015-01-01' })
-    expect(getTotalCreditLiability([tx], account)).toBe(0)
-  })
-
-  it('subtracts INCOME credits and period-referenced CREDIT_PAYMENT, ignores TRANSFER', () => {
-    const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 28, dueDay: 10 } })
-    const today = new Date().toISOString().slice(0, 10)
-    const currentKey = invoicePeriodKey(getInvoicePeriod(today, 28))
-    const charge = makeTx({ amount: 500, date: today })
-    const credit = makeTx({ id: 'tx-2', type: 'INCOME', amount: 200, date: today })
-    const payment = makeTx({
-      id: 'tx-3',
-      type: 'CREDIT_PAYMENT',
-      amount: 100,
-      referenceMonth: currentKey,
-    })
-    const transfer = makeTx({ id: 'tx-4', type: 'TRANSFER', amount: 999, date: today })
-    expect(getTotalCreditLiability([charge, credit, payment, transfer], account)).toBe(200)
-  })
-
-  it('ignores transactions from a different account', () => {
-    const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 28, dueDay: 10 } })
-    const today = new Date().toISOString().slice(0, 10)
-    const tx = makeTx({ accountId: 'other-acc', amount: 999, date: today })
-    expect(getTotalCreditLiability([tx], account)).toBe(0)
-  })
-
-  it('counts only the current period, not future installments', () => {
-    const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 28, dueDay: 10 } })
-    const today = new Date().toISOString().slice(0, 10)
-    const currentTx = makeTx({ amount: 200, date: today })
-    const futureTx = makeTx({ id: 'tx-2', amount: 300, date: '2099-12-01' })
-    expect(getTotalCreditLiability([currentTx, futureTx], account)).toBe(200)
   })
 })
 

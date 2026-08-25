@@ -673,8 +673,7 @@ Funções puras — todas usam `parseDateLocal()` internamente:
 - `getInvoicePaid(transactions, account, period)` — Σ `CREDIT_PAYMENT` cujo `referenceMonth` é o período
 - `getInvoiceStatus(total, paid)` — `'open' | 'partial' | 'paid'`
 - `getCurrentInvoiceBalance(transactions, account)` — total da fatura do período corrente
-- `getOpenCreditBalance(transactions, account)` — fatura **atual** em aberto (total do período − pagamentos do período); base do limite disponível e do passivo (B-16)
-- `getTotalCreditLiability(transactions, account)` — = `getOpenCreditBalance` (passivo total exibido no Patrimônio)
+- `getOpenCreditBalance(transactions, account)` — fatura **atual** em aberto (total do período − pagamentos do período); base do limite disponível (B-16). Desde o M-86, deixou de ser a base do passivo total de `/net-worth` — ver `getDebtBreakdown` abaixo
 - `isCardCredit(tx, accounts)` — `true` se `tx` é um estorno/crédito (`INCOME`) numa conta CREDIT
 - `getEffectiveCashFlowDate(tx, accounts)` — data efetiva para o gráfico de fluxo de caixa
 
@@ -793,12 +792,17 @@ global "Incluir não pagos":
 ### NetWorth (`/net-worth`, F-24)
 
 - Patrimônio líquido = ativos (contas não-CREDIT com `includeInBalance`, + valuations de
-  STOCKS/CRYPTO/FOREX/ASSET) − passivos (`getTotalCreditLiability` de cada conta CREDIT +
-  `getLoanLiability` de cada conta LOAN + `getDebtBreakdown` filtrado a `kind: 'installments'`
-  para séries de parcelamento abertas em conta comum — M-85, mesmo motor que `/health` usa via
-  HE-15, evita que o usuário precise duplicar a dívida numa conta `LOAN` só para ela aparecer aqui)
+  STOCKS/CRYPTO/FOREX/ASSET) − passivos, todos os três agora derivados de `getDebtBreakdown`
+  (mesmo motor que `/health` usa via HE-15, M-85/M-86): soma de `remainingTotal` dos grupos
+  `kind: 'card'` (contas CREDIT — total parcelado em aberto, não só a fatura atual) +
+  `kind: 'installments'` (parcelamento em conta comum) + `getLoanLiability` de cada conta LOAN
+  (`outstandingBalance`, sem passar por `getDebtBreakdown` — `LOAN` não tem transações). Extensão
+  deliberada do escopo do passivo de cartão além da fatura atual (M-86) — evita que o usuário
+  precise duplicar a dívida numa conta `LOAN` manual só para ela aparecer aqui (M-85); a fatura
+  atual (`getCurrentInvoiceBalance`) segue exibida ao lado, sem mudança
 - Stat cards (total, ativos, passivos), breakdown por conta — três categorias de passivo
-  (Cartões de Crédito, Empréstimos e Financiamentos, Parcelamentos)
+  (Cartões de Crédito, Empréstimos e Financiamentos, Parcelamentos em Contas), cada linha em
+  ordem "do mês → do todo" (Fatura Atual/Parcela Mensal → Total Comprometido)
 - Toggle `netWorthIncludeHidden` (workspace) — inclui contas com `includeInBalance=false`
 
 ### Settings (`/settings`)
