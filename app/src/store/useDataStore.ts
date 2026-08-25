@@ -306,7 +306,12 @@ export const useDataStore = create<DataStore>((set, get) => ({
             latestLocal.settings.fileUpdatedAt > data.settings.fileUpdatedAt
           ) {
             reconciled = mergeForSync(latestLocal, fresh)
-            await storage.replaceAll(reconciled)
+            // CS-30 (Fase 1): `fresh` acabou de ser lido do disco (linha acima), então já é o
+            // baseline correto para o diff — nenhuma leitura extra é necessária aqui. Substitui o
+            // replaceAll (reescrita completa) por applyMutation (M-73): a reconciliação normalmente
+            // envolve só a transação editada concorrentemente, não o cofre inteiro.
+            const delta = diffTransactions(fresh.transactions, reconciled.transactions)
+            await storage.applyMutation(reconciled, delta)
             void pushIfNeeded(reconciled)
           }
           _lastPersisted = reconciled

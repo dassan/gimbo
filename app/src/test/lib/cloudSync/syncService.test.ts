@@ -16,15 +16,20 @@ vi.mock('@/lib/cloudSync/googleDrive', () => ({
   createGoogleDriveProvider: createGoogleDriveProviderMock,
 }))
 
-const { readPeerBlobMock, replaceAllMock, exportBlobMock } = vi.hoisted(() => ({
-  readPeerBlobMock: vi.fn(),
-  replaceAllMock: vi.fn(),
-  exportBlobMock: vi.fn(),
-}))
+const { readPeerBlobMock, replaceAllMock, applyMutationMock, loadDataFileMock, exportBlobMock } =
+  vi.hoisted(() => ({
+    readPeerBlobMock: vi.fn(),
+    replaceAllMock: vi.fn(),
+    applyMutationMock: vi.fn(),
+    loadDataFileMock: vi.fn(),
+    exportBlobMock: vi.fn(),
+  }))
 vi.mock('@/services/storage', () => ({
   storage: {
     readPeerBlob: readPeerBlobMock,
     replaceAll: replaceAllMock,
+    applyMutation: applyMutationMock,
+    loadDataFile: loadDataFileMock,
     exportBlob: exportBlobMock,
   },
 }))
@@ -70,6 +75,8 @@ beforeEach(() => {
   })
   readPeerBlobMock.mockReset()
   replaceAllMock.mockReset()
+  applyMutationMock.mockReset().mockResolvedValue(undefined)
+  loadDataFileMock.mockReset().mockResolvedValue(makeDataFile())
   exportBlobMock.mockReset().mockResolvedValue(new Blob(['x']))
 })
 
@@ -131,7 +138,9 @@ describe('pullAndMerge', () => {
     const result = await pullAndMerge(makeDataFile())
 
     expect(result).toEqual({ status: 'merged', peersMerged: 1 })
-    expect(replaceAllMock).toHaveBeenCalledTimes(1)
+    // CS-30 (Fase 1): applyMutation (diff), não mais replaceAll (reescrita completa).
+    expect(applyMutationMock).toHaveBeenCalledTimes(1)
+    expect(replaceAllMock).not.toHaveBeenCalled()
     expect(uploadMock).toHaveBeenCalledTimes(1)
   })
 
@@ -143,6 +152,7 @@ describe('pullAndMerge', () => {
     const result = await pullAndMerge(makeDataFile())
     expect(result).toEqual({ status: 'skipped', reason: 'unreadable' })
     expect(replaceAllMock).not.toHaveBeenCalled()
+    expect(applyMutationMock).not.toHaveBeenCalled()
   })
 
   it('returns offline (never throws) when the provider fails', async () => {

@@ -112,8 +112,11 @@ describe('runPeerSync — local edit during pull (race regression)', () => {
 
     await useDataStore.getState().runPeerSync()
 
-    expect(replaceAllMock).toHaveBeenCalled()
-    const persisted = replaceAllMock.mock.calls[replaceAllMock.mock.calls.length - 1][0] as DataFile
+    expect(applyMutationMock).toHaveBeenCalled()
+    expect(replaceAllMock).not.toHaveBeenCalled()
+    const persisted = applyMutationMock.mock.calls[
+      applyMutationMock.mock.calls.length - 1
+    ][0] as DataFile
     expect(persisted.transactions.map((t) => t.id)).toContain('local-1')
     expect(pushIfNeededMock).toHaveBeenCalled()
   })
@@ -131,6 +134,7 @@ describe('runPeerSync — local edit during pull (race regression)', () => {
 
     expect(useDataStore.getState().data!.transactions.map((t) => t.id)).toEqual(['remote-1'])
     expect(replaceAllMock).not.toHaveBeenCalled()
+    expect(applyMutationMock).not.toHaveBeenCalled()
     expect(pushIfNeededMock).not.toHaveBeenCalled()
   })
 
@@ -158,6 +162,7 @@ describe('runPeerSync — local edit during pull (race regression)', () => {
 
     expect(useDataStore.getState().data!.transactions.map((t) => t.id)).toEqual(['remote-1'])
     expect(replaceAllMock).not.toHaveBeenCalled()
+    expect(applyMutationMock).not.toHaveBeenCalled()
     expect(pushIfNeededMock).not.toHaveBeenCalled()
   })
 })

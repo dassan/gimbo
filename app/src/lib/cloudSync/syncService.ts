@@ -12,6 +12,7 @@ import { createGoogleDriveProvider } from './googleDrive'
 import { mergeForSync } from './merge'
 import type { SyncResult } from './provider'
 import { measureSync, measureSyncCompute } from './syncMetrics'
+import { diffTransactions } from '@/lib/storage/transactionDiff'
 
 const LAST_PULLED_KEY = 'gimbo_sync_drive_last_pulled_mtime'
 
@@ -59,7 +60,15 @@ async function pullAndMergeInner(local: DataFile): Promise<SyncResult> {
     }
 
     const mergedData = measureSyncCompute('sync.merge', () => mergeForSync(local, result.data))
-    await measureSync('sync.replaceAll', () => storage.replaceAll(mergedData))
+    // CS-30 (Fase 1): baseline lido do disco agora, não `local` — o pull acima pode ter levado
+    // segundos a minutos (Drive/wifi lento), e uma edição concorrente pode já ter avançado o
+    // disco além do snapshot recebido como parâmetro (mesmo cuidado do CS-24). applyMutation
+    // (M-73) só reescreve as linhas de fato diferentes, em vez do cofre inteiro a cada sync.
+    const baseline = await measureSync('sync.loadBaseline', () => storage.loadDataFile())
+    const delta = baseline
+      ? diffTransactions(baseline.transactions, mergedData.transactions)
+      : { upserts: mergedData.transactions, deletedIds: [] }
+    await measureSync('sync.applyMutation', () => storage.applyMutation(mergedData, delta))
     await provider.upload(await storage.exportBlob())
     setLastPulledRemoteModifiedTime(meta.modifiedTime)
     return { status: 'merged', peersMerged: 1 }
