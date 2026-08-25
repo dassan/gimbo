@@ -21,6 +21,8 @@ import { syncFromPeers } from '@/lib/cloudSync/folderSyncService'
 import { isMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
 import { isGoogleConnected } from '@/lib/cloudSync/googleAuth'
 import { pullAndMerge, pushIfNeeded } from '@/lib/cloudSync/syncService'
+import { mergeForSync } from '@/lib/cloudSync/merge'
+import { measureSync } from '@/lib/cloudSync/syncMetrics'
 import {
   uuid,
   now,
@@ -252,6 +254,16 @@ export const useDataStore = create<DataStore>((set, get) => ({
   },
 
   runPeerSync: async () => {
+    // CS-25: re-entrancy guard — App.tsx's boot-time call and Settings' OAuth-callback call both
+    // fire on the same page load (the redirect back to /settings?code=&state=), and App.tsx's own
+    // ~2s local-data-load delay was enough time for the OAuth callback to finish connecting Google
+    // *first*, so by the time App.tsx's delayed call ran, isGoogleConnected() was already true and
+    // both proceeded — confirmed via sync.* metrics (CS-20): two full pullAndMerge cycles
+    // overlapping in time, each independently re-checking file existence and re-uploading the
+    // entire vault. This check-then-set has no `await` before it, so it's race-free by JS's
+    // run-to-completion semantics: whichever call's synchronous prefix runs first commits
+    // 'syncing' before any other call can observe a stale 'idle'/'offline'/'error'.
+    if (get().syncStatus === 'syncing') return
     // CS-07: Google Drive (Fase 2) takes precedence over the Fase 1 shared-folder mode when
     // both happen to be configured — same "one transport at a time" rule as _triggerLocalBackup.
     const googleOn = isGoogleConnected()
@@ -261,20 +273,40 @@ export const useDataStore = create<DataStore>((set, get) => ({
 
     set({ syncStatus: 'syncing' })
     try {
-      const result = googleOn
-        ? await pullAndMerge(data)
-        : await syncFromPeers(data, await getDeviceId())
+      // Wall-clock for the whole attempt, as the user actually experiences it — pullAndMerge's
+      // own 'sync.pullAndMerge.total' only covers the Drive transport; this also covers the
+      // reconciliation write below and (for the folder transport) syncFromPeers.
+      await measureSync('sync.runPeerSync.total', async () => {
+        const result = googleOn
+          ? await pullAndMerge(data)
+          : await syncFromPeers(data, await getDeviceId())
 
-      if (result.status === 'merged') {
-        const fresh = await storage.loadDataFile()
-        _lastPersisted = fresh ?? get().data
-        set({ data: fresh ?? get().data, syncStatus: 'idle', lastSyncedAt: now() })
-      } else if (result.status === 'offline') {
-        set({ syncStatus: 'offline' })
-      } else {
-        // 'synced' or 'skipped' (newer-schema, non-fatal) — still a completed attempt
-        set({ syncStatus: 'idle', lastSyncedAt: now() })
-      }
+        if (result.status === 'merged') {
+          const fresh = await storage.loadDataFile()
+          // `data` above is the snapshot pullAndMerge/syncFromPeers started from — its pull can
+          // take a while (a slow Drive round-trip on mobile easily runs minutes), and any edit
+          // the user makes meanwhile survives its own debounced write only until
+          // replaceAll(merged) overwrites the whole DB with a version computed from the stale
+          // `data` snapshot, silently dropping it. Re-merging the *current* live state against
+          // `fresh` recovers such an edit: mergeForSync is pure/idempotent and LWW by updatedAt,
+          // so the edit's fresh timestamp wins the merge, and this is a no-op
+          // (reconciled === fresh) when nothing changed during the sync.
+          const latestLocal = get().data
+          let reconciled = fresh ?? latestLocal
+          if (fresh && latestLocal && latestLocal !== data) {
+            reconciled = mergeForSync(latestLocal, fresh)
+            await storage.replaceAll(reconciled)
+            void pushIfNeeded(reconciled)
+          }
+          _lastPersisted = reconciled
+          set({ data: reconciled, syncStatus: 'idle', lastSyncedAt: now() })
+        } else if (result.status === 'offline') {
+          set({ syncStatus: 'offline' })
+        } else {
+          // 'synced' or 'skipped' (newer-schema, non-fatal) — still a completed attempt
+          set({ syncStatus: 'idle', lastSyncedAt: now() })
+        }
+      })
     } catch {
       set({ syncStatus: 'error' })
     }
