@@ -11,6 +11,7 @@ import { isGoogleConnected } from './googleAuth'
 import { createGoogleDriveProvider } from './googleDrive'
 import { mergeForSync } from './merge'
 import type { SyncResult } from './provider'
+import { measureSync, measureSyncCompute } from './syncMetrics'
 
 const LAST_PULLED_KEY = 'gimbo_sync_drive_last_pulled_mtime'
 
@@ -31,6 +32,10 @@ function setLastPulledRemoteModifiedTime(modifiedTime: string): void {
  */
 export async function pullAndMerge(local: DataFile): Promise<SyncResult> {
   if (!isGoogleConnected()) return { status: 'offline' }
+  return measureSync('sync.pullAndMerge.total', () => pullAndMergeInner(local))
+}
+
+async function pullAndMergeInner(local: DataFile): Promise<SyncResult> {
   const provider = createGoogleDriveProvider()
 
   try {
@@ -46,13 +51,15 @@ export async function pullAndMerge(local: DataFile): Promise<SyncResult> {
     }
 
     const buffer = await provider.download()
-    const result = await storage.readPeerBlob(new Blob([buffer]))
+    const result = await measureSync('sync.readPeerBlob', () =>
+      storage.readPeerBlob(new Blob([buffer]))
+    )
     if (result.status === 'skipped') {
       return { status: 'skipped', reason: result.reason }
     }
 
-    const merged = mergeForSync(local, result.data)
-    await storage.replaceAll(merged)
+    const mergedData = measureSyncCompute('sync.merge', () => mergeForSync(local, result.data))
+    await measureSync('sync.replaceAll', () => storage.replaceAll(mergedData))
     await provider.upload(await storage.exportBlob())
     setLastPulledRemoteModifiedTime(meta.modifiedTime)
     return { status: 'merged', peersMerged: 1 }
