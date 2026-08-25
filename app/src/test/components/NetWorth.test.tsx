@@ -85,11 +85,32 @@ describe('NetWorth page', () => {
     expect(screen.getByText('netWorth.netWorth')).toBeInTheDocument()
   })
 
-  it('renders assets and liabilities section headings', () => {
-    useDataStore.setState({ data: makeDataFile() })
+  it('renders one category card per account type present, titled by category', () => {
+    const retail = makeRetailAccount({ id: 'acc-retail', name: 'Conta Corrente' })
+    const stocks = makeStocksAccount({ id: 'acc-stocks', name: 'Carteira Ações' })
+    const credit = makeCreditAccount({ id: 'acc-credit' })
+    const loan = makeLoanAccount({ id: 'acc-loan' })
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [retail, stocks, credit, loan] }),
+    })
     render(<NetWorth />)
-    expect(screen.getByText('netWorth.assetsSection')).toBeInTheDocument()
-    expect(screen.getByText('netWorth.liabilitiesSection')).toBeInTheDocument()
+    expect(screen.getByText('netWorth.categoryRetail')).toBeInTheDocument()
+    expect(screen.getByText('netWorth.categoryInvestments')).toBeInTheDocument()
+    expect(screen.getByText('netWorth.categoryCredit')).toBeInTheDocument()
+    expect(screen.getByText('netWorth.categoryLoans')).toBeInTheDocument()
+    // No accounts of these categories in this fixture — their cards are omitted.
+    expect(screen.queryByText('netWorth.categorySavings')).not.toBeInTheDocument()
+    expect(screen.queryByText('netWorth.categoryOther')).not.toBeInTheDocument()
+  })
+
+  it('sums only the accounts in a category on its card header, not the grand total', () => {
+    const retail = makeRetailAccount({ id: 'acc-retail', balance: 1000 })
+    const stocks = makeStocksAccount({ id: 'acc-stocks', balance: 500 })
+    useDataStore.setState({ data: makeDataFile({ accounts: [retail, stocks] }) })
+    render(<NetWorth />)
+    // Retail card shows 1000, Investments card shows 500 — not the combined 1500.
+    expect(document.body.textContent).toContain(formatCurrency(1000))
+    expect(document.body.textContent).toContain(formatCurrency(500))
   })
 
   it('shows empty state when no accounts', () => {

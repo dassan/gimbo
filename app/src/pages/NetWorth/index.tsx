@@ -162,6 +162,43 @@ function computeAssetBalances(
   return result
 }
 
+// ─── Asset categories (M-XX: category cards replace the single Ativos/Passivos boxes) ─────
+
+type AssetCategory = 'retail' | 'investments' | 'savings' | 'other'
+
+const ASSET_CATEGORY_ORDER: AssetCategory[] = ['retail', 'investments', 'savings', 'other']
+
+const ASSET_CATEGORY_LABEL_KEY: Record<AssetCategory, string> = {
+  retail: 'netWorth.categoryRetail',
+  investments: 'netWorth.categoryInvestments',
+  savings: 'netWorth.categorySavings',
+  other: 'netWorth.categoryOther',
+}
+
+function assetCategoryForType(type: AccountType): AssetCategory {
+  switch (type) {
+    case 'RETAIL':
+      return 'retail'
+    case 'SAVINGS':
+      return 'savings'
+    case 'ASSET':
+    case 'STOCKS':
+    case 'CRYPTO':
+    case 'FOREX':
+      return 'investments'
+    default:
+      return 'other'
+  }
+}
+
+function emptyAssetsByCategory(): Record<AssetCategory, Account[]> {
+  return { retail: [], investments: [], savings: [], other: [] }
+}
+
+function emptyAssetCategoryTotals(): Record<AssetCategory, number> {
+  return { retail: 0, investments: 0, savings: 0, other: 0 }
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function NetWorth() {
@@ -174,9 +211,12 @@ export default function NetWorth() {
   )
 
   const {
-    visibleAssetAccounts,
+    assetsByCategory,
+    assetCategoryTotals,
     visibleCreditAccounts,
     visibleLoanAccounts,
+    totalCreditLiabilities,
+    totalLoanLiabilities,
     assetBalances,
     totalAssets,
     totalLiabilities,
@@ -184,9 +224,12 @@ export default function NetWorth() {
   } = useMemo(() => {
     if (!data) {
       return {
-        visibleAssetAccounts: [],
+        assetsByCategory: emptyAssetsByCategory(),
+        assetCategoryTotals: emptyAssetCategoryTotals(),
         visibleCreditAccounts: [],
         visibleLoanAccounts: [],
+        totalCreditLiabilities: 0,
+        totalLoanLiabilities: 0,
         assetBalances: {} as Record<string, number>,
         totalAssets: 0,
         totalLiabilities: 0,
@@ -211,6 +254,16 @@ export default function NetWorth() {
 
     const assetBalances = computeAssetBalances(assetAccounts, data.transactions, data.valuations)
 
+    // Group asset rows (visible only) and totals (all, incl. archived) by category.
+    const assetsByCategory = emptyAssetsByCategory()
+    for (const acc of visibleAssetAccounts) {
+      assetsByCategory[assetCategoryForType(acc.type)].push(acc)
+    }
+    const assetCategoryTotals = emptyAssetCategoryTotals()
+    for (const acc of assetAccounts) {
+      assetCategoryTotals[assetCategoryForType(acc.type)] += assetBalances[acc.id] ?? 0
+    }
+
     const totalAssets = Object.values(assetBalances).reduce((s, v) => s + v, 0)
     const totalCreditLiabilities = creditAccounts.reduce(
       (s, acc) => s + getTotalCreditLiability(data.transactions, acc),
@@ -220,9 +273,12 @@ export default function NetWorth() {
     const totalLiabilities = totalCreditLiabilities + totalLoanLiabilities
 
     return {
-      visibleAssetAccounts,
+      assetsByCategory,
+      assetCategoryTotals,
       visibleCreditAccounts,
       visibleLoanAccounts,
+      totalCreditLiabilities,
+      totalLoanLiabilities,
       assetBalances,
       totalAssets,
       totalLiabilities,
@@ -230,15 +286,22 @@ export default function NetWorth() {
     }
   }, [data, includeHidden])
 
+  const hasAnyAsset = ASSET_CATEGORY_ORDER.some((cat) => assetsByCategory[cat].length > 0)
+
   if (!data) return null
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-4 sm:space-y-6">
-      {/* ── Page header + toggle ──────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-base font-semibold text-on-surface">{t('netWorth.title')}</h1>
+      {/* ── Page header + toggle — same title/subtitle pattern as Caixinhas e Saúde ── */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold text-on-surface">
+            {t('netWorth.title')}
+          </h1>
+          <p className="text-sm text-on-surface/50 mt-0.5">{t('netWorth.subtitle')}</p>
+        </div>
 
-        <label className="flex items-center gap-2 cursor-pointer select-none">
+        <label className="flex shrink-0 items-center gap-2 cursor-pointer select-none">
           <span className="text-xs text-on-surface/50">{t('netWorth.includeHidden')}</span>
           <button
             role="switch"
@@ -284,75 +347,101 @@ export default function NetWorth() {
         />
       </div>
 
-      {/* ── Breakdown ─────────────────────────────────────────────────────── */}
+      {/* ── Breakdown — one card per account category, replaces the single
+          Ativos/Passivos boxes (the stat cards above already own those labels) ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* Assets */}
-        <div className={cn('rounded-2xl bg-surface-container p-5 sm:p-6', shadowClass)}>
-          <h3 className="text-sm font-semibold text-on-surface mb-4">
-            {t('netWorth.assetsSection')}
-          </h3>
-
-          {visibleAssetAccounts.length === 0 ? (
-            <p className="py-8 text-center text-sm text-on-surface/40">
-              {t('netWorth.noAccounts')}
-            </p>
-          ) : (
-            <div className="space-y-1">
-              {[...visibleAssetAccounts]
-                .sort((a, b) => (assetBalances[b.id] ?? 0) - (assetBalances[a.id] ?? 0))
-                .map((acc) => (
-                  <AssetRow
-                    key={acc.id}
-                    account={acc}
-                    balance={assetBalances[acc.id] ?? 0}
-                    totalAssets={totalAssets}
-                    typeLabel={t(`accounts.${acc.type.toLowerCase()}`)}
-                    updateLabel={t('netWorth.updateMarketValue')}
-                    ofTotalLabel={t('netWorth.ofTotal')}
-                  />
-                ))}
+        {/* Assets column */}
+        <div className="space-y-4">
+          {!hasAnyAsset ? (
+            <div className={cn('rounded-2xl bg-surface-container p-5 sm:p-6', shadowClass)}>
+              <p className="py-8 text-center text-sm text-on-surface/40">
+                {t('netWorth.noAccounts')}
+              </p>
             </div>
+          ) : (
+            ASSET_CATEGORY_ORDER.filter((cat) => assetsByCategory[cat].length > 0).map((cat) => (
+              <CategoryCard
+                key={cat}
+                title={t(ASSET_CATEGORY_LABEL_KEY[cat])}
+                total={assetCategoryTotals[cat]}
+                shadowClass={shadowClass}
+              >
+                <div className="space-y-1">
+                  {[...assetsByCategory[cat]]
+                    .sort((a, b) => (assetBalances[b.id] ?? 0) - (assetBalances[a.id] ?? 0))
+                    .map((acc) => (
+                      <AssetRow
+                        key={acc.id}
+                        account={acc}
+                        balance={assetBalances[acc.id] ?? 0}
+                        totalAssets={totalAssets}
+                        typeLabel={t(`accounts.${acc.type.toLowerCase()}`)}
+                        updateLabel={t('netWorth.updateMarketValue')}
+                        ofTotalLabel={t('netWorth.ofTotal')}
+                      />
+                    ))}
+                </div>
+              </CategoryCard>
+            ))
           )}
         </div>
 
-        {/* Liabilities */}
-        <div className={cn('rounded-2xl bg-surface-container p-5 sm:p-6', shadowClass)}>
-          <h3 className="text-sm font-semibold text-on-surface mb-4">
-            {t('netWorth.liabilitiesSection')}
-          </h3>
-
+        {/* Liabilities column */}
+        <div className="space-y-4">
           {visibleCreditAccounts.length === 0 && visibleLoanAccounts.length === 0 ? (
-            <p className="py-8 text-center text-sm text-on-surface/40">
-              {t('netWorth.noAccounts')}
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {visibleCreditAccounts.map((acc) => (
-                <LiabilityRow
-                  key={acc.id}
-                  account={acc}
-                  currentInvoice={getCurrentInvoiceBalance(data.transactions, acc)}
-                  totalCommitted={getTotalCreditLiability(data.transactions, acc)}
-                  totalLiabilities={totalLiabilities}
-                  currentInvoiceLabel={t('netWorth.currentInvoice')}
-                  totalCommittedLabel={t('netWorth.totalCommitted')}
-                  totalCommittedHint={t('netWorth.totalCommittedHint')}
-                  ofTotalLabel={t('netWorth.ofTotal')}
-                />
-              ))}
-              {visibleLoanAccounts.map((acc) => (
-                <LoanLiabilityRow
-                  key={acc.id}
-                  account={acc}
-                  outstandingBalance={getLoanLiability(acc)}
-                  totalLiabilities={totalLiabilities}
-                  outstandingBalanceLabel={t('accounts.outstandingBalance')}
-                  monthlyPaymentLabel={t('accounts.monthlyPayment')}
-                  remainingInstallmentsLabel={t('accounts.remainingInstallments')}
-                  ofTotalLabel={t('netWorth.ofTotal')}
-                />
-              ))}
+            <div className={cn('rounded-2xl bg-surface-container p-5 sm:p-6', shadowClass)}>
+              <p className="py-8 text-center text-sm text-on-surface/40">
+                {t('netWorth.noAccounts')}
+              </p>
             </div>
+          ) : (
+            <>
+              {visibleCreditAccounts.length > 0 && (
+                <CategoryCard
+                  title={t('netWorth.categoryCredit')}
+                  total={totalCreditLiabilities}
+                  shadowClass={shadowClass}
+                >
+                  <div className="space-y-1">
+                    {visibleCreditAccounts.map((acc) => (
+                      <LiabilityRow
+                        key={acc.id}
+                        account={acc}
+                        currentInvoice={getCurrentInvoiceBalance(data.transactions, acc)}
+                        totalCommitted={getTotalCreditLiability(data.transactions, acc)}
+                        totalLiabilities={totalLiabilities}
+                        currentInvoiceLabel={t('netWorth.currentInvoice')}
+                        totalCommittedLabel={t('netWorth.totalCommitted')}
+                        totalCommittedHint={t('netWorth.totalCommittedHint')}
+                        ofTotalLabel={t('netWorth.ofTotal')}
+                      />
+                    ))}
+                  </div>
+                </CategoryCard>
+              )}
+              {visibleLoanAccounts.length > 0 && (
+                <CategoryCard
+                  title={t('netWorth.categoryLoans')}
+                  total={totalLoanLiabilities}
+                  shadowClass={shadowClass}
+                >
+                  <div className="space-y-1">
+                    {visibleLoanAccounts.map((acc) => (
+                      <LoanLiabilityRow
+                        key={acc.id}
+                        account={acc}
+                        outstandingBalance={getLoanLiability(acc)}
+                        totalLiabilities={totalLiabilities}
+                        outstandingBalanceLabel={t('accounts.outstandingBalance')}
+                        monthlyPaymentLabel={t('accounts.monthlyPayment')}
+                        remainingInstallmentsLabel={t('accounts.remainingInstallments')}
+                        ofTotalLabel={t('netWorth.ofTotal')}
+                      />
+                    ))}
+                  </div>
+                </CategoryCard>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -361,6 +450,35 @@ export default function NetWorth() {
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
+
+function CategoryCard({
+  title,
+  total,
+  shadowClass,
+  children,
+}: {
+  title: string
+  total: number
+  shadowClass: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className={cn('rounded-2xl bg-surface-container p-5 sm:p-6', shadowClass)}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-on-surface">{title}</h3>
+        <span
+          className={cn(
+            'text-sm font-bold tabular-nums pr-3',
+            total < 0 ? 'text-tertiary' : 'text-on-surface'
+          )}
+        >
+          {formatCurrency(total)}
+        </span>
+      </div>
+      {children}
+    </div>
+  )
+}
 
 function AssetRow({
   account,
@@ -516,28 +634,27 @@ function LoanLiabilityRow({
   const pct = totalLiabilities > 0 ? Math.round((outstandingBalance / totalLiabilities) * 100) : 0
 
   return (
-    <div className="rounded-xl border border-surface-container-low px-4 py-3 space-y-2">
-      {/* Loan name */}
-      <div className="flex items-center gap-3">
-        <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white"
-          style={{ backgroundColor: ACCOUNT_TYPE_COLORS.LOAN }}
-        >
-          <Banknote size={18} strokeWidth={1.5} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-on-surface truncate">{account.name}</p>
-          {totalLiabilities > 0 && (
-            <p className="text-xs text-on-surface/30 mt-0.5">
-              {pct}% {ofTotalLabel}
-            </p>
-          )}
-        </div>
+    <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-surface-container-low transition-colors">
+      <div
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white"
+        style={{ backgroundColor: ACCOUNT_TYPE_COLORS.LOAN }}
+      >
+        <Banknote size={18} strokeWidth={1.5} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-on-surface truncate">{account.name}</p>
+        {totalLiabilities > 0 && (
+          <p className="text-xs text-on-surface/40 mt-0.5">
+            {pct}% {ofTotalLabel} · {remainingInstallmentsLabel}:{' '}
+            {account.loanMetadata?.remainingInstallments ?? 0}
+          </p>
+        )}
       </div>
 
-      {/* Two numbers */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
+      {/* Same layout as LiabilityRow: two right-aligned stat blocks next to the name,
+          both a single label+value line so the two blocks share the same baseline. */}
+      <div className="flex items-center gap-4 shrink-0">
+        <div className="text-right">
           <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
             {outstandingBalanceLabel}
           </p>
@@ -545,15 +662,12 @@ function LoanLiabilityRow({
             {formatCurrency(outstandingBalance)}
           </p>
         </div>
-        <div>
+        <div className="text-right">
           <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium">
             {monthlyPaymentLabel}
           </p>
           <p className="text-sm font-bold tabular-nums text-on-surface">
             {formatCurrency(account.loanMetadata?.monthlyPayment ?? 0)}
-          </p>
-          <p className="text-[10px] text-on-surface/30 mt-0.5">
-            {remainingInstallmentsLabel}: {account.loanMetadata?.remainingInstallments ?? 0}
           </p>
         </div>
       </div>

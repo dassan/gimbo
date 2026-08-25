@@ -107,7 +107,15 @@ import type {
   BudgetSortBy,
 } from '@/types'
 
-type Section = 'accounts' | 'categories' | 'tags' | 'vault' | 'preferences' | 'backup' | 'history'
+type Section =
+  | 'accounts'
+  | 'categories'
+  | 'tags'
+  | 'wealth'
+  | 'vault'
+  | 'preferences'
+  | 'backup'
+  | 'history'
 
 // ─── Credit issuer config ─────────────────────────────────────────────────────
 
@@ -134,6 +142,11 @@ const ACCOUNT_TYPES: { type: AccountType; icon: React.ReactNode }[] = [
   { type: 'LOAN', icon: <Banknote size={20} strokeWidth={1.5} /> },
   { type: 'OTHER', icon: <MoreHorizontal size={20} strokeWidth={1.5} /> },
 ]
+
+// Day-to-day cash flow (Contas e Cartões) vs. wealth (Ativos e Passivos) — CREDIT stays a
+// separate column of its own in Contas e Cartões, so it isn't listed in either group here.
+const DAY_TO_DAY_ACCOUNT_TYPES: AccountType[] = ['RETAIL', 'SAVINGS']
+const WEALTH_ASSET_TYPES: AccountType[] = ['ASSET', 'STOCKS', 'CRYPTO', 'FOREX', 'OTHER']
 
 // ─── Category icon config ─────────────────────────────────────────────────────
 
@@ -181,7 +194,15 @@ function accountTypeIcon(type: AccountType): React.ReactNode {
 
 type ModalState =
   | { open: false }
-  | { open: true; account: Account | null; defaultType?: AccountType }
+  | {
+      open: true
+      account: Account | null
+      defaultType?: AccountType
+      // Restricts the type dropdown to the scope the modal was opened from (Contas e Cartões vs.
+      // Ativos e Passivos). Omitted (full list) when editing an existing account, so a correction
+      // can still move an account across scopes.
+      allowedTypes?: AccountType[]
+    }
 type CategoryModalState =
   | { open: false }
   | { open: true; category: Category | null; defaultType?: CategoryType }
@@ -224,7 +245,9 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
-const DATA_SECTIONS: { key: Section; icon: React.ReactNode; labelKey: string }[] = [
+// M-83: "Rotina Financeira" — day-to-day cash flow (Contas e Cartões, Categorias, Tags), split
+// from the wealth-management group below (different update cadence, different mental model).
+const ROUTINE_SECTIONS: { key: Section; icon: React.ReactNode; labelKey: string }[] = [
   {
     key: 'accounts',
     icon: <Landmark size={16} strokeWidth={1.5} />,
@@ -236,6 +259,13 @@ const DATA_SECTIONS: { key: Section; icon: React.ReactNode; labelKey: string }[]
     labelKey: 'settings.categories',
   },
   { key: 'tags', icon: <TagIcon size={16} strokeWidth={1.5} />, labelKey: 'settings.tags' },
+]
+const WEALTH_SECTIONS: { key: Section; icon: React.ReactNode; labelKey: string }[] = [
+  {
+    key: 'wealth',
+    icon: <Briefcase size={16} strokeWidth={1.5} />,
+    labelKey: 'settings.wealthAccounts',
+  },
 ]
 const APP_SECTIONS: { key: Section; icon: React.ReactNode; labelKey: string }[] = [
   { key: 'vault', icon: <Lock size={16} strokeWidth={1.5} />, labelKey: 'settings.vault' },
@@ -251,7 +281,7 @@ const APP_SECTIONS: { key: Section; icon: React.ReactNode; labelKey: string }[] 
   },
   { key: 'history', icon: <History size={16} strokeWidth={1.5} />, labelKey: 'audit.title' },
 ]
-const ALL_SECTIONS = [...DATA_SECTIONS, ...APP_SECTIONS]
+const ALL_SECTIONS = [...ROUTINE_SECTIONS, ...WEALTH_SECTIONS, ...APP_SECTIONS]
 const SECTION_KEYS: Section[] = ALL_SECTIONS.map((s) => s.key)
 
 // F-30/BX-13: lista de receitas (plan/BUDGETS.md §5.9.2) — hoje 1 item; a engrenagem só
@@ -338,6 +368,9 @@ export default function Settings() {
   // M-42: collapsible "Archived accounts" sections — collapsed by default
   const [showArchivedAccounts, setShowArchivedAccounts] = useState(false)
   const [showArchivedCards, setShowArchivedCards] = useState(false)
+  // M-83: separate collapse state for the Ativos e Passivos screen's own archived sections
+  const [showArchivedAssets, setShowArchivedAssets] = useState(false)
+  const [showArchivedLoans, setShowArchivedLoans] = useState(false)
   useEffect(() => {
     void loadBackupDirHandle().then((handle) => setBackupDir(handle))
   }, [])
@@ -781,8 +814,21 @@ export default function Settings() {
             fell off-screen with no hint there was more. ── */}
         {!sectionParam && (
           <div className="sm:hidden mt-4">
-            <SidebarGroup label={t('settings.dataManagement')}>
-              {DATA_SECTIONS.map((s) => (
+            <SidebarGroup label={t('settings.financialRoutine')}>
+              {ROUTINE_SECTIONS.map((s) => (
+                <SidebarItem
+                  key={s.key}
+                  icon={s.icon}
+                  label={t(s.labelKey)}
+                  active={false}
+                  trailing={<ChevronRight size={16} className="text-on-surface/30" />}
+                  onClick={() => void navigate('/settings/' + s.key)}
+                />
+              ))}
+            </SidebarGroup>
+
+            <SidebarGroup label={t('settings.wealth')} className="mt-4">
+              {WEALTH_SECTIONS.map((s) => (
                 <SidebarItem
                   key={s.key}
                   icon={s.icon}
@@ -814,8 +860,20 @@ export default function Settings() {
         <div className="mt-4 sm:mt-6 sm:flex sm:gap-6">
           {/* ── Sidebar — desktop only, unchanged; now navigates instead of setState ── */}
           <aside className="hidden sm:block w-52 shrink-0">
-            <SidebarGroup label={t('settings.dataManagement')}>
-              {DATA_SECTIONS.map((s) => (
+            <SidebarGroup label={t('settings.financialRoutine')}>
+              {ROUTINE_SECTIONS.map((s) => (
+                <SidebarItem
+                  key={s.key}
+                  icon={s.icon}
+                  label={t(s.labelKey)}
+                  active={activeSection === s.key}
+                  onClick={() => void navigate('/settings/' + s.key)}
+                />
+              ))}
+            </SidebarGroup>
+
+            <SidebarGroup label={t('settings.wealth')} className="mt-4">
+              {WEALTH_SECTIONS.map((s) => (
                 <SidebarItem
                   key={s.key}
                   icon={s.icon}
@@ -846,15 +904,17 @@ export default function Settings() {
             {/* Accounts & Cards */}
             {activeSection === 'accounts' &&
               (() => {
-                // M-42: active accounts in the main list; archived ones in a collapsible section
-                const nonCreditAccounts = data.accounts.filter(
-                  (a) => a.type !== 'CREDIT' && !a.archived
+                // M-83: this screen is now scoped to day-to-day cash flow — only RETAIL/SAVINGS
+                // (+ CREDIT in its own column). ASSET/STOCKS/CRYPTO/FOREX/OTHER/LOAN live in the
+                // Ativos e Passivos screen below (different update cadence, different mental model).
+                const dayToDayAccounts = data.accounts.filter(
+                  (a) => DAY_TO_DAY_ACCOUNT_TYPES.includes(a.type) && !a.archived
                 )
                 const creditAccounts = data.accounts.filter(
                   (a) => a.type === 'CREDIT' && !a.archived
                 )
-                const archivedNonCreditAccounts = data.accounts.filter(
-                  (a) => a.type !== 'CREDIT' && a.archived
+                const archivedDayToDayAccounts = data.accounts.filter(
+                  (a) => DAY_TO_DAY_ACCOUNT_TYPES.includes(a.type) && a.archived
                 )
                 const archivedCreditAccounts = data.accounts.filter(
                   (a) => a.type === 'CREDIT' && a.archived
@@ -863,90 +923,24 @@ export default function Settings() {
                   <Section title={t('settings.accountsAndCards')}>
                     {/* M-39: accounts | cards side by side on large screens; stacked below lg */}
                     <div className="grid gap-6 lg:grid-cols-2 items-start">
-                      {/* ── Regular accounts (non-CREDIT) ──────────────────── */}
-                      <div>
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-widest text-on-surface/40">
-                            {t('settings.accounts')}
-                          </p>
-                          <button
-                            onClick={() => setModal({ open: true, account: null })}
-                            className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-on-surface/50 hover:bg-surface-container-high hover:text-on-surface transition-colors active:scale-[0.97]"
-                          >
-                            <Plus size={13} strokeWidth={2.5} />
-                            {t('settings.newAccount')}
-                          </button>
-                        </div>
-                        <div className="space-y-2">
-                          {nonCreditAccounts.length === 0 && (
-                            <p className="py-4 text-center text-sm text-on-surface/40">
-                              {t('common.noData')}
-                            </p>
-                          )}
-                          {nonCreditAccounts.map((acc) => {
-                            // M-34: institution branding — colored badge when an issuer is chosen.
-                            const issuerColor =
-                              acc.issuerIcon && acc.issuerIcon !== 'generic'
-                                ? CREDIT_ISSUERS.find((i) => i.key === acc.issuerIcon)?.color
-                                : undefined
-                            return (
-                              <button
-                                key={acc.id}
-                                onClick={() => setModal({ open: true, account: acc })}
-                                className="flex w-full items-center gap-4 rounded-2xl bg-surface-container px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
-                              >
-                                <div
-                                  className={cn(
-                                    'flex h-10 w-10 items-center justify-center rounded-xl',
-                                    !issuerColor && 'bg-primary/10'
-                                  )}
-                                  style={issuerColor ? { backgroundColor: issuerColor } : undefined}
-                                >
-                                  <span className={issuerColor ? 'text-white' : 'text-primary'}>
-                                    {accountTypeIcon(acc.type)}
-                                  </span>
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <p className="text-sm font-semibold text-on-surface truncate">
-                                      {acc.name}
-                                    </p>
-                                    {acc.reserveMetadata && (
-                                      <Umbrella
-                                        size={12}
-                                        strokeWidth={1.5}
-                                        className="shrink-0 text-on-surface/30"
-                                      />
-                                    )}
-                                  </div>
-                                  <p className="text-xs text-on-surface/40">
-                                    {t(`accounts.${acc.type.toLowerCase()}`)}
-                                  </p>
-                                </div>
-                                <div className="text-right">
-                                  {/* HE-05: LOAN balance is the user-maintained outstandingBalance, not the
-                                      derived cash-flow balance used by other account types */}
-                                  <span className="text-sm font-bold tabular-nums text-on-surface">
-                                    {acc.type === 'LOAN'
-                                      ? formatCurrency(acc.loanMetadata?.outstandingBalance ?? 0)
-                                      : formatCurrency(accountBalances[acc.id] ?? 0)}
-                                  </span>
-                                </div>
-                              </button>
-                            )
-                          })}
-                        </div>
-                        <ArchivedAccountsSection
-                          accounts={archivedNonCreditAccounts}
-                          open={showArchivedAccounts}
-                          onToggle={() => setShowArchivedAccounts((v) => !v)}
-                          onEdit={(acc) => setModal({ open: true, account: acc })}
-                          onReactivate={handleReactivateAccount}
-                          onViewCard={() => {}}
-                          accountBalances={accountBalances}
-                          isCredit={false}
-                        />
-                      </div>
+                      <AccountColumn
+                        label={t('settings.accounts')}
+                        addLabel={t('settings.newAccount')}
+                        onAdd={() =>
+                          setModal({
+                            open: true,
+                            account: null,
+                            allowedTypes: DAY_TO_DAY_ACCOUNT_TYPES,
+                          })
+                        }
+                        accounts={dayToDayAccounts}
+                        archivedAccounts={archivedDayToDayAccounts}
+                        archivedOpen={showArchivedAccounts}
+                        onToggleArchived={() => setShowArchivedAccounts((v) => !v)}
+                        onEditAccount={(acc) => setModal({ open: true, account: acc })}
+                        onReactivateAccount={handleReactivateAccount}
+                        accountBalances={accountBalances}
+                      />
 
                       {/* ── Credit cards (CREDIT) ────────────────────────────── */}
                       <div>
@@ -956,7 +950,12 @@ export default function Settings() {
                           </p>
                           <button
                             onClick={() =>
-                              setModal({ open: true, account: null, defaultType: 'CREDIT' })
+                              setModal({
+                                open: true,
+                                account: null,
+                                defaultType: 'CREDIT',
+                                allowedTypes: ['CREDIT'],
+                              })
                             }
                             className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-on-surface/50 hover:bg-surface-container-high hover:text-on-surface transition-colors active:scale-[0.97]"
                           >
@@ -1018,6 +1017,66 @@ export default function Settings() {
                           isCredit={true}
                         />
                       </div>
+                    </div>
+                  </Section>
+                )
+              })()}
+
+            {/* M-83: Ativos e Passivos — wealth-management accounts, split from the day-to-day
+                Contas e Cartões screen above (ASSET/STOCKS/CRYPTO/FOREX/OTHER + LOAN). */}
+            {activeSection === 'wealth' &&
+              (() => {
+                const assetAccounts = data.accounts.filter(
+                  (a) => WEALTH_ASSET_TYPES.includes(a.type) && !a.archived
+                )
+                const loanAccounts = data.accounts.filter((a) => a.type === 'LOAN' && !a.archived)
+                const archivedAssetAccounts = data.accounts.filter(
+                  (a) => WEALTH_ASSET_TYPES.includes(a.type) && a.archived
+                )
+                const archivedLoanAccounts = data.accounts.filter(
+                  (a) => a.type === 'LOAN' && a.archived
+                )
+                return (
+                  <Section title={t('settings.wealthAccounts')}>
+                    <div className="grid gap-6 lg:grid-cols-2 items-start">
+                      <AccountColumn
+                        label={t('settings.assets')}
+                        addLabel={t('settings.newAsset')}
+                        onAdd={() =>
+                          setModal({
+                            open: true,
+                            account: null,
+                            defaultType: 'ASSET',
+                            allowedTypes: WEALTH_ASSET_TYPES,
+                          })
+                        }
+                        accounts={assetAccounts}
+                        archivedAccounts={archivedAssetAccounts}
+                        archivedOpen={showArchivedAssets}
+                        onToggleArchived={() => setShowArchivedAssets((v) => !v)}
+                        onEditAccount={(acc) => setModal({ open: true, account: acc })}
+                        onReactivateAccount={handleReactivateAccount}
+                        accountBalances={accountBalances}
+                      />
+                      <AccountColumn
+                        label={t('settings.loans')}
+                        addLabel={t('settings.newLoan')}
+                        onAdd={() =>
+                          setModal({
+                            open: true,
+                            account: null,
+                            defaultType: 'LOAN',
+                            allowedTypes: ['LOAN'],
+                          })
+                        }
+                        accounts={loanAccounts}
+                        archivedAccounts={archivedLoanAccounts}
+                        archivedOpen={showArchivedLoans}
+                        onToggleArchived={() => setShowArchivedLoans((v) => !v)}
+                        onEditAccount={(acc) => setModal({ open: true, account: acc })}
+                        onReactivateAccount={handleReactivateAccount}
+                        accountBalances={accountBalances}
+                      />
                     </div>
                   </Section>
                 )
@@ -1700,6 +1759,7 @@ export default function Settings() {
         <AddAccountModal
           account={modal.account}
           defaultType={modal.defaultType}
+          allowedTypes={modal.allowedTypes}
           onSave={handleSaveAccount}
           onDelete={handleDeleteAccount}
           onClose={() => setModal({ open: false })}
@@ -1740,12 +1800,16 @@ export default function Settings() {
 function AddAccountModal({
   account,
   defaultType = 'RETAIL',
+  allowedTypes,
   onSave,
   onDelete,
   onClose,
 }: {
   account: Account | null
   defaultType?: AccountType
+  // M-83: restricts the type dropdown to the scope the modal was opened from (Contas e Cartões
+  // vs. Ativos e Passivos). Undefined (the edit-mode default) shows every type.
+  allowedTypes?: AccountType[]
   onSave: (
     name: string,
     type: AccountType,
@@ -1958,11 +2022,13 @@ function AddAccountModal({
             onChange={(e) => handleTypeSelect(e.target.value as AccountType)}
             className="w-full appearance-none rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
           >
-            {ACCOUNT_TYPES.map(({ type: t_ }) => (
-              <option key={t_} value={t_}>
-                {t(`accounts.${t_.toLowerCase()}`)}
-              </option>
-            ))}
+            {ACCOUNT_TYPES.filter(({ type: t_ }) => !allowedTypes || allowedTypes.includes(t_)).map(
+              ({ type: t_ }) => (
+                <option key={t_} value={t_}>
+                  {t(`accounts.${t_.toLowerCase()}`)}
+                </option>
+              )
+            )}
           </select>
 
           {/* M-33/HE-05: Initial balance — shown only for non-CREDIT, non-LOAN accounts */}
@@ -2631,6 +2697,114 @@ function AddCategoryModal({
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+// ─── AccountColumn (M-83) ───────────────────────────────────────────────────────
+// Shared by Contas e Cartões (RETAIL/SAVINGS) and Ativos e Passivos (ASSET/STOCKS/CRYPTO/
+// FOREX/OTHER, LOAN) — every non-CREDIT account type renders the same row shape, LOAN's
+// user-maintained outstandingBalance included, so one component covers all of them.
+
+function AccountColumn({
+  label,
+  addLabel,
+  onAdd,
+  accounts,
+  archivedAccounts,
+  archivedOpen,
+  onToggleArchived,
+  onEditAccount,
+  onReactivateAccount,
+  accountBalances,
+}: {
+  label: string
+  addLabel: string
+  onAdd: () => void
+  accounts: Account[]
+  archivedAccounts: Account[]
+  archivedOpen: boolean
+  onToggleArchived: () => void
+  onEditAccount: (acc: Account) => void
+  onReactivateAccount: (acc: Account) => void
+  accountBalances: Record<string, number>
+}) {
+  const { t } = useTranslation()
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-on-surface/40">
+          {label}
+        </p>
+        <button
+          onClick={onAdd}
+          className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium text-on-surface/50 hover:bg-surface-container-high hover:text-on-surface transition-colors active:scale-[0.97]"
+        >
+          <Plus size={13} strokeWidth={2.5} />
+          {addLabel}
+        </button>
+      </div>
+      <div className="space-y-2">
+        {accounts.length === 0 && (
+          <p className="py-4 text-center text-sm text-on-surface/40">{t('common.noData')}</p>
+        )}
+        {accounts.map((acc) => {
+          // M-34: institution branding — colored badge when an issuer is chosen.
+          const issuerColor =
+            acc.issuerIcon && acc.issuerIcon !== 'generic'
+              ? CREDIT_ISSUERS.find((i) => i.key === acc.issuerIcon)?.color
+              : undefined
+          return (
+            <button
+              key={acc.id}
+              onClick={() => onEditAccount(acc)}
+              className="flex w-full items-center gap-4 rounded-2xl bg-surface-container px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
+            >
+              <div
+                className={cn(
+                  'flex h-10 w-10 items-center justify-center rounded-xl',
+                  !issuerColor && 'bg-primary/10'
+                )}
+                style={issuerColor ? { backgroundColor: issuerColor } : undefined}
+              >
+                <span className={issuerColor ? 'text-white' : 'text-primary'}>
+                  {accountTypeIcon(acc.type)}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-semibold text-on-surface truncate">{acc.name}</p>
+                  {acc.reserveMetadata && (
+                    <Umbrella size={12} strokeWidth={1.5} className="shrink-0 text-on-surface/30" />
+                  )}
+                </div>
+                <p className="text-xs text-on-surface/40">
+                  {t(`accounts.${acc.type.toLowerCase()}`)}
+                </p>
+              </div>
+              <div className="text-right">
+                {/* HE-05: LOAN balance is the user-maintained outstandingBalance, not the
+                    derived cash-flow balance used by other account types */}
+                <span className="text-sm font-bold tabular-nums text-on-surface">
+                  {acc.type === 'LOAN'
+                    ? formatCurrency(acc.loanMetadata?.outstandingBalance ?? 0)
+                    : formatCurrency(accountBalances[acc.id] ?? 0)}
+                </span>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+      <ArchivedAccountsSection
+        accounts={archivedAccounts}
+        open={archivedOpen}
+        onToggle={onToggleArchived}
+        onEdit={onEditAccount}
+        onReactivate={onReactivateAccount}
+        onViewCard={() => {}}
+        accountBalances={accountBalances}
+        isCredit={false}
+      />
     </div>
   )
 }
