@@ -571,9 +571,13 @@
     "totalCommitted": "Total comprometido",
     "totalCommittedHint": "Inclui parcelas futuras",
     "updateMarketValue": "Atualizar valor de mercado",
-    "assetsSection": "Ativos",
-    "liabilitiesSection": "Passivos",
-    "ofTotal": "do total"
+    "ofTotal": "do total",
+    "categoryRetail": "Contas Correntes",
+    "categorySavings": "Poupanças",
+    "categoryInvestments": "Investimentos e Bens",
+    "categoryOther": "Outros",
+    "categoryCredit": "Cartões de Crédito",
+    "categoryLoans": "Empréstimos e Financiamentos"
   },
   "health": {
     "title": "Saúde Financeira",

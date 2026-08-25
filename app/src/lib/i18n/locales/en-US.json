@@ -571,9 +571,13 @@
     "totalCommitted": "Total committed",
     "totalCommittedHint": "Includes future installments",
     "updateMarketValue": "Update market value",
-    "assetsSection": "Assets",
-    "liabilitiesSection": "Liabilities",
-    "ofTotal": "of total"
+    "ofTotal": "of total",
+    "categoryRetail": "Checking Accounts",
+    "categorySavings": "Savings",
+    "categoryInvestments": "Investments & Assets",
+    "categoryOther": "Other",
+    "categoryCredit": "Credit Cards",
+    "categoryLoans": "Loans & Financing"
   },
   "health": {
     "title": "Financial Health",
