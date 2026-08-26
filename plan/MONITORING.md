@@ -282,3 +282,13 @@ arquitetura, adicionar depois se algum dia for a fonte de um relato parecido.
   explicitamente que o teste pega o pior caso possível (forçado `hashesMatch()` a sempre "bater"
   — o teste falhou detectando a perda de dado do peer; revertido antes de commitar). Ver `CS-33`
   em `plan/BACKLOG.md`.
+- **CS-34 (2026-08-25)** — usuário reportou, num teste real pós-`CS-33`, que o sync não ficou mais
+  rápido (pareceu até mais lento): `sync.readPeerBlob`/`worker.readPeer` seguiram em 13-14s.
+  Causa: `table_hashes` só é mantida incrementalmente — um ano de histórico nunca tocado por uma
+  mutação diffada desde que a v16 existe nunca ganha uma linha na tabela, e `hashesMatch()` o
+  trata como "sempre diverge" pra sempre. `e2e/selectivePeerRead.spec.ts` (`CS-33`) não pegou isso
+  porque semeia via `replaceAll()`, que já popula os hashes como efeito colateral. Corrigido com
+  `backfillTableHashesIfNeeded(dbPtr)` — checagem barata, popula tudo de uma vez só se a tabela
+  estiver vazia — chamada em `init()` (local, uma vez por boot) e em `readForeignDataFile()`
+  (cópia do peer, antes de comparar). Teste novo reproduz o cenário real (cofre com dado antigo,
+  hashes vazias) e falha sem a correção. Ver `CS-34` em `plan/BACKLOG.md`.
