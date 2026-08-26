@@ -1077,7 +1077,12 @@ async function applyMutation(rawData: unknown, rawDelta: unknown): Promise<void>
 // without ever touching the local gimbo.db. wa-sqlite has no pure in-memory VFS, so the closest
 // safe approximation is: write the peer's bytes to a scratch OPFS file with its own name, open a
 // *second* db pointer against it, read every table, then delete the scratch file. `db` (the
-// local database) is never opened, migrated, or written to during this process.
+// local database) is never migrated or written to during this process — CS-30/CS-31/CS-32 Fase
+// 2b does read it once (`table_hashes` only, via readTableHashes(db)) to decide which of the
+// peer's partitions are actually worth reading, but that read happens inside the same enqueue()'d
+// task that processes the peer, so there's no window for a concurrent write to race it (see the
+// CS-28 note on readTransactionsForYears above — the same "stay inside one dequeued task"
+// invariant this whole file depends on).
 
 async function queryRows(
   dbPtr: number,
@@ -1166,16 +1171,16 @@ function sqlRowToRawTransaction(
 // Mirrors StorageService's rowTo* mappers, but against an arbitrary db pointer instead of the
 // message-passing `this.query()` — necessary because this runs inside the worker itself, on a
 // scratch db that StorageService (main thread) never sees.
-async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
-  const userRows = await queryRows(dbPtr, "SELECT * FROM users WHERE id = 'singleton'")
-  if (userRows.length === 0) return null
-  const settingsRows = await queryRows(dbPtr, "SELECT * FROM settings WHERE id = 'singleton'")
-  if (settingsRows.length === 0) return null
-  const u = userRows[0]
-  const s = settingsRows[0]
+//
+// CS-30/CS-31/CS-32 Fase 2b: cada tabela vira um leitor próprio, chamado incondicionalmente por
+// readDataFileFromDb() (leitura completa, usada por importDb() — validação de um import não pode
+// depender de hash) e condicionalmente por readDataFileFromDbSelective() (leitura seletiva do
+// peer, usada só pelo sync via readForeignDataFile()) — uma partição cujo hash bate com o local
+// nunca chega a rodar seu leitor.
 
+async function readAccounts(dbPtr: number): Promise<RawAccount[]> {
   const accountRows = await queryRows(dbPtr, 'SELECT * FROM accounts ORDER BY name')
-  const accounts: RawAccount[] = accountRows.map((r) => {
+  return accountRows.map((r) => {
     const acc: RawAccount = {
       id: r.id as string,
       name: r.name as string,
@@ -1207,9 +1212,11 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
     if (r.updated_at !== null && r.updated_at !== undefined) acc.updatedAt = r.updated_at as string
     return acc
   })
+}
 
+async function readCategories(dbPtr: number): Promise<RawCategory[]> {
   const categoryRows = await queryRows(dbPtr, 'SELECT * FROM categories ORDER BY name')
-  const categories: RawCategory[] = categoryRows.map((r) => ({
+  return categoryRows.map((r) => ({
     id: r.id as string,
     parentId: (r.parent_id as string | null) ?? null,
     name: r.name as string,
@@ -1220,9 +1227,11 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       ? { updatedAt: r.updated_at as string }
       : {}),
   }))
+}
 
+async function readTags(dbPtr: number): Promise<RawTag[]> {
   const tagRows = await queryRows(dbPtr, 'SELECT * FROM tags ORDER BY name')
-  const tags: RawTag[] = tagRows.map((r) => ({
+  return tagRows.map((r) => ({
     id: r.id as string,
     name: r.name as string,
     color: r.color as string,
@@ -1230,67 +1239,116 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       ? { updatedAt: r.updated_at as string }
       : {}),
   }))
+}
 
-  // M-72/PERFORMANCE.md: the double-LEFT-JOIN + GROUP_CONCAT(DISTINCT) + GROUP BY t.id shape
-  // this used to share with StorageService.getTransactions() cost ~224s on a real ~25k-tx vault
-  // under wa-sqlite/WASM's async OPFS VFS — the aggregation itself is the bottleneck here, not
-  // row volume. getTransactions() was rewritten to three flat queries joined in JS
-  // (StorageService.ts) but this scratch-db reader (CS-15, a separate code path since it runs
-  // inside the worker against a peer's bytes, not through the message-passing `this.query()`)
-  // was missed — confirmed live via CS-20 sync metrics: `sync.readPeerBlob` took 17.8s to parse a
-  // 14.83MB/~26k-tx peer db, slower than the 10.8s spent downloading those same bytes.
-  //
-  // CS-28: sequential, NOT Promise.all — StorageService.getTransactions() runs its three queries
-  // concurrently safely because each goes through `this.query()` → postMessage → the worker's own
-  // `enqueue()` (this file, dispatch queue), which serializes them one at a time before they ever
-  // reach wa-sqlite. This function already runs *inside* a dequeued task, calling `queryRows()`
-  // directly against the wasm instance — the async build only supports one in-flight Asyncify
-  // call at a time, and firing three concurrently corrupted its unwind state, crashing with
-  // "NotFoundError: Entry not found" → "RuntimeError: unreachable executed" on the next OPFS
-  // call from *any* subsequent operation (e.g. the following import). Confirmed reproducible.
-  const txRows = await queryRows(
-    dbPtr,
-    'SELECT t.* FROM transactions t ORDER BY t.date DESC, t.created_at DESC'
-  )
-  const txTagRows = await queryRows(dbPtr, 'SELECT transaction_id, tag_id FROM transaction_tags')
-  const txBudgetRows = await queryRows(
-    dbPtr,
-    'SELECT transaction_id, budget_id FROM transaction_budgets'
-  )
-  const tagsByTx = groupJoinIds(txTagRows, 'tag_id')
-  const budgetsByTx = groupJoinIds(txBudgetRows, 'budget_id')
-  const transactions: RawTransaction[] = txRows.map((r) =>
+// `years === null` lê o histórico inteiro (readDataFileFromDb, usa um único SELECT sem filtro
+// pras junções — igual ao comportamento de sempre). `years` não-nulo lê só as transações daqueles
+// anos (readDataFileFromDbSelective) e busca as junções batelada por id, já que não faz sentido
+// puxar transaction_tags/transaction_budgets inteiras pra filtrar depois em memória.
+//
+// M-72/PERFORMANCE.md: o formato antigo (LEFT JOIN duplo + GROUP_CONCAT(DISTINCT) + GROUP BY
+// t.id) custava ~224s num cofre real de ~25 mil transações sob wa-sqlite/WASM + VFS assíncrona do
+// OPFS — o agregado em si era o gargalo, não o volume de linhas. Reescrito pra três queries
+// simples unidas em JS — mesmo padrão de StorageService.getTransactions() (StorageService.ts).
+//
+// CS-28: sequential, NOT Promise.all — StorageService.getTransactions() roda suas três queries
+// concorrentemente com segurança porque cada uma passa por `this.query()` → postMessage → a fila
+// `enqueue()` do próprio worker (dispatch), que as serializa antes de qualquer uma chegar no
+// wa-sqlite. Esta função já roda *dentro* de uma tarefa já retirada da fila, chamando
+// `queryRows()` direto contra a instância wasm — o build async só suporta uma chamada Asyncify em
+// voo por vez, e disparar três ao mesmo tempo corrompeu o estado interno do unwind, travando com
+// "NotFoundError: Entry not found" → "RuntimeError: unreachable executed" na próxima chamada OPFS
+// de *qualquer* operação seguinte (ex.: o import seguinte). Confirmado reproduzível.
+async function readTransactionsForYears(
+  dbPtr: number,
+  years: string[] | null
+): Promise<RawTransaction[]> {
+  let txRows: Record<string, unknown>[]
+  if (years === null) {
+    txRows = await queryRows(
+      dbPtr,
+      'SELECT t.* FROM transactions t ORDER BY t.date DESC, t.created_at DESC'
+    )
+  } else if (years.length === 0) {
+    return []
+  } else {
+    const conds = years.map(() => 'date LIKE ?').join(' OR ')
+    txRows = await queryRows(
+      dbPtr,
+      `SELECT t.* FROM transactions t WHERE ${conds} ORDER BY t.date DESC, t.created_at DESC`,
+      years.map((y) => `${y}%`)
+    )
+  }
+  if (txRows.length === 0) return []
+
+  const tagsByTx = new Map<string, string[]>()
+  const budgetsByTx = new Map<string, string[]>()
+  if (years === null) {
+    const txTagRows = await queryRows(dbPtr, 'SELECT transaction_id, tag_id FROM transaction_tags')
+    const txBudgetRows = await queryRows(
+      dbPtr,
+      'SELECT transaction_id, budget_id FROM transaction_budgets'
+    )
+    for (const [id, list] of groupJoinIds(txTagRows, 'tag_id')) tagsByTx.set(id, list)
+    for (const [id, list] of groupJoinIds(txBudgetRows, 'budget_id')) budgetsByTx.set(id, list)
+  } else {
+    const ids = txRows.map((r) => r.id as string)
+    const idBatchSize = Math.max(1, maxBoundParams)
+    for (const idBatch of chunk(ids, idBatchSize)) {
+      const placeholders = idBatch.map(() => '?').join(',')
+      const txTagRows = await queryRows(
+        dbPtr,
+        `SELECT transaction_id, tag_id FROM transaction_tags WHERE transaction_id IN (${placeholders})`,
+        idBatch
+      )
+      const txBudgetRows = await queryRows(
+        dbPtr,
+        `SELECT transaction_id, budget_id FROM transaction_budgets WHERE transaction_id IN (${placeholders})`,
+        idBatch
+      )
+      for (const [id, list] of groupJoinIds(txTagRows, 'tag_id')) tagsByTx.set(id, list)
+      for (const [id, list] of groupJoinIds(txBudgetRows, 'budget_id')) budgetsByTx.set(id, list)
+    }
+  }
+
+  return txRows.map((r) =>
     sqlRowToRawTransaction(
       r,
       tagsByTx.get(r.id as string) ?? [],
       budgetsByTx.get(r.id as string) ?? []
     )
   )
+}
 
+async function readValuations(dbPtr: number): Promise<RawValuation[]> {
   const valuationRows = await queryRows(
     dbPtr,
     'SELECT id, account_id, date, market_value FROM valuations'
   )
-  const valuations: RawValuation[] = valuationRows.map((r) => ({
+  return valuationRows.map((r) => ({
     id: r.id as string,
     accountId: r.account_id as string,
     date: r.date as string,
     marketValue: r.market_value as number,
   }))
+}
 
+async function readSavedPeriods(dbPtr: number): Promise<RawSavedPeriod[]> {
   const savedPeriodRows = await queryRows(
     dbPtr,
     'SELECT id, name, start_date, end_date FROM saved_periods ORDER BY created_at'
   )
-  const savedPeriods: RawSavedPeriod[] = savedPeriodRows.map((r) => ({
+  return savedPeriodRows.map((r) => ({
     id: r.id as string,
     name: r.name as string,
     start: r.start_date as string,
     end: r.end_date as string,
   }))
+}
 
+async function readBudgets(dbPtr: number): Promise<RawBudget[]> {
   const budgetRows = await queryRows(dbPtr, 'SELECT * FROM budgets ORDER BY created_at')
-  const budgets: RawBudget[] = budgetRows.map((r) => {
+  return budgetRows.map((r) => {
     const period: RawBudget['period'] =
       r.period_mode === 'date'
         ? { mode: 'date', date: r.period_date as string }
@@ -1316,9 +1374,11 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       b.targetSource = r.target_source as string
     return b
   })
+}
 
+async function readAuditLog(dbPtr: number): Promise<RawAuditEntry[]> {
   const auditRows = await queryRows(dbPtr, 'SELECT * FROM audit_log ORDER BY timestamp ASC')
-  const auditLog: RawAuditEntry[] = auditRows.map((r) => ({
+  return auditRows.map((r) => ({
     id: r.id as string,
     timestamp: r.timestamp as string,
     action: r.action as string,
@@ -1326,10 +1386,22 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
     entityId: r.entity_id as string,
     summary: r.summary as string,
   }))
+}
 
+async function readDeletedIds(dbPtr: number): Promise<string[]> {
   const deletedRows = await queryRows(dbPtr, 'SELECT id FROM deleted_ids')
-  const deletedIds = deletedRows.map((r) => r.id as string)
+  return deletedRows.map((r) => r.id as string)
+}
 
+async function readUserAndSettings(
+  dbPtr: number
+): Promise<{ user: RawUser; settings: RawSettings } | null> {
+  const userRows = await queryRows(dbPtr, "SELECT * FROM users WHERE id = 'singleton'")
+  if (userRows.length === 0) return null
+  const settingsRows = await queryRows(dbPtr, "SELECT * FROM settings WHERE id = 'singleton'")
+  if (settingsRows.length === 0) return null
+  const u = userRows[0]
+  const s = settingsRows[0]
   return {
     user: {
       name: u.name as string,
@@ -1343,6 +1415,107 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       quadrantesEnabled: Boolean(s.quadrantes_enabled),
       quadrantesInferFromHistory: Boolean(s.quadrantes_infer_from_history),
     },
+  }
+}
+
+// Full, unconditional read of every table — used by importDb() (validating an import can't
+// depend on hash comparisons) and by the readers above when called without a hash gate.
+async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
+  const base = await readUserAndSettings(dbPtr)
+  if (!base) return null
+
+  const accounts = await readAccounts(dbPtr)
+  const categories = await readCategories(dbPtr)
+  const tags = await readTags(dbPtr)
+  const transactions = await readTransactionsForYears(dbPtr, null)
+  const valuations = await readValuations(dbPtr)
+  const savedPeriods = await readSavedPeriods(dbPtr)
+  const budgets = await readBudgets(dbPtr)
+  const auditLog = await readAuditLog(dbPtr)
+  const deletedIds = await readDeletedIds(dbPtr)
+
+  return {
+    ...base,
+    accounts,
+    categories,
+    tags,
+    transactions,
+    valuations,
+    auditLog,
+    deletedIds,
+    savedPeriods,
+    budgets,
+  }
+}
+
+type HashEntry = { hash: number; count: number }
+
+async function readTableHashes(dbPtr: number): Promise<Map<string, HashEntry>> {
+  const rows = await queryRows(
+    dbPtr,
+    'SELECT table_name, partition_key, hash_value, row_count FROM table_hashes'
+  )
+  const map = new Map<string, HashEntry>()
+  for (const r of rows) {
+    map.set(`${r.table_name as string}:${r.partition_key as string}`, {
+      hash: r.hash_value as number,
+      count: r.row_count as number,
+    })
+  }
+  return map
+}
+
+// Ausente de qualquer lado (peer pré-v16, ou local antes de qualquer escrita) = sempre diverge —
+// nunca tratado como "igual" por omissão. É o mesmo comportamento seguro de hoje, só sem a
+// otimização de pular a leitura.
+function hashesMatch(
+  peerHashes: Map<string, HashEntry>,
+  localHashes: Map<string, HashEntry>,
+  key: string
+): boolean {
+  const peer = peerHashes.get(key)
+  const local = localHashes.get(key)
+  if (!peer || !local) return false
+  return peer.hash === local.hash && peer.count === local.count
+}
+
+// CS-30/CS-31/CS-32 Fase 2b: só usada pelo caminho de sync (readForeignDataFile), nunca por
+// importDb() — comparar hashes antes de ler é uma otimização de leitura, não uma decisão que
+// afete se um import é válido. `localHashes` vem de uma leitura do `db` local, feita pelo chamador
+// dentro da mesma invocação enfileirada que processa o peer (nunca um snapshot anterior — a
+// mesma disciplina do CS-24/CS-29 de nunca comparar contra estado desatualizado).
+async function readDataFileFromDbSelective(
+  dbPtr: number,
+  localHashes: Map<string, HashEntry>
+): Promise<RawDataFile | null> {
+  const base = await readUserAndSettings(dbPtr)
+  if (!base) return null
+
+  const peerHashes = await readTableHashes(dbPtr)
+  const matches = (table: string) => hashesMatch(peerHashes, localHashes, `${table}:`)
+
+  const accounts = matches('accounts') ? [] : await readAccounts(dbPtr)
+  const categories = matches('categories') ? [] : await readCategories(dbPtr)
+  const tags = matches('tags') ? [] : await readTags(dbPtr)
+  const valuations = matches('valuations') ? [] : await readValuations(dbPtr)
+  const savedPeriods = matches('saved_periods') ? [] : await readSavedPeriods(dbPtr)
+  const budgets = matches('budgets') ? [] : await readBudgets(dbPtr)
+  const auditLog = matches('audit_log') ? [] : await readAuditLog(dbPtr)
+  const deletedIds = matches('deleted_ids') ? [] : await readDeletedIds(dbPtr)
+
+  // Descobre os anos que o peer de fato tem (nunca lê um ano que só existe localmente — não há
+  // nada pra buscar dele) e lê só os que divergirem do hash local.
+  const yearRows = await queryRows(
+    dbPtr,
+    'SELECT DISTINCT substr(date, 1, 4) AS year FROM transactions'
+  )
+  const divergingYears = yearRows
+    .map((r) => r.year as string)
+    .filter((year) => !hashesMatch(peerHashes, localHashes, `transactions:${year}`))
+  const transactions = await readTransactionsForYears(dbPtr, divergingYears)
+
+  return {
+    ...base,
     accounts,
     categories,
     tags,
@@ -1400,7 +1573,12 @@ async function readForeignDataFile(buffer: ArrayBuffer): Promise<ReadPeerResult>
     }
 
     await runMigrationsOn(tempDb)
-    const data = await readDataFileFromDb(tempDb)
+    // CS-30/CS-31/CS-32 Fase 2b: lê o hash local *agora*, dentro desta mesma task enfileirada —
+    // nunca um valor obtido antes do download/parse do peer, que poderia levar segundos a
+    // minutos (mesma disciplina do CS-24/CS-29: comparar sempre contra o estado atual, não um
+    // snapshot anterior a uma operação potencialmente longa).
+    const localHashes = await readTableHashes(db)
+    const data = await readDataFileFromDbSelective(tempDb, localHashes)
     await sqlite3.close(tempDb)
     await cleanup()
     return data ? { ok: true, data } : { ok: false, reason: 'unreadable' }
