@@ -108,6 +108,18 @@ interface GoogleAuthMeta {
  */
 let _accessToken: { value: string; expiresAt: number } | null = null
 
+/**
+ * CS-37: refresh em voo, compartilhado por todos os chamadores concorrentes.
+ *
+ * Até aqui isso era invisível porque o `enqueue()` de `googleDrive.ts` serializava *todo* I/O do
+ * Drive, então nunca havia dois refreshes ao mesmo tempo. O transporte particionado (CS-43) troca
+ * essa serialização global por um limitador de concorrência, e como `_accessToken` só vive em
+ * memória (SEC-04), **todo reload começa frio** — a primeira coisa que o sync faz depois de um
+ * reload é disparar N requisições paralelas, e sem esta guarda cada uma postaria o mesmo
+ * `refresh_token` grant ao Google, um convite a `rate_limit_exceeded`.
+ */
+let _refreshInFlight: Promise<string> | null = null
+
 function loadMeta(): GoogleAuthMeta | null {
   const raw = localStorage.getItem(META_KEY)
   if (raw) {
@@ -161,6 +173,10 @@ function clearMeta(): void {
   localStorage.removeItem(META_KEY)
   localStorage.removeItem(LEGACY_AUTH_KEY)
   _accessToken = null
+  // CS-37: desanexa quem chamar daqui pra frente do refresh que porventura esteja em voo — depois
+  // de um desconectar, o próximo chamador tem que falhar com "Not connected", não herdar o token
+  // da conexão anterior.
+  _refreshInFlight = null
 }
 
 function base64UrlEncode(bytes: Uint8Array): string {
@@ -278,8 +294,23 @@ export async function handleGoogleCallback(code: string, state: string): Promise
   })
 }
 
-/** Exchanges the stored refresh_token for a new access_token. Marks needsReconnect on failure. */
-export async function refreshGoogleToken(): Promise<string> {
+/**
+ * Exchanges the stored refresh_token for a new access_token. Marks needsReconnect on failure.
+ *
+ * CS-37: single-flight — chamadores concorrentes compartilham o mesmo grant em voo em vez de
+ * postarem N idênticos. Só promessas *em voo* são compartilhadas: um refresh já concluído nunca é
+ * reaproveitado, então o retry-por-401 de `authorizedFetch` continua conseguindo um token novo de
+ * verdade quando precisa.
+ */
+export function refreshGoogleToken(): Promise<string> {
+  if (_refreshInFlight) return _refreshInFlight
+  _refreshInFlight = refreshGoogleTokenInner().finally(() => {
+    _refreshInFlight = null
+  })
+  return _refreshInFlight
+}
+
+async function refreshGoogleTokenInner(): Promise<string> {
   const meta = loadMeta()
   if (!meta) throw new Error('Not connected to Google Drive')
 

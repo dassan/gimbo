@@ -199,6 +199,52 @@ describe('refreshGoogleToken / getValidAccessToken', () => {
   it('refreshGoogleToken throws when never connected', async () => {
     await expect(refreshGoogleToken()).rejects.toThrow()
   })
+
+  // CS-37: pré-requisito do transporte particionado, que troca a serialização global do
+  // `enqueue()` de googleDrive.ts por um limitador de concorrência. Como o access token só vive em
+  // memória (SEC-04), todo reload começa frio e a primeira rodada de sync dispara N requisições
+  // paralelas — sem single-flight, cada uma postaria o mesmo grant ao Google.
+  it('CS-37: chamadas concorrentes compartilham um único grant de refresh', async () => {
+    await connect()
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 4_000_000) // past the 1h expiry
+    const fetchMock = mockFetchOk({ access_token: 'access-2', expires_in: 3600 })
+    global.fetch = fetchMock
+
+    const tokens = await Promise.all([
+      getValidAccessToken(),
+      getValidAccessToken(),
+      getValidAccessToken(),
+      refreshGoogleToken(),
+    ])
+
+    expect(tokens).toEqual(['access-2', 'access-2', 'access-2', 'access-2'])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('CS-37: um refresh já concluído não é reaproveitado pelo próximo chamador', async () => {
+    await connect()
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 4_000_000)
+    global.fetch = mockFetchOk({ access_token: 'access-2', expires_in: 3600 })
+    await refreshGoogleToken()
+
+    // O retry-por-401 de authorizedFetch depende disto: pedir um refresh depois que o anterior
+    // terminou tem que ir à rede de novo, não devolver o token antigo de uma promessa memoizada.
+    const second = mockFetchOk({ access_token: 'access-3', expires_in: 3600 })
+    global.fetch = second
+
+    await expect(refreshGoogleToken()).resolves.toBe('access-3')
+    expect(second).toHaveBeenCalledTimes(1)
+  })
+
+  it('CS-37: uma falha em voo não fica grudada nos chamadores seguintes', async () => {
+    await connect()
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 4_000_000)
+    global.fetch = mockFetchFail()
+    await expect(refreshGoogleToken()).rejects.toThrow()
+
+    global.fetch = mockFetchOk({ access_token: 'access-2', expires_in: 3600 })
+    await expect(refreshGoogleToken()).resolves.toBe('access-2')
+  })
 })
 
 describe('revokeGoogleAuth', () => {
