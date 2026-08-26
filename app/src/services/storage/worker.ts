@@ -432,6 +432,11 @@ async function importDb(data: ArrayBuffer): Promise<void> {
     }
     db = await sqlite3.open_v2(DB_FILENAME)
     await runMigrationsOn(db)
+    // CS-34: importDb() reabre `db` fora do caminho de boot de init() — sem isto, um .db
+    // importado sem table_hashes só ganharia o backfill no próximo reload da página, não neste
+    // mesmo carregamento (a UI já segue usando o cofre importado sem reload, ver handleImportDb
+    // em Settings/Onboarding).
+    await backfillTableHashesIfNeeded(db)
   } catch (err) {
     // A troca falhou no meio. Devolve o cofre ao estado anterior antes de propagar.
     if (haveRollback) {

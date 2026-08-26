@@ -272,3 +272,47 @@ test('backfillTableHashesIfNeeded() recupera um cofre com table_hashes vazia (es
   if (result.status !== 'ok') return
   expect(result.data.transactions.map((t) => t.id)).toEqual(['tx-peer-2027'])
 })
+
+// CS-34 continuação: importDb() reabre `db` fora do caminho de boot de init() — sem um backfill
+// próprio ali, um .db importado sem table_hashes (ex.: um backup antigo, de antes da v16) só
+// ganharia o backfill no *próximo reload*, não neste mesmo carregamento — e a UI de import
+// (handleImportDb em Settings/Onboarding) segue usando o cofre importado sem pedir reload.
+test('importar um .db sem table_hashes já sai com os hashes populados, sem precisar de reload', async ({
+  page,
+}) => {
+  await seedAndGetBlobBase64(page, baseFixture([]))
+
+  // Simula um backup antigo: mesmo conteúdo, mas sem nenhuma linha de hash.
+  const staleBlobBase64 = await page.evaluate(async () => {
+    const storage = (window as Record<string, unknown>).__storage as {
+      query(sql: string): Promise<unknown[]>
+      exportBlob(): Promise<Blob>
+    }
+    await storage.query('DELETE FROM table_hashes')
+    const blob = await storage.exportBlob()
+    const buffer = await blob.arrayBuffer()
+    let binary = ''
+    const bytes = new Uint8Array(buffer)
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+    return btoa(binary)
+  })
+
+  // Reimporta esse "backup antigo" de volta, no mesmo carregamento de página — sem reload.
+  await page.evaluate(async (base64) => {
+    const binary = atob(base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    const storage = (window as Record<string, unknown>).__storage as {
+      importBlob(blob: Blob): Promise<void>
+    }
+    await storage.importBlob(new Blob([bytes], { type: 'application/x-sqlite3' }))
+  }, staleBlobBase64)
+
+  const after = await page.evaluate(async () => {
+    const storage = (window as Record<string, unknown>).__storage as {
+      query(sql: string): Promise<unknown[]>
+    }
+    return storage.query('SELECT COUNT(*) as n FROM table_hashes')
+  })
+  expect((after[0] as { n: number }).n).toBeGreaterThan(0)
+})
