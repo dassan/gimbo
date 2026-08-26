@@ -274,3 +274,11 @@ arquitetura, adicionar depois se algum dia for a fonte de um relato parecido.
   `updatedAt ?? ts` da escrita não era espelhado no cálculo do hash, fazendo o hash de uma tabela
   mudar sozinho no primeiro round-trip por `loadDataFile()` sem edição real — corrigido
   normalizando os dois lados igual. Ver `CS-32` em `plan/BACKLOG.md`.
+- **CS-33 (2026-08-25, Fase 2b)** — leitura seletiva do peer: `readDataFileFromDbSelective`
+  (`worker.ts`) só lê uma tabela/ano se o hash divergir do local, usando os hashes do `CS-32`.
+  `readDataFileFromDb` refatorada em leitores por tabela reutilizados por ambos os caminhos
+  (completo/seletivo); `importDb()` continua na versão completa. `e2e/selectivePeerRead.spec.ts`
+  (novo) usa dois contextos de browser reais pra gerar um peer com hash de verdade, e validou
+  explicitamente que o teste pega o pior caso possível (forçado `hashesMatch()` a sempre "bater"
+  — o teste falhou detectando a perda de dado do peer; revertido antes de commitar). Ver `CS-33`
+  em `plan/BACKLOG.md`.
