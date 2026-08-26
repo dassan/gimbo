@@ -210,6 +210,7 @@ async function init(): Promise<void> {
 
   db = await sqlite3.open_v2(DB_FILENAME)
   await runMigrationsOn(db)
+  await backfillTableHashesIfNeeded(db)
 
   const queriedLimit = sqlite3.limit(db, SQLITE_LIMIT_VARIABLE_NUMBER, -1)
   if (queriedLimit > 0) maxBoundParams = Math.floor(queriedLimit * 0.9)
@@ -1528,6 +1529,116 @@ async function readDataFileFromDbSelective(
   }
 }
 
+// CS-30/CS-31/CS-32/CS-33 — achado ao validar a Fase 2b contra dado real: `table_hashes` é uma
+// tabela nova (v16) e só é mantida *incrementalmente* — `applyTransactionDelta` só recomputa o
+// hash dos anos que o delta de fato tocou. Um ano de histórico que nunca sofreu uma mutação
+// diffada desde que esta feature existe **nunca ganha uma linha em `table_hashes`**, então
+// `hashesMatch()` o vê como ausente dos dois lados e trata como "sempre diverge" — pra sempre,
+// já que nada além de uma mutação naquele ano específico o preencheria. Resultado observado:
+// nenhum ganho de velocidade (o histórico inteiro continua sendo lido a cada sync), com o custo
+// extra da própria comparação de hash por cima. Correção: quando `table_hashes` está vazia (a
+// checagem mais barata possível — uma tabela já backfilled nunca volta a ficar vazia), calcula o
+// hash do estado *atual* inteiro de uma vez, do mesmo jeito que `replaceAll()`/`writeSmallTables()`
+// já fariam se tivessem rodado depois do v16 existir. Custo de leitura completa, uma vez por
+// banco (local no boot; peer/scratch antes de comparar) — depois disso, a manutenção incremental
+// já existente mantém tudo em dia.
+async function backfillTableHashesIfNeeded(dbPtr: number): Promise<void> {
+  const { rows } = await sqlite3.execWithParams(dbPtr, 'SELECT COUNT(*) FROM table_hashes')
+  const count = (rows[0]?.[0] ?? 0) as number
+  if (count > 0) return
+
+  const data = await readDataFileFromDb(dbPtr)
+  if (!data) return
+  const ts = data.settings.fileCreatedAt || new Date().toISOString()
+
+  const upsert = (tableName: string, partitionKey: string, hash: number, rowCount: number) =>
+    sqlite3.run(
+      dbPtr,
+      `INSERT INTO table_hashes (table_name, partition_key, hash_value, row_count) VALUES (?, ?, ?, ?)
+       ON CONFLICT(table_name, partition_key) DO UPDATE SET hash_value = excluded.hash_value, row_count = excluded.row_count`,
+      [tableName, partitionKey, hash, rowCount]
+    )
+
+  // Mesma normalização de updatedAt/createdAt que refreshSmallTableHashes/
+  // refreshTransactionYearHashesFromMemory já fazem (CS-32) — sem ela, o backfill produziria um
+  // hash que muda sozinho no próximo round-trip por loadDataFile(), mesmo achado daquele fix.
+  await upsert(
+    'accounts',
+    '',
+    combineHashes(
+      data.accounts.map((a) => hashRow(accountRowKey({ ...a, updatedAt: a.updatedAt ?? ts })))
+    ),
+    data.accounts.length
+  )
+  await upsert(
+    'categories',
+    '',
+    combineHashes(
+      data.categories.map((c) => hashRow(categoryRowKey({ ...c, updatedAt: c.updatedAt ?? ts })))
+    ),
+    data.categories.length
+  )
+  await upsert(
+    'tags',
+    '',
+    combineHashes(data.tags.map((t) => hashRow(tagRowKey({ ...t, updatedAt: t.updatedAt ?? ts })))),
+    data.tags.length
+  )
+  await upsert(
+    'budgets',
+    '',
+    combineHashes(
+      data.budgets.map((b) => hashRow(budgetRowKey({ ...b, updatedAt: b.updatedAt ?? ts })))
+    ),
+    data.budgets.length
+  )
+  await upsert(
+    'valuations',
+    '',
+    combineHashes(data.valuations.map((v) => hashRow(valuationRowKey(v)))),
+    data.valuations.length
+  )
+  await upsert(
+    'saved_periods',
+    '',
+    combineHashes(data.savedPeriods.map((p) => hashRow(savedPeriodRowKey(p)))),
+    data.savedPeriods.length
+  )
+  await upsert(
+    'audit_log',
+    '',
+    combineHashes(data.auditLog.map((e) => hashRow(auditEntryRowKey(e)))),
+    data.auditLog.length
+  )
+  await upsert(
+    'deleted_ids',
+    '',
+    combineHashes(data.deletedIds.map((id) => hashRow(deletedIdRowKey(id)))),
+    data.deletedIds.length
+  )
+
+  const byYear = new Map<string, RawTransaction[]>()
+  for (const raw of data.transactions) {
+    const tx: RawTransaction = {
+      ...raw,
+      updatedAt: raw.updatedAt ?? ts,
+      createdAt: raw.createdAt ?? ts,
+    }
+    const year = tx.date.slice(0, 4)
+    const list = byYear.get(year)
+    if (list) list.push(tx)
+    else byYear.set(year, [tx])
+  }
+  for (const [year, txs] of byYear) {
+    await upsert(
+      'transactions',
+      year,
+      combineHashes(txs.map((t) => hashRow(transactionRowKey(t)))),
+      txs.length
+    )
+  }
+}
+
 type ReadPeerResult =
   | { ok: true; data: RawDataFile }
   | { ok: false; reason: 'unreadable' | 'newer-schema' }
@@ -1573,6 +1684,11 @@ async function readForeignDataFile(buffer: ArrayBuffer): Promise<ReadPeerResult>
     }
 
     await runMigrationsOn(tempDb)
+    // O peer pode ser um upload de antes desta feature existir (ou de um dispositivo que ainda
+    // não rodou o backfill do lado dele) — sem isso, `table_hashes` do peer viria vazia e toda
+    // partição pareceria divergir pra sempre, mesmo quando o conteúdo é idêntico (ver o comentário
+    // de `backfillTableHashesIfNeeded`).
+    await backfillTableHashesIfNeeded(tempDb)
     // CS-30/CS-31/CS-32 Fase 2b: lê o hash local *agora*, dentro desta mesma task enfileirada —
     // nunca um valor obtido antes do download/parse do peer, que poderia levar segundos a
     // minutos (mesma disciplina do CS-24/CS-29: comparar sempre contra o estado atual, não um
