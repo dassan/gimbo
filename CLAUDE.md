@@ -28,8 +28,9 @@ Workflow de desenvolvimento IA + humano definido em `plan/RULES.md`.
 | Backlog | `plan/BACKLOG.md` | Bugs (B-XX), melhorias (M-XX), cartão (CC-XX), relatórios (R-XX), backup (BK-XX), sync (CS-XX), segurança (SEC-XX) |
 | Especificação técnica | `plan/SPEC.md` | Tasks de implementação por fase (TASK-XX); Fase 16 = sync multi-dispositivo |
 | Cartão de crédito | `plan/CREDIT_CARD.md` | Decisões de produto e desafios técnicos do módulo CC |
-| Cenários de sync | `plan/SYNC_SCENARIOS.md` | 20 cenários: SQLite atual (S-01..07), multi-desktop por pasta (S-16..20), nuvem (S-08..15) |
+| Cenários de sync | `plan/SYNC_SCENARIOS.md` | 20 cenários: SQLite atual (S-01..07), multi-desktop por pasta (S-16..20), nuvem (S-08..15); Parte 4 é o diário da sessão de otimização `CS-24..36` |
 | Brainstorm de sync | `plan/FABLE-BRAINSTORM.md` | Análise das 7 alternativas de sync multi-dispositivo, matriz de trade-offs, roadmap faseado e decisões |
+| Transporte particionado de sync | `plan/SYNC_PARTITIONED_TRANSPORT.md` | Proposta (pré-Plan Mode) pra particionar o artefato de sync remoto por tabela/período em vez de transferir o `gimbo.db` inteiro a cada sync — ataca o custo de banda que `CS-30..36` não tocaram; a fazer numa branch/sessão nova |
 | Histórico de storage | `plan/STORAGE.md` | Decisão e migração JSON/FSA → SQLite/OPFS |
 | Telemetria e bug report | `plan/METRICS.md` | Decisões de privacidade, arquitetura do F-26 (Bug Report System), tasks TASK-BR-01 a BR-08 |
 | Monitoramento de performance | `plan/MONITORING.md` | Camada dev-only de instrumentação (`lib/perfMonitor.ts`, `PerfPanel`), pontos instrumentados, por que não Prometheus/Grafana (M-71) |
