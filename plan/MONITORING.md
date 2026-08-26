@@ -291,4 +291,7 @@ arquitetura, adicionar depois se algum dia for a fonte de um relato parecido.
   `backfillTableHashesIfNeeded(dbPtr)` — checagem barata, popula tudo de uma vez só se a tabela
   estiver vazia — chamada em `init()` (local, uma vez por boot) e em `readForeignDataFile()`
   (cópia do peer, antes de comparar). Teste novo reproduz o cenário real (cofre com dado antigo,
-  hashes vazias) e falha sem a correção. Ver `CS-34` em `plan/BACKLOG.md`.
+  hashes vazias) e falha sem a correção. **Extensão:** `importDb()` também precisou da mesma
+  chamada — reabre `db` fora do caminho de boot de `init()`, então importar um `.db` antigo sem
+  hashes só se beneficiaria no próximo reload, não no mesmo carregamento em que o import acontece.
+  Ver `CS-34` em `plan/BACKLOG.md`.
