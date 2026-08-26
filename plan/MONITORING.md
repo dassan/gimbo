@@ -313,3 +313,14 @@ arquitetura, adicionar depois se algum dia for a fonte de um relato parecido.
   `worker.readPeer` reflete um par de dispositivos genuinamente divergente (primeiro sync de um
   histórico grande, custo conhecido e esperado). Zero mudança de comportamento. Ver `CS-36` em
   `plan/BACKLOG.md`.
+- **CS-35 confirmado / CS-36 primeira leitura (2026-08-26)** — nova rodada de dois browsers no
+  mesmo cofre real (~26,5 mil transações) confirmou o `CS-35`: `sync.runPeerSync.total` ficou a
+  ~280-300ms de `sync.pullAndMerge.total` nos dois lados (era 7,5-9,8s de diferença antes) — a
+  releitura redundante foi eliminada de fato, não só em teoria. `CS-36` deu sua primeira leitura
+  real: Firefox (só 1 transação nova desde o último sync) pulou 19 de 20 anos — `worker.readPeer`
+  em 756ms, hash-skip funcionando como desenhado; Chrome (mesmo cofre, hash local aparentemente já
+  convergido) não pulou nenhum dos 20 anos. Hipótese em aberto, não confirmada: `sync_gimbo.py`
+  carimba `updated_at` com o timestamp do *run* em toda transação (B-32) — um `.db` de fixture
+  gerado por uma execução diferente do script teria `updated_at` genuinamente distinto em cada
+  linha, mesmo com o mesmo conteúdo financeiro, o que faria o hash divergir de verdade (não seria
+  bug). Ver `CS-35`/`CS-36` em `plan/BACKLOG.md` para o detalhe completo.
