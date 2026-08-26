@@ -173,11 +173,13 @@ ring buffer de 100 eventos de `telemetry.ts`.
 | `sync.drive.download` / `.bytes` | `googleDrive.ts` | Download do `gimbo.db` do Drive — duração e tamanho |
 | `sync.drive.upload` / `.bytes` | `googleDrive.ts` | Upload do `gimbo.db` pro Drive — duração e tamanho |
 | `sync.readPeerBlob` | `syncService.ts` | Parse do blob baixado em `DataFile` (via `storage.readPeerBlob`, worker) |
+| `sync.readPeer.tablesSkipped` / `.tablesTotal` | `syncService.ts`/`folderSyncService.ts` | CS-36: quantas das 8 tabelas pequenas o hash-skip (Fase 2b) de fato pulou nesta leitura de peer |
+| `sync.readPeer.yearsSkipped` / `.yearsTotal` | `syncService.ts`/`folderSyncService.ts` | CS-36: idem, por ano de `transactions` |
 | `sync.merge` | `syncService.ts` | `mergeForSync()` puro — deve ser rápido; confirma ou descarta o merge como gargalo |
 | `sync.loadBaseline` | `syncService.ts` | Leitura do baseline fresco (`storage.loadDataFile()`) usado pelo diff — CS-30 |
 | `sync.applyMutation` | `syncService.ts` | Escrita do resultado mesclado no OPFS local, por diff (CS-30) — antes `sync.replaceAll`, reescrita total |
 | `sync.pullAndMerge.total` | `syncService.ts` | `pullAndMerge()` inteiro — só o transporte Drive |
-| `sync.runPeerSync.total` | `useDataStore.ts` | `runPeerSync()` inteiro, como o usuário percebe — inclui a reconciliação do `CS-24` |
+| `sync.runPeerSync.total` | `useDataStore.ts` | `runPeerSync()` inteiro, como o usuário percebe — inclui a reconciliação do `CS-24`. Desde o `CS-35`, não inclui mais nenhuma releitura completa do cofre local além da já contabilizada em `sync.pullAndMerge.total`/`sync.loadBaseline` |
 
 Consumo: Bug Report System (F-26) já existente, categoria "performance" do snapshot — sem UI nova.
 No celular, Configurações → "Reportar problema" → conferir/copiar o JSON. Mesma regra de
@@ -295,3 +297,19 @@ arquitetura, adicionar depois se algum dia for a fonte de um relato parecido.
   chamada — reabre `db` fora do caminho de boot de `init()`, então importar um `.db` antigo sem
   hashes só se beneficiaria no próximo reload, não no mesmo carregamento em que o import acontece.
   Ver `CS-34` em `plan/BACKLOG.md`.
+- **CS-35 (2026-08-25)** — duas coletas reais (Chrome+Firefox) enviadas pra confirmar o `CS-34`
+  mostraram um `worker.query:SELECT t.* FROM transactions` isolado de ~8,85s (Chrome)/~6,5s
+  (Firefox) *depois* de `sync.pullAndMerge.total` já ter terminado, dentro de
+  `sync.runPeerSync.total` — inclusive no caso do Firefox, onde nenhuma reconciliação chegou a
+  disparar. Causa: `pullAndMergeInner`/`syncFromPeers` já computam o `DataFile` mergeado em
+  memória e o persistem, mas descartavam esse valor no `SyncResult` devolvido, forçando
+  `runPeerSync` a chamar `storage.loadDataFile()` de novo só pra reconstruir uma cópia
+  equivalente — pagando o mesmo custo de leitura completa do `M-72` a cada sync, usado ou não.
+  Corrigido devolvendo o `DataFile` já computado em `result.data`; a checagem de edição
+  concorrente do `CS-29` passou a comparar `get().data` (em memória, zero I/O, mais atual que uma
+  releitura de disco) em vez de reler. Ver `CS-35` em `plan/BACKLOG.md`.
+- **CS-36 (2026-08-25)** — telemetria nova (tabela acima) pra a próxima coleta real dizer sem
+  ambiguidade se o hash-skip da Fase 2b está de fato pulando partições ou se um número alto de
+  `worker.readPeer` reflete um par de dispositivos genuinamente divergente (primeiro sync de um
+  histórico grande, custo conhecido e esperado). Zero mudança de comportamento. Ver `CS-36` em
+  `plan/BACKLOG.md`.
