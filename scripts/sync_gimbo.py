@@ -860,7 +860,16 @@ CREATE INDEX IF NOT EXISTS idx_valuations_date ON valuations(date);
 CREATE INDEX IF NOT EXISTS idx_transaction_budgets_tx ON transaction_budgets(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_transaction_budgets_budget ON transaction_budgets(budget_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_date_created ON transactions(date DESC, created_at DESC);
-PRAGMA user_version = 15;
+-- CS-30/CS-31/app schema v16: tabela de controle de hash por partição pro sync incremental.
+-- Este script nunca a popula (reimplementar o hash em Python não vale o esforço pra um script de
+-- benchmark) — fica sempre vazia, e o app trata isso como "toda partição diverge, lê tudo
+-- completo", nunca como erro. Só perde a otimização de pular leitura, nunca corrompe dado.
+CREATE TABLE IF NOT EXISTS table_hashes (
+  table_name TEXT NOT NULL, partition_key TEXT NOT NULL DEFAULT '',
+  hash_value INTEGER NOT NULL, row_count INTEGER NOT NULL,
+  PRIMARY KEY (table_name, partition_key)
+);
+PRAGMA user_version = 16;
 """
 
 

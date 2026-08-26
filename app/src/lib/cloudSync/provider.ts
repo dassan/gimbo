@@ -5,6 +5,8 @@
 // (`merge.ts`) and any orchestration layer must only ever depend on `CloudProvider`, never on a
 // concrete transport.
 
+import type { DataFile } from '@/types'
+
 export interface CloudProvider {
   upload(blob: Blob): Promise<void>
   download(): Promise<ArrayBuffer>
@@ -14,7 +16,10 @@ export interface CloudProvider {
 
 export type SyncResult =
   | { status: 'synced' } // nothing to do
-  | { status: 'merged'; peersMerged: number } // a merge happened
+  // CS-35: carries the merged DataFile the sync module already computed and persisted — the
+  // caller (useDataStore's runPeerSync) used to throw this away and pay for a full
+  // storage.loadDataFile() (whole-vault re-read) just to get an equivalent copy back.
+  | { status: 'merged'; peersMerged: number; data: DataFile }
   | { status: 'skipped'; reason: 'unreadable' | 'newer-schema' }
   | { status: 'offline' }
   | { status: 'error'; message: string }

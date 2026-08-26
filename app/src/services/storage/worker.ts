@@ -22,7 +22,21 @@ import v12Schema from './migrations/v12.sql?raw'
 import v13Schema from './migrations/v13.sql?raw'
 import v14Schema from './migrations/v14.sql?raw'
 import v15Schema from './migrations/v15.sql?raw'
+import v16Schema from './migrations/v16.sql?raw'
 import { ERR_DB_UNREADABLE, ERR_SCHEMA_TOO_NEW } from './errors'
+import {
+  hashRow,
+  combineHashes,
+  accountRowKey,
+  categoryRowKey,
+  tagRowKey,
+  budgetRowKey,
+  valuationRowKey,
+  savedPeriodRowKey,
+  auditEntryRowKey,
+  deletedIdRowKey,
+  transactionRowKey,
+} from '@/lib/storage/rowHash'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
 
@@ -49,7 +63,9 @@ type RawSettings = {
   quadrantesEnabled: boolean
   quadrantesInferFromHistory: boolean
 }
-type RawAccount = {
+// Exported (type-only elsewhere) so lib/storage/rowHash.ts can compute a canonical hash key per
+// row without duplicating these shapes — CS-30/CS-31 Fase 2.
+export type RawAccount = {
   id: string
   name: string
   type: string
@@ -67,7 +83,7 @@ type RawAccount = {
   archived?: boolean
   updatedAt?: string
 }
-type RawCategory = {
+export type RawCategory = {
   id: string
   parentId: string | null
   name: string
@@ -76,8 +92,8 @@ type RawCategory = {
   type: string
   updatedAt?: string
 }
-type RawTag = { id: string; name: string; color: string; updatedAt?: string }
-type RawTransaction = {
+export type RawTag = { id: string; name: string; color: string; updatedAt?: string }
+export type RawTransaction = {
   id: string
   accountId: string
   categoryId: string
@@ -96,7 +112,7 @@ type RawTransaction = {
   createdAt?: string
   budgetIds?: string[]
 }
-type RawAuditEntry = {
+export type RawAuditEntry = {
   id: string
   timestamp: string
   action: string
@@ -104,19 +120,19 @@ type RawAuditEntry = {
   entityId: string
   summary: string
 }
-type RawValuation = {
+export type RawValuation = {
   id: string
   accountId: string
   date: string
   marketValue: number
 }
-type RawSavedPeriod = {
+export type RawSavedPeriod = {
   id: string
   name: string
   start: string
   end: string
 }
-type RawBudget = {
+export type RawBudget = {
   id: string
   name: string
   emoji: string
@@ -173,7 +189,7 @@ const DB_FILENAME = 'gimbo.db'
 // this number was written by a newer app build and must be skipped, not partially migrated.
 // Bump this alongside every new migrations/vN.sql (same trap as data/sync_gimbo.py — see
 // CLAUDE.md "Armadilha recorrente").
-const MAX_KNOWN_DB_VERSION = 15
+const MAX_KNOWN_DB_VERSION = 16
 
 // ─── Initialization ───────────────────────────────────────────────────────────
 
@@ -194,6 +210,7 @@ async function init(): Promise<void> {
 
   db = await sqlite3.open_v2(DB_FILENAME)
   await runMigrationsOn(db)
+  await backfillTableHashesIfNeeded(db)
 
   const queriedLimit = sqlite3.limit(db, SQLITE_LIMIT_VARIABLE_NUMBER, -1)
   if (queriedLimit > 0) maxBoundParams = Math.floor(queriedLimit * 0.9)
@@ -221,6 +238,7 @@ const MIGRATIONS: ReadonlyArray<readonly [version: number, sql: string]> = [
   [13, v13Schema],
   [14, v14Schema],
   [15, v15Schema],
+  [16, v16Schema],
 ]
 
 // Applies pending migrations to an arbitrary db pointer — the main `db` on every open, or a
@@ -414,6 +432,11 @@ async function importDb(data: ArrayBuffer): Promise<void> {
     }
     db = await sqlite3.open_v2(DB_FILENAME)
     await runMigrationsOn(db)
+    // CS-34: importDb() reabre `db` fora do caminho de boot de init() — sem isto, um .db
+    // importado sem table_hashes só ganharia o backfill no próximo reload da página, não neste
+    // mesmo carregamento (a UI já segue usando o cofre importado sem reload, ver handleImportDb
+    // em Settings/Onboarding).
+    await backfillTableHashesIfNeeded(db)
   } catch (err) {
     // A troca falhou no meio. Devolve o cofre ao estado anterior antes de propagar.
     if (haveRollback) {
@@ -456,6 +479,178 @@ async function importDb(data: ArrayBuffer): Promise<void> {
 
   await removeDbFiles(root, stagingName)
   await removeDbFiles(root, rollbackName)
+}
+
+// ─── Hash de partição (CS-30/CS-31 Fase 2) ─────────────────────────────────────
+
+// Upsert de uma linha de table_hashes contra o `db` local — sempre o `db` módulo-level, nunca um
+// dbPtr de peer/scratch/staging, porque a tabela de hash existe pra o sync decidir o que ler
+// *deste* dispositivo, não pra descrever um banco alheio.
+async function upsertTableHash(
+  tableName: string,
+  partitionKey: string,
+  hash: number,
+  rowCount: number
+): Promise<void> {
+  await sqlite3.run(
+    db,
+    `INSERT INTO table_hashes (table_name, partition_key, hash_value, row_count) VALUES (?, ?, ?, ?)
+     ON CONFLICT(table_name, partition_key) DO UPDATE SET hash_value = excluded.hash_value, row_count = excluded.row_count`,
+    [tableName, partitionKey, hash, rowCount]
+  )
+}
+
+// As 8 tabelas "pequenas" — sempre hasheadas como um todo (partition_key = ''), nunca
+// particionadas por ano como transactions. settings/users ficam de fora: são singleton, sempre
+// lidos, comparar hash não economiza nada. deleted_ids entra aqui (não em transactions) porque um
+// tombstone pode apagar qualquer tipo de entidade, não só transações.
+async function refreshSmallTableHashes(d: RawDataFile, ts: string): Promise<void> {
+  // accounts/categories/tags/budgets persistem `updatedAt ?? ts` (abaixo, nas próprias inserções)
+  // quando o objeto em memória não traz um `updatedAt` — hashear o valor *não normalizado* faria
+  // o hash mudar sozinho no primeiro round-trip por loadDataFile() (que sempre volta com o
+  // fallback já preenchido), mesmo sem nenhuma edição real. Normalizar aqui do mesmo jeito que a
+  // escrita normaliza mantém o hash estável através de leitura-e-escrita-de-volta — achado via
+  // e2e/tableHashSync.spec.ts (o hash de accounts mudava sozinho depois de um applyMutation que
+  // só tocava transactions).
+  await upsertTableHash(
+    'accounts',
+    '',
+    combineHashes(
+      d.accounts.map((a) => hashRow(accountRowKey({ ...a, updatedAt: a.updatedAt ?? ts })))
+    ),
+    d.accounts.length
+  )
+  await upsertTableHash(
+    'categories',
+    '',
+    combineHashes(
+      d.categories.map((c) => hashRow(categoryRowKey({ ...c, updatedAt: c.updatedAt ?? ts })))
+    ),
+    d.categories.length
+  )
+  await upsertTableHash(
+    'tags',
+    '',
+    combineHashes(d.tags.map((t) => hashRow(tagRowKey({ ...t, updatedAt: t.updatedAt ?? ts })))),
+    d.tags.length
+  )
+  await upsertTableHash(
+    'budgets',
+    '',
+    combineHashes(
+      (d.budgets ?? []).map((b) => hashRow(budgetRowKey({ ...b, updatedAt: b.updatedAt ?? ts })))
+    ),
+    (d.budgets ?? []).length
+  )
+  await upsertTableHash(
+    'valuations',
+    '',
+    combineHashes((d.valuations ?? []).map((v) => hashRow(valuationRowKey(v)))),
+    (d.valuations ?? []).length
+  )
+  await upsertTableHash(
+    'saved_periods',
+    '',
+    combineHashes((d.savedPeriods ?? []).map((p) => hashRow(savedPeriodRowKey(p)))),
+    (d.savedPeriods ?? []).length
+  )
+  await upsertTableHash(
+    'audit_log',
+    '',
+    combineHashes(d.auditLog.map((e) => hashRow(auditEntryRowKey(e)))),
+    d.auditLog.length
+  )
+  await upsertTableHash(
+    'deleted_ids',
+    '',
+    combineHashes(d.deletedIds.map((id) => hashRow(deletedIdRowKey(id)))),
+    d.deletedIds.length
+  )
+}
+
+async function upsertTransactionYearHash(year: string, txs: RawTransaction[]): Promise<void> {
+  // combineHashes([]) === 0 — um ano que esvaziou por completo (última transação apagada) grava
+  // (hash=0, row_count=0), nunca deixa a entrada antiga (agora errada) parada em table_hashes.
+  await upsertTableHash(
+    'transactions',
+    year,
+    combineHashes(txs.map((t) => hashRow(transactionRowKey(t)))),
+    txs.length
+  )
+}
+
+// Usado por replaceAll(): já tem o array completo de transações em mãos (reescreveu tudo), então
+// agrupa por ano em memória. Precisa ainda assim consultar quais anos já tinham entrada em
+// table_hashes — um ano que existia antes e não aparece mais no array novo (todas as transações
+// daquele ano vieram deletadas pelo merge) tem que ser zerado, não deixado com o hash antigo.
+//
+// `ts`: mesma normalização de refreshSmallTableHashes — a escrita logo abaixo persiste
+// `tx.updatedAt ?? ts`/`tx.createdAt ?? ts` quando o objeto em memória não traz esses campos;
+// hashear o valor pré-fallback faria o hash mudar sozinho no primeiro round-trip por
+// loadDataFile()/refreshTransactionYearHashesFromDb (que sempre voltam com o fallback já
+// preenchido). Só relevante aqui: a variante "FromDb" já lê o estado persistido, já normalizado.
+async function refreshTransactionYearHashesFromMemory(
+  transactions: RawTransaction[],
+  ts: string
+): Promise<void> {
+  const byYear = new Map<string, RawTransaction[]>()
+  for (const raw of transactions) {
+    const tx: RawTransaction = {
+      ...raw,
+      updatedAt: raw.updatedAt ?? ts,
+      createdAt: raw.createdAt ?? ts,
+    }
+    const year = tx.date.slice(0, 4)
+    const list = byYear.get(year)
+    if (list) list.push(tx)
+    else byYear.set(year, [tx])
+  }
+  const { rows: existingYearRows } = await sqlite3.execWithParams(
+    db,
+    "SELECT DISTINCT partition_key FROM table_hashes WHERE table_name = 'transactions'"
+  )
+  const years = new Set<string>(byYear.keys())
+  for (const [year] of existingYearRows) years.add(year as string)
+  for (const year of years) {
+    await upsertTransactionYearHash(year, byYear.get(year) ?? [])
+  }
+}
+
+// Usado por applyTransactionDelta(): só os anos de fato afetados por esta mutação (fetchOldYears
+// + anos novos dos upserts) — relê cada um do `db` (já com o delta aplicado) em vez de manter um
+// array completo em memória, porque o delta não carrega o estado das linhas não tocadas.
+async function refreshTransactionYearHashesFromDb(years: Iterable<string>): Promise<void> {
+  for (const year of years) {
+    const txRows = await queryRows(db, 'SELECT * FROM transactions WHERE date LIKE ?', [`${year}%`])
+    const ids = txRows.map((r) => r.id as string)
+    const idBatchSize = Math.max(1, maxBoundParams)
+    const tagsByTx = new Map<string, string[]>()
+    const budgetsByTx = new Map<string, string[]>()
+    for (const idBatch of chunk(ids, idBatchSize)) {
+      if (idBatch.length === 0) continue
+      const placeholders = idBatch.map(() => '?').join(',')
+      const tagRows = await queryRows(
+        db,
+        `SELECT transaction_id, tag_id FROM transaction_tags WHERE transaction_id IN (${placeholders})`,
+        idBatch
+      )
+      const budgetRows = await queryRows(
+        db,
+        `SELECT transaction_id, budget_id FROM transaction_budgets WHERE transaction_id IN (${placeholders})`,
+        idBatch
+      )
+      for (const [id, list] of groupJoinIds(tagRows, 'tag_id')) tagsByTx.set(id, list)
+      for (const [id, list] of groupJoinIds(budgetRows, 'budget_id')) budgetsByTx.set(id, list)
+    }
+    const txs = txRows.map((r) =>
+      sqlRowToRawTransaction(
+        r,
+        tagsByTx.get(r.id as string) ?? [],
+        budgetsByTx.get(r.id as string) ?? []
+      )
+    )
+    await upsertTransactionYearHash(year, txs)
+  }
 }
 
 // ─── replaceAll ───────────────────────────────────────────────────────────────
@@ -621,6 +816,8 @@ async function writeSmallTables(d: RawDataFile, ts: string): Promise<void> {
   for (const id of d.deletedIds) {
     await sqlite3.run(db, 'INSERT OR IGNORE INTO deleted_ids (id) VALUES (?)', [id])
   }
+
+  await refreshSmallTableHashes(d, ts)
 }
 
 async function replaceAll(raw: unknown): Promise<void> {
@@ -687,6 +884,8 @@ async function replaceAll(raw: unknown): Promise<void> {
       }
     }
 
+    await refreshTransactionYearHashesFromMemory(d.transactions, ts)
+
     await sqlite3.run(db, 'COMMIT')
   } catch (err) {
     try {
@@ -719,6 +918,22 @@ function chunk<T>(arr: T[], size: number): T[][] {
 async function applyTransactionDelta(delta: RawTransactionDelta, ts: string): Promise<void> {
   const idBatchSize = Math.max(1, maxBoundParams)
   const touchedIds = [...delta.deletedIds, ...delta.upserts.map((t) => t.id)]
+
+  // CS-30/CS-31 Fase 2: precisa saber o ano *antigo* de cada linha tocada que já existia, antes
+  // de qualquer DELETE/INSERT — é a única forma de saber de qual partição de hash tirar a
+  // contribuição antiga se uma transação mudou de ano (ex.: editar a data de 31/dez pra jan do
+  // ano seguinte). Sem isso, o hash do ano antigo ficaria parado, incorreto.
+  const oldYearById = new Map<string, string>()
+  for (const idBatch of chunk(touchedIds, idBatchSize)) {
+    if (idBatch.length === 0) continue
+    const placeholders = idBatch.map(() => '?').join(',')
+    const rows = await queryRows(
+      db,
+      `SELECT id, date FROM transactions WHERE id IN (${placeholders})`,
+      idBatch
+    )
+    for (const r of rows) oldYearById.set(r.id as string, (r.date as string).slice(0, 4))
+  }
 
   // Junction rows são sempre apagadas e reinseridas para toda transação tocada (upsert ou
   // delete) — mais simples que diffar associação de tag/budget separadamente, e ainda barato:
@@ -825,6 +1040,21 @@ async function applyTransactionDelta(delta: RawTransactionDelta, ts: string): Pr
       )
     }
   }
+
+  // Anos afetados: união dos anos antigos das linhas tocadas (upsert ou delete) com os anos
+  // novos dos upserts — tipicamente 1, raramente 2 (uma transação mudando de ano). Nunca o
+  // histórico inteiro, diferente de refreshTransactionYearHashesFromMemory (replaceAll).
+  const affectedYears = new Set<string>()
+  for (const id of delta.deletedIds) {
+    const year = oldYearById.get(id)
+    if (year) affectedYears.add(year)
+  }
+  for (const tx of delta.upserts) {
+    affectedYears.add(tx.date.slice(0, 4))
+    const oldYear = oldYearById.get(tx.id)
+    if (oldYear) affectedYears.add(oldYear)
+  }
+  await refreshTransactionYearHashesFromDb(affectedYears)
 }
 
 async function applyMutation(rawData: unknown, rawDelta: unknown): Promise<void> {
@@ -853,7 +1083,12 @@ async function applyMutation(rawData: unknown, rawDelta: unknown): Promise<void>
 // without ever touching the local gimbo.db. wa-sqlite has no pure in-memory VFS, so the closest
 // safe approximation is: write the peer's bytes to a scratch OPFS file with its own name, open a
 // *second* db pointer against it, read every table, then delete the scratch file. `db` (the
-// local database) is never opened, migrated, or written to during this process.
+// local database) is never migrated or written to during this process — CS-30/CS-31/CS-32 Fase
+// 2b does read it once (`table_hashes` only, via readTableHashes(db)) to decide which of the
+// peer's partitions are actually worth reading, but that read happens inside the same enqueue()'d
+// task that processes the peer, so there's no window for a concurrent write to race it (see the
+// CS-28 note on readTransactionsForYears above — the same "stay inside one dequeued task"
+// invariant this whole file depends on).
 
 async function queryRows(
   dbPtr: number,
@@ -870,19 +1105,88 @@ async function queryRows(
   })
 }
 
+// Mirrors StorageService's groupIds() — duplicated rather than imported because that module
+// instantiates the main-thread Worker wrapper and can't be pulled into the worker bundle itself.
+function groupJoinIds(rows: Record<string, unknown>[], valueCol: string): Map<string, string[]> {
+  const map = new Map<string, string[]>()
+  for (const row of rows) {
+    const txId = row.transaction_id as string
+    const value = row[valueCol] as string
+    const list = map.get(txId)
+    if (list) list.push(value)
+    else map.set(txId, [value])
+  }
+  return map
+}
+
+// Maps one raw SQL row (snake_case columns, as queryRows() returns) plus its already-joined
+// tag/budget ids into a RawTransaction. Extracted out of readDataFileFromDb (CS-30/CS-31 Fase 2)
+// so applyTransactionDelta's per-year hash recompute can reuse the exact same mapping instead of
+// a second, easily-drifting reimplementation — the canonical shape a hash is computed from must
+// match the shape read from the peer/local db bit for bit.
+function sqlRowToRawTransaction(
+  r: Record<string, unknown>,
+  tags: string[],
+  budgetIds: string[]
+): RawTransaction {
+  const tx: RawTransaction = {
+    id: r.id as string,
+    accountId: r.account_id as string,
+    categoryId: (r.category_id as string | null) ?? '',
+    amount: r.amount as number,
+    type: r.type as string,
+    description: r.description as string,
+    date: r.date as string,
+    isPaid: Boolean(r.is_paid),
+    tags,
+    budgetIds,
+  }
+  if (r.updated_at !== null && r.updated_at !== undefined) tx.updatedAt = r.updated_at as string
+  if (r.created_at !== null && r.created_at !== undefined) tx.createdAt = r.created_at as string
+  if (r.transfer_account_id !== null && r.transfer_account_id !== undefined) {
+    tx.transferAccountId = r.transfer_account_id as string
+  }
+  if (r.reference_month !== null && r.reference_month !== undefined) {
+    tx.referenceMonth = r.reference_month as string
+  }
+  if (r.invoice_due_date !== null && r.invoice_due_date !== undefined) {
+    tx.invoiceDueDate = r.invoice_due_date as string
+  }
+  if (r.installment_parent_id !== null && r.installment_parent_id !== undefined) {
+    tx.installment = {
+      parentId: r.installment_parent_id as string,
+      currentIndex: r.installment_index as number,
+      total: r.installment_total as number,
+      ...(r.installment_purchase_date !== null && r.installment_purchase_date !== undefined
+        ? { purchaseDate: r.installment_purchase_date as string }
+        : {}),
+    }
+  }
+  if (r.recurrence_parent_id !== null && r.recurrence_parent_id !== undefined) {
+    tx.recurrence = {
+      frequency: r.recurrence_frequency as string,
+      parentId: r.recurrence_parent_id as string,
+      ...(r.recurrence_end_date !== null && r.recurrence_end_date !== undefined
+        ? { endDate: r.recurrence_end_date as string }
+        : {}),
+    }
+  }
+  return tx
+}
+
 // Mirrors StorageService's rowTo* mappers, but against an arbitrary db pointer instead of the
 // message-passing `this.query()` — necessary because this runs inside the worker itself, on a
 // scratch db that StorageService (main thread) never sees.
-async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
-  const userRows = await queryRows(dbPtr, "SELECT * FROM users WHERE id = 'singleton'")
-  if (userRows.length === 0) return null
-  const settingsRows = await queryRows(dbPtr, "SELECT * FROM settings WHERE id = 'singleton'")
-  if (settingsRows.length === 0) return null
-  const u = userRows[0]
-  const s = settingsRows[0]
+//
+// CS-30/CS-31/CS-32 Fase 2b: cada tabela vira um leitor próprio, chamado incondicionalmente por
+// readDataFileFromDb() (leitura completa, usada por importDb() — validação de um import não pode
+// depender de hash) e condicionalmente por readDataFileFromDbSelective() (leitura seletiva do
+// peer, usada só pelo sync via readForeignDataFile()) — uma partição cujo hash bate com o local
+// nunca chega a rodar seu leitor.
 
+async function readAccounts(dbPtr: number): Promise<RawAccount[]> {
   const accountRows = await queryRows(dbPtr, 'SELECT * FROM accounts ORDER BY name')
-  const accounts: RawAccount[] = accountRows.map((r) => {
+  return accountRows.map((r) => {
     const acc: RawAccount = {
       id: r.id as string,
       name: r.name as string,
@@ -914,9 +1218,11 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
     if (r.updated_at !== null && r.updated_at !== undefined) acc.updatedAt = r.updated_at as string
     return acc
   })
+}
 
+async function readCategories(dbPtr: number): Promise<RawCategory[]> {
   const categoryRows = await queryRows(dbPtr, 'SELECT * FROM categories ORDER BY name')
-  const categories: RawCategory[] = categoryRows.map((r) => ({
+  return categoryRows.map((r) => ({
     id: r.id as string,
     parentId: (r.parent_id as string | null) ?? null,
     name: r.name as string,
@@ -927,9 +1233,11 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       ? { updatedAt: r.updated_at as string }
       : {}),
   }))
+}
 
+async function readTags(dbPtr: number): Promise<RawTag[]> {
   const tagRows = await queryRows(dbPtr, 'SELECT * FROM tags ORDER BY name')
-  const tags: RawTag[] = tagRows.map((r) => ({
+  return tagRows.map((r) => ({
     id: r.id as string,
     name: r.name as string,
     color: r.color as string,
@@ -937,89 +1245,116 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       ? { updatedAt: r.updated_at as string }
       : {}),
   }))
+}
 
-  const txRows = await queryRows(
-    dbPtr,
-    `SELECT t.*, GROUP_CONCAT(DISTINCT tt.tag_id) AS tag_ids,
-            GROUP_CONCAT(DISTINCT tb.budget_id) AS budget_ids
-     FROM transactions t
-     LEFT JOIN transaction_tags tt ON t.id = tt.transaction_id
-     LEFT JOIN transaction_budgets tb ON t.id = tb.transaction_id
-     GROUP BY t.id
-     ORDER BY t.date DESC, t.created_at DESC`
+// `years === null` lê o histórico inteiro (readDataFileFromDb, usa um único SELECT sem filtro
+// pras junções — igual ao comportamento de sempre). `years` não-nulo lê só as transações daqueles
+// anos (readDataFileFromDbSelective) e busca as junções batelada por id, já que não faz sentido
+// puxar transaction_tags/transaction_budgets inteiras pra filtrar depois em memória.
+//
+// M-72/PERFORMANCE.md: o formato antigo (LEFT JOIN duplo + GROUP_CONCAT(DISTINCT) + GROUP BY
+// t.id) custava ~224s num cofre real de ~25 mil transações sob wa-sqlite/WASM + VFS assíncrona do
+// OPFS — o agregado em si era o gargalo, não o volume de linhas. Reescrito pra três queries
+// simples unidas em JS — mesmo padrão de StorageService.getTransactions() (StorageService.ts).
+//
+// CS-28: sequential, NOT Promise.all — StorageService.getTransactions() roda suas três queries
+// concorrentemente com segurança porque cada uma passa por `this.query()` → postMessage → a fila
+// `enqueue()` do próprio worker (dispatch), que as serializa antes de qualquer uma chegar no
+// wa-sqlite. Esta função já roda *dentro* de uma tarefa já retirada da fila, chamando
+// `queryRows()` direto contra a instância wasm — o build async só suporta uma chamada Asyncify em
+// voo por vez, e disparar três ao mesmo tempo corrompeu o estado interno do unwind, travando com
+// "NotFoundError: Entry not found" → "RuntimeError: unreachable executed" na próxima chamada OPFS
+// de *qualquer* operação seguinte (ex.: o import seguinte). Confirmado reproduzível.
+async function readTransactionsForYears(
+  dbPtr: number,
+  years: string[] | null
+): Promise<RawTransaction[]> {
+  let txRows: Record<string, unknown>[]
+  if (years === null) {
+    txRows = await queryRows(
+      dbPtr,
+      'SELECT t.* FROM transactions t ORDER BY t.date DESC, t.created_at DESC'
+    )
+  } else if (years.length === 0) {
+    return []
+  } else {
+    const conds = years.map(() => 'date LIKE ?').join(' OR ')
+    txRows = await queryRows(
+      dbPtr,
+      `SELECT t.* FROM transactions t WHERE ${conds} ORDER BY t.date DESC, t.created_at DESC`,
+      years.map((y) => `${y}%`)
+    )
+  }
+  if (txRows.length === 0) return []
+
+  const tagsByTx = new Map<string, string[]>()
+  const budgetsByTx = new Map<string, string[]>()
+  if (years === null) {
+    const txTagRows = await queryRows(dbPtr, 'SELECT transaction_id, tag_id FROM transaction_tags')
+    const txBudgetRows = await queryRows(
+      dbPtr,
+      'SELECT transaction_id, budget_id FROM transaction_budgets'
+    )
+    for (const [id, list] of groupJoinIds(txTagRows, 'tag_id')) tagsByTx.set(id, list)
+    for (const [id, list] of groupJoinIds(txBudgetRows, 'budget_id')) budgetsByTx.set(id, list)
+  } else {
+    const ids = txRows.map((r) => r.id as string)
+    const idBatchSize = Math.max(1, maxBoundParams)
+    for (const idBatch of chunk(ids, idBatchSize)) {
+      const placeholders = idBatch.map(() => '?').join(',')
+      const txTagRows = await queryRows(
+        dbPtr,
+        `SELECT transaction_id, tag_id FROM transaction_tags WHERE transaction_id IN (${placeholders})`,
+        idBatch
+      )
+      const txBudgetRows = await queryRows(
+        dbPtr,
+        `SELECT transaction_id, budget_id FROM transaction_budgets WHERE transaction_id IN (${placeholders})`,
+        idBatch
+      )
+      for (const [id, list] of groupJoinIds(txTagRows, 'tag_id')) tagsByTx.set(id, list)
+      for (const [id, list] of groupJoinIds(txBudgetRows, 'budget_id')) budgetsByTx.set(id, list)
+    }
+  }
+
+  return txRows.map((r) =>
+    sqlRowToRawTransaction(
+      r,
+      tagsByTx.get(r.id as string) ?? [],
+      budgetsByTx.get(r.id as string) ?? []
+    )
   )
-  const transactions: RawTransaction[] = txRows.map((r) => {
-    const tagIds = r.tag_ids as string | null
-    const budgetIds = r.budget_ids as string | null
-    const tx: RawTransaction = {
-      id: r.id as string,
-      accountId: r.account_id as string,
-      categoryId: (r.category_id as string | null) ?? '',
-      amount: r.amount as number,
-      type: r.type as string,
-      description: r.description as string,
-      date: r.date as string,
-      isPaid: Boolean(r.is_paid),
-      tags: tagIds ? tagIds.split(',') : [],
-      budgetIds: budgetIds ? budgetIds.split(',') : [],
-    }
-    if (r.updated_at !== null && r.updated_at !== undefined) tx.updatedAt = r.updated_at as string
-    if (r.created_at !== null && r.created_at !== undefined) tx.createdAt = r.created_at as string
-    if (r.transfer_account_id !== null && r.transfer_account_id !== undefined) {
-      tx.transferAccountId = r.transfer_account_id as string
-    }
-    if (r.reference_month !== null && r.reference_month !== undefined) {
-      tx.referenceMonth = r.reference_month as string
-    }
-    if (r.invoice_due_date !== null && r.invoice_due_date !== undefined) {
-      tx.invoiceDueDate = r.invoice_due_date as string
-    }
-    if (r.installment_parent_id !== null && r.installment_parent_id !== undefined) {
-      tx.installment = {
-        parentId: r.installment_parent_id as string,
-        currentIndex: r.installment_index as number,
-        total: r.installment_total as number,
-        ...(r.installment_purchase_date !== null && r.installment_purchase_date !== undefined
-          ? { purchaseDate: r.installment_purchase_date as string }
-          : {}),
-      }
-    }
-    if (r.recurrence_parent_id !== null && r.recurrence_parent_id !== undefined) {
-      tx.recurrence = {
-        frequency: r.recurrence_frequency as string,
-        parentId: r.recurrence_parent_id as string,
-        ...(r.recurrence_end_date !== null && r.recurrence_end_date !== undefined
-          ? { endDate: r.recurrence_end_date as string }
-          : {}),
-      }
-    }
-    return tx
-  })
+}
 
+async function readValuations(dbPtr: number): Promise<RawValuation[]> {
   const valuationRows = await queryRows(
     dbPtr,
     'SELECT id, account_id, date, market_value FROM valuations'
   )
-  const valuations: RawValuation[] = valuationRows.map((r) => ({
+  return valuationRows.map((r) => ({
     id: r.id as string,
     accountId: r.account_id as string,
     date: r.date as string,
     marketValue: r.market_value as number,
   }))
+}
 
+async function readSavedPeriods(dbPtr: number): Promise<RawSavedPeriod[]> {
   const savedPeriodRows = await queryRows(
     dbPtr,
     'SELECT id, name, start_date, end_date FROM saved_periods ORDER BY created_at'
   )
-  const savedPeriods: RawSavedPeriod[] = savedPeriodRows.map((r) => ({
+  return savedPeriodRows.map((r) => ({
     id: r.id as string,
     name: r.name as string,
     start: r.start_date as string,
     end: r.end_date as string,
   }))
+}
 
+async function readBudgets(dbPtr: number): Promise<RawBudget[]> {
   const budgetRows = await queryRows(dbPtr, 'SELECT * FROM budgets ORDER BY created_at')
-  const budgets: RawBudget[] = budgetRows.map((r) => {
+  return budgetRows.map((r) => {
     const period: RawBudget['period'] =
       r.period_mode === 'date'
         ? { mode: 'date', date: r.period_date as string }
@@ -1045,9 +1380,11 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       b.targetSource = r.target_source as string
     return b
   })
+}
 
+async function readAuditLog(dbPtr: number): Promise<RawAuditEntry[]> {
   const auditRows = await queryRows(dbPtr, 'SELECT * FROM audit_log ORDER BY timestamp ASC')
-  const auditLog: RawAuditEntry[] = auditRows.map((r) => ({
+  return auditRows.map((r) => ({
     id: r.id as string,
     timestamp: r.timestamp as string,
     action: r.action as string,
@@ -1055,10 +1392,22 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
     entityId: r.entity_id as string,
     summary: r.summary as string,
   }))
+}
 
+async function readDeletedIds(dbPtr: number): Promise<string[]> {
   const deletedRows = await queryRows(dbPtr, 'SELECT id FROM deleted_ids')
-  const deletedIds = deletedRows.map((r) => r.id as string)
+  return deletedRows.map((r) => r.id as string)
+}
 
+async function readUserAndSettings(
+  dbPtr: number
+): Promise<{ user: RawUser; settings: RawSettings } | null> {
+  const userRows = await queryRows(dbPtr, "SELECT * FROM users WHERE id = 'singleton'")
+  if (userRows.length === 0) return null
+  const settingsRows = await queryRows(dbPtr, "SELECT * FROM settings WHERE id = 'singleton'")
+  if (settingsRows.length === 0) return null
+  const u = userRows[0]
+  const s = settingsRows[0]
   return {
     user: {
       name: u.name as string,
@@ -1072,6 +1421,27 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
       quadrantesEnabled: Boolean(s.quadrantes_enabled),
       quadrantesInferFromHistory: Boolean(s.quadrantes_infer_from_history),
     },
+  }
+}
+
+// Full, unconditional read of every table — used by importDb() (validating an import can't
+// depend on hash comparisons) and by the readers above when called without a hash gate.
+async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
+  const base = await readUserAndSettings(dbPtr)
+  if (!base) return null
+
+  const accounts = await readAccounts(dbPtr)
+  const categories = await readCategories(dbPtr)
+  const tags = await readTags(dbPtr)
+  const transactions = await readTransactionsForYears(dbPtr, null)
+  const valuations = await readValuations(dbPtr)
+  const savedPeriods = await readSavedPeriods(dbPtr)
+  const budgets = await readBudgets(dbPtr)
+  const auditLog = await readAuditLog(dbPtr)
+  const deletedIds = await readDeletedIds(dbPtr)
+
+  return {
+    ...base,
     accounts,
     categories,
     tags,
@@ -1084,8 +1454,235 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
   }
 }
 
+type HashEntry = { hash: number; count: number }
+
+async function readTableHashes(dbPtr: number): Promise<Map<string, HashEntry>> {
+  const rows = await queryRows(
+    dbPtr,
+    'SELECT table_name, partition_key, hash_value, row_count FROM table_hashes'
+  )
+  const map = new Map<string, HashEntry>()
+  for (const r of rows) {
+    map.set(`${r.table_name as string}:${r.partition_key as string}`, {
+      hash: r.hash_value as number,
+      count: r.row_count as number,
+    })
+  }
+  return map
+}
+
+// Ausente de qualquer lado (peer pré-v16, ou local antes de qualquer escrita) = sempre diverge —
+// nunca tratado como "igual" por omissão. É o mesmo comportamento seguro de hoje, só sem a
+// otimização de pular a leitura.
+function hashesMatch(
+  peerHashes: Map<string, HashEntry>,
+  localHashes: Map<string, HashEntry>,
+  key: string
+): boolean {
+  const peer = peerHashes.get(key)
+  const local = localHashes.get(key)
+  if (!peer || !local) return false
+  return peer.hash === local.hash && peer.count === local.count
+}
+
+// CS-30/CS-31/CS-32 Fase 2b: só usada pelo caminho de sync (readForeignDataFile), nunca por
+// importDb() — comparar hashes antes de ler é uma otimização de leitura, não uma decisão que
+// afete se um import é válido. `localHashes` vem de uma leitura do `db` local, feita pelo chamador
+// dentro da mesma invocação enfileirada que processa o peer (nunca um snapshot anterior — a
+// mesma disciplina do CS-24/CS-29 de nunca comparar contra estado desatualizado).
+// CS-36: contagem de partições puladas vs. lidas, pra a próxima rodada de dado real dizer de
+// forma inequívoca se o hash-skip da Fase 2b está de fato pulando algo ou se — pré-existente,
+// primeiro sync de um par de dispositivos com estado divergente, hash colidindo por engano — o
+// peer inteiro está sendo relido de qualquer forma. Sem isso, `worker.readPeer`/`sync.readPeerBlob`
+// continuavam altos e não havia telemetria pra distinguir as duas causas (achado ao investigar o
+// CS-34: "sem ganho de velocidade" tinha mais de uma explicação candidata e só uma tinha fix).
+export type SelectiveReadStats = {
+  tablesSkipped: number
+  tablesTotal: number
+  yearsSkipped: number
+  yearsTotal: number
+}
+
+async function readDataFileFromDbSelective(
+  dbPtr: number,
+  localHashes: Map<string, HashEntry>
+): Promise<{ data: RawDataFile; stats: SelectiveReadStats } | null> {
+  const base = await readUserAndSettings(dbPtr)
+  if (!base) return null
+
+  const peerHashes = await readTableHashes(dbPtr)
+  let tablesSkipped = 0
+  const smallTables = [
+    'accounts',
+    'categories',
+    'tags',
+    'valuations',
+    'saved_periods',
+    'budgets',
+    'audit_log',
+    'deleted_ids',
+  ] as const
+  const matches = (table: string) => {
+    const skip = hashesMatch(peerHashes, localHashes, `${table}:`)
+    if (skip) tablesSkipped++
+    return skip
+  }
+
+  const accounts = matches('accounts') ? [] : await readAccounts(dbPtr)
+  const categories = matches('categories') ? [] : await readCategories(dbPtr)
+  const tags = matches('tags') ? [] : await readTags(dbPtr)
+  const valuations = matches('valuations') ? [] : await readValuations(dbPtr)
+  const savedPeriods = matches('saved_periods') ? [] : await readSavedPeriods(dbPtr)
+  const budgets = matches('budgets') ? [] : await readBudgets(dbPtr)
+  const auditLog = matches('audit_log') ? [] : await readAuditLog(dbPtr)
+  const deletedIds = matches('deleted_ids') ? [] : await readDeletedIds(dbPtr)
+
+  // Descobre os anos que o peer de fato tem (nunca lê um ano que só existe localmente — não há
+  // nada pra buscar dele) e lê só os que divergirem do hash local.
+  const yearRows = await queryRows(
+    dbPtr,
+    'SELECT DISTINCT substr(date, 1, 4) AS year FROM transactions'
+  )
+  const years = yearRows.map((r) => r.year as string)
+  const divergingYears = years.filter(
+    (year) => !hashesMatch(peerHashes, localHashes, `transactions:${year}`)
+  )
+  const transactions = await readTransactionsForYears(dbPtr, divergingYears)
+
+  return {
+    data: {
+      ...base,
+      accounts,
+      categories,
+      tags,
+      transactions,
+      valuations,
+      auditLog,
+      deletedIds,
+      savedPeriods,
+      budgets,
+    },
+    stats: {
+      tablesSkipped,
+      tablesTotal: smallTables.length,
+      yearsSkipped: years.length - divergingYears.length,
+      yearsTotal: years.length,
+    },
+  }
+}
+
+// CS-30/CS-31/CS-32/CS-33 — achado ao validar a Fase 2b contra dado real: `table_hashes` é uma
+// tabela nova (v16) e só é mantida *incrementalmente* — `applyTransactionDelta` só recomputa o
+// hash dos anos que o delta de fato tocou. Um ano de histórico que nunca sofreu uma mutação
+// diffada desde que esta feature existe **nunca ganha uma linha em `table_hashes`**, então
+// `hashesMatch()` o vê como ausente dos dois lados e trata como "sempre diverge" — pra sempre,
+// já que nada além de uma mutação naquele ano específico o preencheria. Resultado observado:
+// nenhum ganho de velocidade (o histórico inteiro continua sendo lido a cada sync), com o custo
+// extra da própria comparação de hash por cima. Correção: quando `table_hashes` está vazia (a
+// checagem mais barata possível — uma tabela já backfilled nunca volta a ficar vazia), calcula o
+// hash do estado *atual* inteiro de uma vez, do mesmo jeito que `replaceAll()`/`writeSmallTables()`
+// já fariam se tivessem rodado depois do v16 existir. Custo de leitura completa, uma vez por
+// banco (local no boot; peer/scratch antes de comparar) — depois disso, a manutenção incremental
+// já existente mantém tudo em dia.
+async function backfillTableHashesIfNeeded(dbPtr: number): Promise<void> {
+  const { rows } = await sqlite3.execWithParams(dbPtr, 'SELECT COUNT(*) FROM table_hashes')
+  const count = (rows[0]?.[0] ?? 0) as number
+  if (count > 0) return
+
+  const data = await readDataFileFromDb(dbPtr)
+  if (!data) return
+  const ts = data.settings.fileCreatedAt || new Date().toISOString()
+
+  const upsert = (tableName: string, partitionKey: string, hash: number, rowCount: number) =>
+    sqlite3.run(
+      dbPtr,
+      `INSERT INTO table_hashes (table_name, partition_key, hash_value, row_count) VALUES (?, ?, ?, ?)
+       ON CONFLICT(table_name, partition_key) DO UPDATE SET hash_value = excluded.hash_value, row_count = excluded.row_count`,
+      [tableName, partitionKey, hash, rowCount]
+    )
+
+  // Mesma normalização de updatedAt/createdAt que refreshSmallTableHashes/
+  // refreshTransactionYearHashesFromMemory já fazem (CS-32) — sem ela, o backfill produziria um
+  // hash que muda sozinho no próximo round-trip por loadDataFile(), mesmo achado daquele fix.
+  await upsert(
+    'accounts',
+    '',
+    combineHashes(
+      data.accounts.map((a) => hashRow(accountRowKey({ ...a, updatedAt: a.updatedAt ?? ts })))
+    ),
+    data.accounts.length
+  )
+  await upsert(
+    'categories',
+    '',
+    combineHashes(
+      data.categories.map((c) => hashRow(categoryRowKey({ ...c, updatedAt: c.updatedAt ?? ts })))
+    ),
+    data.categories.length
+  )
+  await upsert(
+    'tags',
+    '',
+    combineHashes(data.tags.map((t) => hashRow(tagRowKey({ ...t, updatedAt: t.updatedAt ?? ts })))),
+    data.tags.length
+  )
+  await upsert(
+    'budgets',
+    '',
+    combineHashes(
+      data.budgets.map((b) => hashRow(budgetRowKey({ ...b, updatedAt: b.updatedAt ?? ts })))
+    ),
+    data.budgets.length
+  )
+  await upsert(
+    'valuations',
+    '',
+    combineHashes(data.valuations.map((v) => hashRow(valuationRowKey(v)))),
+    data.valuations.length
+  )
+  await upsert(
+    'saved_periods',
+    '',
+    combineHashes(data.savedPeriods.map((p) => hashRow(savedPeriodRowKey(p)))),
+    data.savedPeriods.length
+  )
+  await upsert(
+    'audit_log',
+    '',
+    combineHashes(data.auditLog.map((e) => hashRow(auditEntryRowKey(e)))),
+    data.auditLog.length
+  )
+  await upsert(
+    'deleted_ids',
+    '',
+    combineHashes(data.deletedIds.map((id) => hashRow(deletedIdRowKey(id)))),
+    data.deletedIds.length
+  )
+
+  const byYear = new Map<string, RawTransaction[]>()
+  for (const raw of data.transactions) {
+    const tx: RawTransaction = {
+      ...raw,
+      updatedAt: raw.updatedAt ?? ts,
+      createdAt: raw.createdAt ?? ts,
+    }
+    const year = tx.date.slice(0, 4)
+    const list = byYear.get(year)
+    if (list) list.push(tx)
+    else byYear.set(year, [tx])
+  }
+  for (const [year, txs] of byYear) {
+    await upsert(
+      'transactions',
+      year,
+      combineHashes(txs.map((t) => hashRow(transactionRowKey(t)))),
+      txs.length
+    )
+  }
+}
+
 type ReadPeerResult =
-  | { ok: true; data: RawDataFile }
+  | { ok: true; data: RawDataFile; stats: SelectiveReadStats }
   | { ok: false; reason: 'unreadable' | 'newer-schema' }
 
 async function readForeignDataFile(buffer: ArrayBuffer): Promise<ReadPeerResult> {
@@ -1129,10 +1726,22 @@ async function readForeignDataFile(buffer: ArrayBuffer): Promise<ReadPeerResult>
     }
 
     await runMigrationsOn(tempDb)
-    const data = await readDataFileFromDb(tempDb)
+    // O peer pode ser um upload de antes desta feature existir (ou de um dispositivo que ainda
+    // não rodou o backfill do lado dele) — sem isso, `table_hashes` do peer viria vazia e toda
+    // partição pareceria divergir pra sempre, mesmo quando o conteúdo é idêntico (ver o comentário
+    // de `backfillTableHashesIfNeeded`).
+    await backfillTableHashesIfNeeded(tempDb)
+    // CS-30/CS-31/CS-32 Fase 2b: lê o hash local *agora*, dentro desta mesma task enfileirada —
+    // nunca um valor obtido antes do download/parse do peer, que poderia levar segundos a
+    // minutos (mesma disciplina do CS-24/CS-29: comparar sempre contra o estado atual, não um
+    // snapshot anterior a uma operação potencialmente longa).
+    const localHashes = await readTableHashes(db)
+    const selective = await readDataFileFromDbSelective(tempDb, localHashes)
     await sqlite3.close(tempDb)
     await cleanup()
-    return data ? { ok: true, data } : { ok: false, reason: 'unreadable' }
+    return selective
+      ? { ok: true, data: selective.data, stats: selective.stats }
+      : { ok: false, reason: 'unreadable' }
   } catch {
     try {
       await sqlite3.close(tempDb)

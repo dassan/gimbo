@@ -13,6 +13,7 @@
 
 import { getValidAccessToken, isGoogleConnected, refreshGoogleToken } from './googleAuth'
 import type { CloudProvider } from './provider'
+import { measureSync, trackSyncBytes } from './syncMetrics'
 
 let _queue: Promise<unknown> = Promise.resolve()
 function enqueue<T>(fn: () => Promise<T>): Promise<T> {
@@ -50,8 +51,16 @@ export function clearGoogleDriveCache(): void {
 
 // Adds the bearer token; on a 401 (expired/revoked access token) refreshes once and retries —
 // per CS-03, never more than one retry.
+//
+// CS-26: `sync.drive.getMetadata` was measured at 9.2s in production for what should be a trivial
+// `?fields=modifiedTime` GET (vs. 1-2s for the structurally similar findFolderId/findFileId list
+// queries) — plausibly a 401-triggered refresh-and-retry (up to 3 sequential network round-trips
+// for what looks like one call), but the trace alone can't confirm it. These two metrics isolate
+// it directly: `sync.drive.getValidAccessToken` should be ~0 (cached token, no network) unless a
+// proactive refresh fired, and `sync.drive.fetch401Retry` only exists in a trace at all when the
+// retry branch actually ran, so its presence/duration answers the question outright next time.
 async function authorizedFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  const token = await getValidAccessToken()
+  const token = await measureSync('sync.drive.getValidAccessToken', () => getValidAccessToken())
   const withAuth = (t: string): RequestInit => ({
     ...init,
     headers: { ...(init.headers ?? {}), Authorization: `Bearer ${t}` },
@@ -60,56 +69,67 @@ async function authorizedFetch(url: string, init: RequestInit = {}): Promise<Res
   const first = await fetch(url, withAuth(token))
   if (first.status !== 401) return first
 
-  const refreshed = await refreshGoogleToken()
-  return fetch(url, withAuth(refreshed))
+  return measureSync('sync.drive.fetch401Retry', async () => {
+    const refreshed = await refreshGoogleToken()
+    return fetch(url, withAuth(refreshed))
+  })
 }
 
+// Wrapped as a single metric (cache hit and miss alike): a near-zero value confirms the
+// FOLDER_ID_KEY/FILE_ID_KEY cache is being hit on repeat syncs, a large one isolates the cold-cache
+// list-query round-trip a brand-new device (e.g. first mobile connect) always pays.
 async function findFolderId(): Promise<string> {
-  const cached = getCachedId(FOLDER_ID_KEY)
-  if (cached) return cached
+  return measureSync('sync.drive.findFolderId', async () => {
+    const cached = getCachedId(FOLDER_ID_KEY)
+    if (cached) return cached
 
-  const q = `name='${FOLDER_NAME}' and mimeType='${FOLDER_MIME}' and trashed=false`
-  const res = await authorizedFetch(`${FILES_ENDPOINT}?q=${encodeURIComponent(q)}&fields=files(id)`)
-  if (!res.ok) throw new Error('Failed to list Drive folders')
-  const json = (await res.json()) as { files: { id: string }[] }
-  if (json.files.length > 0) {
-    setCachedId(FOLDER_ID_KEY, json.files[0].id)
-    return json.files[0].id
-  }
+    const q = `name='${FOLDER_NAME}' and mimeType='${FOLDER_MIME}' and trashed=false`
+    const res = await authorizedFetch(
+      `${FILES_ENDPOINT}?q=${encodeURIComponent(q)}&fields=files(id)`
+    )
+    if (!res.ok) throw new Error('Failed to list Drive folders')
+    const json = (await res.json()) as { files: { id: string }[] }
+    if (json.files.length > 0) {
+      setCachedId(FOLDER_ID_KEY, json.files[0].id)
+      return json.files[0].id
+    }
 
-  const created = await authorizedFetch(FILES_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: FOLDER_NAME, mimeType: FOLDER_MIME }),
+    const created = await authorizedFetch(FILES_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: FOLDER_NAME, mimeType: FOLDER_MIME }),
+    })
+    if (!created.ok) throw new Error('Failed to create the Gimbo Drive folder')
+    const folder = (await created.json()) as { id: string }
+    setCachedId(FOLDER_ID_KEY, folder.id)
+    return folder.id
   })
-  if (!created.ok) throw new Error('Failed to create the Gimbo Drive folder')
-  const folder = (await created.json()) as { id: string }
-  setCachedId(FOLDER_ID_KEY, folder.id)
-  return folder.id
 }
 
 async function findFileId(folderId: string): Promise<string | null> {
-  const cached = getCachedId(FILE_ID_KEY)
-  if (cached) return cached
+  return measureSync('sync.drive.findFileId', async () => {
+    const cached = getCachedId(FILE_ID_KEY)
+    if (cached) return cached
 
-  const q = `name='${DB_FILENAME}' and '${folderId}' in parents and trashed=false`
-  const res = await authorizedFetch(
-    `${FILES_ENDPOINT}?q=${encodeURIComponent(q)}&orderBy=modifiedTime desc&fields=files(id,modifiedTime)`
-  )
-  if (!res.ok) throw new Error('Failed to list files in the Gimbo Drive folder')
-  const json = (await res.json()) as { files: { id: string; modifiedTime: string }[] }
-  if (json.files.length === 0) return null
-  if (json.files.length > 1) {
-    // Pre-existing duplicate (e.g. from before this race was fixed, or a cross-device race this
-    // module can't prevent) — deterministically pick the most recently modified one rather than
-    // flapping between ids on every sync. Doesn't delete the others; that's a manual cleanup.
-    // eslint-disable-next-line no-console
-    console.warn(
-      `[googleDrive] Found ${json.files.length} gimbo.db files in the Gimbo/ folder — using the most recently modified one. Remove the extras manually in Drive.`
+    const q = `name='${DB_FILENAME}' and '${folderId}' in parents and trashed=false`
+    const res = await authorizedFetch(
+      `${FILES_ENDPOINT}?q=${encodeURIComponent(q)}&orderBy=modifiedTime desc&fields=files(id,modifiedTime)`
     )
-  }
-  setCachedId(FILE_ID_KEY, json.files[0].id)
-  return json.files[0].id
+    if (!res.ok) throw new Error('Failed to list files in the Gimbo Drive folder')
+    const json = (await res.json()) as { files: { id: string; modifiedTime: string }[] }
+    if (json.files.length === 0) return null
+    if (json.files.length > 1) {
+      // Pre-existing duplicate (e.g. from before this race was fixed, or a cross-device race this
+      // module can't prevent) — deterministically pick the most recently modified one rather than
+      // flapping between ids on every sync. Doesn't delete the others; that's a manual cleanup.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[googleDrive] Found ${json.files.length} gimbo.db files in the Gimbo/ folder — using the most recently modified one. Remove the extras manually in Drive.`
+      )
+    }
+    setCachedId(FILE_ID_KEY, json.files[0].id)
+    return json.files[0].id
+  })
 }
 
 export function createGoogleDriveProvider(): CloudProvider & {
@@ -128,54 +148,66 @@ export function createGoogleDriveProvider(): CloudProvider & {
     },
 
     upload(blob: Blob): Promise<void> {
-      return enqueue(async () => {
-        const folderId = await findFolderId()
-        const fileId = await findFileId(folderId)
+      trackSyncBytes('sync.drive.upload.bytes', blob.size)
+      return enqueue(() =>
+        measureSync('sync.drive.upload', async () => {
+          const folderId = await findFolderId()
+          const fileId = await findFileId(folderId)
 
-        if (fileId) {
-          const res = await authorizedFetch(`${UPLOAD_ENDPOINT}/${fileId}?uploadType=media`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/x-sqlite3' },
-            body: blob,
+          if (fileId) {
+            const res = await authorizedFetch(`${UPLOAD_ENDPOINT}/${fileId}?uploadType=media`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/x-sqlite3' },
+              body: blob,
+            })
+            if (!res.ok) throw new Error('Failed to update gimbo.db on Drive')
+            return
+          }
+
+          const metadata = { name: DB_FILENAME, parents: [folderId] }
+          const form = new FormData()
+          form.append(
+            'metadata',
+            new Blob([JSON.stringify(metadata)], { type: 'application/json' })
+          )
+          form.append('file', blob)
+          const res = await authorizedFetch(`${UPLOAD_ENDPOINT}?uploadType=multipart&fields=id`, {
+            method: 'POST',
+            body: form,
           })
-          if (!res.ok) throw new Error('Failed to update gimbo.db on Drive')
-          return
-        }
-
-        const metadata = { name: DB_FILENAME, parents: [folderId] }
-        const form = new FormData()
-        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }))
-        form.append('file', blob)
-        const res = await authorizedFetch(`${UPLOAD_ENDPOINT}?uploadType=multipart&fields=id`, {
-          method: 'POST',
-          body: form,
+          if (!res.ok) throw new Error('Failed to create gimbo.db on Drive')
+          const created = (await res.json()) as { id: string }
+          setCachedId(FILE_ID_KEY, created.id)
         })
-        if (!res.ok) throw new Error('Failed to create gimbo.db on Drive')
-        const created = (await res.json()) as { id: string }
-        setCachedId(FILE_ID_KEY, created.id)
-      })
+      )
     },
 
     download(): Promise<ArrayBuffer> {
-      return enqueue(async () => {
-        const folderId = await findFolderId()
-        const fileId = await findFileId(folderId)
-        if (!fileId) throw new Error('gimbo.db not found on Drive')
-        const res = await authorizedFetch(`${FILES_ENDPOINT}/${fileId}?alt=media`)
-        if (!res.ok) throw new Error('Failed to download gimbo.db from Drive')
-        return res.arrayBuffer()
-      })
+      return enqueue(() =>
+        measureSync('sync.drive.download', async () => {
+          const folderId = await findFolderId()
+          const fileId = await findFileId(folderId)
+          if (!fileId) throw new Error('gimbo.db not found on Drive')
+          const res = await authorizedFetch(`${FILES_ENDPOINT}/${fileId}?alt=media`)
+          if (!res.ok) throw new Error('Failed to download gimbo.db from Drive')
+          const buffer = await res.arrayBuffer()
+          trackSyncBytes('sync.drive.download.bytes', buffer.byteLength)
+          return buffer
+        })
+      )
     },
 
     getMetadata(): Promise<{ modifiedTime: string }> {
-      return enqueue(async () => {
-        const folderId = await findFolderId()
-        const fileId = await findFileId(folderId)
-        if (!fileId) throw new Error('gimbo.db not found on Drive')
-        const res = await authorizedFetch(`${FILES_ENDPOINT}/${fileId}?fields=modifiedTime`)
-        if (!res.ok) throw new Error('Failed to read gimbo.db metadata from Drive')
-        return (await res.json()) as { modifiedTime: string }
-      })
+      return enqueue(() =>
+        measureSync('sync.drive.getMetadata', async () => {
+          const folderId = await findFolderId()
+          const fileId = await findFileId(folderId)
+          if (!fileId) throw new Error('gimbo.db not found on Drive')
+          const res = await authorizedFetch(`${FILES_ENDPOINT}/${fileId}?fields=modifiedTime`)
+          if (!res.ok) throw new Error('Failed to read gimbo.db metadata from Drive')
+          return (await res.json()) as { modifiedTime: string }
+        })
+      )
     },
   }
 }

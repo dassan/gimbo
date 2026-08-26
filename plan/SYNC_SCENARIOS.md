@@ -451,3 +451,324 @@ Mobile PWA (SQLite/OPFS) <──pull/push──>  Drive
 | Arquivo cloud corrompido | Estado local preservado; push forçado após confirmação (S-13) |
 | Token expirado | Refresh automático + retry único; badge vermelho se falhar (S-15) |
 | Desconectar provider | Tokens removidos; dados locais intactos; arquivo permanece na nuvem (S-14) |
+
+---
+
+## Parte 4 — Diário de Sessão: Sync Multi-Dispositivo sob Carga Real (2026-08-25/26)
+
+> **Propósito desta seção:** diferente do resto do documento (cenários de comportamento, atemporais),
+> isto é um **relato cronológico** de uma sessão específica de trabalho — branch
+> `dassan/sync-drive-fixes` — escrito para que uma sessão futura (humana ou IA) entenda o que
+> aconteceu, por quê, e o que ficou em aberto, sem precisar reconstruir isso a partir de 17 entradas
+> de `BACKLOG.md` fora de ordem. Os itens `CS-20`, `CS-24` a `CS-36` citados abaixo têm o registro
+> técnico canônico em `plan/BACKLOG.md`; o texto aqui é o *porquê* e o *como pensamos*, não uma
+> duplicata do *o quê*.
+
+### 0. Gatilho: uso real em produção, não um teste sintético
+
+A sessão começou com o mantenedor relatando problemas reais usando o Gimbo em produção, sincronizando
+via Google Drive um cofre de verdade — não um fixture de teste — com **~25-26,5 mil transações e
+~13-15MB**. Dois sintomas relatados de início:
+
+1. O primeiro sync no celular (conectando o Drive pela primeira vez, wifi comum) levou **minutos**.
+2. Um lançamento feito **logo depois** desse sync sumiu após um refresh na web.
+
+O segundo sintoma virou `CS-24` (bug de race grave — ver abaixo). Mas o padrão de trabalho que se
+estabeleceu a partir daí definiu o resto da sessão: em vez de investigar com dados sintéticos, cada
+correção foi validada contra o **cofre real do mantenedor**, testado manualmente entre dois
+browsers reais (tipicamente Chrome escrevendo, Firefox lendo, ou vice-versa) — porque a
+infraestrutura de teste automatizado do projeto (`vitest`/jsdom) **não roda wa-sqlite/OPFS de
+verdade**, então bugs desta camada (performance de query real, corrupção do módulo WASM, tempo de
+round-trip de uma API real) são estruturalmente invisíveis a testes unitários. Isso gerou um ciclo
+de trabalho recorrente ao longo de toda a sessão: **fix → suíte completa verde → e2e Playwright
+contra wa-sqlite real → o mantenedor testa contra o cofre real de novo → novo achado → repete.**
+Esse ciclo produziu 13 itens de backlog (`CS-24` a `CS-36`) numa única sessão contínua.
+
+### 1. O dilema estratégico: servidor de sync próprio vs. investir na camada local
+
+Depois de uma primeira leva de correções (`CS-24` e `CS-25`, ambos bugs de orquestração — ver
+§2), o mantenedor levantou uma preocupação de nível mais alto, não sobre um bug específico: **o
+custo de manutenção da própria camada de sync estava crescendo rápido demais** — 5 bugs reais
+numa única sessão de trabalho (`CS-24` a `CS-29`) é um sinal de que a superfície é frágil. A
+pergunta explícita foi se valia a pena recuar da arquitetura "sync client-side puro contra a nuvem
+do próprio usuário" (o desenho de todo o F-28 Nível 2, decidido em 2026-07-24) em favor de um
+servidor de sync próprio do Gimbo.
+
+Isso foi discutido e explorado, mas **descartado** — não por ser tecnicamente inviável, mas porque
+contradiria o princípio de produto mais fundamental do Gimbo (`CLAUDE.md`, identidade do projeto):
+"local-first... sem servidor, sem nuvem", com os dados sempre na infraestrutura do próprio usuário.
+Um servidor de sync do Gimbo resolveria os sintomas de performance, mas ao custo de abandonar
+exatamente a proposta de valor que diferencia o produto. A decisão foi **investir em reduzir o
+próprio custo recorrente do sync local**, atacando a causa estrutural em vez de trocar de
+arquitetura: por que o merge de sync continuava reescrevendo/relendo o cofre inteiro a cada ciclo,
+quando o `M-73` já tinha resolvido exatamente esse problema — reescrita total → diff — para
+mutação normal do dia a dia?
+
+A resposta original do `M-73` para essa pergunta ("o merge pode tocar uma fração não-limitada de
+entidades, o diff degradaria pro custo de reescrita total mesmo") foi reavaliada à luz da
+telemetria real coletada nesta sessão (`CS-20`/`CS-24` a `CS-29`): é um argumento de pior caso que
+não se sustenta para o caso comum (sync do dia a dia, poucas linhas mudam) — e no pior caso (primeiro
+sync, tudo diverge), o diff nunca é *pior* que a reescrita total que ele substitui, só igual.
+
+O mantenedor então propôs, por conta própria, uma segunda ideia complementar: **uma tabela de
+controle com hash por partição** (por tabela pequena inteira, por ano para `transactions`) — comparar
+hashes *antes* de ler/parsear o `.db` do peer, pulando inteiramente as partições que baterem. Essa
+ideia não veio de mim; foi oferecida pelo mantenedor e explorada e formalizada a partir daí.
+
+Isso virou um plano de 2 fases, desenhado via Plan Mode (agentes Explore + Plan), aprovado
+explicitamente pelo mantenedor ("Quero, vamos seguir com o plano") depois de uma discussão
+explícita sobre riscos aceitos — arquivo completo em
+`/home/dassan/.claude/plans/crystalline-seeking-pearl.md`:
+
+- **Fase 1** — trocar `storage.replaceAll(merged)` (reescrita total) por
+  `storage.applyMutation(merged, diffTransactions(baseline, merged.transactions))` (mesmo
+  mecanismo do `M-73`) nos três pontos que faziam merge de sync. Baixo risco: reaproveita 100% de
+  mecanismo já existente e testado, nenhuma mudança de formato de dado.
+- **Fase 2** (2a schema+manutenção, 2b leitura seletiva) — a tabela de hash por partição proposta
+  pelo mantenedor, para atacar o custo de *ler* o `.db` do peer (que a Fase 1 não toca — ela só
+  resolve o custo de *escrever* o resultado do merge).
+
+**Risco aceito explicitamente, documentado no plano e recorrente ao longo da sessão:** qualquer
+comparação nesta camada (hash local vs. hash do peer, snapshot pré-pull vs. estado atual) precisa
+ser feita contra o estado **atual** do disco, nunca contra um snapshot anterior a uma operação
+potencialmente longa (o pull pode levar segundos a minutos) — é exatamente a classe de bug já
+encontrada no `CS-24` e reencontrada no `CS-29`. **Mitigação de UX aceita como fora de escopo
+deste trabalho de camada de dados:** o primeiro sync de um dispositivo novo continua sendo o caso
+mais caro por natureza (nada nas duas fases muda isso) — o mantenedor decidiu que a mitigação
+correta para isso é uma feature de UI separada (um spinner bloqueante durante o primeiro sync),
+não algo a resolver aqui.
+
+### 2. Bugs de orquestração encontrados antes do plano de 2 fases (`CS-24`, `CS-25`)
+
+Estes dois antecederam a decisão estratégica acima e foram o gatilho dela:
+
+- **`CS-24`** — o bug real que motivou a sessão: `runPeerSync` tirava um snapshot de `data` *antes*
+  do pull (que pode levar minutos), e uma mutação feita nesse meio-tempo sobrevivia à sua própria
+  escrita mas era apagada pelo `replaceAll(merged)` calculado a partir do snapshot já desatualizado.
+  Corrigido religando `runPeerSync` para reler o estado atual após o pull e, só se divergiu do
+  snapshot inicial, reconciliar com um segundo merge antes de publicar.
+- **`CS-25`** — `runPeerSync()` disparava duas vezes concorrentemente na primeira conexão (boot de
+  `App.tsx` + callback OAuth de `Settings`, mesma navegação), cada uma refazendo lookup e
+  reenviando o cofre inteiro. Corrigido com uma guarda de reentrância (`if (get().syncStatus ===
+  'syncing') return`, sem `await` antes — livre de race pela semântica run-to-completion do JS).
+
+Junto com estes, `CS-20` criou a própria infraestrutura de telemetria que tornou o resto da sessão
+possível: `lib/cloudSync/syncMetrics.ts`, **deliberadamente sempre ativo, inclusive em produção**
+(diferente do padrão dev-only de `perfMonitor.ts`/M-71) — porque a latência real da API do Drive só
+se manifesta no dispositivo real do usuário, nunca numa máquina de dev em localhost. Consumida via
+o Bug Report System (F-26) já existente, como categoria "performance" do JSON exportado — é assim
+que o mantenedor conseguiu colar os arquivos `chrome-N.json`/`firefox-N.json` usados para
+diagnosticar cada rodada.
+
+### 3. Fase 1 implementada e validada (`CS-30`, `CS-31`)
+
+Os três pontos de sync que faziam `replaceAll()` passaram a usar `applyMutation()` +
+`diffTransactions()`. Validado contra dado real: `sync.applyMutation` caiu para a faixa 100-400ms
+esperada pelo `M-73`. Mas essa mesma validação revelou um achado colateral (`CS-31`, ainda **aberto**
+no momento em que a Parte 4 deste documento foi escrita): a *leitura* do baseline local que o diff
+precisa (`storage.loadDataFile()`, chamada nova introduzida pela própria Fase 1) custou **7,3s no
+Firefox** contra **52ms no Chrome**, mesmo tamanho de cofre — um descompasso Firefox×Chrome que já
+aparecia em outras coletas desta sessão (inclusive na hidratação de boot) mas nunca tinha sido
+nomeado explicitamente como um padrão. Sem causa raiz investigada; a expectativa registrada é que a
+Fase 2 (hash por partição, aplicada também ao lado local) mitigue o sintoma como efeito colateral,
+sem resolver a causa raiz do descompasso em si.
+
+### 4. Fase 2a e 2b implementadas — e o ciclo de "corrigido, mas não validado" (`CS-32` a `CS-34`)
+
+- **`CS-32`** (Fase 2a) — schema `table_hashes` (migration v16) e manutenção incremental do hash
+  (FNV-1a de 32 bits + XOR-fold, síncrono de propósito — `crypto.subtle` reintroduziria o mesmo
+  overhead-por-chamada que o `M-72` já tinha corrigido). Um e2e novo pegou um bug real de
+  normalização antes de qualquer leitura seletiva depender desses hashes (fallback `updatedAt ??
+  ts` não espelhado no cálculo do hash, fazendo o hash mudar sozinho sem edição real).
+- **`CS-33`** (Fase 2b) — leitura seletiva do peer usando os hashes acima. Validado com um teste
+  e2e que usa **dois contextos de browser reais** (dois "dispositivos" de verdade) e que foi
+  explicitamente estressado contra o pior caso possível: forçar `hashesMatch()` a sempre "bater"
+  (pular tudo cegamente) — o teste falhou corretamente detectando perda de dado do peer, revertido
+  antes de commitar. Essa verificação foi deliberada: perda silenciosa de dado é um risco mais
+  grave do que o "sync lento" que motivou toda a Fase 2, e por isso ganhou cobertura específica.
+- **`CS-34`** — o primeiro "não funcionou na prática" da Fase 2: o mantenedor repetiu o teste de
+  dois browsers depois do `CS-33` e reportou **nenhum ganho de velocidade, "pelo contrário, pareceu
+  mais lenta"**. Causa raiz: `table_hashes` só é mantida *incrementalmente* (só os anos que um
+  delta realmente tocou ganham uma linha) — qualquer ano de histórico nunca tocado por uma mutação
+  diffada desde que a v16 existe **nunca ganha uma linha na tabela**, e a ausência é tratada (por
+  desenho, corretamente) como "sempre diverge" — então o histórico inteiro continuava sendo lido
+  para sempre. O teste do `CS-33` não pegou isso porque semeava via `replaceAll()`, que já popula
+  os hashes como efeito colateral — nunca exercitou "cofre com dado antigo, hashes vazias", que é
+  exatamente o estado real de qualquer vault que existia antes da v16. Corrigido com
+  `backfillTableHashesIfNeeded()` — checagem barata, popula tudo de uma vez só quando a tabela está
+  vazia — chamada em `init()` (boot) e `readForeignDataFile()` (peer). **Extensão do mesmo item**,
+  motivada por uma pergunta de esclarecimento do mantenedor sobre o procedimento de reteste
+  ("importo → pago o custo do backfill → exporto → reuso esse arquivo daí em diante, certo?"): essa
+  pergunta expôs que `importDb()` reabre `db` **fora** do caminho de boot de `init()`, então
+  importar um `.db` antigo sem hashes só ganharia o backfill no *próximo reload*, não no mesmo
+  carregamento em que o import acontece — contradizendo o fluxo que o mantenedor tinha acabado de
+  propor. Adicionada a mesma chamada ao final do caminho de sucesso de `importDb()`.
+
+**Achado técnico transversal a toda a Fase 2 (`CS-28`), grave o suficiente para virar regra
+permanente em `CLAUDE.md`:** a primeira versão do fix do `CS-26` paralelizava três queries com
+`Promise.all` dentro do worker — o que corrompe o módulo WASM do `wa-sqlite` (build Asyncify, que só
+suporta **uma chamada em voo por vez**). Isso não era hipotético: crashou uma tentativa real de
+importação do mantenedor minutos depois (`RuntimeError: unreachable executed`). A distinção que
+causou a confusão original: `StorageService.getTransactions()` (main thread) já usa esse mesmo
+padrão de `Promise.all` com segurança, porque cada chamada passa por `postMessage` → a fila
+`enqueue()` do worker antes de chegar no wasm; código que já roda **dentro** de uma task do worker
+(como o leitor de peer) não tem mais nenhuma serialização abaixo dele. Corrigido revertendo para
+sequencial.
+
+### 5. Esta sessão (retomada após compactação de contexto): `CS-35` e `CS-36`
+
+O usuário enviou duas coletas reais novas (`chrome-2.json`/`firefox-2.json`, Firefox importando um
+`.db` com hashes já backfilled, Chrome sincronizando esse mesmo `.db` via Drive) pedindo confirmação
+de que o fix do `CS-34` resolveu o problema. A análise dessas duas coletas — cruzando os números
+crus de `worker.query:SELECT...` (timings *cumulativos* dentro de um mesmo lote de leitura, não
+durações independentes por query — uma armadilha de leitura do próprio formato de telemetria que
+valeu a pena registrar aqui) com os metric names de mais alto nível (`sync.pullAndMerge.total`,
+`sync.runPeerSync.total`, `worker.readPeer`) — revelou dois achados distintos, um confirmado e
+corrigido (`CS-35`), outro deixado como pergunta em aberto instrumentada, não respondida (`CS-36`):
+
+- **`CS-35` (confirmado via leitura do código, corrigido):** um `worker.query:SELECT t.* FROM
+  transactions` isolado, custando **~8,85s no Chrome / ~6,5s no Firefox**, aparecia *depois* de
+  `sync.pullAndMerge.total` já ter terminado — inclusive no Firefox, onde **nenhuma reconciliação
+  de edição concorrente chegou a disparar** (ou seja, o valor lido nem sequer era usado). Ao ler o
+  código-fonte (`syncService.ts`/`folderSyncService.ts`/`useDataStore.ts`), a causa ficou clara:
+  `pullAndMergeInner`/`syncFromPeers` já computam o `DataFile` mergeado inteiro em memória e o
+  persistem via `applyMutation` — mas o `SyncResult` que devolviam pro chamador descartava esse
+  valor (`{status:'merged', peersMerged}`, sem o dado), forçando `runPeerSync` a chamar
+  `storage.loadDataFile()` de novo só para reconstruir uma cópia equivalente do que já tinha sido
+  calculado, pagando o mesmo custo de leitura completa que o `M-72` documentou (~3-9s num cofre
+  real) a cada sync, usado ou não. Corrigido devolvendo o `DataFile` já calculado em `result.data`
+  (`SyncResult`'s variante `'merged'`, `provider.ts`, ganhou um campo `data: DataFile`); a checagem
+  de edição concorrente do `CS-29` deixou de precisar de qualquer I/O — passou a comparar
+  `get().data.settings.fileUpdatedAt` (a cópia em memória do Zustand, atualizada de forma síncrona
+  por todo `mutate()`, *antes* da sua própria escrita debounced de 300ms) em vez de reler o disco —
+  mais rápido (zero custo) e, como efeito colateral, mais correto (não pode perder uma edição cujo
+  `debouncedApplyMutation()` ainda não tenha concluído, o que uma releitura do disco poderia
+  perder). Zero mecanismo novo — só threading de um valor já calculado através do tipo de retorno.
+- **`CS-36` (pergunta em aberto, só instrumentada — não é ainda um "resolvido"):** depois do fix do
+  `CS-35`, `worker.readPeer`/`sync.readPeerBlob` continuavam altos nas mesmas duas coletas (~11,3s
+  Chrome / ~6,6s Firefox). Isso tem **duas explicações possíveis, indistinguíveis a partir do trace
+  disponível**: (a) o hash-skip da Fase 2b não está de fato pulando nenhuma partição (bug ainda não
+  identificado), ou (b) o par de dispositivos testado nesta rodada específica tinha estado
+  genuinamente muito divergente — por exemplo, se o Chrome estava "atrasado" sincronizando pela
+  primeira vez um histórico grande que o Firefox já tinha — cenário em que ler quase tudo é
+  **esperado e correto** (o próprio plano da Fase 2 documentou isso como risco aceito: "primeiro
+  sync continua caro", nenhuma das duas fases muda isso). Sem saber o histórico exato de cada
+  dispositivo nesse teste específico, não dava para decidir entre as duas com confiança — decisão
+  consciente de não adivinhar. Em vez disso, `readDataFileFromDbSelective` (`worker.ts`) passou a
+  contar `tablesSkipped`/`tablesTotal` e `yearsSkipped`/`yearsTotal` enquanto decide o que ler, e
+  esses números agora saem no JSON do Bug Report como `sync.readPeer.tablesSkipped`/`tablesTotal`/
+  `yearsSkipped`/`yearsTotal` (mesmo padrão sempre-ativo do `CS-20`). **A próxima rodada de teste
+  real vai responder isso diretamente, sem inferência.**
+
+Ambos os itens (`CS-35` fix + `CS-36` telemetria) passaram pelo mesmo rigor de verificação do resto
+da sessão: suíte completa (1005 testes unitários) verde, os 14 testes e2e relevantes de sync/import
+(incluindo `SEC-05`/`SEC-06`, para garantir que a mudança no formato de `SyncResult` não afetou as
+garantias de segurança de import) verdes, bundle de produção confirmado sem `__syncTest`/`__storage`
+(`grep -c` = 0 em todos os arquivos). Commitados em dois commits separados (código+testes, depois
+docs) na branch `dassan/sync-drive-fixes` — ainda não mergeada, sem PR aberta.
+
+### 6. Estado no momento em que este relato foi escrito pela primeira vez (2026-08-26, manhã)
+
+- **Resolvido e validado contra dado real, com confiança alta:** `CS-20`, `CS-24`, `CS-25`, `CS-26`,
+  `CS-28`, `CS-29`, `CS-30`, `CS-32`, `CS-33`, `CS-34` (incl. extensão do import).
+- **Resolvido, aguardando confirmação da próxima rodada real:** `CS-35` (a releitura redundante foi
+  eliminada por leitura de código — correta com alta confiança — mas ainda não confirmada por uma
+  nova coleta mostrando `sync.runPeerSync.total` mais próximo de `sync.pullAndMerge.total`).
+- **Aberto, sem causa raiz, baixo risco percebido:** `CS-27` (latência anômala de
+  `sync.drive.getMetadata`, não reproduzida numa segunda coleta — rebaixada a "provável anomalia de
+  rede pontual"); `CS-31` (descompasso de performance Firefox×Chrome para a mesma query/mesmo
+  tamanho de dado, causa raiz nunca investigada diretamente).
+- **Instrumentado, pergunta genuinamente em aberto:** `CS-36` — não se sabia ainda se o hash-skip da
+  Fase 2b estava funcionando como desenhado. A resposta dependia só de rodar o teste de novo e ler
+  os quatro novos campos no JSON do Bug Report.
+
+> Esta seção §6 ficou **desatualizada horas depois de escrita** — ver §8 abaixo para o estado
+> revisado. Mantida aqui intacta (não editada retroativamente) porque documenta com precisão o que
+> se sabia *no momento exato* em que a dúvida ainda estava aberta; útil para quem quiser entender a
+> sequência de raciocínio, não só a conclusão final.
+
+### 7. Fio solto no momento em que este relato foi escrito pela primeira vez
+
+O mantenedor sinalizou, ao pedir este relato, que **passou a noite pensando numa abordagem
+"levemente diferente"** para o problema geral de performance de sync — sem ainda detalhar qual —
+e estava rodando uma nova rodada de teste real em paralelo a esta documentação.
+
+> **Atualização (mesmo dia, poucas horas depois):** a rodada de teste voltou (ver §8) com um
+> resultado muito positivo ("Ficou MUITO mais rápido") — mas **a abordagem alternativa em si ainda
+> não foi compartilhada**. Continua um fio solto genuíno: uma sessão futura não deve assumir que o
+> mantenedor abandonou essa ideia só porque o resultado atual foi bom.
+
+### 8. Confirmação contra dado real (2026-08-26, mesmo dia — `CS-35` fechado, `CS-36` respondido com uma reviravolta)
+
+O mantenedor repetiu o teste de dois browsers (mesmo cofre real, ~26,5 mil transações) e enviou o
+resultado com uma única frase: **"Ficou MUITO mais rápido."** Os números confirmam isso sem
+ambiguidade:
+
+| Métrica | Antes (`CS-34` já aplicado, `CS-35` não) | Depois (`CS-35`+`CS-36` aplicados) |
+|---|---|---|
+| `sync.runPeerSync.total` (Chrome) | 31.247ms | **12.880,7ms** (~2,4x) |
+| `sync.runPeerSync.total` (Firefox) | 31.236ms | **9.794ms** (~3,2x) |
+| Gap `runPeerSync.total` − `pullAndMerge.total` (Chrome) | 9.789,6ms | **277,4ms** |
+| Gap `runPeerSync.total` − `pullAndMerge.total` (Firefox) | 7.558ms | **294ms** |
+
+**`CS-35` está confirmado, não só "correto por leitura de código":** o gap que media exatamente a
+releitura redundante do cofre local caiu de segundos para bem abaixo de meio segundo nos dois
+browsers — a causa raiz identificada (o `SyncResult` descartando o `DataFile` já calculado) era
+mesmo a explicação certa, e a correção elimina o custo por completo, não só reduz.
+
+**`CS-36` respondeu a pergunta que motivou sua criação — mas com uma reviravolta interessante,
+ainda não totalmente fechada:**
+
+- **Firefox** (pulling o `.db` que o Chrome tinha acabado de subir ao Drive, contendo 1 transação
+  nova desde a última convergência entre os dois dispositivos): `yearsSkipped: 19` de
+  `yearsTotal: 20` — só o ano da transação nova precisou ser lido de fato. `worker.readPeer` caiu
+  para **756ms**. Isto é a confirmação positiva que faltava: **o hash-skip da Fase 2b funciona
+  exatamente como desenhado no caso comum** (poucas linhas mudaram desde o último sync).
+- **Chrome** (pulling o Drive no início da mesma rodada): `yearsSkipped: 0` de `yearsTotal: 20` —
+  nenhum ano bateu hash, apesar do cofre já estar (supostamente) convergido com o do Firefox nas
+  rodadas anteriores desta mesma sessão de testes.
+
+**Hipótese líder para o "0 de 20" do Chrome, formulada mas *não confirmada com o mantenedor*:**
+`scripts/sync_gimbo.py` carimba `updated_at = timestamp do momento em que o script roda` em
+**toda** transação, a cada execução — decisão de projeto deliberada e documentada no próprio
+script (comentário "B-32": é a chave LWW do merge multi-dispositivo, então precisa refletir "um
+snapshot novo chegou", não "o conteúdo financeiro mudou"). Consequência direta, não-óbvia: **dois
+arquivos `.db` gerados por duas execuções separadas do script carregam `updated_at` diferente em
+literalmente toda transação, mesmo que o conteúdo financeiro subjacente (valor, data, descrição)
+seja idêntico** — porque o hash de cada linha (`transactionRowKey`) inclui `updatedAt`. Se o `.db`
+usado para semear o Chrome nesta rodada de teste veio de uma corrida do script diferente da que
+gerou o `.db` que o Firefox tem, **o hash diverge de verdade, para cada ano, e isso é o
+comportamento correto do hash-skip** (dado realmente diferente não deveria ser pulado) — não um
+bug no mecanismo, e sim um artefato de como o fixture real foi (re)gerado/reimportado entre
+rodadas de teste. Isso é coerente com o próprio procedimento de reteste que o mantenedor descreveu
+em sessões anteriores (importar um `.db` "fresco" a cada rodada para reiniciar o estado de um dos
+lados).
+
+**Isto ainda não foi verificado com o mantenedor — é a pergunta mais importante em aberto agora:**
+se ele confirmar que o `.db` do Chrome nesta rodada veio de uma corrida diferente do
+`sync_gimbo.py` (ou de qualquer outra fonte com `updated_at` recalculado) do que o do Firefox, o
+`CS-36` fecha como "telemetria fez seu trabalho, hash-skip validado, sem bug" — só uma nota de
+metodologia de teste a registrar. Se ele confirmar que os dois lados deveriam ter exatamente os
+mesmos `updated_at` nesta rodada (mesmo fixture, sem reimportação no meio), então o "0 de 20" é a
+**primeira evidência real de um bug genuíno no hash-skip**, e merece investigação dedicada
+(possivelmente relacionada ao `fileCreatedAt` usado como fallback de normalização em
+`backfillTableHashesIfNeeded`/`refreshSmallTableHashes` — ver `merge.ts`: `mergeForSync` nunca
+sincroniza `settings.fileCreatedAt` entre dispositivos, só `fileUpdatedAt`, então dois vaults que
+não nasceram do mesmo arquivo literal podem ter `fileCreatedAt` diferente para sempre — um segundo
+candidato a causa raiz, não descartado).
+
+Ambos os documentos técnicos (`BACKLOG.md` CS-35/CS-36, `MONITORING.md`, `CLAUDE.md`) já foram
+atualizados com esses números antes desta seção ser escrita.
+
+### 9. Fio solto real, agora (final desta atualização)
+
+Dois pontos genuinamente em aberto para quem continuar a partir daqui:
+
+1. **A abordagem alternativa que o mantenedor pensou durante a noite (§7) ainda não foi
+   compartilhada.** Perguntar antes de assumir que o caminho é só "seguir refinando a Fase 2".
+2. **Confirmar com o mantenedor a origem do `.db` usado para semear o Chrome nesta última rodada**
+   (§8) — essa resposta sozinha decide se `CS-36` fecha como "confirmado, sem bug" ou reabre como
+   "bug real a investigar", e qual das duas não pode ser adivinhada, só perguntada ou verificada
+   inspecionando o `fileCreatedAt`/`updated_at` reais dos dois cofres.
+3. Não reabrir o leque de alternativas já descartado no §1 acima (servidor de sync próprio) sem um
+   motivo novo e explícito — foi uma decisão de produto deliberada, não uma pendência técnica.

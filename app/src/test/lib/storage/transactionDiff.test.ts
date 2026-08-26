@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { diffTransactions } from '@/lib/storage/transactionDiff'
+import { mergeForSync } from '@/lib/cloudSync/merge'
+import { makeDataFile } from '../../fixtures/dataFile'
 import type { Transaction } from '@/types'
 
 // Fixture com TODO campo opcional preenchido — necessário pro teste-guarda abaixo, que depende
@@ -127,5 +129,59 @@ describe('diffTransactions', () => {
         changed,
       ])
     }
+  })
+})
+
+// CS-30 (Fase 1): diffTransactions() não muda — o que muda é o *tipo* de input que passa a
+// alimentá-la, vindo de mergeForSync() em vez de uma edição manual via UI. Estes casos fixam que
+// ela continua correta para as formas de "before"/"after" que um merge de sync realmente produz.
+describe('diffTransactions fed by mergeForSync output (sync write-path)', () => {
+  it('a tombstone merged in from the remote peer produces a deletedIds entry even though the local baseline still has the row', () => {
+    const tx = makeFullTransaction()
+    const local = makeDataFile({ transactions: [tx], deletedIds: [] })
+    // Peer deleted this transaction — its tombstone arrives via deletedIds, not by simply
+    // omitting the row (mirrors how a real remote delete propagates through mergeForSync).
+    const remote = makeDataFile({ transactions: [tx], deletedIds: [tx.id] })
+
+    const merged = mergeForSync(local, remote)
+    const delta = diffTransactions(local.transactions, merged.transactions)
+
+    expect(merged.transactions).toEqual([])
+    expect(delta.upserts).toEqual([])
+    expect(delta.deletedIds).toEqual([tx.id])
+  })
+
+  it('first sync of a brand-new device: near-empty baseline, delta is almost entirely upserts', () => {
+    const seedTx = makeFullTransaction({ id: 'seed-1' })
+    const local = makeDataFile({ transactions: [seedTx] }) // onboarding-seeded, near-empty
+    const remoteTxs = Array.from({ length: 500 }, (_, i) =>
+      makeFullTransaction({ id: `remote-${i}` })
+    )
+    const remote = makeDataFile({ transactions: remoteTxs })
+
+    const merged = mergeForSync(local, remote)
+    const delta = diffTransactions(local.transactions, merged.transactions)
+
+    // No branch by size — every remote row is a genuine upsert, the local seed survives untouched.
+    expect(delta.upserts).toHaveLength(500)
+    expect(delta.deletedIds).toEqual([])
+    expect(merged.transactions.map((t) => t.id)).toContain('seed-1')
+  })
+
+  it('LWW conflict on the same id: the remote row with a newer updatedAt is detected as an upsert', () => {
+    const local = makeDataFile({
+      transactions: [makeFullTransaction({ updatedAt: '2026-01-01T00:00:00.000Z' })],
+    })
+    const remoteTx = makeFullTransaction({
+      amount: 999,
+      updatedAt: '2026-06-01T00:00:00.000Z',
+    })
+    const remote = makeDataFile({ transactions: [remoteTx] })
+
+    const merged = mergeForSync(local, remote)
+    const delta = diffTransactions(local.transactions, merged.transactions)
+
+    expect(delta.upserts).toEqual([remoteTx])
+    expect(delta.deletedIds).toEqual([])
   })
 })

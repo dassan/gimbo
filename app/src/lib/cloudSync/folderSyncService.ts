@@ -8,6 +8,8 @@ import type { DataFile } from '@/types'
 import { createFolderProvider, type PeerFile } from './folderProvider'
 import { mergeForSync } from './merge'
 import type { SyncResult } from './provider'
+import { trackSyncBytes } from './syncMetrics'
+import { diffTransactions } from '@/lib/storage/transactionDiff'
 
 const LAST_MERGED_KEY_PREFIX = 'gimbo_sync_last_merged_'
 
@@ -59,6 +61,12 @@ export async function syncFromPeers(local: DataFile, deviceId: string): Promise<
       if (result.reason === 'newer-schema') sawNewerSchema = true
       continue
     }
+    // CS-36: mesma telemetria de hash-skip do transporte Drive (syncService.ts) — por peer, já
+    // que um sync de pasta pode ler vários dispositivos numa só chamada.
+    trackSyncBytes('sync.readPeer.tablesSkipped', result.stats.tablesSkipped)
+    trackSyncBytes('sync.readPeer.tablesTotal', result.stats.tablesTotal)
+    trackSyncBytes('sync.readPeer.yearsSkipped', result.stats.yearsSkipped)
+    trackSyncBytes('sync.readPeer.yearsTotal', result.stats.yearsTotal)
 
     merged = mergeForSync(merged, result.data)
     peersMerged++
@@ -69,8 +77,16 @@ export async function syncFromPeers(local: DataFile, deviceId: string): Promise<
     return sawNewerSchema ? { status: 'skipped', reason: 'newer-schema' } : { status: 'synced' }
   }
 
-  await storage.replaceAll(merged)
+  // CS-30 (Fase 1): baseline lido do disco agora, não `local` (o parâmetro recebido pode ser um
+  // snapshot anterior a esta função inteira ter rodado) — mesmo cuidado do CS-24. replaceAll
+  // reescrevia o cofre inteiro a cada sync mesmo quando só uma fração mudou; applyMutation (M-73)
+  // só toca as linhas de fato diferentes.
+  const baseline = await storage.loadDataFile()
+  const delta = baseline
+    ? diffTransactions(baseline.transactions, merged.transactions)
+    : { upserts: merged.transactions, deletedIds: [] }
+  await storage.applyMutation(merged, delta)
   await provider.upload(await storage.exportBlob())
 
-  return { status: 'merged', peersMerged }
+  return { status: 'merged', peersMerged, data: merged }
 }

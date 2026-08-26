@@ -21,6 +21,8 @@ import { syncFromPeers } from '@/lib/cloudSync/folderSyncService'
 import { isMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
 import { isGoogleConnected } from '@/lib/cloudSync/googleAuth'
 import { pullAndMerge, pushIfNeeded } from '@/lib/cloudSync/syncService'
+import { mergeForSync } from '@/lib/cloudSync/merge'
+import { measureSync } from '@/lib/cloudSync/syncMetrics'
 import {
   uuid,
   now,
@@ -252,6 +254,16 @@ export const useDataStore = create<DataStore>((set, get) => ({
   },
 
   runPeerSync: async () => {
+    // CS-25: re-entrancy guard — App.tsx's boot-time call and Settings' OAuth-callback call both
+    // fire on the same page load (the redirect back to /settings?code=&state=), and App.tsx's own
+    // ~2s local-data-load delay was enough time for the OAuth callback to finish connecting Google
+    // *first*, so by the time App.tsx's delayed call ran, isGoogleConnected() was already true and
+    // both proceeded — confirmed via sync.* metrics (CS-20): two full pullAndMerge cycles
+    // overlapping in time, each independently re-checking file existence and re-uploading the
+    // entire vault. This check-then-set has no `await` before it, so it's race-free by JS's
+    // run-to-completion semantics: whichever call's synchronous prefix runs first commits
+    // 'syncing' before any other call can observe a stale 'idle'/'offline'/'error'.
+    if (get().syncStatus === 'syncing') return
     // CS-07: Google Drive (Fase 2) takes precedence over the Fase 1 shared-folder mode when
     // both happen to be configured — same "one transport at a time" rule as _triggerLocalBackup.
     const googleOn = isGoogleConnected()
@@ -261,20 +273,63 @@ export const useDataStore = create<DataStore>((set, get) => ({
 
     set({ syncStatus: 'syncing' })
     try {
-      const result = googleOn
-        ? await pullAndMerge(data)
-        : await syncFromPeers(data, await getDeviceId())
+      // Wall-clock for the whole attempt, as the user actually experiences it — pullAndMerge's
+      // own 'sync.pullAndMerge.total' only covers the Drive transport; this also covers the
+      // reconciliation write below and (for the folder transport) syncFromPeers.
+      await measureSync('sync.runPeerSync.total', async () => {
+        const result = googleOn
+          ? await pullAndMerge(data)
+          : await syncFromPeers(data, await getDeviceId())
 
-      if (result.status === 'merged') {
-        const fresh = await storage.loadDataFile()
-        _lastPersisted = fresh ?? get().data
-        set({ data: fresh ?? get().data, syncStatus: 'idle', lastSyncedAt: now() })
-      } else if (result.status === 'offline') {
-        set({ syncStatus: 'offline' })
-      } else {
-        // 'synced' or 'skipped' (newer-schema, non-fatal) — still a completed attempt
-        set({ syncStatus: 'idle', lastSyncedAt: now() })
-      }
+        if (result.status === 'merged') {
+          // CS-35: `result.data` is the merged DataFile pullAndMerge/syncFromPeers already
+          // computed in memory and persisted — using it directly avoids paying for a second full
+          // storage.loadDataFile() (whole-vault re-read) just to get an equivalent copy back.
+          // Confirmed via real telemetry (CS-30/CS-31 traces) that this re-read alone could cost
+          // several seconds on a large vault, once the peer-read and write paths were already
+          // optimized — this was the last unconditional full local read left in the sync hot path.
+          const mergedData = result.data
+          // `data` above is the snapshot pullAndMerge/syncFromPeers started from — its pull can
+          // take a while (a slow Drive round-trip on mobile easily runs minutes), and any edit
+          // the user makes meanwhile survives its own debounced write only until this sync's
+          // applyMutation overwrites the affected rows with a version computed from the stale
+          // `data` snapshot, silently dropping it. Re-merging the *current* live state against
+          // `mergedData` recovers such an edit: mergeForSync is pure/idempotent and LWW by
+          // updatedAt, so the edit's fresh timestamp wins the merge, and this is a no-op
+          // (reconciled === mergedData) when nothing changed during the sync.
+          const latestLocal = get().data
+          let reconciled = mergedData
+          // CS-29: compare fileUpdatedAt, not object identity. `loadData()`/`clearData()` replace
+          // `data` with a brand-new object on every call (StrictMode's double-invoked init() being
+          // the most common trigger in practice) even when nothing actually changed — a reference
+          // check treated that as "a concurrent edit happened" and ran a whole extra
+          // mergeForSync+replaceAll+pushIfNeeded cycle for nothing (confirmed in production
+          // metrics: an unnecessary second ~7.4s replaceAll on every sync). Only `mutate()` bumps
+          // `fileUpdatedAt`, so this only fires for an actual concurrent edit, same as intended.
+          // `get().data` is Zustand's in-memory copy, updated synchronously by every mutate() call
+          // ahead of its own debounced disk write (CS-35) — comparing it costs no I/O at all, and
+          // is at least as fresh as a disk read would be (it can't miss a concurrent edit whose
+          // debounced write hasn't landed yet, the way a fresh loadDataFile() could).
+          if (latestLocal && latestLocal.settings.fileUpdatedAt > data.settings.fileUpdatedAt) {
+            reconciled = mergeForSync(latestLocal, mergedData)
+            // CS-30 (Fase 1): `mergedData` já é o baseline correto para o diff — é exatamente o
+            // que pullAndMerge/syncFromPeers acabaram de persistir, sem precisar reler o disco.
+            // Substitui o replaceAll (reescrita completa) por applyMutation (M-73): a
+            // reconciliação normalmente envolve só a transação editada concorrentemente, não o
+            // cofre inteiro.
+            const delta = diffTransactions(mergedData.transactions, reconciled.transactions)
+            await storage.applyMutation(reconciled, delta)
+            void pushIfNeeded(reconciled)
+          }
+          _lastPersisted = reconciled
+          set({ data: reconciled, syncStatus: 'idle', lastSyncedAt: now() })
+        } else if (result.status === 'offline') {
+          set({ syncStatus: 'offline' })
+        } else {
+          // 'synced' or 'skipped' (newer-schema, non-fatal) — still a completed attempt
+          set({ syncStatus: 'idle', lastSyncedAt: now() })
+        }
+      })
     } catch {
       set({ syncStatus: 'error' })
     }
