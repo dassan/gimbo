@@ -1,7 +1,12 @@
 // Regression test for the runPeerSync race: pullAndMerge/syncFromPeers snapshot `data` before
-// their (possibly slow, network-bound) pull, then overwrite the whole DB via replaceAll(merged)
-// once it resolves. Any local edit made in between survived its own debounced write only until
-// that replaceAll clobbered it. See useDataStore.ts `runPeerSync` for the reconciliation fix.
+// their (possibly slow, network-bound) pull, then persist the merged result once it resolves.
+// Any local edit made in between survived its own debounced write only until that write
+// overwrote the affected rows with a version computed from the stale snapshot. See
+// useDataStore.ts `runPeerSync` for the reconciliation fix.
+//
+// CS-35: pullAndMerge/syncFromPeers now return the merged DataFile directly on `result.data`
+// instead of the caller re-reading it via storage.loadDataFile() — these mocks set `data` on the
+// resolved SyncResult rather than on a separate loadDataFile mock.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DataFile, Transaction } from '@/types'
@@ -29,15 +34,13 @@ vi.mock('@/lib/cloudSync/syncService', () => ({
   pushIfNeeded: pushIfNeededMock,
 }))
 
-const { loadDataFileMock, replaceAllMock, applyMutationMock, exportBlobMock } = vi.hoisted(() => ({
-  loadDataFileMock: vi.fn(),
+const { replaceAllMock, applyMutationMock, exportBlobMock } = vi.hoisted(() => ({
   replaceAllMock: vi.fn().mockResolvedValue(undefined),
   applyMutationMock: vi.fn().mockResolvedValue(undefined),
   exportBlobMock: vi.fn().mockResolvedValue(new Blob()),
 }))
 vi.mock('@/services/storage', () => ({
   storage: {
-    loadDataFile: loadDataFileMock,
     replaceAll: replaceAllMock,
     applyMutation: applyMutationMock,
     exportBlob: exportBlobMock,
@@ -82,15 +85,15 @@ describe('runPeerSync — local edit during pull (race regression)', () => {
       description: 'From peer',
       updatedAt: '2020-01-01T00:00:00.000Z',
     })
-    // What pullAndMerge's own replaceAll would have written: merged against the *stale*
-    // pre-edit snapshot it started from, so it never saw the local edit below.
-    loadDataFileMock.mockResolvedValue({ ...initial, transactions: [remoteTx] } as DataFile)
+    // What pullAndMerge already persisted: merged against the *stale* pre-edit snapshot it
+    // started from, so it never saw the local edit below.
+    const mergedFromPeer = { ...initial, transactions: [remoteTx] } as DataFile
 
     pullAndMergeMock.mockImplementation(() => {
       // Simulate a mutation landing after runPeerSync's initial get().data snapshot but before
       // it re-reads the store — the exact window a slow Drive round-trip opens up.
       useDataStore.getState().addTransaction(makeTx({ id: 'local-1', description: 'Local edit' }))
-      return Promise.resolve({ status: 'merged', peersMerged: 1 })
+      return Promise.resolve({ status: 'merged', peersMerged: 1, data: mergedFromPeer })
     })
 
     await useDataStore.getState().runPeerSync()
@@ -104,10 +107,10 @@ describe('runPeerSync — local edit during pull (race regression)', () => {
     const initial = makeDataFile({ transactions: [] })
     useDataStore.getState().loadData(initial)
 
-    loadDataFileMock.mockResolvedValue({ ...initial, transactions: [] } as DataFile)
+    const mergedFromPeer = { ...initial, transactions: [] } as DataFile
     pullAndMergeMock.mockImplementation(() => {
       useDataStore.getState().addTransaction(makeTx({ id: 'local-1' }))
-      return Promise.resolve({ status: 'merged', peersMerged: 1 })
+      return Promise.resolve({ status: 'merged', peersMerged: 1, data: mergedFromPeer })
     })
 
     await useDataStore.getState().runPeerSync()
@@ -127,8 +130,7 @@ describe('runPeerSync — local edit during pull (race regression)', () => {
 
     const remoteTx = makeTx({ id: 'remote-1' })
     const fresh = { ...initial, transactions: [remoteTx] } as DataFile
-    loadDataFileMock.mockResolvedValue(fresh)
-    pullAndMergeMock.mockResolvedValue({ status: 'merged', peersMerged: 1 })
+    pullAndMergeMock.mockResolvedValue({ status: 'merged', peersMerged: 1, data: fresh })
 
     await useDataStore.getState().runPeerSync()
 
@@ -151,11 +153,10 @@ describe('runPeerSync — local edit during pull (race regression)', () => {
 
     const remoteTx = makeTx({ id: 'remote-1' })
     const fresh = { ...initial, transactions: [remoteTx] } as DataFile
-    loadDataFileMock.mockResolvedValue(fresh)
     pullAndMergeMock.mockImplementation(() => {
       // Same content, same fileUpdatedAt, but a brand-new object — not a real edit.
       useDataStore.getState().loadData({ ...initial })
-      return Promise.resolve({ status: 'merged', peersMerged: 1 })
+      return Promise.resolve({ status: 'merged', peersMerged: 1, data: fresh })
     })
 
     await useDataStore.getState().runPeerSync()

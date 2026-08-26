@@ -98,11 +98,18 @@ describe('syncFromPeers', () => {
   it('merges a newer peer and republishes the local file', async () => {
     const peer = makePeer('peer-1', 1000)
     listPeersMock.mockResolvedValue([peer])
-    readPeerBlobMock.mockResolvedValue({ status: 'ok', data: makeDataFile() })
+    readPeerBlobMock.mockResolvedValue({
+      status: 'ok',
+      data: makeDataFile(),
+      stats: { tablesSkipped: 0, tablesTotal: 8, yearsSkipped: 0, yearsTotal: 0 },
+    })
 
     const result = await syncFromPeers(makeDataFile(), 'local-device')
 
-    expect(result).toEqual({ status: 'merged', peersMerged: 1 })
+    expect(result.status).toBe('merged')
+    expect((result as { peersMerged: number }).peersMerged).toBe(1)
+    // CS-35: o DataFile mergeado volta em `result.data`, sem o chamador precisar reler o disco.
+    expect((result as { data: DataFile }).data).toBeDefined()
     // CS-30 (Fase 1): applyMutation (diff), não mais replaceAll (reescrita completa).
     expect(applyMutationMock).toHaveBeenCalledTimes(1)
     expect(replaceAllMock).not.toHaveBeenCalled()
@@ -165,17 +172,27 @@ describe('syncFromPeers', () => {
     const peerA = makePeer('peer-a', 1000)
     const peerB = makePeer('peer-b', 2000)
     listPeersMock.mockResolvedValue([peerA, peerB])
-    readPeerBlobMock.mockResolvedValue({ status: 'ok', data: makeDataFile() })
+    readPeerBlobMock.mockResolvedValue({
+      status: 'ok',
+      data: makeDataFile(),
+      stats: { tablesSkipped: 0, tablesTotal: 8, yearsSkipped: 0, yearsTotal: 0 },
+    })
 
     const result = await syncFromPeers(makeDataFile(), 'local-device')
 
-    expect(result).toEqual({ status: 'merged', peersMerged: 2 })
+    expect(result.status).toBe('merged')
+    expect((result as { peersMerged: number }).peersMerged).toBe(2)
+    expect((result as { data: DataFile }).data).toBeDefined()
   })
 
   it('records lastMergedAt per peer after a successful merge', async () => {
     const peer = makePeer('peer-1', 1234)
     listPeersMock.mockResolvedValue([peer])
-    readPeerBlobMock.mockResolvedValue({ status: 'ok', data: makeDataFile() })
+    readPeerBlobMock.mockResolvedValue({
+      status: 'ok',
+      data: makeDataFile(),
+      stats: { tablesSkipped: 0, tablesTotal: 8, yearsSkipped: 0, yearsTotal: 0 },
+    })
 
     await syncFromPeers(makeDataFile(), 'local-device')
 

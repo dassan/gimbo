@@ -109,7 +109,11 @@ describe('pullAndMerge', () => {
   it('pulls a never-before-seen remote even when local is a freshly created vault with a newer timestamp', async () => {
     fileExistsMock.mockResolvedValue(true)
     getMetadataMock.mockResolvedValue({ modifiedTime: '2026-01-01T00:00:00.000Z' })
-    readPeerBlobMock.mockResolvedValue({ status: 'ok', data: makeDataFile() })
+    readPeerBlobMock.mockResolvedValue({
+      status: 'ok',
+      data: makeDataFile(),
+      stats: { tablesSkipped: 0, tablesTotal: 8, yearsSkipped: 0, yearsTotal: 0 },
+    })
 
     const result = await pullAndMerge(
       makeDataFile({
@@ -123,7 +127,11 @@ describe('pullAndMerge', () => {
       })
     )
 
-    expect(result).toEqual({ status: 'merged', peersMerged: 1 })
+    expect(result.status).toBe('merged')
+    expect((result as { peersMerged: number }).peersMerged).toBe(1)
+    // CS-35: the merged DataFile comes back on `result.data` so callers don't need a
+    // separate storage.loadDataFile() to get an equivalent copy.
+    expect((result as { data: DataFile }).data).toBeDefined()
     expect(downloadMock).toHaveBeenCalledTimes(1)
     expect(localStorage.getItem('gimbo_sync_drive_last_pulled_mtime')).toBe(
       '2026-01-01T00:00:00.000Z'
@@ -133,11 +141,17 @@ describe('pullAndMerge', () => {
   it('downloads, merges, and republishes when Drive is newer', async () => {
     fileExistsMock.mockResolvedValue(true)
     getMetadataMock.mockResolvedValue({ modifiedTime: '2026-03-01T00:00:00.000Z' })
-    readPeerBlobMock.mockResolvedValue({ status: 'ok', data: makeDataFile() })
+    readPeerBlobMock.mockResolvedValue({
+      status: 'ok',
+      data: makeDataFile(),
+      stats: { tablesSkipped: 0, tablesTotal: 8, yearsSkipped: 0, yearsTotal: 0 },
+    })
 
     const result = await pullAndMerge(makeDataFile())
 
-    expect(result).toEqual({ status: 'merged', peersMerged: 1 })
+    expect(result.status).toBe('merged')
+    expect((result as { peersMerged: number }).peersMerged).toBe(1)
+    expect((result as { data: DataFile }).data).toBeDefined()
     // CS-30 (Fase 1): applyMutation (diff), não mais replaceAll (reescrita completa).
     expect(applyMutationMock).toHaveBeenCalledTimes(1)
     expect(replaceAllMock).not.toHaveBeenCalled()

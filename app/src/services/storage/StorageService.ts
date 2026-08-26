@@ -3,6 +3,7 @@ import { measure } from '@/lib/perfMonitor'
 import { trackPerformance } from '@/lib/telemetry'
 import type { TransactionDelta } from '@/lib/storage/transactionDiff'
 import { CURRENT_SCHEMA_VERSION } from '@/lib/storage/schema'
+import type { SelectiveReadStats } from './worker'
 import type {
   Account,
   AccountType,
@@ -624,15 +625,20 @@ export class StorageService {
   async readPeerBlob(
     blob: Blob
   ): Promise<
-    { status: 'ok'; data: DataFile } | { status: 'skipped'; reason: 'unreadable' | 'newer-schema' }
+    | { status: 'ok'; data: DataFile; stats: SelectiveReadStats }
+    | { status: 'skipped'; reason: 'unreadable' | 'newer-schema' }
   > {
     const buffer = await blob.arrayBuffer()
     const result = await this.call<
-      | { ok: true; data: Omit<DataFile, 'schemaVersion'> }
+      | { ok: true; data: Omit<DataFile, 'schemaVersion'>; stats: SelectiveReadStats }
       | { ok: false; reason: 'unreadable' | 'newer-schema' }
     >('readPeer', [buffer], [buffer])
     if (!result.ok) return { status: 'skipped', reason: result.reason }
-    return { status: 'ok', data: { schemaVersion: CURRENT_SCHEMA_VERSION, ...result.data } }
+    return {
+      status: 'ok',
+      data: { schemaVersion: CURRENT_SCHEMA_VERSION, ...result.data },
+      stats: result.stats,
+    }
   }
 
   async getDatabaseVersion(): Promise<number> {

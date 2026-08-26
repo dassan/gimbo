@@ -11,7 +11,7 @@ import { isGoogleConnected } from './googleAuth'
 import { createGoogleDriveProvider } from './googleDrive'
 import { mergeForSync } from './merge'
 import type { SyncResult } from './provider'
-import { measureSync, measureSyncCompute } from './syncMetrics'
+import { measureSync, measureSyncCompute, trackSyncBytes } from './syncMetrics'
 import { diffTransactions } from '@/lib/storage/transactionDiff'
 
 const LAST_PULLED_KEY = 'gimbo_sync_drive_last_pulled_mtime'
@@ -58,6 +58,12 @@ async function pullAndMergeInner(local: DataFile): Promise<SyncResult> {
     if (result.status === 'skipped') {
       return { status: 'skipped', reason: result.reason }
     }
+    // CS-36: quantas partições o hash-skip (Fase 2b) de fato pulou nesta leitura, pra a próxima
+    // rodada de dado real distinguir "hash bateu e pulou" de "primeiro sync, tudo diverge mesmo".
+    trackSyncBytes('sync.readPeer.tablesSkipped', result.stats.tablesSkipped)
+    trackSyncBytes('sync.readPeer.tablesTotal', result.stats.tablesTotal)
+    trackSyncBytes('sync.readPeer.yearsSkipped', result.stats.yearsSkipped)
+    trackSyncBytes('sync.readPeer.yearsTotal', result.stats.yearsTotal)
 
     const mergedData = measureSyncCompute('sync.merge', () => mergeForSync(local, result.data))
     // CS-30 (Fase 1): baseline lido do disco agora, não `local` — o pull acima pode ter levado
@@ -71,7 +77,7 @@ async function pullAndMergeInner(local: DataFile): Promise<SyncResult> {
     await measureSync('sync.applyMutation', () => storage.applyMutation(mergedData, delta))
     await provider.upload(await storage.exportBlob())
     setLastPulledRemoteModifiedTime(meta.modifiedTime)
-    return { status: 'merged', peersMerged: 1 }
+    return { status: 'merged', peersMerged: 1, data: mergedData }
   } catch {
     // Network/API failure (offline, revoked access, Drive outage...) — never fatal, the app
     // keeps working off the local OPFS copy and retries on the next boot/poll tick/mutation.

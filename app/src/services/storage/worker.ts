@@ -1490,15 +1490,43 @@ function hashesMatch(
 // afete se um import é válido. `localHashes` vem de uma leitura do `db` local, feita pelo chamador
 // dentro da mesma invocação enfileirada que processa o peer (nunca um snapshot anterior — a
 // mesma disciplina do CS-24/CS-29 de nunca comparar contra estado desatualizado).
+// CS-36: contagem de partições puladas vs. lidas, pra a próxima rodada de dado real dizer de
+// forma inequívoca se o hash-skip da Fase 2b está de fato pulando algo ou se — pré-existente,
+// primeiro sync de um par de dispositivos com estado divergente, hash colidindo por engano — o
+// peer inteiro está sendo relido de qualquer forma. Sem isso, `worker.readPeer`/`sync.readPeerBlob`
+// continuavam altos e não havia telemetria pra distinguir as duas causas (achado ao investigar o
+// CS-34: "sem ganho de velocidade" tinha mais de uma explicação candidata e só uma tinha fix).
+export type SelectiveReadStats = {
+  tablesSkipped: number
+  tablesTotal: number
+  yearsSkipped: number
+  yearsTotal: number
+}
+
 async function readDataFileFromDbSelective(
   dbPtr: number,
   localHashes: Map<string, HashEntry>
-): Promise<RawDataFile | null> {
+): Promise<{ data: RawDataFile; stats: SelectiveReadStats } | null> {
   const base = await readUserAndSettings(dbPtr)
   if (!base) return null
 
   const peerHashes = await readTableHashes(dbPtr)
-  const matches = (table: string) => hashesMatch(peerHashes, localHashes, `${table}:`)
+  let tablesSkipped = 0
+  const smallTables = [
+    'accounts',
+    'categories',
+    'tags',
+    'valuations',
+    'saved_periods',
+    'budgets',
+    'audit_log',
+    'deleted_ids',
+  ] as const
+  const matches = (table: string) => {
+    const skip = hashesMatch(peerHashes, localHashes, `${table}:`)
+    if (skip) tablesSkipped++
+    return skip
+  }
 
   const accounts = matches('accounts') ? [] : await readAccounts(dbPtr)
   const categories = matches('categories') ? [] : await readCategories(dbPtr)
@@ -1515,22 +1543,31 @@ async function readDataFileFromDbSelective(
     dbPtr,
     'SELECT DISTINCT substr(date, 1, 4) AS year FROM transactions'
   )
-  const divergingYears = yearRows
-    .map((r) => r.year as string)
-    .filter((year) => !hashesMatch(peerHashes, localHashes, `transactions:${year}`))
+  const years = yearRows.map((r) => r.year as string)
+  const divergingYears = years.filter(
+    (year) => !hashesMatch(peerHashes, localHashes, `transactions:${year}`)
+  )
   const transactions = await readTransactionsForYears(dbPtr, divergingYears)
 
   return {
-    ...base,
-    accounts,
-    categories,
-    tags,
-    transactions,
-    valuations,
-    auditLog,
-    deletedIds,
-    savedPeriods,
-    budgets,
+    data: {
+      ...base,
+      accounts,
+      categories,
+      tags,
+      transactions,
+      valuations,
+      auditLog,
+      deletedIds,
+      savedPeriods,
+      budgets,
+    },
+    stats: {
+      tablesSkipped,
+      tablesTotal: smallTables.length,
+      yearsSkipped: years.length - divergingYears.length,
+      yearsTotal: years.length,
+    },
   }
 }
 
@@ -1645,7 +1682,7 @@ async function backfillTableHashesIfNeeded(dbPtr: number): Promise<void> {
 }
 
 type ReadPeerResult =
-  | { ok: true; data: RawDataFile }
+  | { ok: true; data: RawDataFile; stats: SelectiveReadStats }
   | { ok: false; reason: 'unreadable' | 'newer-schema' }
 
 async function readForeignDataFile(buffer: ArrayBuffer): Promise<ReadPeerResult> {
@@ -1699,10 +1736,12 @@ async function readForeignDataFile(buffer: ArrayBuffer): Promise<ReadPeerResult>
     // minutos (mesma disciplina do CS-24/CS-29: comparar sempre contra o estado atual, não um
     // snapshot anterior a uma operação potencialmente longa).
     const localHashes = await readTableHashes(db)
-    const data = await readDataFileFromDbSelective(tempDb, localHashes)
+    const selective = await readDataFileFromDbSelective(tempDb, localHashes)
     await sqlite3.close(tempDb)
     await cleanup()
-    return data ? { ok: true, data } : { ok: false, reason: 'unreadable' }
+    return selective
+      ? { ok: true, data: selective.data, stats: selective.stats }
+      : { ok: false, reason: 'unreadable' }
   } catch {
     try {
       await sqlite3.close(tempDb)
