@@ -31,6 +31,8 @@ export interface FakeDriveFile {
 export interface FakeDriveCall {
   method: string
   url: string
+  /** Nome do arquivo alvo, quando a requisição é um upload — permite afirmar ordem de publicação. */
+  name?: string
 }
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
@@ -175,7 +177,10 @@ export class FakeDrive {
 
   private async handle(url: string, init?: RequestInit): Promise<Response> {
     const method = (init?.method ?? 'GET').toUpperCase()
-    this.callLog.push({ method, url })
+    // O registro é capturado aqui e repassado adiante: com uploads concorrentes, "a última chamada
+    // registrada" não é necessariamente esta.
+    const call: FakeDriveCall = { method, url }
+    this.callLog.push(call)
 
     const rule = this._failRules.find((r) => r.remaining > 0 && this.matches(url, r.pattern))
     if (rule) {
@@ -198,8 +203,8 @@ export class FakeDrive {
     const isUpload = parsed.pathname.startsWith('/upload/')
     const idMatch = /\/files\/([^/?]+)/.exec(parsed.pathname)
 
-    if (isUpload && method === 'PATCH' && idMatch) return this.updateMedia(idMatch[1], init)
-    if (isUpload && method === 'POST') return this.createMultipart(init)
+    if (isUpload && method === 'PATCH' && idMatch) return this.updateMedia(idMatch[1], init, call)
+    if (isUpload && method === 'POST') return this.createMultipart(init, call)
     if (method === 'POST' && !isUpload) return this.createMetadataOnly(init)
     if (method === 'GET' && idMatch) return this.getOne(idMatch[1], parsed)
     if (method === 'GET') return this.list(parsed)
@@ -207,21 +212,30 @@ export class FakeDrive {
     throw new Error(`FakeDrive: unhandled ${method} ${url}`)
   }
 
-  private async updateMedia(id: string, init?: RequestInit): Promise<Response> {
+  private async updateMedia(
+    id: string,
+    init: RequestInit | undefined,
+    call: FakeDriveCall
+  ): Promise<Response> {
     const file = this.files.get(id)
     if (!file) return this.respond({ error: { message: 'File not found' } }, false, 404)
+    call.name = file.name
     file.bytes = await toBytes(init?.body)
     file.modifiedTime = this.tick()
     return this.respond({ id })
   }
 
-  private async createMultipart(init?: RequestInit): Promise<Response> {
+  private async createMultipart(
+    init: RequestInit | undefined,
+    call: FakeDriveCall
+  ): Promise<Response> {
     const form = init?.body
     if (!(form instanceof FormData)) throw new Error('FakeDrive: multipart body is not FormData')
     const metaRaw = form.get('metadata')
     const metaText =
       typeof metaRaw === 'string' ? metaRaw : new TextDecoder().decode(await toBytes(metaRaw))
     const meta = JSON.parse(metaText) as { name: string; parents?: string[]; mimeType?: string }
+    call.name = meta.name
     const id = this.insert({
       name: meta.name,
       parents: meta.parents ?? [],

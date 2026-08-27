@@ -1,5 +1,5 @@
 // F-28 Nível 2, Fase 2 — CS-03: Google Drive file operations behind the CloudProvider interface
-// (CS-19, Fase 0). Only `merge.ts`/`syncService.ts` orchestration talks to this module directly —
+// (CS-19, Fase 0). Only `merge.ts`/`driveTreeSyncService.ts` orchestration talks to this module directly —
 // everything above the transport layer depends on `CloudProvider`, never on Drive specifics.
 //
 // **Race fixed 2026-07-25 (found in production testing):** find-or-create isn't atomic — two

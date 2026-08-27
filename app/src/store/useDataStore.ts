@@ -20,7 +20,7 @@ import { createFolderProvider } from '@/lib/cloudSync/folderProvider'
 import { syncFromPeers } from '@/lib/cloudSync/folderSyncService'
 import { isMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
 import { isGoogleConnected } from '@/lib/cloudSync/googleAuth'
-import { pullAndMerge, pushIfNeeded } from '@/lib/cloudSync/syncService'
+import { pullAndMerge, pushIfNeeded } from '@/lib/cloudSync/driveTreeSyncService'
 import { mergeForSync } from '@/lib/cloudSync/merge'
 import { measureSync } from '@/lib/cloudSync/syncMetrics'
 import {
@@ -57,10 +57,10 @@ let _lastPersisted: DataFile | null = null
 // precedence over the Nível 1 legacy single-file backup — only one transport pushes per mutation.
 // This mirrors the "um transporte ativo por vez" rule already planned for CS-12 (Fase 3);
 // applying it here now avoids two transports racing to write/merge the same mutation.
-async function _triggerLocalBackup(data: DataFile) {
+async function _triggerLocalBackup() {
   try {
     if (isGoogleConnected()) {
-      const synced = await pushIfNeeded(data)
+      const synced = await pushIfNeeded()
       localStorage.setItem('gimbo_backup_last_saved', new Date().toISOString())
       // B-23: this runs on every mutation (debounced), not just the manual "Sincronizar agora"
       // button — lastSyncedAt must reflect it, or the Settings badge shows a stale timestamp
@@ -112,7 +112,7 @@ function debouncedApplyMutation(data: DataFile) {
       : storage.replaceAll(data)
     void write.then(() => {
       _lastPersisted = data
-      void _triggerLocalBackup(data)
+      void _triggerLocalBackup()
     })
   }, 300)
 }
@@ -319,7 +319,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
             // cofre inteiro.
             const delta = diffTransactions(mergedData.transactions, reconciled.transactions)
             await storage.applyMutation(reconciled, delta)
-            void pushIfNeeded(reconciled)
+            void pushIfNeeded()
           }
           _lastPersisted = reconciled
           set({ data: reconciled, syncStatus: 'idle', lastSyncedAt: now() })
