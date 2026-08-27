@@ -245,3 +245,102 @@ test('CS-41: round-trip completo — publicar partições e remontar o DataFile 
   expect(peer.fileUpdatedAt).toBe('2026-01-02T00:00:00.000Z')
   expect(peer.taggedTx.tags).toEqual(['tag-1'])
 })
+
+// CS-50 (A) — a leitura batelada, e em especial o caminho de leitura completa.
+//
+// Acima de 4 anos pedidos, `readPartitions` deixa de montar um `WHERE date LIKE ? OR …` e lê
+// `transactions` inteiro, agrupando por ano em JS. É uma query estruturalmente diferente da usada
+// para poucos anos, então precisa da própria cobertura: um erro de agrupamento aqui misturaria
+// transações entre partições — e o hash da partição deixaria de bater para todos os peers.
+test('CS-50: acima do limiar, a leitura completa agrupa por ano sem misturar partições', async ({
+  page,
+}) => {
+  const years = ['2019', '2020', '2021', '2022', '2023', '2024']
+  await seedSqlite(page, {
+    ...fixture,
+    transactions: years.map((year, i) => ({
+      ...fixture.transactions[0],
+      id: `tx-${year}`,
+      date: `${year}-06-1${i}`,
+      amount: 100 + i,
+      tags: i % 2 === 0 ? ['tag-1'] : [],
+      updatedAt: `${year}-06-10T10:00:00.000Z`,
+      createdAt: `${year}-06-10T09:00:00.000Z`,
+    })),
+  })
+
+  const result = await page.evaluate(
+    async (keys) => (window as Win).__storage.readPartitions(keys),
+    years.map((y) => `transactions:${y}`)
+  )
+
+  for (const year of years) {
+    const rows = result[`transactions:${year}`]
+    expect(rows, `partição de ${year}`).toHaveLength(1)
+    expect(rows[0].id).toBe(`tx-${year}`)
+  }
+  // As tags da junção sobrevivem ao agrupamento em JS.
+  expect(result['transactions:2019'][0].tags).toEqual(['tag-1'])
+  expect(result['transactions:2020'][0].tags).toEqual([])
+})
+
+test('CS-50: pedir um subconjunto pela leitura completa não devolve os anos não pedidos', async ({
+  page,
+}) => {
+  const years = ['2019', '2020', '2021', '2022', '2023', '2024']
+  await seedSqlite(page, {
+    ...fixture,
+    transactions: years.map((year) => ({
+      ...fixture.transactions[0],
+      id: `tx-${year}`,
+      date: `${year}-06-10`,
+      tags: [],
+      updatedAt: `${year}-06-10T10:00:00.000Z`,
+      createdAt: `${year}-06-10T09:00:00.000Z`,
+    })),
+  })
+
+  const asked = ['2019', '2020', '2021', '2022', '2023']
+  const result = await page.evaluate(
+    async (keys) => (window as Win).__storage.readPartitions(keys),
+    asked.map((y) => `transactions:${y}`)
+  )
+
+  expect(Object.keys(result).sort()).toEqual(asked.map((y) => `transactions:${y}`).sort())
+  expect(result['transactions:2024']).toBeUndefined()
+})
+
+// O hash do manifesto tem que continuar batendo quando as partições vêm da leitura completa —
+// é a mesma propriedade do teste acima, agora exercitando o outro caminho de query.
+test('CS-50: o hash do manifesto bate também no caminho de leitura completa', async ({ page }) => {
+  const years = ['2019', '2020', '2021', '2022', '2023', '2024']
+  await seedSqlite(page, {
+    ...fixture,
+    transactions: years.map((year, i) => ({
+      ...fixture.transactions[0],
+      id: `tx-${year}`,
+      date: `${year}-06-10`,
+      amount: 100 + i,
+      tags: [],
+      updatedAt: `${year}-06-10T10:00:00.000Z`,
+      createdAt: `${year}-06-10T09:00:00.000Z`,
+    })),
+  })
+
+  const verdicts = await page.evaluate(async () => {
+    const win = window as Win
+    const base = await win.__storage.getSyncManifestBase()
+    const keys = base.hashes.filter((h: { count: number }) => h.count > 0)
+    const rowsByKey = await win.__storage.readPartitions(keys.map((h: { key: string }) => h.key))
+    return keys.map((h: { key: string; hash: number; count: number }) => ({
+      key: h.key,
+      ok: win.__syncTest.partitions.verifyPartition(h.key, rowsByKey[h.key], {
+        hash: h.hash,
+        count: h.count,
+      }),
+    }))
+  })
+
+  expect(verdicts.filter((v) => v.key.startsWith('transactions:')).length).toBe(6)
+  for (const v of verdicts) expect(v.ok, `hash não bate em ${v.key}`).toBe(true)
+})

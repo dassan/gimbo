@@ -23,9 +23,9 @@
 // idempotente), só atrasa até ele atualizar.
 
 import { CURRENT_SCHEMA_VERSION, SchemaVersionError } from '@/lib/storage/schema'
-import { diffTransactions } from '@/lib/storage/transactionDiff'
+import { diffTransactions, type TransactionDelta } from '@/lib/storage/transactionDiff'
 import { storage } from '@/services/storage'
-import type { DataFile } from '@/types'
+import type { DataFile, Transaction } from '@/types'
 import { getDeviceId } from './deviceId'
 import { isGoogleConnected } from './googleAuth'
 import {
@@ -181,6 +181,11 @@ async function pullAndMergeInner(local: DataFile): Promise<SyncResult> {
   let merged = local
   let peersMerged = 0
   let sawNewerSchema = false
+  // CS-50 (B): anos de `transactions` que alguma partição buscada pode ter alterado, para diferir
+  // só esses em vez de reler o cofre inteiro. `tombstonesFetched` força o caminho completo — uma
+  // lápide pode remover uma transação de *qualquer* ano, e um diff escopado não a veria.
+  const affectedYears = new Set<string>()
+  let tombstonesFetched = false
 
   for (const manifestFile of stale) {
     const outcome = await mergeOnePeer(manifestFile, merged)
@@ -195,15 +200,16 @@ async function pullAndMergeInner(local: DataFile): Promise<SyncResult> {
     if (outcome.status === 'failed') continue
     merged = outcome.data
     peersMerged++
+    for (const key of outcome.fetchedKeys) {
+      const { table, partition } = parseKey(key)
+      if (table === 'transactions') affectedYears.add(partition)
+      if (table === 'deleted_ids') tombstonesFetched = true
+    }
     setPeerWatermark(manifestFile.id, manifestFile.modifiedTime)
   }
 
   if (peersMerged > 0) {
-    // CS-30 (Fase 1): baseline lido fresco do disco *agora*, nunca o snapshot pré-pull.
-    const baseline = await measureSync('sync.loadBaseline', () => storage.loadDataFile())
-    const delta = baseline
-      ? diffTransactions(baseline.transactions, merged.transactions)
-      : { upserts: merged.transactions, deletedIds: [] }
+    const delta = await computeDelta(merged, affectedYears, tombstonesFetched)
     await measureSync('sync.applyMutation', () => storage.applyMutation(merged, delta))
   }
 
@@ -218,8 +224,60 @@ async function pullAndMergeInner(local: DataFile): Promise<SyncResult> {
   return { status: 'merged', peersMerged, data: merged }
 }
 
+function parseKey(key: PartitionKey): { table: string; partition: string } {
+  const separator = key.indexOf(':')
+  if (separator === -1) return { table: key, partition: '' }
+  return { table: key.slice(0, separator), partition: key.slice(separator + 1) }
+}
+
+/**
+ * O delta que `applyMutation` vai gravar, sempre contra o que está **no disco agora** — nunca
+ * contra o snapshot pré-pull (CS-30/CS-24).
+ *
+ * Ler o cofre inteiro só para diferir custava 2,0-2,5s numa medição real (é o `CS-31`, que a Fase 2
+ * não tinha resolvido). Mas o transporte particionado sabe exatamente quais partições vieram da
+ * rede, e uma transação só pode ter mudado num ano cuja partição divergiu — se o ano do peer batia
+ * com o nosso, o conteúdo era idêntico linha a linha e o merge não teve o que mudar ali. Então
+ * basta ler e diferir esses anos.
+ *
+ * **A transação que muda de ano continua correta**, mas não pelo motivo que parece. Em geral as
+ * duas pontas entram no conjunto (o ano novo do peer diverge do nosso, e o ano velho também), e o
+ * diff sobre a união resolve. No caso limite em que o ano velho do peer fica *vazio*, porém, ele
+ * nem é publicado — não está no manifesto e portanto não é buscado, então só o ano novo entra em
+ * `affectedYears`. O resultado segue certo porque o delta é aplicado por **upsert por id**
+ * (`applyTransactionDelta`): a linha antiga é atualizada no lugar, e a recomputação de hash de lá
+ * já cobre o ano velho a partir do `oldYearById`. Um teste fixa exatamente esse caso limite.
+ *
+ * O caminho completo é obrigatório quando vieram lápides: `deleted_ids` remove por id, sem dizer
+ * de que ano, e um diff escopado não veria a remoção num ano que ninguém buscou.
+ *
+ * Efeito colateral bem-vindo: uma edição local concorrente num ano *não* tocado deixa de ser
+ * revertida-e-recuperada (o ciclo do CS-24/CS-29) e simplesmente sobrevive, porque nunca entra no
+ * diff. A reconciliação em `runPeerSync` continua lá para os demais casos.
+ */
+async function computeDelta(
+  merged: DataFile,
+  affectedYears: Set<string>,
+  tombstonesFetched: boolean
+): Promise<TransactionDelta> {
+  if (tombstonesFetched || affectedYears.size === 0) {
+    const baseline = await measureSync('sync.loadBaseline', () => storage.loadDataFile())
+    return baseline
+      ? diffTransactions(baseline.transactions, merged.transactions)
+      : { upserts: merged.transactions, deletedIds: [] }
+  }
+
+  const keys = [...affectedYears].map((year) => `transactions:${year}`)
+  const rowsByKey = await measureSync('sync.loadBaseline', () => storage.readPartitions(keys))
+  trackSyncBytes('sync.drive.baselineScopedYears', affectedYears.size)
+
+  const before = keys.flatMap((key) => (rowsByKey[key] ?? []) as Transaction[])
+  const after = merged.transactions.filter((tx) => affectedYears.has(tx.date.slice(0, 4)))
+  return diffTransactions(before, after)
+}
+
 type PeerOutcome =
-  | { status: 'ok'; data: DataFile }
+  | { status: 'ok'; data: DataFile; fetchedKeys: PartitionKey[] }
   | { status: 'newer-schema' }
   | { status: 'failed' }
 
@@ -250,6 +308,7 @@ async function mergeOnePeer(manifestFile: DriveFile, current: DataFile): Promise
     return {
       status: 'ok',
       data: measureSyncCompute('sync.merge', () => mergeForSync(current, peer)),
+      fetchedKeys: plan.keys,
     }
   } catch (err) {
     if (err instanceof SchemaVersionError) return { status: 'newer-schema' }
@@ -352,15 +411,33 @@ async function publishOwnTree(
   // sync em regime permanente em ~1 chamada.
   if (hasCache && !anythingChanged(localHashes, published.hashes)) return
 
-  const folderId = published.folderId ?? (await ensureSubfolder(rootId, deviceFolderName(deviceId)))
-  const existing = await listFolderChildren(folderId)
-  const fileIdsByName = new Map(existing.map((f) => [f.name, f.id]))
+  // CS-50 (C): com o cache íntegro, os nomes e ids da própria pasta já são conhecidos — listar de
+  // novo custava um estágio sequencial de rede (~0,55s medidos) para reconfirmar o que acabamos de
+  // escrever. Sem cache (dispositivo novo, localStorage despejado), lista.
+  //
+  // O que se perde: um arquivo apagado *fora* do app, cujo hash não mudou, deixa de ser detectado
+  // como ausente. `uploadFileToFolder` já recria em 404 no que a gente sobe, e qualquer id que se
+  // revelar morto invalida o cache abaixo, forçando a listagem completa no sync seguinte.
+  const cachedFileIds = Object.entries(published.fileIds)
+  const canUseCache = published.folderId !== undefined && cachedFileIds.length > 0
 
-  const keys = planPublish(localHashes, published.hashes, new Set(existing.map((f) => f.name)))
+  const folderId = published.folderId ?? (await ensureSubfolder(rootId, deviceFolderName(deviceId)))
+  const fileIdsByName = canUseCache
+    ? new Map(cachedFileIds)
+    : new Map((await listFolderChildren(folderId)).map((f) => [f.name, f.id]))
+
+  const keys = planPublish(localHashes, published.hashes, new Set(fileIdsByName.keys()))
+
+  // Uma única chamada ao worker para todas as partições. Antes era uma por partição dentro do laço
+  // de concorrência: os uploads paralelizavam, mas as leituras não — a fila do worker as serializa
+  // (corretamente, CS-28), e 23 leituras enfileiradas somavam ~13s no primeiro sync, mais que toda
+  // a rede junta. Medido contra dado real em 2026-08-27.
+  const rowsByKey = await measureSync('sync.drive.publish.readPartitions', () =>
+    storage.readPartitions(keys)
+  )
 
   const uploadedIds = await mapWithConcurrency(keys, async (key) => {
-    const rows = await storage.readPartitions([key])
-    const { bytes, gzip } = await encodePartition(rows[key] ?? [])
+    const { bytes, gzip } = await encodePartition(rowsByKey[key] ?? [])
     const name = partitionFileName(key, gzip)
     const id = await uploadFileToFolder({
       parentId: folderId,
@@ -368,10 +445,16 @@ async function publishOwnTree(
       blob: new Blob([bytes as BlobPart], { type: partitionMimeType(gzip) }),
       fileId: fileIdsByName.get(name),
     })
-    return { name, id }
+    return { name, id, recreated: id !== fileIdsByName.get(name) && fileIdsByName.has(name) }
   })
+
+  // Um id em cache que se revelou morto (o upload teve de recriar o arquivo) significa que a pasta
+  // no Drive divergiu do que guardamos — descarta o cache de ids para o próximo sync listar de
+  // verdade, em vez de seguir confiando em entradas possivelmente obsoletas.
+  const driveDrifted = uploadedIds.some((u) => u.recreated)
   for (const { name, id } of uploadedIds) fileIdsByName.set(name, id)
   trackSyncBytes('sync.drive.publish.partitionsUploaded', keys.length)
+  if (driveDrifted) trackSyncBytes('sync.drive.publish.staleFileIds', 1)
 
   // Barreira dura: o manifesto só sobe depois que todos os uploads acima resolveram.
   const manifest = buildManifest({
@@ -392,7 +475,7 @@ async function publishOwnTree(
 
   savePublished({
     hashes: Object.fromEntries(localHashes),
-    fileIds: Object.fromEntries(fileIdsByName),
+    fileIds: driveDrifted ? {} : Object.fromEntries(fileIdsByName),
     folderId,
     manifestFileId,
   })

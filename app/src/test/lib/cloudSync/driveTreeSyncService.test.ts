@@ -113,6 +113,7 @@ async function seedPeerTree(params: {
   rootId: string
   accounts?: unknown[]
   txByYear?: Record<string, Transaction[]>
+  deletedIds?: string[]
   manifestOverrides?: Partial<SyncManifest>
 }): Promise<string> {
   const accounts = params.accounts ?? [ACCOUNT]
@@ -130,6 +131,7 @@ async function seedPeerTree(params: {
   }
 
   await add('accounts:', accounts, accountRowKey)
+  await add('deleted_ids:', params.deletedIds ?? [], (id) => String(id))
   for (const [year, rows] of Object.entries(txByYear)) {
     await add(`transactions:${year}`, rows, transactionRowKey)
   }
@@ -395,5 +397,157 @@ describe('clearDriveTreeSyncState', () => {
     // o dado recém-descartado.
     expect(again.status).toBe('merged')
     expect(metricValue('sync.drive.peersSkippedByWatermark')).toBe(0)
+  })
+})
+
+// ─── CS-50: leitura batelada, baseline escopado, listagem evitada ─────────────
+
+describe('CS-50 (A) — leitura de partições batelada', () => {
+  it('lê todas as partições numa única chamada ao worker, não uma por partição', async () => {
+    setLocalVault({
+      txByYear: {
+        '2024': [makeTx({ id: 'a', date: '2024-01-01' })],
+        '2025': [makeTx({ id: 'b', date: '2025-01-01' })],
+        '2026': [makeTx()],
+      },
+    })
+
+    await pullAndMerge(makeDataFile())
+
+    // 4 partições publicadas (accounts + 3 anos), mas uma só ida ao worker. Antes era uma por
+    // partição, todas serializadas pela fila — o gargalo do primeiro sync.
+    expect(storageMock.readPartitions).toHaveBeenCalledTimes(1)
+    expect((storageMock.readPartitions.mock.calls[0][0] as string[]).sort()).toEqual([
+      'accounts:',
+      'transactions:2024',
+      'transactions:2025',
+      'transactions:2026',
+    ])
+  })
+})
+
+describe('CS-50 (B) — baseline escopado aos anos afetados', () => {
+  it('lê só os anos buscados em vez do cofre inteiro', async () => {
+    const local2026 = [makeTx()]
+    setLocalVault({
+      txByYear: { '2026': local2026, '2020': [makeTx({ id: 'old', date: '2020-01-01' })] },
+    })
+    const root = drive.seedFolder('Gimbo')
+    await seedPeerTree({
+      rootId: root,
+      txByYear: { '2026': [makeTx({ id: 'tx-peer', date: '2026-09-01' })] },
+    })
+
+    storageMock.loadDataFile.mockClear()
+    storageMock.readPartitions.mockClear()
+    const result = await pullAndMerge(makeDataFile({ transactions: local2026 }))
+
+    expect(result.status).toBe('merged')
+    // O cofre inteiro não é mais relido só para diferir (CS-31).
+    expect(storageMock.loadDataFile).not.toHaveBeenCalled()
+    const baselineCall = storageMock.readPartitions.mock.calls.find((c) =>
+      (c[0] as string[]).every((k) => k.startsWith('transactions:'))
+    )
+    expect(baselineCall?.[0]).toEqual(['transactions:2026'])
+    expect(metricValue('sync.drive.baselineScopedYears')).toBe(1)
+  })
+
+  // Caso limite do escopo, e o motivo de ele ser seguro: quando o peer move a ÚNICA transação de
+  // 2026 para 2025, o 2026 dele fica vazio e não é publicado — some do manifesto e não é buscado,
+  // então só 2025 entra em affectedYears. O resultado ainda é correto porque o delta é aplicado
+  // por upsert por id: a linha antiga é atualizada no lugar, não duplicada.
+  it('move a transação de ano corretamente mesmo quando o ano velho do peer esvaziou', async () => {
+    const local2026 = [makeTx({ id: 'tx-movida', date: '2026-03-10' })]
+    setLocalVault({ txByYear: { '2026': local2026 } })
+    const root = drive.seedFolder('Gimbo')
+    const movida = makeTx({
+      id: 'tx-movida',
+      date: '2025-11-20',
+      updatedAt: '2026-08-27T10:00:00.000Z', // mais nova: vence o LWW
+    })
+    await seedPeerTree({ rootId: root, txByYear: { '2025': [movida] } })
+
+    storageMock.applyMutation.mockClear()
+    const result = await pullAndMerge(makeDataFile({ transactions: local2026 }))
+
+    const merged = (result as { data: DataFile }).data
+    expect(merged.transactions.filter((t) => t.id === 'tx-movida')).toHaveLength(1)
+    expect(merged.transactions.find((t) => t.id === 'tx-movida')?.date).toBe('2025-11-20')
+
+    // O que de fato vai pro disco: um upsert com a data nova, nenhum delete pendurado.
+    const delta = storageMock.applyMutation.mock.calls[0][1] as {
+      upserts: Transaction[]
+      deletedIds: string[]
+    }
+    expect(delta.upserts.map((t) => t.id)).toEqual(['tx-movida'])
+    expect(delta.upserts[0].date).toBe('2025-11-20')
+    expect(delta.deletedIds).toEqual([])
+  })
+
+  // A guarda só importa quando lápides chegam JUNTO de anos alterados: aí o escopo existiria, e
+  // seguir por ele deixaria a remoção — que não diz de que ano é — fora do delta. É perda de dado
+  // silenciosa, então o caminho completo é obrigatório.
+  it('cai para a leitura completa quando vieram lápides junto de um ano alterado', async () => {
+    const antiga = makeTx({ id: 'tx-2020', date: '2020-05-01' })
+    const local2026 = [makeTx()]
+    setLocalVault({ txByYear: { '2020': [antiga], '2026': local2026 } })
+    storageMock.loadDataFile.mockResolvedValue(
+      makeDataFile({ transactions: [antiga, ...local2026] })
+    )
+
+    const root = drive.seedFolder('Gimbo')
+    await seedPeerTree({
+      rootId: root,
+      deletedIds: ['tx-2020'],
+      txByYear: { '2026': [makeTx({ id: 'tx-peer', date: '2026-09-01' })] },
+    })
+
+    storageMock.loadDataFile.mockClear()
+    storageMock.applyMutation.mockClear()
+    await pullAndMerge(makeDataFile({ transactions: [antiga, ...local2026] }))
+
+    expect(storageMock.loadDataFile).toHaveBeenCalled()
+    expect(metricValue('sync.drive.baselineScopedYears')).toBeUndefined()
+
+    // O essencial: a lápide de 2020 vira DELETE no disco, apesar de 2020 não estar entre os anos
+    // buscados. Com o escopo, ela sumiria do delta e a linha ficaria viva para sempre.
+    const delta = storageMock.applyMutation.mock.calls[0][1] as {
+      upserts: Transaction[]
+      deletedIds: string[]
+    }
+    expect(delta.deletedIds).toContain('tx-2020')
+  })
+})
+
+describe('CS-50 (C) — publicação sem listar a própria pasta', () => {
+  it('reusa os fileIds em cache em vez de relistar a cada publicação', async () => {
+    setLocalVault({ txByYear: { '2026': [makeTx()] } })
+    await pullAndMerge(makeDataFile()) // primeira publicação: lista (cache vazio)
+
+    drive.callLog.length = 0
+    setLocalVault({ txByYear: { '2026': [makeTx({ amount: 999 })] } })
+    await pullAndMerge(makeDataFile())
+
+    // Uma listagem sobra: a da raiz, que o pull precisa para achar os manifestos dos peers.
+    expect(drive.calls(/files\?q=/)).toHaveLength(1)
+  })
+
+  it('descarta o cache de ids quando um upload teve de recriar o arquivo', async () => {
+    setLocalVault({ txByYear: { '2026': [makeTx()] } })
+    await pullAndMerge(makeDataFile())
+
+    // Alguém apagou a partição no Drive por fora; o id em cache ficou órfão.
+    const stale = drive.byName('transactions-2026.json.gz')!
+    drive.files.delete(stale.id)
+
+    setLocalVault({ txByYear: { '2026': [makeTx({ amount: 999 })] } })
+    await pullAndMerge(makeDataFile())
+
+    expect(metricValue('sync.drive.publish.staleFileIds')).toBe(1)
+    // Cache invalidado: o sync seguinte volta a listar a pasta para reconstruir a verdade.
+    drive.callLog.length = 0
+    setLocalVault({ txByYear: { '2026': [makeTx({ amount: 777 })] } })
+    await pullAndMerge(makeDataFile())
+    expect(drive.calls(/files\?q=/).length).toBeGreaterThan(1)
   })
 })

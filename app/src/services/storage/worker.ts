@@ -1765,8 +1765,46 @@ async function readSyncManifestBase(): Promise<SyncManifestBase | null> {
  * `Promise.all` porque lá cada chamada passa por postMessage e é serializada antes de chegar no
  * wasm — aqui não há mais nenhuma serialização abaixo.
  */
+/**
+ * Acima deste número de anos pedidos, ler `transactions` inteiro de uma vez sai mais barato que
+ * montar um `WHERE date LIKE ? OR …` com um termo por ano — a leitura completa é uma query por
+ * tabela, enquanto a filtrada ainda paga a busca em lote das junções por id.
+ *
+ * Medido contra dado real (2026-08-27, cofre de 26.577 transações): 23 partições lidas uma a uma
+ * somavam ~13s no Chrome e ~9s no Firefox, contra ~2,5s de uma leitura completa. O ponto de virada
+ * exato não foi medido; 4 é conservador e cobre com folga o caso comum (1-2 anos por sync).
+ */
+const FULL_TRANSACTION_READ_THRESHOLD = 4
+
 async function readPartitions(keys: string[]): Promise<Record<string, unknown[]>> {
   const out: Record<string, unknown[]> = {}
+
+  const years: string[] = []
+  for (const key of keys) {
+    const separator = key.indexOf(':')
+    if (key.slice(0, separator === -1 ? undefined : separator) === 'transactions') {
+      years.push(separator === -1 ? '' : key.slice(separator + 1))
+    }
+  }
+
+  // Uma única leitura de `transactions` para *todos* os anos pedidos, agrupada por ano em JS —
+  // antes era uma chamada por ano, cada uma com seu próprio SELECT, e todas serializadas pela fila
+  // do worker (a paralelização do chamador não ajuda: a fila existe justamente para não haver duas
+  // chamadas Asyncify em voo, CS-28). Era o gargalo do primeiro sync.
+  const byYear = new Map<string, RawTransaction[]>()
+  if (years.length > 0) {
+    const rows = await readTransactionsForYears(
+      db,
+      years.length > FULL_TRANSACTION_READ_THRESHOLD ? null : years
+    )
+    for (const year of years) byYear.set(year, [])
+    for (const tx of rows) {
+      const bucket = byYear.get(tx.date.slice(0, 4))
+      // Com a leitura completa vêm anos que ninguém pediu; descarta em vez de devolver a mais.
+      if (bucket) bucket.push(tx)
+    }
+  }
+
   for (const key of keys) {
     const separator = key.indexOf(':')
     const table = separator === -1 ? key : key.slice(0, separator)
@@ -1798,7 +1836,7 @@ async function readPartitions(keys: string[]): Promise<Record<string, unknown[]>
         out[key] = await readDeletedIds(db)
         break
       case 'transactions':
-        out[key] = await readTransactionsForYears(db, [partition])
+        out[key] = byYear.get(partition) ?? []
         break
       default:
         throw new Error(`[storage-worker] Unknown partition key: ${key}`)
