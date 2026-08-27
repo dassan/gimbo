@@ -170,16 +170,33 @@ ring buffer de 100 eventos de `telemetry.ts`.
 | `sync.drive.getMetadata` | `googleDrive.ts` | Round-trip só de metadados (`modifiedTime`) |
 | `sync.drive.getValidAccessToken` | `googleDrive.ts` | Leitura do access token (deveria ficar ~0ms — token em cache, sem rede; um valor alto aponta refresh proativo) |
 | `sync.drive.fetch401Retry` | `googleDrive.ts` | Só existe no trace quando o retry-por-401 de fato roda (`fetch → refreshGoogleToken() → fetch de novo`) — presença/duração isola o custo do refresh (CS-27) |
-| `sync.drive.download` / `.bytes` | `googleDrive.ts` | Download do `gimbo.db` do Drive — duração e tamanho |
-| `sync.drive.upload` / `.bytes` | `googleDrive.ts` | Upload do `gimbo.db` pro Drive — duração e tamanho |
-| `sync.readPeerBlob` | `syncService.ts` | Parse do blob baixado em `DataFile` (via `storage.readPeerBlob`, worker) |
-| `sync.readPeer.tablesSkipped` / `.tablesTotal` | `syncService.ts`/`folderSyncService.ts` | CS-36: quantas das 8 tabelas pequenas o hash-skip (Fase 2b) de fato pulou nesta leitura de peer |
-| `sync.readPeer.yearsSkipped` / `.yearsTotal` | `syncService.ts`/`folderSyncService.ts` | CS-36: idem, por ano de `transactions` |
-| `sync.merge` | `syncService.ts` | `mergeForSync()` puro — deve ser rápido; confirma ou descarta o merge como gargalo |
-| `sync.loadBaseline` | `syncService.ts` | Leitura do baseline fresco (`storage.loadDataFile()`) usado pelo diff — CS-30 |
-| `sync.applyMutation` | `syncService.ts` | Escrita do resultado mesclado no OPFS local, por diff (CS-30) — antes `sync.replaceAll`, reescrita total |
-| `sync.pullAndMerge.total` | `syncService.ts` | `pullAndMerge()` inteiro — só o transporte Drive |
+| `sync.drive.download` / `.bytes` | `googleDrive.ts` | Download do Drive — duração e tamanho. Desde o `CS-44`, soma manifesto + partições baixadas, não mais um `gimbo.db` inteiro |
+| `sync.drive.upload` / `.bytes` | `googleDrive.ts` | Upload pro Drive. Desde o `CS-44`, soma só as partições que mudaram + o manifesto |
+| `sync.readPeerBlob` | `folderSyncService.ts` | Parse do `.db` de peer (via `storage.readPeerBlob`, worker). **Some dos traces do Drive desde o `CS-44`** — segue vivo na pasta compartilhada e no Onboarding |
+| `sync.readPeer.tablesSkipped` / `.tablesTotal` | `folderSyncService.ts` | CS-36: hash-skip por tabela pequena. Mesma nota acima — só pasta compartilhada agora |
+| `sync.readPeer.yearsSkipped` / `.yearsTotal` | `folderSyncService.ts` | CS-36: idem, por ano de `transactions` |
+| `sync.merge` | `driveTreeSyncService.ts` | `mergeForSync()` puro — deve ser rápido; confirma ou descarta o merge como gargalo |
+| `sync.loadBaseline` | `driveTreeSyncService.ts` | Leitura do baseline fresco (`storage.loadDataFile()`) usado pelo diff — CS-30 |
+| `sync.applyMutation` | `driveTreeSyncService.ts` | Escrita do resultado mesclado no OPFS local, por diff (CS-30) |
+| `sync.pullAndMerge.total` | `driveTreeSyncService.ts` | `pullAndMerge()` inteiro — só o transporte Drive |
 | `sync.runPeerSync.total` | `useDataStore.ts` | `runPeerSync()` inteiro, como o usuário percebe — inclui a reconciliação do `CS-24`. Desde o `CS-35`, não inclui mais nenhuma releitura completa do cofre local além da já contabilizada em `sync.pullAndMerge.total`/`sync.loadBaseline` |
+
+### Transporte particionado (CS-42 a CS-47)
+
+Métricas novas do `CS-44`/`CS-45`, todas sempre ativas. Juntas respondem, **sem inferência**, as
+duas perguntas que a Fase 2 deixou em aberto: o hash-skip está pulando de verdade, e qual o custo
+real em chamadas à API.
+
+| Métrica | Onde | O que mede |
+|---|---|---|
+| `sync.drive.apiCalls` | `googleDrive.ts` | **Round-trips de fato disparados no sync inteiro, retries inclusive.** Resposta direta ao "orçamento de chamadas à API": o transporte novo troca poucas chamadas com muitos bytes por muitos bytes a menos em mais chamadas, e dado o `CS-27` (uma chamada de metadados variou de 0,4s a 9,2s) essa troca pode sair pela culatra em alta latência. Regime permanente esperado: **1** |
+| `sync.drive.fetch429Retry` | `googleDrive.ts` | Só existe no trace quando o backoff de rate limit rodou. Espelha o `fetch401Retry`; presença = trocamos bytes por chamadas demais |
+| `sync.drive.peersTotal` / `.peersSkippedByWatermark` | `driveTreeSyncService.ts` | Quantos peers existem e quantos foram pulados inteiros porque o `modifiedTime` do manifesto não avançou |
+| `sync.drive.partitionsTotal` / `.partitionsSkipped` / `.partitionsFetched` | `driveTreeSyncService.ts` | O `CS-36` elevado à camada de rede: distingue "hash-skip quebrado" de "peer genuinamente divergente" sem inferência |
+| `sync.drive.decodePartitions` | `driveTreeSyncService.ts` | gunzip + `JSON.parse` + zod das partições baixadas, na main thread. O risco de jank do primeiro sync, medido em vez de estimado |
+| `sync.drive.publish.partitionsUploaded` | `driveTreeSyncService.ts` | Quantas partições este dispositivo republicou. Com `sync.drive.upload.bytes`, confirma o colapso de ~14MB por salvamento |
+| `sync.drive.partitionHashMismatch` | `driveTreeSyncService.ts` | Integridade de transferência: o hash das linhas baixadas não bateu com o do manifesto. **Reporta, nunca bloqueia** — também serve de detector permanente de regressão da normalização do `CS-32` |
+| `sync.drive.hashVersionMismatch` | `driveTreeSyncService.ts` | O peer publicou com outro `HASH_VERSION` (`CS-39`) — nada é comparável e tudo é buscado. Remove a ambiguidade que custou uma rodada de depuração no `CS-34`/`CS-36` |
 
 Consumo: Bug Report System (F-26) já existente, categoria "performance" do snapshot — sem UI nova.
 No celular, Configurações → "Reportar problema" → conferir/copiar o JSON. Mesma regra de
