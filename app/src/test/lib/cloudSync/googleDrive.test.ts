@@ -1,13 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeDrive } from './fakeDrive'
 
-const { getValidAccessTokenMock, refreshGoogleTokenMock, isGoogleConnectedMock } = vi.hoisted(
-  () => ({
-    getValidAccessTokenMock: vi.fn(),
-    refreshGoogleTokenMock: vi.fn(),
-    isGoogleConnectedMock: vi.fn(),
-  })
-)
+const {
+  getValidAccessTokenMock,
+  refreshGoogleTokenMock,
+  isGoogleConnectedMock,
+  trackPerformanceMock,
+} = vi.hoisted(() => ({
+  getValidAccessTokenMock: vi.fn(),
+  refreshGoogleTokenMock: vi.fn(),
+  isGoogleConnectedMock: vi.fn(),
+  trackPerformanceMock: vi.fn(),
+}))
+
+vi.mock('@/lib/telemetry', () => ({ trackPerformance: trackPerformanceMock }))
 
 vi.mock('@/lib/cloudSync/googleAuth', () => ({
   getValidAccessToken: getValidAccessTokenMock,
@@ -23,6 +29,10 @@ const {
   ensureSubfolder,
   uploadFileToFolder,
   downloadFileById,
+  resetDriveApiCallCount,
+  reportDriveApiCallCount,
+  mapWithConcurrency,
+  DRIVE_CONCURRENCY,
 } = await import('@/lib/cloudSync/googleDrive')
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
@@ -34,6 +44,7 @@ beforeEach(() => {
   getValidAccessTokenMock.mockReset().mockResolvedValue('token-1')
   refreshGoogleTokenMock.mockReset().mockResolvedValue('token-2')
   isGoogleConnectedMock.mockReset().mockReturnValue(true)
+  trackPerformanceMock.mockReset()
   drive = new FakeDrive()
   drive.install()
 })
@@ -350,5 +361,98 @@ describe('primitivas de árvore (CS-42)', () => {
     await ensureSubfolder(root, "device-o'brien")
 
     expect(drive.allNamed("device-o'brien")).toHaveLength(1)
+  })
+})
+
+// ─── CS-43: concorrência, backoff e contador de chamadas ──────────────────────
+
+describe('concorrência e rate limit (CS-43)', () => {
+  it('conta cada round-trip disparado, retries inclusive', async () => {
+    seedVault()
+    resetDriveApiCallCount()
+    const provider = createGoogleDriveProvider()
+
+    await provider.getMetadata()
+
+    // O contador é a resposta à pergunta "trocamos bytes por chamadas demais?" — tem que bater
+    // com o número real de requisições, não com o número de operações lógicas.
+    reportDriveApiCallCount()
+    expect(trackPerformanceMock).toHaveBeenCalledWith('sync.drive.apiCalls', drive.calls().length)
+  })
+
+  it('zera o contador depois de reportar, para o próximo sync medir só a si mesmo', async () => {
+    seedVault()
+    resetDriveApiCallCount()
+    const provider = createGoogleDriveProvider()
+    await provider.getMetadata()
+    reportDriveApiCallCount()
+    trackPerformanceMock.mockClear()
+
+    reportDriveApiCallCount()
+
+    expect(trackPerformanceMock).toHaveBeenCalledWith('sync.drive.apiCalls', 0)
+  })
+
+  it('espera e repete depois de um 403 de rate limit, e emite a métrica', async () => {
+    const { folderId, fileId } = seedVault()
+    localStorage.setItem('gimbo_google_drive_folder_id', folderId)
+    localStorage.setItem('gimbo_google_drive_file_id', fileId)
+    drive.failNextWithRateLimit(/files\//)
+    const provider = createGoogleDriveProvider()
+
+    const meta = await provider.getMetadata()
+
+    expect(meta.modifiedTime).toBeDefined()
+    expect(drive.calls()).toHaveLength(2)
+    const metricNames = trackPerformanceMock.mock.calls.map((call) => String(call[0]))
+    expect(metricNames).toContain('sync.drive.fetch429Retry')
+  })
+
+  it('não repete um 403 de permissão — esperar não conserta autorização', async () => {
+    const { folderId, fileId } = seedVault()
+    localStorage.setItem('gimbo_google_drive_folder_id', folderId)
+    localStorage.setItem('gimbo_google_drive_file_id', fileId)
+    drive.failNext(/files\//, 403) // sem reason de rate limit
+    const provider = createGoogleDriveProvider()
+
+    await expect(provider.getMetadata()).rejects.toThrow()
+    expect(drive.calls()).toHaveLength(1)
+  })
+
+  it('desiste depois do teto de tentativas em vez de repetir para sempre', async () => {
+    const { folderId, fileId } = seedVault()
+    localStorage.setItem('gimbo_google_drive_folder_id', folderId)
+    localStorage.setItem('gimbo_google_drive_file_id', fileId)
+    drive.failNextWithRateLimit(/files\//, 99)
+    const provider = createGoogleDriveProvider()
+
+    await expect(provider.getMetadata()).rejects.toThrow()
+    expect(drive.calls()).toHaveLength(4) // original + 3 retries
+  })
+
+  it('mapWithConcurrency preserva a ordem e respeita o teto', async () => {
+    const items = Array.from({ length: 12 }, (_, i) => i)
+    let inFlight = 0
+    let peak = 0
+
+    const results = await mapWithConcurrency(items, async (n) => {
+      inFlight++
+      peak = Math.max(peak, inFlight)
+      await new Promise((r) => setTimeout(r, 1))
+      inFlight--
+      return n * 2
+    })
+
+    expect(results).toEqual(items.map((n) => n * 2))
+    expect(peak).toBeLessThanOrEqual(DRIVE_CONCURRENCY)
+    expect(peak).toBeGreaterThan(1) // e de fato paralelizou
+  })
+
+  it('mapWithConcurrency propaga a falha de um item', async () => {
+    await expect(
+      mapWithConcurrency([1, 2, 3], (n) =>
+        n === 2 ? Promise.reject(new Error('boom')) : Promise.resolve(n)
+      )
+    ).rejects.toThrow('boom')
   })
 })

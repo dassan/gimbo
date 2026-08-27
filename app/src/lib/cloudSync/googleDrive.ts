@@ -59,6 +59,54 @@ export function clearGoogleDriveCache(): void {
 // it directly: `sync.drive.getValidAccessToken` should be ~0 (cached token, no network) unless a
 // proactive refresh fired, and `sync.drive.fetch401Retry` only exists in a trace at all when the
 // retry branch actually ran, so its presence/duration answers the question outright next time.
+// CS-43: contador de chamadas à API, sempre ativo.
+//
+// É a resposta direta à pergunta em aberto do plano de transporte particionado ("orçamento de
+// chamadas à API"): o desenho novo troca *poucas chamadas com muitos bytes* por *muitos bytes a
+// menos, em mais chamadas*, e dado o CS-27 (uma única chamada de metadados variou de 0,4s a 9,2s)
+// essa troca pode sair pela culatra numa conexão de alta latência. Sem medir, seria palpite.
+//
+// Conta cada `fetch` de fato disparado, retries inclusive — o número honesto de round-trips.
+let _apiCalls = 0
+
+export function resetDriveApiCallCount(): void {
+  _apiCalls = 0
+}
+
+/** Publica o total acumulado e zera. Chamado uma vez por sync pelo orquestrador. */
+export function reportDriveApiCallCount(): void {
+  trackSyncBytes('sync.drive.apiCalls', _apiCalls)
+  _apiCalls = 0
+}
+
+const MAX_RATE_LIMIT_RETRIES = 3
+const RATE_LIMIT_BASE_DELAY_MS = 400
+
+/**
+ * 429 sempre; 403 só quando o motivo é de fato limite de taxa — um 403 de permissão não melhora
+ * com espera, e repetir três vezes só atrasaria a falha.
+ */
+async function isRateLimited(res: Response): Promise<boolean> {
+  if (res.status === 429) return true
+  if (res.status !== 403) return false
+  try {
+    // clone() para não consumir o corpo que o chamador ainda pode querer ler no caminho de erro.
+    const source = typeof res.clone === 'function' ? res.clone() : res
+    const body = (await source.json()) as { error?: { errors?: { reason?: string }[] } }
+    const reason = body.error?.errors?.[0]?.reason
+    return reason === 'rateLimitExceeded' || reason === 'userRateLimitExceeded'
+  } catch {
+    return false
+  }
+}
+
+function backoffDelay(attempt: number): number {
+  // Exponencial com jitter — sem o jitter, N requisições paralelas que tomam 429 juntas voltariam
+  // todas no mesmo instante e tomariam 429 de novo, em sincronia.
+  const base = RATE_LIMIT_BASE_DELAY_MS * 2 ** attempt
+  return base / 2 + Math.random() * base
+}
+
 async function authorizedFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const token = await measureSync('sync.drive.getValidAccessToken', () => getValidAccessToken())
   const withAuth = (t: string): RequestInit => ({
@@ -66,13 +114,63 @@ async function authorizedFetch(url: string, init: RequestInit = {}): Promise<Res
     headers: { ...(init.headers ?? {}), Authorization: `Bearer ${t}` },
   })
 
-  const first = await fetch(url, withAuth(token))
-  if (first.status !== 401) return first
+  _apiCalls++
+  let res = await fetch(url, withAuth(token))
 
-  return measureSync('sync.drive.fetch401Retry', async () => {
-    const refreshed = await refreshGoogleToken()
-    return fetch(url, withAuth(refreshed))
+  if (res.status === 401) {
+    res = await measureSync('sync.drive.fetch401Retry', async () => {
+      const refreshed = await refreshGoogleToken()
+      _apiCalls++
+      return fetch(url, withAuth(refreshed))
+    })
+  }
+
+  // CS-43: backoff de rate limit. Não existia porque o transporte monolítico fazia ~5 chamadas por
+  // sync; o particionado faz dezenas na primeira publicação, e a presença desta métrica num trace
+  // responde de imediato se trocamos "muitos bytes" por "chamadas demais".
+  for (let attempt = 0; attempt < MAX_RATE_LIMIT_RETRIES && (await isRateLimited(res)); attempt++) {
+    res = await measureSync('sync.drive.fetch429Retry', async () => {
+      await new Promise((resolve) => setTimeout(resolve, backoffDelay(attempt)))
+      const current = await getValidAccessToken()
+      _apiCalls++
+      return fetch(url, withAuth(current))
+    })
+  }
+
+  return res
+}
+
+/**
+ * Teto de I/O simultâneo contra o Drive.
+ *
+ * A justificativa está na primeira publicação: ~30 uploads. Em 5G, 30 × 400ms sequenciais são 12s
+ * contra ~3s a 4 vias — e foi exatamente um teste em 5G que motivou todo o transporte particionado.
+ * O teto existe para não trocar latência por rate limit.
+ *
+ * **CS-28 não se aplica aqui.** Aquela regra é sobre chamadas concorrentes ao wa-sqlite dentro do
+ * worker; isto é `fetch` na main thread, sem nenhum wasm envolvido. O reflexo de serializar por
+ * segurança seria custo puro.
+ */
+export const DRIVE_CONCURRENCY = 4
+
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  fn: (item: T) => Promise<R>,
+  limit = DRIVE_CONCURRENCY
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const index = next++
+      if (index >= items.length) return
+      results[index] = await fn(items[index])
+    }
   })
+
+  await Promise.all(workers)
+  return results
 }
 
 // Wrapped as a single metric (cache hit and miss alike): a near-zero value confirms the

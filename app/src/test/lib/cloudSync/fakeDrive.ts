@@ -39,6 +39,7 @@ interface FailRule {
   pattern: string | RegExp
   status: number
   remaining: number
+  body?: unknown
 }
 
 export class FakeDrive {
@@ -142,9 +143,12 @@ export class FakeDrive {
   }
 
   private respond(body: unknown, ok = true, status = ok ? 200 : 400): Response {
-    return {
+    const response: Response = {
       ok,
       status,
+      // Real Response bodies are single-use, so the rate-limit check clones before reading.
+      // Modelling clone() keeps that path exercisable.
+      clone: () => response,
       json: () => Promise.resolve(body),
       text: () => Promise.resolve(typeof body === 'string' ? body : JSON.stringify(body)),
       arrayBuffer: () =>
@@ -156,6 +160,17 @@ export class FakeDrive {
             : new ArrayBuffer(0)
         ),
     } as unknown as Response
+    return response
+  }
+
+  /** Injeta um 403 com motivo de rate limit — o formato que o Drive de verdade devolve. */
+  failNextWithRateLimit(pattern: string | RegExp, times = 1): void {
+    this._failRules.push({
+      pattern,
+      status: 403,
+      remaining: times,
+      body: { error: { errors: [{ reason: 'userRateLimitExceeded' }] } },
+    })
   }
 
   private async handle(url: string, init?: RequestInit): Promise<Response> {
@@ -165,7 +180,11 @@ export class FakeDrive {
     const rule = this._failRules.find((r) => r.remaining > 0 && this.matches(url, r.pattern))
     if (rule) {
       rule.remaining--
-      return this.respond({ error: { message: 'injected failure' } }, false, rule.status)
+      return this.respond(
+        rule.body ?? { error: { message: 'injected failure' } },
+        false,
+        rule.status
+      )
     }
 
     if (this._validToken !== null) {
