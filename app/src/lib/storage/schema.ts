@@ -192,6 +192,38 @@ export const DataFileSchema = z.object({
   budgets: z.array(BudgetSchema).default([]), // F-30/BX-03; absent in older files defaults to []
 })
 
+/**
+ * CS-40 — schemas por partição, para o transporte particionado de sync validar cada arquivo que
+ * baixa em vez de só o `DataFile` inteiro montado.
+ *
+ * Duas razões. **Custo:** um sync em regime permanente não baixa partição nenhuma, então valida
+ * nada; um sync que baixou um ano valida um ano. Rodar `DataFileSchema.parse` sobre o objeto
+ * montado pagaria a validação das ~26k transações locais que nem vieram da rede. **Cobertura:** a
+ * leitura de peer de hoje (`readForeignDataFile`) monta `RawDataFile` direto de linhas SQL, sem
+ * nenhuma validação zod — validar por partição é estritamente mais do que existe hoje, no espírito
+ * do SEC-05 (nunca confiar em bytes de fora sem checar a forma).
+ *
+ * As chaves batem com os nomes de tabela usados em `table_hashes` (worker.ts), não com os nomes de
+ * campo do `DataFile` — é o vocabulário do particionamento.
+ */
+export const PARTITION_SCHEMAS = {
+  accounts: z.array(AccountSchema),
+  categories: z.array(CategorySchema),
+  tags: z.array(TagSchema),
+  transactions: z.array(TransactionSchema),
+  valuations: z.array(ValuationSchema),
+  saved_periods: z.array(SavedPeriodSchema),
+  budgets: z.array(BudgetSchema),
+  audit_log: z.array(AuditEntrySchema),
+  deleted_ids: z.array(z.string()),
+} as const
+
+/** Os singletons, que nunca são particionados — viajam no manifesto (CS-40). */
+export const ManifestBaseSchema = z.object({
+  user: UserSchema,
+  settings: SettingsSchema,
+})
+
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 /**
@@ -213,7 +245,7 @@ export function validateDataFile(data: unknown): DataFile {
  * Applies all pending migrations in order until the file reaches
  * CURRENT_SCHEMA_VERSION. Each migration step is idempotent.
  */
-function migrateDataFile(data: DataFile): DataFile {
+export function migrateDataFile(data: DataFile): DataFile {
   if (data.schemaVersion === CURRENT_SCHEMA_VERSION) return data
 
   let migrated = data
