@@ -3,7 +3,7 @@ import { measure } from '@/lib/perfMonitor'
 import { trackPerformance } from '@/lib/telemetry'
 import type { TransactionDelta } from '@/lib/storage/transactionDiff'
 import { CURRENT_SCHEMA_VERSION } from '@/lib/storage/schema'
-import type { SelectiveReadStats } from './worker'
+import type { SelectiveReadStats, SyncManifestBase } from './worker'
 import type {
   Account,
   AccountType,
@@ -639,6 +639,23 @@ export class StorageService {
       data: { schemaVersion: CURRENT_SCHEMA_VERSION, ...result.data },
       stats: result.stats,
     }
+  }
+
+  /**
+   * CS-41: singletons + hashes por partição numa única task do worker, para o publicador do
+   * transporte particionado montar seu manifesto a partir de um instante consistente do banco.
+   */
+  async getSyncManifestBase(): Promise<SyncManifestBase | null> {
+    return this.call<SyncManifestBase | null>('syncManifestBase', [])
+  }
+
+  /**
+   * CS-41: lê as partições pedidas do cofre local, para publicação. As chaves são as mesmas de
+   * `table_hashes` (`accounts:`, `transactions:2026`).
+   */
+  async readPartitions(keys: string[]): Promise<Record<string, unknown[]>> {
+    if (keys.length === 0) return {}
+    return this.call<Record<string, unknown[]>>('readPartitions', [keys])
   }
 
   async getDatabaseVersion(): Promise<number> {

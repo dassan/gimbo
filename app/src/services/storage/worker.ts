@@ -1726,6 +1726,87 @@ async function ensureTableHashesCurrent(dbPtr: number): Promise<void> {
   await upsert(HASH_META_TABLE, HASH_VERSION_KEY, HASH_VERSION, 0)
 }
 
+// ─── CS-41: superfície de leitura por partição (transporte particionado) ──────
+
+export type PartitionHashRow = { key: string; hash: number; count: number }
+
+export type SyncManifestBase = {
+  user: RawUser
+  settings: RawSettings
+  hashes: PartitionHashRow[]
+}
+
+/**
+ * Tudo o que o publicador precisa para montar seu manifesto, numa **única task enfileirada**:
+ * os singletons (que nunca são particionados) e o mapa de hashes por partição.
+ *
+ * Uma chamada só, e não duas, porque o par tem que descrever o mesmo instante do banco — separá-las
+ * abriria uma janela para uma mutação landar no meio e publicar um manifesto cujo `fileUpdatedAt`
+ * não corresponde aos hashes ao lado dele.
+ */
+async function readSyncManifestBase(): Promise<SyncManifestBase | null> {
+  const base = await readUserAndSettings(db)
+  if (!base) return null
+  const hashes = await readTableHashes(db)
+  return {
+    user: base.user,
+    settings: base.settings,
+    hashes: [...hashes].map(([key, entry]) => ({ key, hash: entry.hash, count: entry.count })),
+  }
+}
+
+/**
+ * Lê as partições pedidas do cofre local, para publicação.
+ *
+ * **Sequencial, nunca `Promise.all` — CS-28.** Esta função roda *dentro* de uma task já retirada da
+ * fila `enqueue()` do worker, chamando os leitores direto contra a instância wasm. O build
+ * `wa-sqlite-async` é Asyncify e só suporta uma chamada em voo por vez; disparar várias em paralelo
+ * corrompe o módulo inteiro de forma irrecuperável sem reload. `StorageService` pode usar
+ * `Promise.all` porque lá cada chamada passa por postMessage e é serializada antes de chegar no
+ * wasm — aqui não há mais nenhuma serialização abaixo.
+ */
+async function readPartitions(keys: string[]): Promise<Record<string, unknown[]>> {
+  const out: Record<string, unknown[]> = {}
+  for (const key of keys) {
+    const separator = key.indexOf(':')
+    const table = separator === -1 ? key : key.slice(0, separator)
+    const partition = separator === -1 ? '' : key.slice(separator + 1)
+
+    switch (table) {
+      case 'accounts':
+        out[key] = await readAccounts(db)
+        break
+      case 'categories':
+        out[key] = await readCategories(db)
+        break
+      case 'tags':
+        out[key] = await readTags(db)
+        break
+      case 'valuations':
+        out[key] = await readValuations(db)
+        break
+      case 'saved_periods':
+        out[key] = await readSavedPeriods(db)
+        break
+      case 'budgets':
+        out[key] = await readBudgets(db)
+        break
+      case 'audit_log':
+        out[key] = await readAuditLog(db)
+        break
+      case 'deleted_ids':
+        out[key] = await readDeletedIds(db)
+        break
+      case 'transactions':
+        out[key] = await readTransactionsForYears(db, [partition])
+        break
+      default:
+        throw new Error(`[storage-worker] Unknown partition key: ${key}`)
+    }
+  }
+  return out
+}
+
 type ReadPeerResult =
   | { ok: true; data: RawDataFile; stats: SelectiveReadStats }
   | { ok: false; reason: 'unreadable' | 'newer-schema' }
@@ -1880,6 +1961,10 @@ async function dispatch(method: string, args: unknown[]): Promise<unknown> {
       return clearAll()
     case 'readPeer':
       return readForeignDataFile(args[0] as ArrayBuffer)
+    case 'syncManifestBase':
+      return readSyncManifestBase()
+    case 'readPartitions':
+      return readPartitions(args[0] as string[])
     default:
       throw new Error(`[storage-worker] Unknown method: ${method}`)
   }
