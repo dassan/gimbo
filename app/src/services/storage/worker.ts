@@ -36,6 +36,7 @@ import {
   auditEntryRowKey,
   deletedIdRowKey,
   transactionRowKey,
+  HASH_VERSION,
 } from '@/lib/storage/rowHash'
 
 // ─── Protocol types ───────────────────────────────────────────────────────────
@@ -210,7 +211,7 @@ async function init(): Promise<void> {
 
   db = await sqlite3.open_v2(DB_FILENAME)
   await runMigrationsOn(db)
-  await backfillTableHashesIfNeeded(db)
+  await ensureTableHashesCurrent(db)
 
   const queriedLimit = sqlite3.limit(db, SQLITE_LIMIT_VARIABLE_NUMBER, -1)
   if (queriedLimit > 0) maxBoundParams = Math.floor(queriedLimit * 0.9)
@@ -436,7 +437,7 @@ async function importDb(data: ArrayBuffer): Promise<void> {
     // importado sem table_hashes só ganharia o backfill no próximo reload da página, não neste
     // mesmo carregamento (a UI já segue usando o cofre importado sem reload, ver handleImportDb
     // em Settings/Onboarding).
-    await backfillTableHashesIfNeeded(db)
+    await ensureTableHashesCurrent(db)
   } catch (err) {
     // A troca falhou no meio. Devolve o cofre ao estado anterior antes de propagar.
     if (haveRollback) {
@@ -566,6 +567,12 @@ async function refreshSmallTableHashes(d: RawDataFile, ts: string): Promise<void
     combineHashes(d.deletedIds.map((id) => hashRow(deletedIdRowKey(id)))),
     d.deletedIds.length
   )
+  // CS-39: quem escreve hash também registra sob qual esquema escreveu. Esta função roda em toda
+  // mutação (via writeSmallTables) e em todo replaceAll, então a sentinela nunca fica atrás das
+  // partições que ela descreve — sem isto, um replaceAll (import, restauração, merge de sync)
+  // repopularia todas as partições deixando a sentinela ausente/velha, e o boot seguinte jogaria
+  // fora um trabalho recém-feito para recomputar exatamente os mesmos valores.
+  await upsertTableHash(HASH_META_TABLE, HASH_VERSION_KEY, HASH_VERSION, 0)
 }
 
 async function upsertTransactionYearHash(year: string, txs: RawTransaction[]): Promise<void> {
@@ -1456,10 +1463,19 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
 
 type HashEntry = { hash: number; count: number }
 
+// CS-39: linha-sentinela que grava o HASH_VERSION que produziu as demais linhas. Mora dentro da
+// própria `table_hashes` (em vez de uma coluna nova) de propósito: sem DDL novo, `MAX_KNOWN_DB_VERSION`
+// fica onde está e `scripts/sync_gimbo.py` não precisa de bump — a armadilha de "bumpar em três
+// lugares" que o CLAUDE.md marca como recorrente. `table_name` é reservado e nunca colide com uma
+// tabela real; `readTableHashes` o filtra.
+const HASH_META_TABLE = '__meta'
+const HASH_VERSION_KEY = 'hash_version'
+
 async function readTableHashes(dbPtr: number): Promise<Map<string, HashEntry>> {
   const rows = await queryRows(
     dbPtr,
-    'SELECT table_name, partition_key, hash_value, row_count FROM table_hashes'
+    'SELECT table_name, partition_key, hash_value, row_count FROM table_hashes WHERE table_name != ?',
+    [HASH_META_TABLE]
   )
   const map = new Map<string, HashEntry>()
   for (const r of rows) {
@@ -1469,6 +1485,17 @@ async function readTableHashes(dbPtr: number): Promise<Map<string, HashEntry>> {
     })
   }
   return map
+}
+
+/** Lê o HASH_VERSION que gravou as linhas atuais; null se a sentinela não existe (pré-CS-39). */
+async function readStoredHashVersion(dbPtr: number): Promise<number | null> {
+  const { rows } = await sqlite3.execWithParams(
+    dbPtr,
+    'SELECT hash_value FROM table_hashes WHERE table_name = ? AND partition_key = ?',
+    [HASH_META_TABLE, HASH_VERSION_KEY]
+  )
+  const value: unknown = rows[0]?.[0]
+  return typeof value === 'number' ? value : null
 }
 
 // Ausente de qualquer lado (peer pré-v16, ou local antes de qualquer escrita) = sempre diverge —
@@ -1584,10 +1611,23 @@ async function readDataFileFromDbSelective(
 // já fariam se tivessem rodado depois do v16 existir. Custo de leitura completa, uma vez por
 // banco (local no boot; peer/scratch antes de comparar) — depois disso, a manutenção incremental
 // já existente mantém tudo em dia.
-async function backfillTableHashesIfNeeded(dbPtr: number): Promise<void> {
+//
+// CS-39 estende isto de "vazia?" para "vazia **ou** produzida por outro HASH_VERSION?". A checagem
+// original (`COUNT(*) === 0`) não cobria o caso de o próprio esquema de hash mudar entre versões do
+// app: as linhas continuavam lá, calculadas pelas funções antigas de `rowHash.ts`, e nada as
+// recomputava exceto uma escrita naquela partição. Localmente isso só custava performance; com o
+// transporte particionado, esses hashes viram um manifesto que outro dispositivo compara com o
+// dele, então dois dispositivos em versões diferentes nunca convergiriam no hash-skip. Recomputar
+// tudo uma vez por bump é barato e acontece no máximo uma vez por versão do app.
+async function ensureTableHashesCurrent(dbPtr: number): Promise<void> {
   const { rows } = await sqlite3.execWithParams(dbPtr, 'SELECT COUNT(*) FROM table_hashes')
   const count = (rows[0]?.[0] ?? 0) as number
-  if (count > 0) return
+  const storedVersion = count > 0 ? await readStoredHashVersion(dbPtr) : null
+  if (count > 0 && storedVersion === HASH_VERSION) return
+
+  // Esquema de hash mudou (ou a sentinela é de antes do CS-39): as linhas existentes descrevem o
+  // banco sob regras antigas e não são comparáveis com as novas — apagar e recomputar do zero.
+  if (count > 0) await sqlite3.run(dbPtr, 'DELETE FROM table_hashes')
 
   const data = await readDataFileFromDb(dbPtr)
   if (!data) return
@@ -1679,6 +1719,11 @@ async function backfillTableHashesIfNeeded(dbPtr: number): Promise<void> {
       txs.length
     )
   }
+
+  // CS-39: por último, e só depois de tudo ter sido recomputado com sucesso — se algo acima falhar
+  // ou sair cedo, a sentinela não é escrita e o próximo boot tenta de novo, em vez de dar a tabela
+  // por atualizada.
+  await upsert(HASH_META_TABLE, HASH_VERSION_KEY, HASH_VERSION, 0)
 }
 
 type ReadPeerResult =
@@ -1729,8 +1774,9 @@ async function readForeignDataFile(buffer: ArrayBuffer): Promise<ReadPeerResult>
     // O peer pode ser um upload de antes desta feature existir (ou de um dispositivo que ainda
     // não rodou o backfill do lado dele) — sem isso, `table_hashes` do peer viria vazia e toda
     // partição pareceria divergir pra sempre, mesmo quando o conteúdo é idêntico (ver o comentário
-    // de `backfillTableHashesIfNeeded`).
-    await backfillTableHashesIfNeeded(tempDb)
+    // de `ensureTableHashesCurrent`). CS-39: também recomputa quando o peer foi gerado por um
+    // HASH_VERSION diferente, que é o caso de um dispositivo numa versão mais antiga do app.
+    await ensureTableHashesCurrent(tempDb)
     // CS-30/CS-31/CS-32 Fase 2b: lê o hash local *agora*, dentro desta mesma task enfileirada —
     // nunca um valor obtido antes do download/parse do peer, que poderia levar segundos a
     // minutos (mesma disciplina do CS-24/CS-29: comparar sempre contra o estado atual, não um

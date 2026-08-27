@@ -16,6 +16,29 @@ import type {
   RawAuditEntry,
 } from '@/services/storage/worker'
 
+/**
+ * Versão do *esquema* de hash: a função FNV-1a, o XOR-fold e a lista de campos de cada `*RowKey`
+ * abaixo. Bumpar sempre que qualquer um dos três mudar.
+ *
+ * Por que existe (CS-39): `table_hashes` é mantida incrementalmente e não guarda a versão do
+ * esquema que a produziu, então uma mudança em qualquer função deste arquivo deixava todo hash já
+ * gravado calculado pelo esquema antigo — e nada os recomputava, exceto uma escrita naquela
+ * partição específica. Localmente isso só degradava performance (um hash "errado" nunca bate, e
+ * `hashesMatch` só pula quando bate). Mas o transporte particionado publica esses hashes num
+ * manifesto que **outro dispositivo** compara com os seus, e ali dois dispositivos em versões
+ * diferentes do app produziriam hashes distintos para dado idêntico — sem este campo, "0 partições
+ * puladas" seria ambíguo entre "peer genuinamente divergente" e "esquema de hash mudou", que é
+ * exatamente a ambiguidade que já custou uma rodada de depuração no CS-34/CS-36.
+ *
+ * Divergência de versão nunca é falha de correção — leva a buscar/ler a partição, o caminho
+ * seguro. `ensureTableHashesCurrent()` (worker.ts) invalida a tabela local quando este valor muda.
+ *
+ * **Esquecer de bumpar é o risco real**, e o que protege contra isso é o teste de pinagem em
+ * `rowHash.test.ts`: ele fixa este número junto de um hash literal por `*RowKey`, então mudar
+ * qualquer função sem bumpar falha no CI com instruções.
+ */
+export const HASH_VERSION = 1
+
 const FNV_OFFSET_BASIS = 0x811c9dc5
 const FNV_PRIME = 0x01000193
 
