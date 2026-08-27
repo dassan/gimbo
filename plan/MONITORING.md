@@ -197,6 +197,9 @@ real em chamadas à API.
 | `sync.drive.publish.partitionsUploaded` | `driveTreeSyncService.ts` | Quantas partições este dispositivo republicou. Com `sync.drive.upload.bytes`, confirma o colapso de ~14MB por salvamento |
 | `sync.drive.partitionHashMismatch` | `driveTreeSyncService.ts` | Integridade de transferência: o hash das linhas baixadas não bateu com o do manifesto. **Reporta, nunca bloqueia** — também serve de detector permanente de regressão da normalização do `CS-32` |
 | `sync.drive.hashVersionMismatch` | `driveTreeSyncService.ts` | O peer publicou com outro `HASH_VERSION` (`CS-39`) — nada é comparável e tudo é buscado. Remove a ambiguidade que custou uma rodada de depuração no `CS-34`/`CS-36` |
+| `sync.drive.publish.readPartitions` | `driveTreeSyncService.ts` | `CS-50`: leitura batelada de todas as partições a publicar, numa chamada só ao worker. Antes eram N chamadas serializadas pela fila — ~13s no primeiro sync |
+| `sync.drive.baselineScopedYears` | `driveTreeSyncService.ts` | `CS-50`: quantos anos o diff leu, em vez do cofre inteiro. **Ausente = caminho completo**, o que só deveria acontecer quando vieram lápides (elas removem de qualquer ano) |
+| `sync.drive.publish.staleFileIds` | `driveTreeSyncService.ts` | `CS-50`: um `fileId` em cache estava morto e o upload teve de recriar o arquivo — o cache de ids é descartado e o sync seguinte relista a pasta |
 
 Consumo: Bug Report System (F-26) já existente, categoria "performance" do snapshot — sem UI nova.
 No celular, Configurações → "Reportar problema" → conferir/copiar o JSON. Mesma regra de
