@@ -15,8 +15,15 @@ vi.mock('@/lib/cloudSync/googleAuth', () => ({
   isGoogleConnected: isGoogleConnectedMock,
 }))
 
-const { createGoogleDriveProvider, clearGoogleDriveCache } =
-  await import('@/lib/cloudSync/googleDrive')
+const {
+  createGoogleDriveProvider,
+  clearGoogleDriveCache,
+  listFolderChildren,
+  getRootFolderId,
+  ensureSubfolder,
+  uploadFileToFolder,
+  downloadFileById,
+} = await import('@/lib/cloudSync/googleDrive')
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
 let drive: FakeDrive
@@ -236,5 +243,112 @@ describe('FakeDrive — contrato do harness', () => {
     await expect(get(`https://www.googleapis.com/drive/v3/files?q=${q}`)).rejects.toThrow(
       /unsupported q clause/
     )
+  })
+})
+
+// ─── CS-42: primitivas de árvore ──────────────────────────────────────────────
+
+describe('primitivas de árvore (CS-42)', () => {
+  it('lista todos os filhos de uma pasta, seguindo nextPageToken até o fim', async () => {
+    const folderId = drive.seedFolder('Gimbo')
+    // Acima do pageSize=1000 que a implementação pede, para o laço de paginação rodar de verdade.
+    for (let i = 0; i < 1200; i++) drive.seedFile(`part-${i}.json.gz`, folderId, 'x')
+
+    const children = await listFolderChildren(folderId)
+
+    // O bug que isto pega: sem nextPageToken em `fields` (ou sem iterar), viria só a primeira
+    // página, e a ausência do resto seria lida como "arquivos faltando" → re-upload a cada sync.
+    expect(children).toHaveLength(1200)
+    expect(new Set(children.map((c) => c.id)).size).toBe(1200)
+    expect(drive.calls(/files\?q=/).length).toBeGreaterThan(1)
+  })
+
+  it('não devolve filhos de outra pasta', async () => {
+    const mine = drive.seedFolder('device-a')
+    const theirs = drive.seedFolder('device-b')
+    drive.seedFile('accounts.json.gz', mine, 'a')
+    drive.seedFile('accounts.json.gz', theirs, 'b')
+
+    const children = await listFolderChildren(mine)
+
+    expect(children.map((c) => c.name)).toEqual(['accounts.json.gz'])
+    expect(drive.textOf(children[0].id)).toBe('a')
+  })
+
+  it('ensureSubfolder cria uma vez e reusa depois', async () => {
+    const root = await getRootFolderId()
+
+    const first = await ensureSubfolder(root, 'device-a1b2c3')
+    const second = await ensureSubfolder(root, 'device-a1b2c3')
+
+    expect(second).toBe(first)
+    expect(drive.allNamed('device-a1b2c3')).toHaveLength(1)
+  })
+
+  it('ensureSubfolder concorrente nunca cria duas pastas', async () => {
+    const root = await getRootFolderId()
+
+    const ids = await Promise.all([
+      ensureSubfolder(root, 'device-a1b2c3'),
+      ensureSubfolder(root, 'device-a1b2c3'),
+      ensureSubfolder(root, 'device-a1b2c3'),
+    ])
+
+    expect(new Set(ids).size).toBe(1)
+    expect(drive.allNamed('device-a1b2c3')).toHaveLength(1)
+  })
+
+  it('uploadFileToFolder cria e depois atualiza no lugar', async () => {
+    const folderId = drive.seedFolder('device-a')
+
+    const fileId = await uploadFileToFolder({
+      parentId: folderId,
+      name: 'accounts.json.gz',
+      blob: new Blob(['v1']),
+    })
+    const again = await uploadFileToFolder({
+      parentId: folderId,
+      name: 'accounts.json.gz',
+      blob: new Blob(['v2']),
+      fileId,
+    })
+
+    expect(again).toBe(fileId)
+    expect(drive.textOf(fileId)).toBe('v2')
+    expect(drive.childrenOf(folderId)).toHaveLength(1)
+  })
+
+  // Auto-cura: um id guardado pode ter sido apagado no Drive entre dois syncs.
+  it('uploadFileToFolder recria quando o fileId guardado sumiu (404)', async () => {
+    const folderId = drive.seedFolder('device-a')
+
+    const newId = await uploadFileToFolder({
+      parentId: folderId,
+      name: 'accounts.json.gz',
+      blob: new Blob(['v1']),
+      fileId: 'id-que-nao-existe',
+    })
+
+    expect(newId).not.toBe('id-que-nao-existe')
+    expect(drive.textOf(newId)).toBe('v1')
+  })
+
+  it('downloadFileById devolve os bytes, e null quando o id sumiu', async () => {
+    const folderId = drive.seedFolder('device-a')
+    const fileId = drive.seedFile('accounts.json.gz', folderId, 'conteúdo')
+
+    const buffer = await downloadFileById(fileId)
+    expect(new TextDecoder().decode(new Uint8Array(buffer!))).toBe('conteúdo')
+
+    // null, não exceção: o manifesto do peer pode anunciar um id obsoleto, e o leitor recupera
+    // caindo para uma listagem da pasta em vez de abortar o sync inteiro.
+    expect(await downloadFileById('id-que-nao-existe')).toBeNull()
+  })
+
+  it('escapa aspas simples na query em vez de concatenar cru', async () => {
+    const root = await getRootFolderId()
+    await ensureSubfolder(root, "device-o'brien")
+
+    expect(drive.allNamed("device-o'brien")).toHaveLength(1)
   })
 })

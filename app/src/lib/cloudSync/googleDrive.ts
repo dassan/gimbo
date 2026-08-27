@@ -132,6 +132,141 @@ async function findFileId(folderId: string): Promise<string | null> {
   })
 }
 
+// ─── CS-42: primitivas de árvore, para o transporte particionado ──────────────
+//
+// O provider acima é amarrado a *um* arquivo (`Gimbo/gimbo.db`): não existe nenhuma primitiva de
+// enumeração de diretório nem de acesso por id. O transporte particionado precisa das duas — listar
+// o que cada dispositivo publicou e baixar partições direto pelo id que o manifesto anuncia.
+
+export interface DriveFile {
+  id: string
+  name: string
+  mimeType: string
+  modifiedTime: string
+}
+
+/**
+ * Escapa um literal para dentro de uma query `q` do Drive. Os ids que interpolamos hoje são UUIDs,
+ * então não há injeção possível — mas a query é montada por concatenação e essa propriedade não é
+ * garantida por nada, então escapar é mais barato que confiar.
+ */
+function quoteQ(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+}
+
+/**
+ * `files.list` com paginação de verdade.
+ *
+ * `pageSize` do Drive é 100 por padrão e — a pegadinha — **`nextPageToken` só vem se for pedido em
+ * `fields`**. Sem as duas coisas, uma pasta com mais de 100 arquivos é truncada em silêncio, e num
+ * transporte particionado truncar a listagem seria lido como "arquivo faltando", disparando
+ * re-upload da partição a cada sync.
+ */
+async function listFiles(query: string): Promise<DriveFile[]> {
+  const out: DriveFile[] = []
+  let pageToken: string | undefined
+
+  do {
+    const params = new URLSearchParams({
+      q: query,
+      fields: 'nextPageToken,files(id,name,mimeType,modifiedTime)',
+      pageSize: '1000',
+    })
+    if (pageToken) params.set('pageToken', pageToken)
+
+    const res = await authorizedFetch(`${FILES_ENDPOINT}?${params.toString()}`)
+    if (!res.ok) throw new Error('Failed to list files on Drive')
+    const json = (await res.json()) as { files: DriveFile[]; nextPageToken?: string }
+    out.push(...json.files)
+    pageToken = json.nextPageToken
+  } while (pageToken)
+
+  return out
+}
+
+/** Filhos diretos e não-descartados de uma pasta. */
+export function listFolderChildren(folderId: string): Promise<DriveFile[]> {
+  return listFiles(`'${quoteQ(folderId)}' in parents and trashed=false`)
+}
+
+/** Id da pasta `Gimbo/` (cria se não existir). */
+export function getRootFolderId(): Promise<string> {
+  return enqueue(() => findFolderId())
+}
+
+/**
+ * Find-or-create de subpasta. **Serializado pelo `enqueue()`** — é a única operação com corrida
+ * real (duas chamadas concorrentes veem "não existe" e cada uma cria a sua); tudo o mais opera
+ * sobre ids já conhecidos e é seguro em paralelo.
+ */
+export function ensureSubfolder(parentId: string, name: string): Promise<string> {
+  return enqueue(async () => {
+    const existing = await listFiles(
+      `name='${quoteQ(name)}' and '${quoteQ(parentId)}' in parents and mimeType='${FOLDER_MIME}' and trashed=false`
+    )
+    if (existing.length > 0) {
+      // Duplicata (corrida entre dispositivos, que a API não permite evitar) — escolhe
+      // deterministicamente a mais recente, em vez de alternar entre ids a cada sync.
+      return existing.sort((a, b) => b.modifiedTime.localeCompare(a.modifiedTime))[0].id
+    }
+
+    const created = await authorizedFetch(FILES_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
+    })
+    if (!created.ok) throw new Error(`Failed to create the ${name} folder on Drive`)
+    return ((await created.json()) as { id: string }).id
+  })
+}
+
+/** Bytes de um arquivo pelo id. Devolve null em 404 — id obsoleto de manifesto é recuperável. */
+export async function downloadFileById(fileId: string): Promise<ArrayBuffer | null> {
+  const res = await authorizedFetch(`${FILES_ENDPOINT}/${fileId}?alt=media`)
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error('Failed to download a file from Drive')
+  const buffer = await res.arrayBuffer()
+  trackSyncBytes('sync.drive.download.bytes', buffer.byteLength)
+  return buffer
+}
+
+/**
+ * Cria ou atualiza um arquivo, devolvendo o id.
+ *
+ * Sem `enqueue()` de propósito: o alvo é sempre um nome único dentro da pasta deste dispositivo
+ * (escritor único por arquivo, o invariante da Fase 1), então não há find-or-create nem corrida.
+ * É o que permite ao CS-43 paralelizar a publicação.
+ */
+export async function uploadFileToFolder(params: {
+  parentId: string
+  name: string
+  blob: Blob
+  fileId?: string
+}): Promise<string> {
+  trackSyncBytes('sync.drive.upload.bytes', params.blob.size)
+
+  if (params.fileId) {
+    const res = await authorizedFetch(
+      `${UPLOAD_ENDPOINT}/${params.fileId}?uploadType=media&fields=id`,
+      { method: 'PATCH', headers: { 'Content-Type': params.blob.type }, body: params.blob }
+    )
+    if (res.ok) return params.fileId
+    // 404: o arquivo foi apagado no Drive desde que guardamos o id — recria em vez de falhar.
+    if (res.status !== 404) throw new Error(`Failed to update ${params.name} on Drive`)
+  }
+
+  const metadata = { name: params.name, parents: [params.parentId] }
+  const form = new FormData()
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }))
+  form.append('file', params.blob)
+  const res = await authorizedFetch(`${UPLOAD_ENDPOINT}?uploadType=multipart&fields=id`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) throw new Error(`Failed to create ${params.name} on Drive`)
+  return ((await res.json()) as { id: string }).id
+}
+
 export function createGoogleDriveProvider(): CloudProvider & {
   fileExists(): Promise<boolean>
 } {
