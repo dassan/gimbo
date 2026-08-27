@@ -344,3 +344,64 @@ test('CS-50: o hash do manifesto bate também no caminho de leitura completa', a
   expect(verdicts.filter((v) => v.key.startsWith('transactions:')).length).toBe(6)
   for (const v of verdicts) expect(v.ok, `hash não bate em ${v.key}`).toBe(true)
 })
+
+// CS-51 — o filtro por ano tem que usar o índice, não varrer a tabela.
+//
+// `date LIKE '2026%'` parece um filtro de prefixo mas o plano real é `SCAN t`: a otimização de
+// prefixo do SQLite não vale aqui porque `LIKE` é case-insensitive por padrão e o índice usa
+// colação BINARY. Isso estava em dois caminhos quentes — o recálculo de hash por ano (a cada
+// mutação) e a leitura de partição —, cada um varrendo as 26 mil linhas por ano tocado.
+//
+// Este teste falha se alguém voltar a escrever o filtro com LIKE. É barato e a diferença é
+// invisível em qualquer asserção funcional: as duas formas devolvem exatamente as mesmas linhas.
+test('CS-51: o filtro por ano usa o índice em vez de varrer a tabela', async ({ page }) => {
+  const plans = await page.evaluate(async () => {
+    const q = (sql: string, params: unknown[] = []) => (window as Win).__storage.query(sql, params)
+    return {
+      hashRefresh: await q(
+        'EXPLAIN QUERY PLAN SELECT * FROM transactions WHERE date >= ? AND date < ?',
+        ['2026-01-01', '2027-01-01']
+      ),
+      partitionRead: await q(
+        'EXPLAIN QUERY PLAN SELECT t.* FROM transactions t WHERE (t.date >= ? AND t.date < ?) ORDER BY t.date DESC, t.created_at DESC',
+        ['2026-01-01', '2027-01-01']
+      ),
+      // A forma antiga, para o teste documentar o porquê em vez de só afirmar o resultado.
+      legacyLike: await q('EXPLAIN QUERY PLAN SELECT * FROM transactions WHERE date LIKE ?', [
+        '2026%',
+      ]),
+    }
+  })
+
+  const detail = (rows: { detail: string }[]) => rows.map((r) => r.detail).join(' | ')
+  expect(detail(plans.hashRefresh)).toContain('USING INDEX')
+  expect(detail(plans.partitionRead)).toContain('USING INDEX')
+  expect(detail(plans.legacyLike)).toContain('SCAN')
+})
+
+test('CS-51: o intervalo por ano devolve exatamente as mesmas linhas que o LIKE', async ({
+  page,
+}) => {
+  await seedSqlite(page, {
+    ...fixture,
+    transactions: [
+      { ...fixture.transactions[0], id: 'jan', date: '2026-01-01' },
+      { ...fixture.transactions[0], id: 'dez', date: '2026-12-31' },
+      { ...fixture.transactions[0], id: 'antes', date: '2025-12-31' },
+      { ...fixture.transactions[0], id: 'depois', date: '2027-01-01' },
+    ].map((t) => ({
+      ...t,
+      tags: [],
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    })),
+  })
+
+  const rows = await page.evaluate(async () =>
+    (window as Win).__storage.readPartitions(['transactions:2026'])
+  )
+
+  // As bordas do ano são o que um intervalo semiaberto pode errar: 01-01 entra, 12-31 entra,
+  // e nem 2025-12-31 nem 2027-01-01 vazam.
+  expect(rows['transactions:2026'].map((t: { id: string }) => t.id).sort()).toEqual(['dez', 'jan'])
+})

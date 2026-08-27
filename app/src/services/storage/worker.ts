@@ -623,12 +623,33 @@ async function refreshTransactionYearHashesFromMemory(
   }
 }
 
+/**
+ * CS-51: intervalo semiaberto de um ano, para filtrar `transactions` **pelo índice**.
+ *
+ * `date LIKE '2026%'` parece um filtro de prefixo, mas o `EXPLAIN QUERY PLAN` real (medido em
+ * 2026-08-27, Chrome, wa-sqlite/OPFS) mostra `SCAN t` — varredura completa da tabela. A otimização
+ * de prefixo do SQLite não se aplica aqui porque `LIKE` é case-insensitive por padrão e o índice
+ * usa colação BINARY; nem literal nem parâmetro vinculado ativam o índice. Já
+ * `date >= ? AND date < ?` dá `SEARCH t USING INDEX idx_transactions_date_created`.
+ *
+ * Importa porque as duas formas estavam em caminhos quentes: `refreshTransactionYearHashesFromDb`
+ * roda a cada mutação (uma varredura completa por ano tocado) e `readTransactionsForYears` roda a
+ * cada leitura de partição.
+ */
+function yearRange(year: string): [string, string] {
+  return [`${year}-01-01`, `${Number(year) + 1}-01-01`]
+}
+
 // Usado por applyTransactionDelta(): só os anos de fato afetados por esta mutação (fetchOldYears
 // + anos novos dos upserts) — relê cada um do `db` (já com o delta aplicado) em vez de manter um
 // array completo em memória, porque o delta não carrega o estado das linhas não tocadas.
 async function refreshTransactionYearHashesFromDb(years: Iterable<string>): Promise<void> {
   for (const year of years) {
-    const txRows = await queryRows(db, 'SELECT * FROM transactions WHERE date LIKE ?', [`${year}%`])
+    const txRows = await queryRows(
+      db,
+      'SELECT * FROM transactions WHERE date >= ? AND date < ?',
+      yearRange(year)
+    )
     const ids = txRows.map((r) => r.id as string)
     const idBatchSize = Math.max(1, maxBoundParams)
     const tagsByTx = new Map<string, string[]>()
@@ -1285,11 +1306,11 @@ async function readTransactionsForYears(
   } else if (years.length === 0) {
     return []
   } else {
-    const conds = years.map(() => 'date LIKE ?').join(' OR ')
+    const conds = years.map(() => '(t.date >= ? AND t.date < ?)').join(' OR ')
     txRows = await queryRows(
       dbPtr,
       `SELECT t.* FROM transactions t WHERE ${conds} ORDER BY t.date DESC, t.created_at DESC`,
-      years.map((y) => `${y}%`)
+      years.flatMap(yearRange)
     )
   }
   if (txRows.length === 0) return []
