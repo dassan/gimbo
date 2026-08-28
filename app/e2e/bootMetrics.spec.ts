@@ -54,7 +54,7 @@ test('o boot publica a linha do tempo completa, da partida do script até a tela
   await page.waitForFunction(
     () => window.__telemetry.getSnapshot().some((e) => e.metric === 'boot.appVisible'),
     null,
-    { timeout: 30000 }
+    { timeout: 15000 }
   )
 
   const m = await bootMetrics(page)
@@ -135,7 +135,7 @@ test('métricas de boot são registradas sem depender do toggle do PerfMonitor',
   await page.waitForFunction(
     () => window.__telemetry.getSnapshot().some((e) => e.metric === 'boot.appVisible'),
     null,
-    { timeout: 30000 }
+    { timeout: 15000 }
   )
 
   const m = await bootMetrics(page)
