@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   _resetBootTrackingForTests,
   markAppVisible,
+  markShellVisible,
   measureBoot,
   measureBootSync,
   startBootTracking,
@@ -103,6 +104,30 @@ describe('markAppVisible', () => {
     markAppVisible()
     flushFrames(2)
     expect(metricNames()).toContain('boot.blankWindow')
+  })
+
+  it('o esqueleto fecha a janela em branco, e a interface não a reabre', () => {
+    // M-90: a janela em branco termina na primeira coisa que aparece — o esqueleto —, não na
+    // última. Se as duas registrassem, o valor da interface (maior) sobrescreveria a leitura.
+    startBootTracking()
+    markShellVisible()
+    flushFrames(2)
+    expect(metricNames()).toContain('boot.shellVisible')
+    const janelas = () => metricNames().filter((m) => m === 'boot.blankWindow')
+    expect(janelas()).toHaveLength(1)
+
+    markAppVisible()
+    flushFrames(2)
+    expect(metricNames()).toContain('boot.appVisible')
+    expect(janelas()).toHaveLength(1)
+  })
+
+  it('markShellVisible é idempotente', () => {
+    startBootTracking()
+    markShellVisible()
+    markShellVisible()
+    flushFrames(2)
+    expect(metricNames().filter((m) => m === 'boot.shellVisible')).toHaveLength(1)
   })
 
   it('a janela em branco não é registrada se o boot nunca foi iniciado', () => {

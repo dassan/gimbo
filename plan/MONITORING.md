@@ -251,8 +251,9 @@ Duas convenções de leitura:
 | `boot.derive` | `App.tsx` | `refreshRecurrenceHorizons()` + `ensureQuadrantesBatch()` — manutenção que roda em todo boot e pode clonar o `DataFile` inteiro |
 | `boot.dataReady` | `App.tsx` | Instante em que os dados ficaram prontos e o React foi liberado para renderizar |
 | `boot.firstRender` | `App.tsx` | Instante em que o primeiro render real foi cometido. Menos `boot.dataReady` = custo de desenhar a tela inicial |
-| `boot.appVisible` | `bootMetrics.ts` | Instante do frame pintado com a interface (par de `requestAnimationFrame` após o commit) |
-| `boot.blankWindow` | `bootMetrics.ts` | **A duração da tela vazia** — o sintoma relatado. Contada do `first-paint` onde ele existe (Chromium) e do `boot.scriptStart` onde não (Firefox); nunca do FCP, que neste app chega junto com a interface e reportaria dezenas de ms para um boot de segundos |
+| `boot.shellVisible` | `BootSkeleton.tsx` | **Instante em que a primeira coisa aparece na tela** — a silhueta do app (`M-90`). É a métrica de *tempo percebido*: não melhora nem piora com o tamanho do cofre |
+| `boot.appVisible` | `bootMetrics.ts` | Instante do frame pintado com a interface real (par de `requestAnimationFrame` após o commit). Menos `boot.shellVisible` = quanto tempo o esqueleto ficou em cena |
+| `boot.blankWindow` | `bootMetrics.ts` | **A duração da tela vazia** — o sintoma relatado. Termina na primeira coisa que aparece (o esqueleto, desde o `M-90`), não na última. Contada do `first-paint` onde ele existe (Chromium) e do `boot.scriptStart` onde não (Firefox); nunca do FCP, que neste app chega junto com a interface e reportaria dezenas de ms para um boot de segundos |
 
 Consumo: o mesmo de sync — Bug Report System (F-26), categoria "performance", sem UI nova. Em dev,
 o `PerfPanel` (`Alt+Shift+P`) já lista tudo isto sem precisar de mudança nenhuma.
@@ -287,8 +288,35 @@ Três conclusões, nenhuma delas inferida:
    (inflacionamento dev do React, `M-75` de novo) e as durações duplicadas pelo `<StrictMode>`:
    medir boot em dev leva à conclusão errada sobre onde está o custo.
 
+### Tempo percebido × tempo total (M-90)
+
+O `M-87` mediu o problema; o `M-90` atacou a metade dele que dá para atacar sem tocar em premissa
+nenhuma da store — **a mesma manobra do `CS-52`**, que tirou a publicação do caminho percebido sem
+torná-la mais rápida. Aqui: a interface não depende do cofre, só os números dependem, então a
+silhueta do app pode pintar imediatamente enquanto o SQLite é lido.
+
+Mesmo cofre, mesmo build de produção, medido antes e depois:
+
+| | antes (M-87) | depois (M-90) |
+|---|---|---|
+| `boot.blankWindow` (tela vazia) | 2.802 | **88,8** |
+| `boot.shellVisible` | — | 108,8 |
+| `boot.appVisible` (números reais) | 2.954 | 3.033,9 |
+
+**O total não melhorou — e não era para melhorar.** O que mudou é que a espera deixou de ser
+indistinguível de um travamento: 89ms de nada, depois ~2,9s de app visivelmente carregando. Quem
+for medir a próxima otimização deve olhar as duas métricas juntas; `boot.appVisible` sozinho diria
+que nada aconteceu, e `boot.shellVisible` sozinho diria que o boot ficou 30x mais rápido. Nenhum
+dos dois é verdade isoladamente.
+
 ## Changelog
 
+- **M-90 (2026-08-28)** — esqueleto de boot e a métrica de tempo percebido (seção acima). O achado
+  que vale carregar: **uma métrica de tempo total não consegue enxergar um ganho de percepção.** Se
+  o `boot.shellVisible` não existisse, esta mudança apareceria na telemetria como "nada mudou, e o
+  `appVisible` até subiu 80ms" — que é literalmente verdade e completamente irrelevante para quem
+  usa o app. Todo trabalho de percepção precisa nascer com a métrica que o torna verificável, senão
+  vira discussão de opinião.
 - **M-87 (2026-08-28)** — instrumentação de boot (seção acima). Dois achados de método, ambos
   sobre a métrica mentir em vez de faltar — na mesma linha do `CS-51`:
   1. A primeira versão media só o `first-contentful-paint`, e ele chega **junto** com a interface:

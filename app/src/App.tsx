@@ -12,6 +12,7 @@ import { markAppVisible, markBootInstant, measureBoot, measureBootSync } from '@
 import AppLayout from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import UpdateToast from '@/components/UpdateToast'
+import BootSkeleton from '@/components/BootSkeleton'
 import Landing from '@/pages/Landing'
 import Onboarding from '@/pages/Onboarding'
 import Dashboard from '@/pages/Dashboard'
@@ -143,7 +144,15 @@ export default function App() {
     void init()
   }, [initWorkspace, loadData, refreshRecurrenceHorizons, ensureQuadrantesBatch])
 
-  if (!hydrated) return <UpdateToast />
+  // M-90: enquanto o cofre é lido, a tela mostra a silhueta do app em vez de nada. Não acelera o
+  // boot — encurta o tempo até a primeira coisa aparecer, de ~2,8s para ~150ms num cofre real.
+  if (!hydrated)
+    return (
+      <>
+        <UpdateToast />
+        <BootSkeleton />
+      </>
+    )
 
   if (initError) {
     return (

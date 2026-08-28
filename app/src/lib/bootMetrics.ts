@@ -21,7 +21,9 @@
 import { trackPerformance } from '@/lib/telemetry'
 
 let _started = false
+let _shellVisibleTracked = false
 let _appVisibleTracked = false
+let _blankWindowTracked = false
 /** Instante do primeiro paint — o fundo da tela aparecendo, início da janela em branco. */
 let _firstPaint: number | null = null
 /** Instante em que o script do app começou a rodar — substituto do acima onde ele não existe. */
@@ -126,15 +128,59 @@ export function startBootTracking(): void {
 }
 
 /**
+ * Agenda `fn` para depois do paint do frame que acabou de ser cometido.
+ *
+ * Dois `requestAnimationFrame` encadeados: o primeiro roda antes desse paint, o segundo já depois
+ * dele. É a heurística usual de "depois de pintar" disponível sem APIs experimentais — precisa o
+ * suficiente para janelas medidas em centenas de ms.
+ */
+function afterPaint(fn: () => void): void {
+  requestAnimationFrame(() => requestAnimationFrame(fn))
+}
+
+/**
+ * Fecha a janela em branco: a duração entre o navegador pintar o fundo e o usuário ver a primeira
+ * coisa na tela. Contada do `first-paint` quando o navegador o publica (Chromium) e do
+ * `boot.scriptStart` quando não (Firefox) — nunca do FCP, que neste app chega junto com a
+ * interface e reportaria dezenas de ms para um boot de segundos (M-87).
+ *
+ * Registrada uma vez só, por quem chegar primeiro: com esqueleto (M-90) quem fecha a janela é ele;
+ * sem esqueleto — demo, falha de boot, ou um cofre pequeno o bastante para hidratar antes do
+ * primeiro frame — quem fecha é a própria interface.
+ */
+function trackBlankWindow(at: number): void {
+  if (_blankWindowTracked) return
+  const inicioDaJanela = _firstPaint ?? _scriptStart
+  if (inicioDaJanela === null) return
+  _blankWindowTracked = true
+  trackBoot('boot.blankWindow', at - inicioDaJanela)
+}
+
+/**
+ * M-90 — chamada pelo esqueleto de boot (`components/BootSkeleton.tsx`) quando ele pinta.
+ *
+ * `boot.shellVisible` é a métrica de **tempo percebido**, irmã do que o `CS-52` fez no sync ao
+ * separar o custo total do custo esperado: `boot.appVisible` continua medindo quando os números
+ * reais chegam (e não melhora com o esqueleto), enquanto esta mede quando o usuário para de olhar
+ * para o nada. A distância entre as duas é quanto tempo o esqueleto ficou em cena.
+ */
+export function markShellVisible(): void {
+  if (_shellVisibleTracked) return
+  _shellVisibleTracked = true
+
+  afterPaint(() => {
+    markBootInstant('boot.shellVisible')
+    trackBlankWindow(performance.now())
+  })
+}
+
+/**
  * Chamada quando o React comete o primeiro render com a interface real. Registra
  * `boot.appVisible` (instante desde a navegação, já depois do paint) e `boot.blankWindow` — a
  * duração da tela vazia, que é o sintoma relatado: o usuário vendo só o fundo, sem interface.
  *
- * A janela é contada do `first-paint` quando o navegador o publica (Chromium) e do
- * `boot.scriptStart` quando não (Firefox). O substituto é honesto: nas coletas reais os dois
- * ficaram a algumas dezenas de ms um do outro (152 vs. 120,5 no Chrome 151), porque o CSS que
- * pinta o fundo é carregado no mesmo `<head>` que serve o módulo do app. Subestima a janela em
- * alguns ms, e nunca pela ordem de grandeza que o FCP subestimaria.
+ * `boot.blankWindow` só é registrada aqui se o esqueleto de boot não a tiver fechado antes (ver
+ * `markShellVisible`) — a janela em branco termina na primeira coisa que aparece, não na última.
  *
  * Dois `requestAnimationFrame` encadeados: o primeiro roda antes do paint do frame que acabou de
  * ser agendado, o segundo já depois dele. É a heurística usual de "depois de pintar" disponível
@@ -144,20 +190,19 @@ export function markAppVisible(): void {
   if (_appVisibleTracked) return
   _appVisibleTracked = true
 
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      const at = performance.now()
-      trackBoot('boot.appVisible', at)
-      const inicioDaJanela = _firstPaint ?? _scriptStart
-      if (inicioDaJanela !== null) trackBoot('boot.blankWindow', at - inicioDaJanela)
-    })
+  afterPaint(() => {
+    const at = performance.now()
+    trackBoot('boot.appVisible', at)
+    trackBlankWindow(at)
   })
 }
 
 /** Só para testes — zera o estado de "já registrado" deste módulo. */
 export function _resetBootTrackingForTests(): void {
   _started = false
+  _shellVisibleTracked = false
   _appVisibleTracked = false
+  _blankWindowTracked = false
   _firstPaint = null
   _scriptStart = null
   _instants.clear()

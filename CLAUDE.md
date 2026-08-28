@@ -218,7 +218,7 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 ## Estado Atual (2026-08-22)
 
 **Schema em memória v19** | **Schema físico SQLite v16** (`migrations/v1..v16.sql`) | Cobertura: ~96% statements
-**1112 testes unitários** (41 arquivos) + **140 testes E2E** (perfis `chromium` e `mobile-chrome`)
+**1117 testes unitários** (42 arquivos) + **140 testes E2E** (perfis `chromium` e `mobile-chrome`)
 
 > Os dois números de schema são independentes e **não coincidem**: `CURRENT_SCHEMA_VERSION` (v17,
 > em `lib/storage/schema.ts`) versiona o `DataFile` em memória; `PRAGMA user_version` (v13)
@@ -270,12 +270,18 @@ Features concluídas desde 2026-05-27:
 
   Em aberto: `CS-49` (e2e entre dois contextos de browser reais trocando uma árvore de partições — hoje há cobertura dos dois lados separadamente, não juntos). Ver `plan/BACKLOG.md` CS-37 a CS-51, `plan/MONITORING.md` §"Transporte particionado" e o changelog de lá.
 
-- **M-89** (2026-08-28) — achado incidental ao ler as coletas reais do `M-87`:
-  `buildBugReportSnapshot()` lia `import.meta.env.VITE_APP_VERSION`, variável nunca definida em
-  lugar nenhum — todo bug report saía com `"appVersion": "unknown"`, inclusive a telemetria de sync
-  das sessões `CS-20` a `CS-55`, num épico cujo método era comparar coletas antes e depois de cada
-  correção. Passou a usar `__APP_VERSION__` (mesma fonte do rodapé de Configurações), com teste de
-  regressão.
+- **M-90 / M-89** (2026-08-28) — continuação direta do `M-87`. **M-90:** `App.tsx` deixou de
+  renderizar nada enquanto hidrata — novo `components/BootSkeleton.tsx` (silhueta do app, medidas
+  espelhando `Navbar`/`AppLayout` para não haver salto de layout) pinta imediatamente, porque a
+  interface não depende do cofre, só os números dependem. Mesma manobra do `CS-52` no sync: tirar
+  do caminho percebido o que não precisa estar nele. Métrica nova `boot.shellVisible`, e
+  `boot.blankWindow` passou a fechar na primeira coisa que aparece. **Medido no mesmo cofre real:
+  janela em branco 2.802ms → 88,8ms, com `boot.appVisible` inalterado em ~3s.** Lição para
+  trabalhos futuros de percepção: **uma métrica de tempo total não enxerga um ganho de percepção** —
+  sem o `shellVisible`, esta mudança apareceria como "nada mudou". **M-89:** `buildBugReportSnapshot()`
+  lia `import.meta.env.VITE_APP_VERSION`, variável nunca definida em lugar nenhum — todo bug report
+  saía com `"appVersion": "unknown"`, inclusive a telemetria de sync das sessões `CS-20` a `CS-55`.
+  Passou a usar `__APP_VERSION__` (mesma fonte do rodapé de Configurações), com teste de regressão.
 
 - **M-87** (2026-08-28) — usuário relatou que, ao recarregar a página, o app fica alguns segundos
   mostrando só o fundo da tela antes de a interface aparecer. O projeto não tinha **nenhuma**

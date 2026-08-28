@@ -58,6 +58,8 @@ test('o boot publica a linha do tempo completa, da partida do script até a tela
   // Fases da thread principal.
   for (const metric of [
     'boot.scriptStart',
+    'boot.shellVisible',
+    'boot.blankWindow',
     'boot.storageReady',
     'boot.loadDataFile',
     'boot.hydrateStore',
@@ -83,6 +85,8 @@ test('o boot publica a linha do tempo completa, da partida do script até a tela
 
   // Ordem dos marcos: script → dados prontos → primeiro render → tela pintada. Uma inversão aqui
   // significa que alguma marca foi parar no lugar errado do ciclo de vida.
+  expect(m.get('boot.scriptStart')!).toBeLessThanOrEqual(m.get('boot.shellVisible')!)
+  expect(m.get('boot.shellVisible')!).toBeLessThanOrEqual(m.get('boot.appVisible')!)
   expect(m.get('boot.scriptStart')!).toBeLessThanOrEqual(m.get('boot.dataReady')!)
   expect(m.get('boot.dataReady')!).toBeLessThanOrEqual(m.get('boot.firstRender')!)
   expect(m.get('boot.firstRender')!).toBeLessThanOrEqual(m.get('boot.appVisible')!)
@@ -92,6 +96,11 @@ test('o boot publica a linha do tempo completa, da partida do script até a tela
   // trabalho que continua acontecendo depois dele.
   const fases = m.get('boot.storageReady')! + m.get('boot.loadDataFile')! + m.get('boot.derive')!
   expect(fases).toBeLessThanOrEqual(m.get('boot.dataReady')!)
+
+  // M-90: a janela em branco tem que fechar no esqueleto, não na interface — é a diferença entre
+  // tempo percebido e tempo total. Se ela crescer até `boot.appVisible`, o esqueleto parou de
+  // pintar antes da hidratação e o ganho de percepção evaporou.
+  expect(m.get('boot.blankWindow')!).toBeLessThan(m.get('boot.appVisible')!)
 
   // O detalhamento do worker cabe dentro do total dele, que cabe dentro do `storageReady` visto
   // da thread principal (a diferença é a partida do próprio worker: fetch e parse do módulo).
