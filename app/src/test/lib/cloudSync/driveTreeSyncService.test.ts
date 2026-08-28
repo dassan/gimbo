@@ -36,8 +36,20 @@ vi.mock('@/lib/cloudSync/googleAuth', () => ({
 vi.mock('@/lib/cloudSync/deviceId', () => ({ getDeviceId: getDeviceIdMock }))
 vi.mock('@/services/storage', () => ({ storage: storageMock }))
 
-const { pullAndMerge, pushIfNeeded, clearDriveTreeSyncState } =
+const { pullAndMerge, pushIfNeeded, clearDriveTreeSyncState, whenPublishSettled } =
   await import('@/lib/cloudSync/driveTreeSyncService')
+
+/**
+ * CS-52: a publicação virou background, então o pull retorna antes dela terminar. Todo teste que
+ * afirma o estado publicado (arquivos no Drive, contagem de uploads, cache de ids) precisa esperá-la
+ * assentar; os que afirmam só o resultado do pull passariam de qualquer forma, mas usar o mesmo
+ * helper em todos evita que a distinção vire pegadinha para quem editar o arquivo depois.
+ */
+async function syncAndPublish(local: Parameters<typeof pullAndMerge>[0]) {
+  const result = await pullAndMerge(local)
+  await whenPublishSettled()
+  return result
+}
 const { clearGoogleDriveCache } = await import('@/lib/cloudSync/googleDrive')
 const partitions = await import('@/lib/cloudSync/partitions')
 const { HASH_VERSION, combineHashes, hashRow, transactionRowKey, accountRowKey } =
@@ -179,7 +191,7 @@ describe('pullAndMerge — publicação', () => {
   it('publica a árvore completa no primeiro sync e o manifesto por último', async () => {
     setLocalVault({ txByYear: { '2026': [makeTx()] } })
 
-    await pullAndMerge(makeDataFile())
+    await syncAndPublish(makeDataFile())
 
     const root = drive.byName('Gimbo')!
     const folder = drive.byName(`device-${OWN_DEVICE}`, root.id)
@@ -209,11 +221,11 @@ describe('pullAndMerge — publicação', () => {
 
   it('em regime permanente não publica nada e gasta uma única chamada', async () => {
     setLocalVault({ txByYear: { '2026': [makeTx()] } })
-    await pullAndMerge(makeDataFile()) // primeiro sync: publica
+    await syncAndPublish(makeDataFile()) // primeiro sync: publica
 
     drive.callLog.length = 0
     trackPerformanceMock.mockReset()
-    await pullAndMerge(makeDataFile())
+    await syncAndPublish(makeDataFile())
 
     // É a pergunta do "orçamento de chamadas à API" virada em teste: se um dia isto regredir,
     // falha aqui em vez de aparecer numa coleta de telemetria semanas depois.
@@ -224,11 +236,11 @@ describe('pullAndMerge — publicação', () => {
 
   it('republica só a partição que mudou', async () => {
     setLocalVault({ txByYear: { '2026': [makeTx()] } })
-    await pullAndMerge(makeDataFile())
+    await syncAndPublish(makeDataFile())
 
     drive.callLog.length = 0
     setLocalVault({ txByYear: { '2026': [makeTx({ amount: 999 })] } })
-    await pullAndMerge(makeDataFile())
+    await syncAndPublish(makeDataFile())
 
     const uploads = drive.calls().filter((c) => c.url.includes('/upload/'))
     // partição de 2026 + manifesto; accounts não mudou e não sobe.
@@ -248,7 +260,7 @@ describe('pullAndMerge — leitura de peer', () => {
       txByYear: { '2026': local2026, '2025': [makeTx({ id: 'tx-2025', date: '2025-05-01' })] },
     })
 
-    const result = await pullAndMerge(makeDataFile({ transactions: local2026 }))
+    const result = await syncAndPublish(makeDataFile({ transactions: local2026 }))
 
     expect(result.status).toBe('merged')
     expect(metricValue('sync.drive.partitionsSkipped')).toBe(2) // accounts e 2026
@@ -267,7 +279,7 @@ describe('pullAndMerge — leitura de peer', () => {
     const skipped = drive.byName('transactions-2026.json.gz')!
 
     drive.callLog.length = 0
-    await pullAndMerge(makeDataFile({ transactions: local2026 }))
+    await syncAndPublish(makeDataFile({ transactions: local2026 }))
 
     expect(drive.calls().some((c) => c.url.includes(skipped.id))).toBe(false)
   })
@@ -279,11 +291,11 @@ describe('pullAndMerge — leitura de peer', () => {
       rootId: root,
       txByYear: { '2025': [makeTx({ id: 'tx-2025', date: '2025-05-01' })] },
     })
-    await pullAndMerge(makeDataFile())
+    await syncAndPublish(makeDataFile())
 
     drive.callLog.length = 0
     trackPerformanceMock.mockReset()
-    await pullAndMerge(makeDataFile())
+    await syncAndPublish(makeDataFile())
 
     expect(metricValue('sync.drive.peersSkippedByWatermark')).toBe(1)
     expect(drive.calls().some((c) => c.url.includes(manifestId))).toBe(false)
@@ -298,7 +310,7 @@ describe('pullAndMerge — leitura de peer', () => {
       manifestOverrides: { hashVersion: HASH_VERSION + 99 },
     })
 
-    await pullAndMerge(makeDataFile())
+    await syncAndPublish(makeDataFile())
 
     expect(metricValue('sync.drive.hashVersionMismatch')).toBe(1)
     expect(metricValue('sync.drive.partitionsSkipped')).toBe(0)
@@ -313,7 +325,7 @@ describe('pullAndMerge — leitura de peer', () => {
     const { bytes } = await partitions.encodePartition([makeTx({ id: 'tx-peer', amount: 7 })])
     drive.files.get(file.id)!.bytes = bytes
 
-    const result = await pullAndMerge(makeDataFile())
+    const result = await syncAndPublish(makeDataFile())
 
     expect(metricValue('sync.drive.partitionHashMismatch')).toBe(1)
     // O dado real nunca é descartado por um checksum de camada de otimização.
@@ -330,7 +342,7 @@ describe('pullAndMerge — leitura de peer', () => {
       manifestOverrides: { formatVersion: partitions.PARTITION_FORMAT_VERSION + 1 },
     })
 
-    const result = await pullAndMerge(makeDataFile())
+    const result = await syncAndPublish(makeDataFile())
 
     expect(result.status).toBe('skipped')
     expect((result as { reason: string }).reason).toBe('newer-schema')
@@ -343,12 +355,12 @@ describe('pullAndMerge — leitura de peer', () => {
     const partitionFile = drive.byName('transactions-2026.json.gz')!
     drive.failNext(new RegExp(partitionFile.id), 500, 99)
 
-    const first = await pullAndMerge(makeDataFile())
+    const first = await syncAndPublish(makeDataFile())
     expect(first.status).toBe('synced') // nada mesclado
 
     // Segunda tentativa, agora sem falha injetada: o peer tem que ser reprocessado.
     drive['_failRules'] = []
-    const second = await pullAndMerge(makeDataFile())
+    const second = await syncAndPublish(makeDataFile())
 
     expect(second.status).toBe('merged')
     expect((second as { data: DataFile }).data.transactions.map((t) => t.id)).toContain('tx-peer')
@@ -387,11 +399,11 @@ describe('clearDriveTreeSyncState', () => {
     setLocalVault({ txByYear: {} })
     const root = drive.seedFolder('Gimbo')
     await seedPeerTree({ rootId: root, txByYear: { '2026': [makeTx({ id: 'tx-peer' })] } })
-    await pullAndMerge(makeDataFile())
+    await syncAndPublish(makeDataFile())
 
     clearDriveTreeSyncState()
     trackPerformanceMock.mockReset()
-    const again = await pullAndMerge(makeDataFile())
+    const again = await syncAndPublish(makeDataFile())
 
     // Sem isto, importar um backup antigo faria o app pular para sempre o peer que tem justamente
     // o dado recém-descartado.
@@ -412,7 +424,7 @@ describe('CS-50 (A) — leitura de partições batelada', () => {
       },
     })
 
-    await pullAndMerge(makeDataFile())
+    await syncAndPublish(makeDataFile())
 
     // 4 partições publicadas (accounts + 3 anos), mas uma só ida ao worker. Antes era uma por
     // partição, todas serializadas pela fila — o gargalo do primeiro sync.
@@ -440,7 +452,7 @@ describe('CS-50 (B) — baseline escopado aos anos afetados', () => {
 
     storageMock.loadDataFile.mockClear()
     storageMock.readPartitions.mockClear()
-    const result = await pullAndMerge(makeDataFile({ transactions: local2026 }))
+    const result = await syncAndPublish(makeDataFile({ transactions: local2026 }))
 
     expect(result.status).toBe('merged')
     // O cofre inteiro não é mais relido só para diferir (CS-31).
@@ -468,7 +480,7 @@ describe('CS-50 (B) — baseline escopado aos anos afetados', () => {
     await seedPeerTree({ rootId: root, txByYear: { '2025': [movida] } })
 
     storageMock.applyMutation.mockClear()
-    const result = await pullAndMerge(makeDataFile({ transactions: local2026 }))
+    const result = await syncAndPublish(makeDataFile({ transactions: local2026 }))
 
     const merged = (result as { data: DataFile }).data
     expect(merged.transactions.filter((t) => t.id === 'tx-movida')).toHaveLength(1)
@@ -504,7 +516,7 @@ describe('CS-50 (B) — baseline escopado aos anos afetados', () => {
 
     storageMock.loadDataFile.mockClear()
     storageMock.applyMutation.mockClear()
-    await pullAndMerge(makeDataFile({ transactions: [antiga, ...local2026] }))
+    await syncAndPublish(makeDataFile({ transactions: [antiga, ...local2026] }))
 
     expect(storageMock.loadDataFile).toHaveBeenCalled()
     expect(metricValue('sync.drive.baselineScopedYears')).toBeUndefined()
@@ -522,11 +534,11 @@ describe('CS-50 (B) — baseline escopado aos anos afetados', () => {
 describe('CS-50 (C) — publicação sem listar a própria pasta', () => {
   it('reusa os fileIds em cache em vez de relistar a cada publicação', async () => {
     setLocalVault({ txByYear: { '2026': [makeTx()] } })
-    await pullAndMerge(makeDataFile()) // primeira publicação: lista (cache vazio)
+    await syncAndPublish(makeDataFile()) // primeira publicação: lista (cache vazio)
 
     drive.callLog.length = 0
     setLocalVault({ txByYear: { '2026': [makeTx({ amount: 999 })] } })
-    await pullAndMerge(makeDataFile())
+    await syncAndPublish(makeDataFile())
 
     // Uma listagem sobra: a da raiz, que o pull precisa para achar os manifestos dos peers.
     expect(drive.calls(/files\?q=/)).toHaveLength(1)
@@ -534,20 +546,109 @@ describe('CS-50 (C) — publicação sem listar a própria pasta', () => {
 
   it('descarta o cache de ids quando um upload teve de recriar o arquivo', async () => {
     setLocalVault({ txByYear: { '2026': [makeTx()] } })
-    await pullAndMerge(makeDataFile())
+    await syncAndPublish(makeDataFile())
 
     // Alguém apagou a partição no Drive por fora; o id em cache ficou órfão.
     const stale = drive.byName('transactions-2026.json.gz')!
     drive.files.delete(stale.id)
 
     setLocalVault({ txByYear: { '2026': [makeTx({ amount: 999 })] } })
-    await pullAndMerge(makeDataFile())
+    await syncAndPublish(makeDataFile())
 
     expect(metricValue('sync.drive.publish.staleFileIds')).toBe(1)
     // Cache invalidado: o sync seguinte volta a listar a pasta para reconstruir a verdade.
     drive.callLog.length = 0
     setLocalVault({ txByYear: { '2026': [makeTx({ amount: 777 })] } })
-    await pullAndMerge(makeDataFile())
+    await syncAndPublish(makeDataFile())
     expect(drive.calls(/files\?q=/).length).toBeGreaterThan(1)
+  })
+})
+
+// ─── CS-52: publicação desacoplada do pull ───────────────────────────────────
+
+describe('CS-52 — a publicação não bloqueia o pull', () => {
+  it('retorna com o dado do peer antes de qualquer upload acontecer', async () => {
+    setLocalVault({ txByYear: { '2026': [makeTx()] } })
+    const root = drive.seedFolder('Gimbo')
+    await seedPeerTree({
+      rootId: root,
+      txByYear: { '2025': [makeTx({ id: 'tx-peer', date: '2025-05-01' })] },
+    })
+
+    const result = await pullAndMerge(makeDataFile())
+
+    // No instante em que o chamador recebe o resultado, o dado do peer já está mesclado e gravado —
+    // é o que a UI precisa — e nenhum byte foi publicado ainda. Era esse o tempo que o usuário
+    // esperava à toa ao voltar à sessão.
+    expect(result.status).toBe('merged')
+    expect((result as { data: DataFile }).data.transactions.map((t) => t.id)).toContain('tx-peer')
+    expect(storageMock.applyMutation).toHaveBeenCalled()
+    expect(drive.calls().filter((c) => c.url.includes('/upload/'))).toHaveLength(0)
+
+    await whenPublishSettled()
+    expect(drive.calls().filter((c) => c.url.includes('/upload/')).length).toBeGreaterThan(0)
+  })
+
+  it('conta as chamadas do pull e da publicação em orçamentos separados', async () => {
+    setLocalVault({ txByYear: { '2026': [makeTx()] } })
+    const root = drive.seedFolder('Gimbo')
+    await seedPeerTree({
+      rootId: root,
+      txByYear: { '2025': [makeTx({ id: 'tx-peer', date: '2025-05-01' })] },
+    })
+
+    await pullAndMerge(makeDataFile())
+    const pullCalls = metricValue('sync.drive.apiCalls')
+    await whenPublishSettled()
+
+    // Misturar as duas contagens tornaria `sync.drive.apiCalls` inútil como orçamento do que o
+    // usuário espera. O `finally` do pull reporta antes de soltar a publicação, então a separação
+    // é determinística, não uma corrida.
+    expect(pullCalls).toBeGreaterThan(0)
+    expect(metricValue('sync.drive.publish.apiCalls')).toBeGreaterThan(0)
+    expect(metricValue('sync.drive.apiCalls')).toBe(pullCalls)
+  })
+
+  it('serializa: o pull seguinte espera a publicação anterior assentar', async () => {
+    setLocalVault({ txByYear: { '2026': [makeTx()] } })
+    const root = drive.seedFolder('Gimbo')
+    await seedPeerTree({
+      rootId: root,
+      txByYear: { '2025': [makeTx({ id: 'tx-peer', date: '2025-05-01' })] },
+    })
+
+    // Sem esperar a primeira publicação, dispara o segundo sync. Duas publicações concorrentes
+    // corromperiam o cache de "último publicado", que é lido e reescrito por inteiro.
+    await pullAndMerge(makeDataFile())
+    await pullAndMerge(makeDataFile())
+    await whenPublishSettled()
+
+    const gimbo = drive.byName('Gimbo')!
+    expect(drive.allNamed(`manifest-${OWN_DEVICE}.json`)).toHaveLength(1)
+    expect(drive.allNamed(`device-${OWN_DEVICE}`)).toHaveLength(1)
+    const own = drive.byName(`device-${OWN_DEVICE}`, gimbo.id)!
+    expect(drive.childrenOf(own.id).length).toBeGreaterThan(0)
+  })
+
+  it('uma falha na publicação não derruba o sync nem impede a próxima tentativa', async () => {
+    setLocalVault({ txByYear: { '2026': [makeTx()] } })
+    const root = drive.seedFolder('Gimbo')
+    await seedPeerTree({
+      rootId: root,
+      txByYear: { '2025': [makeTx({ id: 'tx-peer', date: '2025-05-01' })] },
+    })
+    drive.failNext(/\/upload\//, 500, 99)
+
+    const result = await pullAndMerge(makeDataFile())
+    await whenPublishSettled()
+
+    // O pull entregou o dado; a publicação falhou em silêncio.
+    expect(result.status).toBe('merged')
+    expect(drive.byName(`manifest-${OWN_DEVICE}.json`)).toBeUndefined()
+
+    // E o cache de "último publicado" não foi gravado, então o sync seguinte republica.
+    drive['_failRules'] = []
+    await syncAndPublish(makeDataFile())
+    expect(drive.byName(`manifest-${OWN_DEVICE}.json`, root)).toBeDefined()
   })
 })

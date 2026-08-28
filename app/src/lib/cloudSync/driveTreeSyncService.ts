@@ -154,19 +154,82 @@ async function yieldToUi(): Promise<void> {
 
 // ─── Pull ─────────────────────────────────────────────────────────────────────
 
+/**
+ * CS-52: publicação pendente, para o pull não esperar por ela.
+ *
+ * Medido contra dado real: de 8,5s de sync incremental, **4,0s eram publicação** — uploads que o
+ * usuário não precisa ver para o dado do peer aparecer na tela. O caso que importa é o de voltar à
+ * sessão: o celular registrou uma despesa, e o desktop deve mostrá-la assim que a tiver, não depois
+ * de terminar de anunciar o próprio estado.
+ *
+ * Serializada, nunca concorrente: `publishOwnTree` lê e reescreve o cache de "último publicado", e
+ * duas execuções simultâneas o corromperiam. O próximo pull espera a publicação anterior assentar
+ * (na prática já assentou — syncs são separados por minutos).
+ */
+interface PendingPublish {
+  rootId: string
+  deviceId: string
+  rootChildren: DriveFile[] | null
+}
+
+let _publishInFlight: Promise<void> | null = null
+
+function settlePendingPublish(): Promise<void> {
+  return _publishInFlight ?? Promise.resolve()
+}
+
+/**
+ * Espera a publicação em background assentar. Exportada porque um chamador pode legitimamente
+ * precisar de um ponto de sincronização — testes que afirmam o estado publicado, e qualquer fluxo
+ * futuro que queira garantir a árvore anunciada antes de seguir (ex.: descarregar a página).
+ */
+export function whenPublishSettled(): Promise<void> {
+  return settlePendingPublish()
+}
+
+function startBackgroundPublish(pending: PendingPublish): void {
+  _publishInFlight = (async () => {
+    // Contagem própria: as chamadas da publicação não pertencem ao orçamento do pull, que já foi
+    // reportado. Sem sobreposição possível, porque o pull seguinte espera esta terminar.
+    resetDriveApiCallCount()
+    try {
+      await measureSync('sync.drive.publish.total', () =>
+        publishOwnTree(pending.rootId, pending.deviceId, pending.rootChildren)
+      )
+    } catch {
+      // Falha de publicação nunca é fatal: o cache de "último publicado" só é gravado no caminho
+      // de sucesso, então o próximo sync republica o que faltou. Mesmo argumento S-20.
+    } finally {
+      reportDriveApiCallCount('sync.drive.publish.apiCalls')
+      _publishInFlight = null
+    }
+  })()
+}
+
 export async function pullAndMerge(local: DataFile): Promise<SyncResult> {
   if (!isGoogleConnected()) return { status: 'offline' }
+  await settlePendingPublish()
   resetDriveApiCallCount()
+
+  let pending: PendingPublish | null = null
   try {
-    return await measureSync('sync.pullAndMerge.total', () => pullAndMergeInner(local))
+    const outcome = await measureSync('sync.pullAndMerge.total', () => pullAndMergeInner(local))
+    pending = outcome.publish
+    return outcome.result
   } catch {
     return { status: 'offline' }
   } finally {
+    // Reporta o orçamento do pull **antes** de soltar a publicação, para as duas contagens não se
+    // misturarem. A ordem aqui é determinística: o `finally` roda antes de qualquer coisa que
+    // `startBackgroundPublish` agende.
     reportDriveApiCallCount()
+    if (pending) startBackgroundPublish(pending)
   }
 }
 
-async function pullAndMergeInner(local: DataFile): Promise<SyncResult> {
+async function pullAndMergeInner(
+  local: DataFile
+): Promise<{ result: SyncResult; publish: PendingPublish }> {
   const deviceId = await getDeviceId()
   const rootId = await getRootFolderId()
   const rootChildren = await listFolderChildren(rootId)
@@ -213,15 +276,20 @@ async function pullAndMergeInner(local: DataFile): Promise<SyncResult> {
     await measureSync('sync.applyMutation', () => storage.applyMutation(merged, delta))
   }
 
-  // Publicar **depois** do applyMutation: é ele que atualiza `table_hashes`, e o manifesto tem que
-  // descrever o estado já mesclado, não o anterior.
-  await publishOwnTree(rootId, deviceId, rootChildren)
+  // CS-52: a publicação é devolvida ao chamador para rodar em background, **depois** do
+  // applyMutation — é ele que atualiza `table_hashes`, e o manifesto tem que descrever o estado já
+  // mesclado. Como o `applyMutation` já concluiu aqui, o estado local está íntegro mesmo se a
+  // publicação falhar; ela só anuncia esse estado aos peers.
+  const publish: PendingPublish = { rootId, deviceId, rootChildren }
 
   if (peersMerged === 0) {
-    return sawNewerSchema ? { status: 'skipped', reason: 'newer-schema' } : { status: 'synced' }
+    const result: SyncResult = sawNewerSchema
+      ? { status: 'skipped', reason: 'newer-schema' }
+      : { status: 'synced' }
+    return { result, publish }
   }
   // CS-35: devolve o DataFile já calculado, para o chamador não pagar um loadDataFile inteiro.
-  return { status: 'merged', peersMerged, data: merged }
+  return { result: { status: 'merged', peersMerged, data: merged }, publish }
 }
 
 function parseKey(key: PartitionKey): { table: string; partition: string } {
@@ -373,6 +441,8 @@ async function downloadPartitionByName(
  */
 export async function pushIfNeeded(): Promise<boolean> {
   if (!isGoogleConnected()) return false
+  // Mesma serialização do pull: nunca duas publicações ao mesmo tempo (CS-52).
+  await settlePendingPublish()
   resetDriveApiCallCount()
   try {
     const deviceId = await getDeviceId()

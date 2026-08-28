@@ -74,8 +74,8 @@ export function resetDriveApiCallCount(): void {
 }
 
 /** Publica o total acumulado e zera. Chamado uma vez por sync pelo orquestrador. */
-export function reportDriveApiCallCount(): void {
-  trackSyncBytes('sync.drive.apiCalls', _apiCalls)
+export function reportDriveApiCallCount(metric = 'sync.drive.apiCalls'): void {
+  trackSyncBytes(metric, _apiCalls)
   _apiCalls = 0
 }
 
