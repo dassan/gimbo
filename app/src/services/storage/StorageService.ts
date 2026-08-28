@@ -63,6 +63,7 @@ type WorkerResponse = {
   result?: unknown
   error?: string
   perf?: { metric: string; ms: number }
+  bootPerf?: { metric: string; ms: number }[]
 }
 
 type QueryResult = { rows: unknown[][]; columns: string[] }
@@ -86,7 +87,15 @@ export class StorageService {
     }
     this.worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
     this.worker.addEventListener('message', (event: MessageEvent<WorkerResponse>) => {
-      const { id, result, error, perf } = event.data
+      const { id, result, error, perf, bootPerf } = event.data
+      // M-87: mensagem não-solicitada do worker com o detalhamento do `init()`. Sempre registrada
+      // (não gated por DEV, ao contrário de `perf` logo abaixo) — é métrica de boot, e boot só
+      // interessa medido no cofre e no navegador reais do usuário. Não corresponde a nenhuma
+      // chamada pendente, então retorna antes da busca em `this.pending`.
+      if (bootPerf) {
+        for (const entry of bootPerf) trackPerformance(entry.metric, entry.ms)
+        return
+      }
       if (import.meta.env.DEV && perf) trackPerformance(perf.metric, perf.ms)
       const handlers = this.pending.get(id)
       if (!handlers) return
@@ -134,6 +143,15 @@ export class StorageService {
 
   private run(sql: string, params: unknown[] = []): Promise<void> {
     return this.call<void>('run', [sql, params])
+  }
+
+  /**
+   * M-87: resolve quando o `init()` do worker termina (wasm + OPFS + migrations + hashes) — a fila
+   * do worker encadeia a partir dele, então esta chamada, que não faz nada, só volta depois que o
+   * storage está de pé. Serve para separar, no boot, o custo de partida do custo de ler o cofre.
+   */
+  ready(): Promise<void> {
+    return this.call<void>('ready')
   }
 
   // ─── User ────────────────────────────────────────────────────────────────────

@@ -191,3 +191,12 @@ export function buildBugReportSnapshot(
     dataShape: options.includeDataShape ? (dataShape ?? null) : null,
   }
 }
+
+// M-87: expõe o buffer no `window` em dev — mesmo precedente (e mesma justificativa) de
+// `__storage`/`__syncTest` em `services/storage/index.ts`: as métricas de boot são gravadas antes
+// de qualquer interação, e um spec e2e não tem outra forma de inspecioná-las sem depender do
+// PerfPanel (que é UI de dev e não monta em viewport mobile). O gate DEV remove isto do bundle
+// de produção — lá o canal de consumo continua sendo só o Bug Report System (F-26).
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  ;(window as unknown as Record<string, unknown>).__telemetry = { getSnapshot, clearBuffer }
+}

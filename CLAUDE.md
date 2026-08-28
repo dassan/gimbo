@@ -218,7 +218,7 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 ## Estado Atual (2026-08-22)
 
 **Schema em memória v19** | **Schema físico SQLite v16** (`migrations/v1..v16.sql`) | Cobertura: ~96% statements
-**1084 testes unitários** (40 arquivos) + **113 testes E2E** (perfis `chromium` e `mobile-chrome`)
+**1111 testes unitários** (41 arquivos) + **140 testes E2E** (perfis `chromium` e `mobile-chrome`)
 
 > Os dois números de schema são independentes e **não coincidem**: `CURRENT_SCHEMA_VERSION` (v17,
 > em `lib/storage/schema.ts`) versiona o `DataFile` em memória; `PRAGMA user_version` (v13)
@@ -270,6 +270,28 @@ Features concluídas desde 2026-05-27:
 
   Em aberto: `CS-49` (e2e entre dois contextos de browser reais trocando uma árvore de partições — hoje há cobertura dos dois lados separadamente, não juntos). Ver `plan/BACKLOG.md` CS-37 a CS-51, `plan/MONITORING.md` §"Transporte particionado" e o changelog de lá.
 
+- **M-87** (2026-08-28) — usuário relatou que, ao recarregar a página, o app fica alguns segundos
+  mostrando só o fundo da tela antes de a interface aparecer. O projeto não tinha **nenhuma**
+  instrumentação de boot (o `M-71` é dev-only e por toggle; o `CS-20` só cobre sync), então o
+  fenômeno era invisível. Nova camada `lib/bootMetrics.ts`, sempre ativa (mesma exceção do
+  `syncMetrics.ts`), publicando a linha do tempo inteira do boot — marcos registrados uma vez só
+  (imunes ao double-invoke do `<StrictMode>`) e durações de fase deliberadamente não deduplicadas;
+  as 4 fases do `init()` do worker chegam por um canal novo `bootPerf` do `WorkerResponse`.
+  **Leituras reais do mantenedor, em build de produção local (`npm run preview`) com o cofre real
+  (26.576 transações): Chrome 151 — 2.802ms de tela vazia, `boot.loadDataFile` 2.311,4ms (80%);
+  Firefox 153 — ~2.348ms, `loadDataFile` 2.028ms (87%).** O boot **é** a leitura completa do cofre
+  no caminho crítico; nada do trabalho de sync desta semana está nele (a partida inteira do storage
+  custa 59-103ms). Três avisos que valem para qualquer trabalho futuro aqui: (1) medir boot em
+  `npm run dev` leva à conclusão errada — o mesmo ciclo deu 4,2s com o render em ~1.000ms em vez de
+  ~340ms (`M-75` de novo), além das durações duplicadas pelo `<StrictMode>`; (2) o
+  `first-contentful-paint` **não** marca o começo da tela vazia neste app — ele chega junto com a
+  interface, e usá-lo como substituto do `first-paint` (que o Firefox não publica) produziu uma
+  "janela em branco" de 20ms para um boot de ~2,3s; o substituto certo é o `boot.scriptStart`;
+  (3) **o descompasso Firefox×Chrome do `CS-31` não se reproduziu** — aqui o Firefox foi 12% mais
+  rápido; tratar aquele achado como não reproduzido até nova evidência.
+  M-87 mede, não corrige — a correção está aberta no `M-88`. Ver `plan/BACKLOG.md` M-87/M-88 e
+  `plan/MONITORING.md` §"Métricas de Boot".
+
 - **CS-35 confirmado, CS-36 primeira leitura real (2026-08-26)** — nova rodada de dois browsers confirmou o `CS-35` de ponta a ponta: `sync.runPeerSync.total` ficou a ~280-300ms de `sync.pullAndMerge.total` nos dois lados (Chrome: 12.880,7ms vs. 12.603,3ms; Firefox: 9.794ms vs. 9.500ms) — antes do fix esse gap era de 7,5-9,8s. Tempo total do sync caiu de ~31,2s pros dois browsers pra **12,9s**/**9,8s** (2,4x/3,2x). `CS-36` deu sua primeira resposta real, e ela é reveladora: Firefox (só 1 transação nova desde a última convergência) pulou 19 dos 20 anos de `transactions` — `worker.readPeer` em 756ms, hash-skip funcionando exatamente como desenhado. Chrome, no mesmo teste, não pulou nenhum dos 20 anos, apesar do cofre já estar convergido nas rodadas anteriores. **Hipótese líder, ainda não confirmada com o usuário:** `scripts/sync_gimbo.py` carimba `updated_at` com o timestamp do *run* em toda transação, por decisão de projeto (B-32, é a chave LWW do merge) — se o `.db` usado pra semear o Chrome nesta rodada veio de uma execução do script diferente da que gerou o `.db` do Firefox, cada transação carrega um `updated_at` genuinamente distinto de um lado, mesmo com conteúdo financeiro idêntico, e o hash diverge corretamente (não seria bug do hash-skip, seria artefato de como o fixture de teste foi gerado/reimportado entre rodadas). Sem correção aplicada — pendente confirmar a causa antes de decidir se há algo a corrigir. Ver `plan/BACKLOG.md` CS-35/CS-36.
 
 > **Deploy migrado de Vercel para Cloudflare Pages (antes de 2026-08-13, data exata não registrada).**
@@ -313,6 +335,10 @@ Itens em aberto:
 
 - **Cofre protegido por senha** — épico separado, decidido em 2026-08-19: bloqueio por senha com expiração por inatividade, e criptografia em repouso. **Reverte parcialmente o `X-1` do `PRD.md`** ("Criptografia do arquivo local", hoje listado como fora de escopo permanente) e encosta no `CS-18`. Ainda não desenhado — decisão pendente: se o backup exportado continua abrível em qualquer ferramenta SQLite ou vira blob opaco.
 
+- **M-88** — Boot: 2,5s de tela vazia num cofre grande, 87% em `loadDataFile()` (diagnóstico
+  fechado no `M-87`, correção não iniciada). Três caminhos combináveis, decisão de produto: dar
+  feedback visual (hoje `App.tsx` não renderiza nada enquanto hidrata), tirar a leitura completa do
+  caminho crítico, ou baratear a leitura em si. Média prioridade.
 - **M-74** — `TransactionDrawer` desvincula silenciosamente a Caixinha ao editar uma transação. Achado incidental ao validar o M-73 (`e2e/mutationDelta.spec.ts`): o formulário de edição carrega/resubmete `tags` corretamente, mas nunca leva `budgetIds` de volta — qualquer edição (mesmo só valor, sem mexer na data) apaga o vínculo com a Caixinha, silenciosamente. Bug de UI pré-existente, não relacionado a persistência; não corrigido nesta sessão (média prioridade).
 - **MB-08** — Analytics responsivo para mobile (média prioridade; parcial — aba Categorias resolvida em `MB-18`, as outras 4 abas — CashFlow, Contas, Tags, Faturas — seguem sem versão mobile)
 - **BK-04** — Banner de re-permissão da pasta de backup no startup (média prioridade)

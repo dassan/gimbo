@@ -52,6 +52,11 @@ type WorkerResponse = {
   result?: unknown
   error?: string
   perf?: { metric: string; ms: number }
+  // M-87: canal não-solicitado — o worker publica o detalhamento do próprio init assim que ele
+  // termina, sem esperar por nenhuma chamada. Ao contrário de `perf` (gated por DEV do lado de
+  // quem consome), estes eventos são sempre registrados: o custo de partida do wa-sqlite/OPFS só
+  // se manifesta no navegador e no cofre reais do usuário.
+  bootPerf?: { metric: string; ms: number }[]
 }
 
 // ─── DataFile subset used by replaceAll ───────────────────────────────────────
@@ -194,29 +199,54 @@ const MAX_KNOWN_DB_VERSION = 16
 
 // ─── Initialization ───────────────────────────────────────────────────────────
 
+// M-87: detalhamento do init, publicado ao final dele (ver `bootPerf` em WorkerResponse). O init
+// inteiro roda antes de qualquer consulta — a fila encadeia a partir dele —, então tudo aqui está
+// no caminho crítico do boot, e nenhuma das quatro fases tem o mesmo remédio: `wasm` é bundle,
+// `openDb` é a VFS do OPFS, `migrations` é DDL pendente e `tableHashes` é o backfill do CS-34/CS-39
+// (que faz uma leitura completa do cofre, mas só uma vez por banco/versão de hash).
+const bootPerf: { metric: string; ms: number }[] = []
+
+async function measureInit<T>(metric: string, fn: () => Promise<T>): Promise<T> {
+  const start = performance.now()
+  try {
+    return await fn()
+  } finally {
+    bootPerf.push({ metric, ms: performance.now() - start })
+  }
+}
+
 async function init(): Promise<void> {
-  // SQLiteESMFactory returns the opaque Emscripten module typed as `any`.
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const module = await SQLiteESMFactory()
-  sqlite3 = SQLite.Factory(module)
+  const startedAt = performance.now()
 
-  // Ensure OPFS root is available before the VFS tries to use it
-  await navigator.storage.getDirectory()
+  await measureInit('boot.worker.wasm', async () => {
+    // SQLiteESMFactory returns the opaque Emscripten module typed as `any`.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const module = await SQLiteESMFactory()
+    sqlite3 = SQLite.Factory(module)
+  })
 
-  // OriginPrivateFileSystemVFS stores files under their virtual filename directly
-  // in the OPFS root, making export/import straightforward.
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-  const vfs = new OriginPrivateFileSystemVFS() as SQLiteVFS
-  sqlite3.vfs_register(vfs, /* makeDefault */ true)
+  await measureInit('boot.worker.openDb', async () => {
+    // Ensure OPFS root is available before the VFS tries to use it
+    await navigator.storage.getDirectory()
 
-  db = await sqlite3.open_v2(DB_FILENAME)
-  await runMigrationsOn(db)
-  await ensureTableHashesCurrent(db)
+    // OriginPrivateFileSystemVFS stores files under their virtual filename directly
+    // in the OPFS root, making export/import straightforward.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+    const vfs = new OriginPrivateFileSystemVFS() as SQLiteVFS
+    sqlite3.vfs_register(vfs, /* makeDefault */ true)
+
+    db = await sqlite3.open_v2(DB_FILENAME)
+  })
+
+  await measureInit('boot.worker.migrations', () => runMigrationsOn(db))
+  await measureInit('boot.worker.tableHashes', () => ensureTableHashesCurrent(db))
 
   const queriedLimit = sqlite3.limit(db, SQLITE_LIMIT_VARIABLE_NUMBER, -1)
   if (queriedLimit > 0) maxBoundParams = Math.floor(queriedLimit * 0.9)
 
   dbReady = true
+  bootPerf.push({ metric: 'boot.worker.total', ms: performance.now() - startedAt })
+  self.postMessage({ id: '', bootPerf } satisfies WorkerResponse)
 }
 
 // Ordem de aplicação das migrations. Substituiu uma escada de 12 `if (version < N)` para que a
@@ -2000,6 +2030,10 @@ async function exportRawBytes(): Promise<ArrayBuffer> {
 
 async function dispatch(method: string, args: unknown[]): Promise<unknown> {
   switch (method) {
+    // M-87: no-op cuja única função é resolver depois do `init()` — a fila encadeia a partir dele,
+    // então a duração desta chamada, medida na thread principal, é o tempo de partida do storage.
+    case 'ready':
+      return undefined
     case 'query':
       return sqlite3.execWithParams(
         db,

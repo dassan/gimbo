@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import i18n from '@/lib/i18n'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
@@ -8,6 +8,7 @@ import { validateDataFile } from '@/lib/storage/schema'
 import { isDemoMode, loadDemoData } from '@/lib/demo'
 import { clearBackupDirHandle } from '@/lib/backupDir'
 import { startSyncPolling } from '@/lib/cloudSync/syncScheduler'
+import { markAppVisible, markBootInstant, measureBoot, measureBootSync } from '@/lib/bootMetrics'
 import AppLayout from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import UpdateToast from '@/components/UpdateToast'
@@ -62,6 +63,17 @@ export default function App() {
     return () => mq.removeEventListener('change', (e) => apply(e.matches))
   }, [theme])
 
+  // M-87: fecha a janela medida do boot — do início da navegação até o primeiro frame com a
+  // interface real na tela. `useLayoutEffect` roda depois do commit e antes do paint: é onde
+  // `boot.firstRender` fecha o custo de renderizar a tela inicial (não desprezível num cofre
+  // grande — o Dashboard deriva tudo das transações), e o par de rAF dentro de markAppVisible()
+  // é o que garante que `boot.appVisible` caia depois do paint.
+  useLayoutEffect(() => {
+    if (!hydrated) return
+    markBootInstant('boot.firstRender')
+    markAppVisible()
+  }, [hydrated])
+
   useEffect(() => {
     async function init() {
       try {
@@ -96,11 +108,22 @@ export default function App() {
           }
         }
 
-        const saved = await storage.loadDataFile()
+        // M-87: as duas fases que dominam o boot de um cofre grande, medidas separadamente —
+        // `boot.storageReady` é a partida do motor (worker + wasm + OPFS + migrations + hashes),
+        // que independe do tamanho do cofre; `boot.loadDataFile` é a leitura do cofre, que
+        // depende. Sem essa separação, um boot lento não diz qual dos dois piorou. A chamada a
+        // `ready()` não acrescenta espera: a fila do worker encadeia a partir do `init()`, então
+        // `loadDataFile()` esperaria pelo mesmo tempo de qualquer forma.
+        await measureBoot('boot.storageReady', () => storage.ready())
+        const saved = await measureBoot('boot.loadDataFile', () => storage.loadDataFile())
         if (saved) {
-          loadData(saved)
-          refreshRecurrenceHorizons()
-          ensureQuadrantesBatch()
+          measureBootSync('boot.hydrateStore', () => loadData(saved))
+          // Manutenção de dados que roda em todo boot, antes da primeira renderização — as duas
+          // podem clonar o `DataFile` inteiro (`structuredClone`), custo que cresce com o cofre.
+          measureBootSync('boot.derive', () => {
+            refreshRecurrenceHorizons()
+            ensureQuadrantesBatch()
+          })
           // CS-15: never blocks the boot — the app hydrates from local OPFS first, sync runs
           // after in the background (no-op when multi-device mode is off).
           void useDataStore.getState().runPeerSync()
@@ -111,6 +134,9 @@ export default function App() {
       } catch (err) {
         setInitError(err instanceof Error ? err.message : 'Erro ao carregar dados locais')
       } finally {
+        // M-87: instante em que os dados ficaram prontos e o React foi liberado para renderizar.
+        // Lido junto de `boot.firstRender`/`boot.appVisible`, separa "carregar" de "desenhar".
+        markBootInstant('boot.dataReady')
         setHydrated(true)
       }
     }
