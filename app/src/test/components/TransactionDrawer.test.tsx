@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import TransactionDrawer from '@/components/TransactionDrawer'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '@/test/fixtures/dataFile'
-import { getTxInvoicePeriod, invoicePeriodKey, todayStr } from '@/lib/utils'
+import { formatDateLocal, getTxInvoicePeriod, invoicePeriodKey, todayStr } from '@/lib/utils'
 import type { Transaction } from '@/types'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ describe('TransactionDrawer — CC-20: invoice balance hint', () => {
             categoryId: 'cat-1',
             amount: 300,
             type: 'EXPENSE',
-            date: new Date().toISOString().slice(0, 10),
+            date: formatDateLocal(new Date()),
             description: 'Compra',
             isPaid: false,
             tags: [],
@@ -609,7 +609,7 @@ describe('TransactionDrawer — M-81: isPaid default follows date', () => {
     const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement
     const futureDate = new Date()
     futureDate.setDate(futureDate.getDate() + 5)
-    fireEvent.change(dateInput, { target: { value: futureDate.toISOString().slice(0, 10) } })
+    fireEvent.change(dateInput, { target: { value: formatDateLocal(futureDate) } })
 
     expect(toggle).toHaveAttribute('aria-checked', 'false')
   })
@@ -621,7 +621,7 @@ describe('TransactionDrawer — M-81: isPaid default follows date', () => {
 
     const futureDate = new Date()
     futureDate.setDate(futureDate.getDate() + 5)
-    fireEvent.change(dateInput, { target: { value: futureDate.toISOString().slice(0, 10) } })
+    fireEvent.change(dateInput, { target: { value: formatDateLocal(futureDate) } })
     expect(toggle).toHaveAttribute('aria-checked', 'false')
 
     fireEvent.change(dateInput, { target: { value: todayStr() } })
@@ -635,7 +635,7 @@ describe('TransactionDrawer — M-81: isPaid default follows date', () => {
 
     const futureDate = new Date()
     futureDate.setDate(futureDate.getDate() + 5)
-    fireEvent.change(dateInput, { target: { value: futureDate.toISOString().slice(0, 10) } })
+    fireEvent.change(dateInput, { target: { value: formatDateLocal(futureDate) } })
     expect(toggle).toHaveAttribute('aria-checked', 'false')
 
     await userEvent.click(toggle)
