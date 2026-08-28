@@ -270,6 +270,23 @@ Features concluídas desde 2026-05-27:
 
   Em aberto: `CS-49` (e2e entre dois contextos de browser reais trocando uma árvore de partições — hoje há cobertura dos dois lados separadamente, não juntos). Ver `plan/BACKLOG.md` CS-37 a CS-51, `plan/MONITORING.md` §"Transporte particionado" e o changelog de lá.
 
+- **M-91** (2026-08-28) — depois do `M-90`, o usuário reportou que agora o **esqueleto** fica em
+  cena tempo demais: resolvida a percepção, o alvo voltou a ser tempo real. Primeiro achado, antes
+  de qualquer código: a coleta que motivou o pedido (`loadDataFile` 10,4s) **não era comparável**
+  com a anterior (2,3s) — todas as fases sem relação com o cofre estavam 2-3x mais lentas na mesma
+  coleta (parse do bundle 3,3x, migrations 2,2x), sinal de máquina carregada, não de regressão; sem
+  as métricas do `M-87` isso teria virado caça a um fantasma de 4,5x. 3 métricas novas sempre ativas
+  em `StorageService.ts` abrem a fase que domina o boot. **Atribuição no cofre real:** SQLite
+  materializando linhas dentro do worker ~95%, `postMessage` ~4%, montagem de objetos na thread
+  principal ~5%. Drill-down: `SELECT COUNT(*)` 89ms, `SELECT id` 619ms, `SELECT t.*` 5.398ms,
+  `SELECT t.*` de um ano só 654ms — **ler o arquivo não é o custo, materializar linha é**, e uma
+  fatia sai proporcionalmente barata. **Hipótese descartada:** `json_group_array(json_object(…))`
+  numa célula só (json1 existe no build) deu **1,03x** num A/B intercalado — o gargalo não é a
+  fronteira JS↔WASM, não repetir sem hipótese nova. **Aviso de método:** a mesma consulta variou de
+  4,0s a 8,0s na mesma sessão numa máquina carregada — comparar aqui exige rodadas intercaladas e
+  mediana. Ver `M-88` (atualizado) para por que a fatia por janela esbarra num bloqueio de correção:
+  saldos derivam do histórico completo, então uma fatia mostraria números errados, não incompletos.
+
 - **M-90 / M-89** (2026-08-28) — continuação direta do `M-87`. **M-90:** `App.tsx` deixou de
   renderizar nada enquanto hidrata — novo `components/BootSkeleton.tsx` (silhueta do app, medidas
   espelhando `Navbar`/`AppLayout` para não haver salto de layout) pinta imediatamente, porque a

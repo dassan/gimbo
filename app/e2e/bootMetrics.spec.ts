@@ -30,7 +30,11 @@ async function bootMetrics(page: import('@playwright/test').Page): Promise<Map<s
   const events = await page.evaluate(() =>
     window.__telemetry
       .getSnapshot()
-      .filter((e) => e.type === 'performance' && e.metric.startsWith('boot.'))
+      .filter(
+        (e) =>
+          e.type === 'performance' &&
+          (e.metric.startsWith('boot.') || e.metric.startsWith('storage.'))
+      )
   )
   // Em dev o StrictMode invoca o efeito de boot duas vezes: para as durações, a primeira
   // ocorrência é a que corresponde ao boot de verdade.
@@ -70,6 +74,19 @@ test('o boot publica a linha do tempo completa, da partida do script até a tela
   ]) {
     expect(m.has(metric), `faltou a métrica ${metric}`).toBe(true)
   }
+
+  // M-91: o detalhamento de dentro do `loadDataFile()`. Sem ele, a fase que domina o boot (80-87%
+  // do total) é um bloco opaco e qualquer tentativa de otimizá-la mede o alvo errado.
+  for (const metric of [
+    'storage.loadDataFile.transactions',
+    'storage.getTransactions.rows',
+    'storage.getTransactions.map',
+  ]) {
+    expect(m.has(metric), `faltou a métrica ${metric}`).toBe(true)
+  }
+  expect(m.get('storage.getTransactions.rows')!).toBeLessThanOrEqual(
+    m.get('storage.loadDataFile.transactions')!
+  )
 
   // Fases do worker — chegam pelo canal `bootPerf`, que é o único caminho pelo qual o custo de
   // partida do wa-sqlite/OPFS cruza a fronteira do worker.

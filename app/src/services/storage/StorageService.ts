@@ -69,6 +69,24 @@ type WorkerResponse = {
 type QueryResult = { rows: unknown[][]; columns: string[] }
 type Row = Record<string, unknown>
 
+// M-91 — abre a caixa-preta do `loadDataFile()`, sempre ativa (mesma justificativa de
+// `lib/bootMetrics.ts`/`syncMetrics.ts`: o custo real só aparece no cofre e no navegador do
+// usuário). Baixa frequência — `loadDataFile()`/`getTransactions()` rodam no boot e no baseline de
+// sync, não a cada mutação.
+function measureLoad<T>(metric: string, fn: () => Promise<T>): Promise<T> {
+  const start = performance.now()
+  return fn().finally(() => trackPerformance(metric, performance.now() - start))
+}
+
+function measureLoadSync<T>(metric: string, fn: () => T): T {
+  const start = performance.now()
+  try {
+    return fn()
+  } finally {
+    trackPerformance(metric, performance.now() - start)
+  }
+}
+
 // ─── StorageService ───────────────────────────────────────────────────────────
 
 export class StorageService {
@@ -398,25 +416,32 @@ export class StorageService {
     // (wa-sqlite/WASM sobre a VFS assíncrona do OPFS), não o volume de linhas. As duas tabelas
     // de junção são pequenas (proporcionais a vínculos reais, não a transações × transações) —
     // buscá-las inteiras e juntar em JS é ordens de magnitude mais rápido que o JOIN+GROUP BY.
-    const [txRows, tagRows, budgetRows] = await Promise.all([
-      this.query(
-        `SELECT t.* FROM transactions t ${where} ORDER BY t.date DESC, t.created_at DESC`,
-        params
-      ),
-      this.query('SELECT transaction_id, tag_id FROM transaction_tags'),
-      this.query('SELECT transaction_id, budget_id FROM transaction_budgets'),
-    ])
-
-    const tagsByTx = groupIds(tagRows, 'tag_id')
-    const budgetsByTx = groupIds(budgetRows, 'budget_id')
-
-    return txRows.map((row) =>
-      rowToTransaction({
-        ...row,
-        tag_ids: tagsByTx.get(row.id as string)?.join(',') ?? null,
-        budget_ids: budgetsByTx.get(row.id as string)?.join(',') ?? null,
-      })
+    // M-91: as duas metades têm remédios completamente diferentes — `.rows` é o SQLite lendo o OPFS
+    // mais o clone estruturado do `postMessage`; `.map` é esta thread montando um objeto por
+    // transação. Medidas juntas, uma esconde a outra.
+    const [txRows, tagRows, budgetRows] = await measureLoad('storage.getTransactions.rows', () =>
+      Promise.all([
+        this.query(
+          `SELECT t.* FROM transactions t ${where} ORDER BY t.date DESC, t.created_at DESC`,
+          params
+        ),
+        this.query('SELECT transaction_id, tag_id FROM transaction_tags'),
+        this.query('SELECT transaction_id, budget_id FROM transaction_budgets'),
+      ])
     )
+
+    return measureLoadSync('storage.getTransactions.map', () => {
+      const tagsByTx = groupIds(tagRows, 'tag_id')
+      const budgetsByTx = groupIds(budgetRows, 'budget_id')
+
+      return txRows.map((row) =>
+        rowToTransaction({
+          ...row,
+          tag_ids: tagsByTx.get(row.id as string)?.join(',') ?? null,
+          budget_ids: budgetsByTx.get(row.id as string)?.join(',') ?? null,
+        })
+      )
+    })
   }
 
   async createTransaction(data: CreateTransactionData): Promise<Transaction> {
@@ -704,7 +729,9 @@ export class StorageService {
       this.getAccounts(),
       this.getCategories(),
       this.getTags(),
-      this.getTransactions(),
+      // M-91: inclui a espera na fila do worker atrás das tabelas pequenas — a diferença para
+      // `storage.getTransactions.rows` é exatamente esse tempo de fila.
+      measureLoad('storage.loadDataFile.transactions', () => this.getTransactions()),
       this.getValuations(),
       this.getAuditLog(),
       this.getDeletedIds(),

@@ -247,6 +247,9 @@ Duas convenções de leitura:
 | `boot.worker.wasm` / `.openDb` / `.migrations` / `.tableHashes` / `.total` | `worker.ts` → `init()` | Partida do storage, fase a fase. Cada uma tem um remédio diferente: bundle, VFS do OPFS, DDL pendente e o backfill de `table_hashes` (`CS-34`/`CS-39` — barato depois da primeira vez, caro exatamente uma vez por bump de `HASH_VERSION`) |
 | `boot.storageReady` | `App.tsx` | A partida do storage vista da thread principal (via `storage.ready()`, no-op que a fila do worker só resolve depois do `init()`). Menos `boot.worker.total` = custo de subir o próprio worker |
 | `boot.loadDataFile` | `App.tsx` | Leitura do cofre inteiro do OPFS para a memória. **A única fase que cresce com o tamanho do cofre** |
+| `storage.loadDataFile.transactions` | `StorageService.ts` | `M-91`: a fatia de `loadDataFile()` gasta com `transactions`, fila do worker inclusa |
+| `storage.getTransactions.rows` | `StorageService.ts` | `M-91`: SQLite lendo o OPFS + clone estruturado do `postMessage`. **Domina tudo** — a diferença para a métrica acima é o tempo de fila |
+| `storage.getTransactions.map` | `StorageService.ts` | `M-91`: esta thread montando um objeto por transação. Medida junto com a de cima, uma escondia a outra |
 | `boot.hydrateStore` | `App.tsx` | `loadData()` na store Zustand |
 | `boot.derive` | `App.tsx` | `refreshRecurrenceHorizons()` + `ensureQuadrantesBatch()` — manutenção que roda em todo boot e pode clonar o `DataFile` inteiro |
 | `boot.dataReady` | `App.tsx` | Instante em que os dados ficaram prontos e o React foi liberado para renderizar |
@@ -309,8 +312,46 @@ for medir a próxima otimização deve olhar as duas métricas juntas; `boot.app
 que nada aconteceu, e `boot.shellVisible` sozinho diria que o boot ficou 30x mais rápido. Nenhum
 dos dois é verdade isoladamente.
 
+### Onde estão os 2,3s do `loadDataFile` (M-91)
+
+O `M-90` tirou a tela vazia do caminho percebido, e a reclamação seguinte foi o esqueleto ficar em
+cena tempo demais — ou seja, o problema voltou a ser tempo real. Como o `loadDataFile` era um bloco
+opaco, a primeira coisa foi abri-lo. Atribuição, no cofre real de 26.576 transações:
+
+| | |
+|---|---|
+| SQLite lendo + materializando as linhas (dentro do worker) | **~95%** |
+| Clone estruturado do `postMessage` (worker → thread principal) | ~4% (150-260ms) |
+| Montagem dos objetos `Transaction` na thread principal | ~5% (207-308ms) |
+
+E dentro do worker, medido pelo console com `window.__storage.query()` (mesma ferramenta do `M-72`):
+
+| Consulta | Tempo |
+|---|---|
+| `SELECT COUNT(*)` — varredura, sem materializar linha | **89ms** |
+| `SELECT id` — 26.576 linhas, 1 coluna | 619ms |
+| `SELECT t.*` — 26.576 linhas, 20 colunas (o que o boot faz) | 5.398ms |
+| `SELECT t.*` de um ano só — 2.146 linhas | **654ms** |
+
+**Ler o arquivo não é o custo — materializar linha é.** Uma fatia sai proporcionalmente barata, o
+que é a evidência que sustenta a opção (b) do `M-88`.
+
+**Hipótese testada e descartada:** extrair tudo numa célula só com `json_group_array(json_object(…))`
+(o build tem json1) para pagar uma travessia em vez de 26.576×20. Numa medição isolada pareceu 1,8x
+melhor; num A/B intercalado de 5 rodadas ficou em **1,03x — ruído**. O gargalo não é a fronteira
+JS↔WASM. Não repetir este teste sem uma hipótese nova.
+
+> **Aviso de método, aprendido nesta rodada:** a mesma consulta variou de 4,0s a 8,0s na mesma
+> sessão, numa máquina com outros processos rodando. Qualquer comparação aqui exige rodadas
+> intercaladas e mediana — uma leitura isolada não distingue otimização de sorte. É a mesma
+> armadilha do `CS-50`, em outra roupa.
+
 ## Changelog
 
+- **M-91 (2026-08-28)** — atribuição de dentro do `loadDataFile` (seção acima). Duas lições: uma
+  fase opaca que domina o boot é indistinguível de um mistério — abrir a caixa custou 3 métricas e
+  respondeu em uma tarde o que estava em aberto desde o `M-87`; e uma hipótese de otimização
+  plausível (json1) só sobreviveu até o primeiro A/B intercalado.
 - **M-90 (2026-08-28)** — esqueleto de boot e a métrica de tempo percebido (seção acima). O achado
   que vale carregar: **uma métrica de tempo total não consegue enxergar um ganho de percepção.** Se
   o `boot.shellVisible` não existisse, esta mudança apareceria na telemetria como "nada mudou, e o
