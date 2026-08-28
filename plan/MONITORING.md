@@ -200,6 +200,10 @@ real em chamadas à API.
 | `sync.drive.publish.readPartitions` | `driveTreeSyncService.ts` | `CS-50`: leitura batelada de todas as partições a publicar, numa chamada só ao worker. Antes eram N chamadas serializadas pela fila — ~13s no primeiro sync |
 | `sync.drive.baselineScopedYears` | `driveTreeSyncService.ts` | `CS-50`: quantos anos o diff leu, em vez do cofre inteiro. **Ausente = caminho completo**, o que só deveria acontecer quando vieram lápides (elas removem de qualquer ano) |
 | `sync.drive.publish.staleFileIds` | `driveTreeSyncService.ts` | `CS-50`: um `fileId` em cache estava morto e o upload teve de recriar o arquivo — o cache de ids é descartado e o sync seguinte relista a pasta |
+| `sync.drive.publish.total` | `driveTreeSyncService.ts` | `CS-52`: duração da publicação, que passou a rodar **em background**. Não faz parte do tempo que o usuário espera; comparar com `sync.pullAndMerge.total` mostra quanto foi retirado do caminho percebido |
+| `sync.drive.publish.apiCalls` | `googleDrive.ts` | `CS-52`: orçamento de chamadas **da publicação**, separado do `sync.drive.apiCalls` (que ficou sendo só o do pull). Somar os dois dá o custo total; olhar só o primeiro dá o custo percebido |
+| `sync.drive.manifestFromProperties` | `driveTreeSyncService.ts` | `CS-53`: o manifesto do peer veio nas `appProperties` do `files.list`, sem download. **Ausente = caminho de fallback** (peer sem propriedades, ou histórico longo demais para caber nos limites da API) |
+| `sync.drive.publish.propertiesTooLarge` | `driveTreeSyncService.ts` | `CS-53`: a tabela de partições não coube em `appProperties` (30 propriedades × 124 bytes). O manifesto segue publicado como arquivo; só se perde o atalho de leitura |
 
 Consumo: Bug Report System (F-26) já existente, categoria "performance" do snapshot — sem UI nova.
 No celular, Configurações → "Reportar problema" → conferir/copiar o JSON. Mesma regra de
