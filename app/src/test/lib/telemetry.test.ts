@@ -188,6 +188,14 @@ describe('buildBugReportSnapshot', () => {
     trackPerformance('render', 50)
   })
 
+  // M-89: regressão real — o campo lia uma env var inexistente e todo relatório saía "unknown",
+  // inclusive os de produção. O valor tem que vir do mesmo `__APP_VERSION__` do rodapé.
+  it('reporta a versão real do app, nunca "unknown"', () => {
+    const snap = buildBugReportSnapshot(ALL_ON, SAMPLE_SHAPE)
+    expect(snap.appVersion).not.toBe('unknown')
+    expect(snap.appVersion).toMatch(/^\d+\.\d+\.\d+/)
+  })
+
   it('includes all categories when all options are true', () => {
     const snap = buildBugReportSnapshot(ALL_ON, SAMPLE_SHAPE)
     expect(snap.recentNavigation).toHaveLength(2)

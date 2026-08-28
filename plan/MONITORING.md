@@ -214,8 +214,160 @@ Escopo desta rodada: só o transporte Google Drive (Fase 2), que é o que motivo
 transporte de pasta compartilhada (`folderSyncService.ts`, Fase 1) não foi instrumentado — mesma
 arquitetura, adicionar depois se algum dia for a fonte de um relato parecido.
 
+## Métricas de Boot (produção, não gated por DEV)
+
+> `M-87` (2026-08-28) — criada a partir de um relato de uso real: ao recarregar a página, o app
+> demora alguns segundos mostrando só o fundo da tela antes de a interface aparecer. Não havia
+> **nenhuma** instrumentação de boot no projeto — `perfMonitor.ts` é dev-only e por toggle,
+> `syncMetrics.ts` só cobre sync —, então o fenômeno era invisível para qualquer diagnóstico.
+
+`lib/bootMetrics.ts` segue a exceção de `syncMetrics.ts`, não o padrão dev-only: o boot que
+interessa é o do cofre real do usuário (dezenas de milhares de transações no OPFS dele), no
+navegador dele, num build de produção com service worker — e o `M-75` é o precedente exato de dev
+e produção divergirem por completo num número desses. Frequência não é problema para o ring buffer
+de 100 eventos: tudo aqui dispara no máximo uma vez por carregamento de página.
+
+Duas convenções de leitura:
+
+- **Marcos** (`boot.scriptStart`, `boot.firstPaint`, `boot.dataReady`, `boot.firstRender`,
+  `boot.appVisible`, `boot.firstContentfulPaint`) são *instantes* contados do início da navegação.
+  Lidos em ordem, desenham a linha do tempo inteira do boot, sem buracos. Registrados **uma vez
+  só** (`markBootInstant`) — o `<StrictMode>` duplica efeitos em dev e um marco repetido não
+  significa nada.
+- **Durações** (o resto) são fases. Estas *não* são deduplicadas de propósito: uma duração que
+  aparece duas vezes denuncia trabalho feito duas vezes (é assim que o double-invoke do
+  `<StrictMode>` fica visível em dev).
+
+| Métrica | Onde | O que mede |
+|---|---|---|
+| `boot.scriptStart` | `main.tsx` | Instante em que o JS do app começou a rodar: rede, service worker, download/parse do bundle e avaliação dos módulos (i18n incluso). O pedaço que nenhuma otimização de SQLite alcança |
+| `boot.ttfb` | `bootMetrics.ts` | `responseEnd` do documento. Perto de zero quando o service worker serve; alto isola a rede |
+| `boot.firstPaint` | `bootMetrics.ts` | O navegador pintando o fundo da página com o `<div id="root">` ainda vazio — **o começo da janela em branco que o usuário percebe** |
+| `boot.firstContentfulPaint` | `bootMetrics.ts` | Primeiro conteúdo pintado; neste app, o React já ter renderizado. Firefox só publica esta, não a de cima — a janela em branco cai para ela quando `first-paint` não existe |
+| `boot.worker.wasm` / `.openDb` / `.migrations` / `.tableHashes` / `.total` | `worker.ts` → `init()` | Partida do storage, fase a fase. Cada uma tem um remédio diferente: bundle, VFS do OPFS, DDL pendente e o backfill de `table_hashes` (`CS-34`/`CS-39` — barato depois da primeira vez, caro exatamente uma vez por bump de `HASH_VERSION`) |
+| `boot.storageReady` | `App.tsx` | A partida do storage vista da thread principal (via `storage.ready()`, no-op que a fila do worker só resolve depois do `init()`). Menos `boot.worker.total` = custo de subir o próprio worker |
+| `boot.loadDataFile` | `App.tsx` | Leitura do cofre inteiro do OPFS para a memória. **A única fase que cresce com o tamanho do cofre** |
+| `storage.loadDataFile.transactions` | `StorageService.ts` | `M-91`: a fatia de `loadDataFile()` gasta com `transactions`, fila do worker inclusa |
+| `storage.getTransactions.rows` | `StorageService.ts` | `M-91`: SQLite lendo o OPFS + clone estruturado do `postMessage`. **Domina tudo** — a diferença para a métrica acima é o tempo de fila |
+| `storage.getTransactions.map` | `StorageService.ts` | `M-91`: esta thread montando um objeto por transação. Medida junto com a de cima, uma escondia a outra |
+| `boot.hydrateStore` | `App.tsx` | `loadData()` na store Zustand |
+| `boot.derive` | `App.tsx` | `refreshRecurrenceHorizons()` + `ensureQuadrantesBatch()` — manutenção que roda em todo boot e pode clonar o `DataFile` inteiro |
+| `boot.dataReady` | `App.tsx` | Instante em que os dados ficaram prontos e o React foi liberado para renderizar |
+| `boot.firstRender` | `App.tsx` | Instante em que o primeiro render real foi cometido. Menos `boot.dataReady` = custo de desenhar a tela inicial |
+| `boot.shellVisible` | `BootSkeleton.tsx` | **Instante em que a primeira coisa aparece na tela** — a silhueta do app (`M-90`). É a métrica de *tempo percebido*: não melhora nem piora com o tamanho do cofre |
+| `boot.appVisible` | `bootMetrics.ts` | Instante do frame pintado com a interface real (par de `requestAnimationFrame` após o commit). Menos `boot.shellVisible` = quanto tempo o esqueleto ficou em cena |
+| `boot.blankWindow` | `bootMetrics.ts` | **A duração da tela vazia** — o sintoma relatado. Termina na primeira coisa que aparece (o esqueleto, desde o `M-90`), não na última. Contada do `first-paint` onde ele existe (Chromium) e do `boot.scriptStart` onde não (Firefox); nunca do FCP, que neste app chega junto com a interface e reportaria dezenas de ms para um boot de segundos |
+
+Consumo: o mesmo de sync — Bug Report System (F-26), categoria "performance", sem UI nova. Em dev,
+o `PerfPanel` (`Alt+Shift+P`) já lista tudo isto sem precisar de mudança nenhuma.
+
+### Primeira leitura real (M-87, 2026-08-28)
+
+Duas coletas do mantenedor, no build de produção local (`npm run preview`), cofre real de 26.576
+transações, mesma máquina, lidas pelo Bug Report System — Chrome 151 e Firefox 153:
+
+| | Chrome 151 | Firefox 153 |
+|---|---|---|
+| `boot.scriptStart` | 120,5 | 231 |
+| `boot.storageReady` | 102,9 | 59 |
+| ↳ `boot.worker.migrations` | 51,5 | 8 |
+| **`boot.loadDataFile`** | **2.311,4** | **2.028** |
+| `boot.derive` | 1,3 | 2 |
+| `boot.dataReady` | 2.562,3 | 2.323 |
+| `boot.firstRender` | 2.905,2 (render: 343) | 2.551 (render: 228) |
+| `boot.appVisible` | 2.954 | 2.579 |
+| **janela em branco** | **2.802** | **~2.348** |
+
+Três conclusões, nenhuma delas inferida:
+
+1. **O boot é `loadDataFile()`** — 80% do total no Chrome, 87% no Firefox. Bundle, wasm, OPFS,
+   migrations, hashes, React e sync somados não passam de 20%. A soma das fases fecha com
+   `boot.dataReady` a menos de 30ms nos dois navegadores: a linha do tempo não tem pontos cegos.
+2. **O descompasso Firefox×Chrome do `CS-31` não se reproduz aqui.** Lá, a mesma consulta custou
+   6,7s no Firefox contra 52ms no Chrome; neste boot o Firefox foi 12% **mais rápido**. Seja o que
+   for que causou aquele número, não é uma propriedade estável da engine — quem for atrás do
+   `CS-31` deve tratá-lo como não reproduzido até nova evidência.
+3. **O mesmo ciclo em `npm run dev` deu 4,2s**, com o render em ~1.000ms em vez de ~340ms
+   (inflacionamento dev do React, `M-75` de novo) e as durações duplicadas pelo `<StrictMode>`:
+   medir boot em dev leva à conclusão errada sobre onde está o custo.
+
+### Tempo percebido × tempo total (M-90)
+
+O `M-87` mediu o problema; o `M-90` atacou a metade dele que dá para atacar sem tocar em premissa
+nenhuma da store — **a mesma manobra do `CS-52`**, que tirou a publicação do caminho percebido sem
+torná-la mais rápida. Aqui: a interface não depende do cofre, só os números dependem, então a
+silhueta do app pode pintar imediatamente enquanto o SQLite é lido.
+
+Mesmo cofre, mesmo build de produção, medido antes e depois:
+
+| | antes (M-87) | depois (M-90) |
+|---|---|---|
+| `boot.blankWindow` (tela vazia) | 2.802 | **88,8** |
+| `boot.shellVisible` | — | 108,8 |
+| `boot.appVisible` (números reais) | 2.954 | 3.033,9 |
+
+**O total não melhorou — e não era para melhorar.** O que mudou é que a espera deixou de ser
+indistinguível de um travamento: 89ms de nada, depois ~2,9s de app visivelmente carregando. Quem
+for medir a próxima otimização deve olhar as duas métricas juntas; `boot.appVisible` sozinho diria
+que nada aconteceu, e `boot.shellVisible` sozinho diria que o boot ficou 30x mais rápido. Nenhum
+dos dois é verdade isoladamente.
+
+### Onde estão os 2,3s do `loadDataFile` (M-91)
+
+O `M-90` tirou a tela vazia do caminho percebido, e a reclamação seguinte foi o esqueleto ficar em
+cena tempo demais — ou seja, o problema voltou a ser tempo real. Como o `loadDataFile` era um bloco
+opaco, a primeira coisa foi abri-lo. Atribuição, no cofre real de 26.576 transações:
+
+| | |
+|---|---|
+| SQLite lendo + materializando as linhas (dentro do worker) | **~95%** |
+| Clone estruturado do `postMessage` (worker → thread principal) | ~4% (150-260ms) |
+| Montagem dos objetos `Transaction` na thread principal | ~5% (207-308ms) |
+
+E dentro do worker, medido pelo console com `window.__storage.query()` (mesma ferramenta do `M-72`):
+
+| Consulta | Tempo |
+|---|---|
+| `SELECT COUNT(*)` — varredura, sem materializar linha | **89ms** |
+| `SELECT id` — 26.576 linhas, 1 coluna | 619ms |
+| `SELECT t.*` — 26.576 linhas, 20 colunas (o que o boot faz) | 5.398ms |
+| `SELECT t.*` de um ano só — 2.146 linhas | **654ms** |
+
+**Ler o arquivo não é o custo — materializar linha é.** Uma fatia sai proporcionalmente barata, o
+que é a evidência que sustenta a opção (b) do `M-88`.
+
+**Hipótese testada e descartada:** extrair tudo numa célula só com `json_group_array(json_object(…))`
+(o build tem json1) para pagar uma travessia em vez de 26.576×20. Numa medição isolada pareceu 1,8x
+melhor; num A/B intercalado de 5 rodadas ficou em **1,03x — ruído**. O gargalo não é a fronteira
+JS↔WASM. Não repetir este teste sem uma hipótese nova.
+
+> **Aviso de método, aprendido nesta rodada:** a mesma consulta variou de 4,0s a 8,0s na mesma
+> sessão, numa máquina com outros processos rodando. Qualquer comparação aqui exige rodadas
+> intercaladas e mediana — uma leitura isolada não distingue otimização de sorte. É a mesma
+> armadilha do `CS-50`, em outra roupa.
+
 ## Changelog
 
+- **M-91 (2026-08-28)** — atribuição de dentro do `loadDataFile` (seção acima). Duas lições: uma
+  fase opaca que domina o boot é indistinguível de um mistério — abrir a caixa custou 3 métricas e
+  respondeu em uma tarde o que estava em aberto desde o `M-87`; e uma hipótese de otimização
+  plausível (json1) só sobreviveu até o primeiro A/B intercalado.
+- **M-90 (2026-08-28)** — esqueleto de boot e a métrica de tempo percebido (seção acima). O achado
+  que vale carregar: **uma métrica de tempo total não consegue enxergar um ganho de percepção.** Se
+  o `boot.shellVisible` não existisse, esta mudança apareceria na telemetria como "nada mudou, e o
+  `appVisible` até subiu 80ms" — que é literalmente verdade e completamente irrelevante para quem
+  usa o app. Todo trabalho de percepção precisa nascer com a métrica que o torna verificável, senão
+  vira discussão de opinião.
+- **M-87 (2026-08-28)** — instrumentação de boot (seção acima). Dois achados de método, ambos
+  sobre a métrica mentir em vez de faltar — na mesma linha do `CS-51`:
+  1. A primeira versão media só o `first-contentful-paint`, e ele chega **junto** com a interface:
+     sugeria que não havia janela em branco nenhuma. É `first-paint` que marca o fundo aparecendo.
+  2. Corrigido isso, o FCP ficou como substituto do `first-paint` onde ele não existe — e a
+     primeira coleta real em Firefox mostrou o estrago: FCP em 2.559ms com a tela pintada em
+     2.579ms daria uma "janela em branco" de 20ms para um boot que teve ~2,3s dela. O substituto
+     certo é o `boot.scriptStart` (dezenas de ms do `first-paint`, porque o CSS que pinta o fundo
+     vem do mesmo `<head>`). **Um substituto plausível e errado é pior que um buraco declarado no
+     dado** — o buraco você percebe, o número errado você usa.
 - **CS-37 a CS-51 (2026-08-26/27)** — transporte particionado de sync no Drive, e o ciclo de
   medição que o corrigiu. Vale ler pelo **método**, não só pelo resultado: três rodadas de
   telemetria real derrubaram, uma por vez, três hipóteses minhas.

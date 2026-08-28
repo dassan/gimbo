@@ -168,7 +168,12 @@ export function buildBugReportSnapshot(
   const events = getSnapshot()
 
   return {
-    appVersion: (import.meta.env.VITE_APP_VERSION as string | undefined) ?? 'unknown',
+    // M-89: `__APP_VERSION__` (definido em `vite.config.ts` a partir do `package.json`) é a mesma
+    // fonte que o rodapé de Configurações exibe. Antes daqui saía `import.meta.env.VITE_APP_VERSION`
+    // — variável que nunca foi definida em lugar nenhum, nem no `.env` nem no build —, então todo
+    // bug report reportava `"appVersion": "unknown"`, inclusive os de produção usados para depurar
+    // sync. Uma métrica que não diz de qual versão veio não fecha nenhuma investigação.
+    appVersion: __APP_VERSION__,
     schemaVersion: 2,
     browser: summarizeUserAgent(navigator.userAgent),
     pwa: window.matchMedia('(display-mode: standalone)').matches,
@@ -190,4 +195,13 @@ export function buildBugReportSnapshot(
       : [],
     dataShape: options.includeDataShape ? (dataShape ?? null) : null,
   }
+}
+
+// M-87: expõe o buffer no `window` em dev — mesmo precedente (e mesma justificativa) de
+// `__storage`/`__syncTest` em `services/storage/index.ts`: as métricas de boot são gravadas antes
+// de qualquer interação, e um spec e2e não tem outra forma de inspecioná-las sem depender do
+// PerfPanel (que é UI de dev e não monta em viewport mobile). O gate DEV remove isto do bundle
+// de produção — lá o canal de consumo continua sendo só o Bug Report System (F-26).
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  ;(window as unknown as Record<string, unknown>).__telemetry = { getSnapshot, clearBuffer }
 }
