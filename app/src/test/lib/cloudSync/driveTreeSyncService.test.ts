@@ -126,6 +126,7 @@ async function seedPeerTree(params: {
   accounts?: unknown[]
   txByYear?: Record<string, Transaction[]>
   deletedIds?: string[]
+  withProperties?: boolean
   manifestOverrides?: Partial<SyncManifest>
 }): Promise<string> {
   const accounts = params.accounts ?? [ACCOUNT]
@@ -160,7 +161,19 @@ async function seedPeerTree(params: {
     ...params.manifestOverrides,
   }
 
-  return drive.seedFile(`manifest-${PEER_DEVICE}.json`, params.rootId, JSON.stringify(manifest))
+  const manifestId = drive.seedFile(
+    `manifest-${PEER_DEVICE}.json`,
+    params.rootId,
+    JSON.stringify(manifest)
+  )
+  // CS-53: um peer real anuncia a tabela de partições também em appProperties. `withProperties:
+  // false` simula um peer que não coube nos limites da API (ou de uma versão anterior), forçando o
+  // leitor a cair no download do manifesto.
+  if (params.withProperties !== false) {
+    const props = partitions.encodeManifestProperties(manifest)
+    if (props) drive.files.get(manifestId)!.appProperties = props
+  }
+  return manifestId
 }
 
 function metricValue(name: string): number | undefined {
@@ -650,5 +663,93 @@ describe('CS-52 — a publicação não bloqueia o pull', () => {
     drive['_failRules'] = []
     await syncAndPublish(makeDataFile())
     expect(drive.byName(`manifest-${OWN_DEVICE}.json`, root)).toBeDefined()
+  })
+})
+
+// ─── CS-53: manifesto lido do files.list, sem round-trip ─────────────────────
+
+describe('CS-53 — manifesto em appProperties', () => {
+  it('não baixa o manifesto do peer quando ele veio nas propriedades', async () => {
+    const local2026 = [makeTx()]
+    setLocalVault({ txByYear: { '2026': local2026 } })
+    const root = drive.seedFolder('Gimbo')
+    const manifestId = await seedPeerTree({
+      rootId: root,
+      txByYear: { '2026': local2026, '2025': [makeTx({ id: 'tx-2025', date: '2025-05-01' })] },
+    })
+
+    const result = await pullAndMerge(makeDataFile({ transactions: local2026 }))
+
+    // O `files.list` da raiz já trouxe os hashes: o arquivo do manifesto nunca é requisitado.
+    expect(drive.calls().some((c) => c.url.includes(manifestId))).toBe(false)
+    expect(metricValue('sync.drive.manifestFromProperties')).toBe(1)
+    // E o resultado é o mesmo de antes: pula o que bate, busca o que diverge.
+    expect(metricValue('sync.drive.partitionsSkipped')).toBe(2)
+    expect(metricValue('sync.drive.partitionsFetched')).toBe(1)
+    expect((result as { data: DataFile }).data.transactions.map((t) => t.id).sort()).toEqual([
+      'tx-1',
+      'tx-2025',
+    ])
+  })
+
+  it('gasta uma chamada a menos no pull do que baixando o manifesto', async () => {
+    const local2026 = [makeTx()]
+    setLocalVault({ txByYear: { '2026': local2026 } })
+    const root = drive.seedFolder('Gimbo')
+    await seedPeerTree({
+      rootId: root,
+      txByYear: { '2025': [makeTx({ id: 'tx-2025', date: '2025-05-01' })] },
+    })
+
+    await pullAndMerge(makeDataFile({ transactions: local2026 }))
+    const withProps = metricValue('sync.drive.apiCalls')!
+
+    // Mesmo cenário, peer sem propriedades: o leitor tem de baixar o manifesto.
+    localStorage.clear()
+    clearGoogleDriveCache()
+    clearDriveTreeSyncState()
+    trackPerformanceMock.mockReset()
+    drive = new FakeDrive()
+    drive.install()
+    const root2 = drive.seedFolder('Gimbo')
+    await seedPeerTree({
+      rootId: root2,
+      txByYear: { '2025': [makeTx({ id: 'tx-2025', date: '2025-05-01' })] },
+      withProperties: false,
+    })
+    await pullAndMerge(makeDataFile({ transactions: local2026 }))
+    const withoutProps = metricValue('sync.drive.apiCalls')!
+
+    expect(withProps).toBe(withoutProps - 1)
+  })
+
+  it('cai para o download quando o peer não anuncia propriedades', async () => {
+    const local2026 = [makeTx()]
+    setLocalVault({ txByYear: { '2026': local2026 } })
+    const root = drive.seedFolder('Gimbo')
+    const manifestId = await seedPeerTree({
+      rootId: root,
+      txByYear: { '2025': [makeTx({ id: 'tx-2025', date: '2025-05-01' })] },
+      withProperties: false,
+    })
+
+    const result = await pullAndMerge(makeDataFile({ transactions: local2026 }))
+
+    expect(drive.calls().some((c) => c.url.includes(manifestId))).toBe(true)
+    expect(metricValue('sync.drive.manifestFromProperties')).toBeUndefined()
+    expect((result as { data: DataFile }).data.transactions.map((t) => t.id)).toContain('tx-2025')
+  })
+
+  it('publica as propriedades junto do manifesto, numa chamada só', async () => {
+    setLocalVault({ txByYear: { '2026': [makeTx()] } })
+
+    await syncAndPublish(makeDataFile())
+
+    const manifest = drive.byName(`manifest-${OWN_DEVICE}.json`)!
+    expect(manifest.appProperties).toBeDefined()
+    // O conteúdo do arquivo continua lá: é o fallback de quem não conseguir ler as propriedades.
+    expect(JSON.parse(drive.textOf(manifest.id)).partitions).toBeDefined()
+    const decoded = partitions.decodeManifestProperties(manifest.appProperties, OWN_DEVICE)!
+    expect(Object.keys(decoded.partitions).sort()).toEqual(['accounts:', 'transactions:2026'])
   })
 })

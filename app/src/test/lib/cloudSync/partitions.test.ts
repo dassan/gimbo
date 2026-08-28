@@ -12,7 +12,10 @@ import {
   planFetch,
   planPublish,
   verifyPartition,
+  encodeManifestProperties,
+  decodeManifestProperties,
   type HashEntry,
+  type PartitionEntry,
   type PartitionKey,
   type SyncManifest,
 } from '@/lib/cloudSync/partitions'
@@ -386,5 +389,98 @@ describe('buildManifest', () => {
 
     expect(plan.keys).toEqual([])
     expect(plan.skipped).toBe(2)
+  })
+})
+
+// ─── CS-53: manifesto embarcado em appProperties ─────────────────────────────
+
+describe('CS-53 — manifesto em appProperties', () => {
+  function manifestWithYears(years: string[]): SyncManifest {
+    const partitions: Record<string, PartitionEntry> = {
+      'accounts:': {
+        hash: 111,
+        count: 3,
+        file: 'accounts.json.gz',
+        fileId: '1AbCdEfGhIjKlMnOpQrStUvWxYz012345',
+      },
+    }
+    for (const year of years) {
+      partitions[`transactions:${year}`] = {
+        hash: -161555390, // hashes de partição são XOR-fold: podem ser negativos
+        count: 1312,
+        file: `transactions-${year}.json.gz`,
+        fileId: `1AbCdEfGhIjKlMnOpQrStUvWxYz0${year}`,
+      }
+    }
+    return makeManifest({ partitions })
+  }
+
+  it('faz round-trip de hashes, contagens e fileIds', () => {
+    const manifest = manifestWithYears(['2025', '2026'])
+    const props = encodeManifestProperties(manifest)!
+    expect(props).toBeTruthy()
+
+    const decoded = decodeManifestProperties(props, 'device-a')!
+
+    expect(decoded.hashVersion).toBe(manifest.hashVersion)
+    expect(decoded.schemaVersion).toBe(manifest.schemaVersion)
+    expect(decoded.fileUpdatedAt).toBe(SETTINGS.fileUpdatedAt)
+    expect(Object.keys(decoded.partitions).sort()).toEqual(Object.keys(manifest.partitions).sort())
+    for (const [key, entry] of Object.entries(manifest.partitions)) {
+      expect(decoded.partitions[key].hash, key).toBe(entry.hash)
+      expect(decoded.partitions[key].count, key).toBe(entry.count)
+      expect(decoded.partitions[key].fileId, key).toBe(entry.fileId)
+      expect(decoded.partitions[key].file, key).toBe(entry.file)
+    }
+  })
+
+  // Os limites da API são o que decide se esta otimização vale: 30 propriedades privadas por app,
+  // 124 bytes cada (chave + valor).
+  it('respeita os limites da API para um cofre de 20 anos', () => {
+    const years = Array.from({ length: 20 }, (_, i) => String(2007 + i))
+    const props = encodeManifestProperties(manifestWithYears(years))!
+
+    expect(props).toBeTruthy()
+    expect(Object.keys(props).length).toBeLessThanOrEqual(30)
+    for (const [key, value] of Object.entries(props)) {
+      const bytes = new TextEncoder().encode(key + value).byteLength
+      expect(bytes, `propriedade ${key}`).toBeLessThanOrEqual(124)
+    }
+  })
+
+  it('desiste (null) quando o histórico é longo demais para caber', () => {
+    const years = Array.from({ length: 120 }, (_, i) => String(1950 + i))
+    expect(encodeManifestProperties(manifestWithYears(years))).toBeNull()
+  })
+
+  it('desiste quando alguma partição não tem fileId — o leitor não conseguiria buscá-la', () => {
+    const manifest = manifestWithYears(['2026'])
+    delete manifest.partitions['transactions:2026'].fileId
+    expect(encodeManifestProperties(manifest)).toBeNull()
+  })
+
+  it('devolve null para propriedades ausentes ou de outro formato', () => {
+    expect(decodeManifestProperties(undefined, 'device-a')).toBeNull()
+    expect(decodeManifestProperties({}, 'device-a')).toBeNull()
+    expect(decodeManifestProperties({ m: 'lixo' }, 'device-a')).toBeNull()
+  })
+
+  // A codificação comprime a chave de partição; se dois códigos colidissem, um peer leria a
+  // partição errada — falha silenciosa e grave.
+  it('os códigos de tabela são injetivos e nunca colidem com um ano', () => {
+    const manifest = manifestWithYears(['2026'])
+    const withAll: Record<string, PartitionEntry> = { ...manifest.partitions }
+    for (const table of SMALL_TABLES) {
+      withAll[partitionKey(table)] = {
+        hash: 1,
+        count: 1,
+        file: partitionFileName(partitionKey(table)),
+        fileId: `id-${table}`,
+      }
+    }
+    const props = encodeManifestProperties(makeManifest({ partitions: withAll }))!
+    const decoded = decodeManifestProperties(props, 'device-a')!
+
+    expect(Object.keys(decoded.partitions).sort()).toEqual(Object.keys(withAll).sort())
   })
 })

@@ -26,6 +26,7 @@ export interface FakeDriveFile {
   bytes: Uint8Array | null
   modifiedTime: string
   trashed: boolean
+  appProperties?: Record<string, string>
 }
 
 export interface FakeDriveCall {
@@ -122,7 +123,7 @@ export class FakeDrive {
 
   private insert(
     partial: Omit<FakeDriveFile, 'id' | 'modifiedTime' | 'trashed' | 'bytes'> &
-      Partial<Pick<FakeDriveFile, 'bytes'>>
+      Partial<Pick<FakeDriveFile, 'bytes' | 'appProperties'>>
   ): string {
     const id = `id-${++this._seq}`
     this.files.set(id, {
@@ -220,7 +221,20 @@ export class FakeDrive {
     const file = this.files.get(id)
     if (!file) return this.respond({ error: { message: 'File not found' } }, false, 404)
     call.name = file.name
-    file.bytes = await toBytes(init?.body)
+
+    // Um PATCH pode ser `uploadType=media` (corpo cru) ou `uploadType=multipart` (FormData com
+    // metadados + conteúdo). O segundo é como o CS-53 grava `appProperties` junto do conteúdo numa
+    // chamada só; sem modelá-lo aqui, o fake lançava e a falha sumia dentro do catch da publicação.
+    if (init?.body instanceof FormData) {
+      const { metadata, bytes } = await readMultipart(init.body)
+      if (metadata.appProperties) {
+        file.appProperties = { ...file.appProperties, ...metadata.appProperties }
+      }
+      if (metadata.name) file.name = metadata.name
+      file.bytes = bytes
+    } else {
+      file.bytes = await toBytes(init?.body)
+    }
     file.modifiedTime = this.tick()
     return this.respond({ id })
   }
@@ -231,16 +245,14 @@ export class FakeDrive {
   ): Promise<Response> {
     const form = init?.body
     if (!(form instanceof FormData)) throw new Error('FakeDrive: multipart body is not FormData')
-    const metaRaw = form.get('metadata')
-    const metaText =
-      typeof metaRaw === 'string' ? metaRaw : new TextDecoder().decode(await toBytes(metaRaw))
-    const meta = JSON.parse(metaText) as { name: string; parents?: string[]; mimeType?: string }
-    call.name = meta.name
+    const { metadata, bytes } = await readMultipart(form)
+    call.name = metadata.name ?? ''
     const id = this.insert({
-      name: meta.name,
-      parents: meta.parents ?? [],
-      mimeType: meta.mimeType ?? 'application/octet-stream',
-      bytes: await toBytes(form.get('file')),
+      name: metadata.name ?? '',
+      parents: metadata.parents ?? [],
+      mimeType: metadata.mimeType ?? 'application/octet-stream',
+      bytes,
+      appProperties: metadata.appProperties,
     })
     return this.respond({ id })
   }
@@ -372,6 +384,7 @@ function projectFile(file: FakeDriveFile, fields: string[] | null): Record<strin
     modifiedTime: file.modifiedTime,
     size: String(file.bytes?.byteLength ?? 0),
     trashed: file.trashed,
+    ...(file.appProperties ? { appProperties: file.appProperties } : {}),
   }
   if (!fields) return full
   const projected: Record<string, unknown> = {}
@@ -387,6 +400,26 @@ async function toBytes(body: unknown): Promise<Uint8Array> {
   }
   if (isBlobLike(body)) return new Uint8Array(await blobToArrayBuffer(body))
   throw new Error(`FakeDrive: unsupported body type ${Object.prototype.toString.call(body)}`)
+}
+
+interface MultipartParts {
+  metadata: {
+    name?: string
+    parents?: string[]
+    mimeType?: string
+    appProperties?: Record<string, string>
+  }
+  bytes: Uint8Array
+}
+
+/** Lê as duas partes que a API de upload multipart do Drive espera: `metadata` (JSON) e `file`. */
+async function readMultipart(form: FormData): Promise<MultipartParts> {
+  const raw = form.get('metadata')
+  const text = typeof raw === 'string' ? raw : new TextDecoder().decode(await toBytes(raw))
+  return {
+    metadata: JSON.parse(text) as MultipartParts['metadata'],
+    bytes: await toBytes(form.get('file')),
+  }
 }
 
 interface BlobLike {

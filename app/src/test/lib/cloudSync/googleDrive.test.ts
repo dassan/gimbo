@@ -312,7 +312,7 @@ describe('primitivas de árvore (CS-42)', () => {
   it('uploadFileToFolder cria e depois atualiza no lugar', async () => {
     const folderId = drive.seedFolder('device-a')
 
-    const fileId = await uploadFileToFolder({
+    const created = await uploadFileToFolder({
       parentId: folderId,
       name: 'accounts.json.gz',
       blob: new Blob(['v1']),
@@ -321,11 +321,13 @@ describe('primitivas de árvore (CS-42)', () => {
       parentId: folderId,
       name: 'accounts.json.gz',
       blob: new Blob(['v2']),
-      fileId,
+      fileId: created.id,
     })
 
-    expect(again).toBe(fileId)
-    expect(drive.textOf(fileId)).toBe('v2')
+    expect(again.id).toBe(created.id)
+    expect(again.recreated).toBe(false)
+    expect(created.recreated).toBe(false) // criação nova não é divergência
+    expect(drive.textOf(created.id)).toBe('v2')
     expect(drive.childrenOf(folderId)).toHaveLength(1)
   })
 
@@ -333,15 +335,17 @@ describe('primitivas de árvore (CS-42)', () => {
   it('uploadFileToFolder recria quando o fileId guardado sumiu (404)', async () => {
     const folderId = drive.seedFolder('device-a')
 
-    const newId = await uploadFileToFolder({
+    const recreated = await uploadFileToFolder({
       parentId: folderId,
       name: 'accounts.json.gz',
       blob: new Blob(['v1']),
       fileId: 'id-que-nao-existe',
     })
 
-    expect(newId).not.toBe('id-que-nao-existe')
-    expect(drive.textOf(newId)).toBe('v1')
+    expect(recreated.id).not.toBe('id-que-nao-existe')
+    // O sinal explícito é o que o publicador usa para invalidar o cache de ids (CS-50 C).
+    expect(recreated.recreated).toBe(true)
+    expect(drive.textOf(recreated.id)).toBe('v1')
   })
 
   it('downloadFileById devolve os bytes, e null quando o id sumiu', async () => {
@@ -454,5 +458,72 @@ describe('concorrência e rate limit (CS-43)', () => {
         n === 2 ? Promise.reject(new Error('boom')) : Promise.resolve(n)
       )
     ).rejects.toThrow('boom')
+  })
+})
+
+// ─── CS-53: appProperties ────────────────────────────────────────────────────
+
+describe('appProperties (CS-53)', () => {
+  it('grava appProperties na criação e as devolve no files.list', async () => {
+    const folderId = drive.seedFolder('Gimbo')
+
+    const created = await uploadFileToFolder({
+      parentId: folderId,
+      name: 'manifest-a.json',
+      blob: new Blob(['{}']),
+      appProperties: { m: '1|1|19|2026-08-27T00:00:00.000Z', q0: 'a,1,1,id-x' },
+    })
+
+    expect(drive.files.get(created.id)?.appProperties).toEqual({
+      m: '1|1|19|2026-08-27T00:00:00.000Z',
+      q0: 'a,1,1,id-x',
+    })
+
+    const children = await listFolderChildren(folderId)
+    expect(children[0].appProperties?.q0).toBe('a,1,1,id-x')
+  })
+
+  it('atualiza appProperties e conteúdo numa única chamada', async () => {
+    const folderId = drive.seedFolder('Gimbo')
+    const created = await uploadFileToFolder({
+      parentId: folderId,
+      name: 'manifest-a.json',
+      blob: new Blob(['v1']),
+      appProperties: { m: 'antigo' },
+    })
+
+    drive.callLog.length = 0
+    await uploadFileToFolder({
+      parentId: folderId,
+      name: 'manifest-a.json',
+      blob: new Blob(['v2']),
+      fileId: created.id,
+      appProperties: { m: 'novo' },
+    })
+
+    // Uma chamada só: separar conteúdo e metadados dobraria o round-trip mais caro (~2s medidos).
+    expect(drive.calls()).toHaveLength(1)
+    expect(drive.textOf(created.id)).toBe('v2')
+    expect(drive.files.get(created.id)?.appProperties?.m).toBe('novo')
+  })
+
+  it('sem appProperties, o update segue pelo caminho de mídia simples', async () => {
+    const folderId = drive.seedFolder('Gimbo')
+    const created = await uploadFileToFolder({
+      parentId: folderId,
+      name: 'accounts.json.gz',
+      blob: new Blob(['v1']),
+    })
+
+    drive.callLog.length = 0
+    await uploadFileToFolder({
+      parentId: folderId,
+      name: 'accounts.json.gz',
+      blob: new Blob(['v2']),
+      fileId: created.id,
+    })
+
+    expect(drive.calls()[0].url).toContain('uploadType=media')
+    expect(drive.textOf(created.id)).toBe('v2')
   })
 })

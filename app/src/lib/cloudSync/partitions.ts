@@ -378,6 +378,146 @@ export function assemblePeerDataFile(
   } as unknown as DataFile)
 }
 
+// ─── CS-53: manifesto embarcado em appProperties ──────────────────────────────
+//
+// O `files.list` da raiz já devolve `appProperties` quando pedidas em `fields`. Se a tabela de
+// partições couber lá, o leitor descobre tudo o que precisa **na mesma chamada que lista os peers**
+// — o download do manifesto (~1s, medido, para 3,5 KB) desaparece. Bytes não são o custo aqui;
+// round-trips são.
+//
+// Limites da API: **30 propriedades privadas por app por arquivo, 124 bytes por propriedade**
+// (chave + valor, UTF-8). Uma entrada `2026,hash,count,fileId` dá ~52 bytes, então cabem duas por
+// propriedade — 24 partições viram 12 propriedades, com folga para ~50 anos de histórico. Acima
+// disso a codificação devolve `null` e o publicador simplesmente não anuncia; o leitor cai para o
+// download do manifesto, que continua sendo publicado como sempre.
+
+const PROP_MAX_COUNT = 29 // 30 do limite, menos a propriedade de metadados
+const PROP_MAX_BYTES = 124
+const PROP_ENTRIES_PREFIX = 'q'
+const PROP_META = 'm'
+
+/**
+ * Códigos curtos por tabela. Nenhum colide com um ano (4 dígitos), o que mantém a codificação
+ * injetiva sem precisar de um separador de tipo. Testado.
+ */
+const TABLE_CODE: Record<SmallTable, string> = {
+  accounts: 'a',
+  categories: 'c',
+  tags: 'g',
+  valuations: 'v',
+  saved_periods: 's',
+  budgets: 'b',
+  audit_log: 'l',
+  deleted_ids: 'd',
+}
+const CODE_TABLE: Record<string, SmallTable> = Object.fromEntries(
+  Object.entries(TABLE_CODE).map(([table, code]) => [code, table as SmallTable])
+) as Record<string, SmallTable>
+
+function encodePartitionCode(key: PartitionKey): string {
+  const { table, partition } = parsePartitionKey(key)
+  if (table === 'transactions') return partition
+  return TABLE_CODE[table as SmallTable]
+}
+
+function decodePartitionCode(code: string): PartitionKey | null {
+  if (/^\d{4}$/.test(code)) return partitionKey('transactions', code)
+  const table = CODE_TABLE[code]
+  return table ? partitionKey(table) : null
+}
+
+/**
+ * Serializa o manifesto em `appProperties`. Devolve `null` quando não cabe — caso em que o
+ * publicador não anuncia e o leitor usa o manifesto baixado, sem perda de funcionalidade.
+ */
+export function encodeManifestProperties(manifest: SyncManifest): Record<string, string> | null {
+  const entries: string[] = []
+  for (const [key, entry] of Object.entries(manifest.partitions)) {
+    const code = encodePartitionCode(key)
+    if (!code || !entry.fileId) return null // sem código ou sem id, o leitor não conseguiria buscar
+    entries.push([code, entry.hash.toString(36), entry.count.toString(36), entry.fileId].join(','))
+  }
+
+  const props: Record<string, string> = {
+    [PROP_META]: [
+      manifest.formatVersion,
+      manifest.hashVersion,
+      manifest.schemaVersion,
+      manifest.settings.fileUpdatedAt,
+    ].join('|'),
+  }
+  if (byteLength(PROP_META) + byteLength(props[PROP_META]) > PROP_MAX_BYTES) return null
+
+  let bucket: string[] = []
+  let index = 0
+  const flush = (): boolean => {
+    if (bucket.length === 0) return true
+    const name = `${PROP_ENTRIES_PREFIX}${index++}`
+    const value = bucket.join('|')
+    if (byteLength(name) + byteLength(value) > PROP_MAX_BYTES) return false
+    props[name] = value
+    bucket = []
+    return true
+  }
+
+  for (const entry of entries) {
+    const candidate = [...bucket, entry].join('|')
+    if (byteLength(`${PROP_ENTRIES_PREFIX}${index}`) + byteLength(candidate) > PROP_MAX_BYTES) {
+      if (!flush()) return null
+    }
+    bucket.push(entry)
+  }
+  if (!flush()) return null
+
+  return Object.keys(props).length - 1 > PROP_MAX_COUNT ? null : props
+}
+
+/**
+ * Reconstrói o manifesto a partir das `appProperties`. `user`/`settings` não viajam aqui — o
+ * chamador os completa com os seus (o merge só lê `remote.settings.fileUpdatedAt`, que vem no
+ * bloco de metadados, e nunca lê `remote.user`).
+ */
+export function decodeManifestProperties(
+  props: Record<string, string> | undefined,
+  deviceId: string
+): (Omit<SyncManifest, 'user' | 'settings'> & { fileUpdatedAt: string }) | null {
+  const meta = props?.[PROP_META]
+  if (!meta) return null
+  const [formatVersion, hashVersion, schemaVersion, fileUpdatedAt] = meta.split('|')
+  if (!fileUpdatedAt) return null
+
+  const partitions: Record<PartitionKey, PartitionEntry> = {}
+  for (let i = 0; ; i++) {
+    const raw = props?.[`${PROP_ENTRIES_PREFIX}${i}`]
+    if (raw === undefined) break
+    for (const entry of raw.split('|')) {
+      const [code, hash, count, fileId] = entry.split(',')
+      const key = decodePartitionCode(code)
+      if (!key || !fileId) return null
+      partitions[key] = {
+        hash: parseInt(hash, 36),
+        count: parseInt(count, 36),
+        file: partitionFileName(key),
+        fileId,
+      }
+    }
+  }
+
+  return {
+    formatVersion: Number(formatVersion),
+    hashVersion: Number(hashVersion),
+    schemaVersion: Number(schemaVersion),
+    deviceId,
+    publishedAt: fileUpdatedAt,
+    partitions,
+    fileUpdatedAt,
+  }
+}
+
+function byteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength
+}
+
 /** Manifesto que este dispositivo publica, a partir dos hashes locais. */
 export function buildManifest(params: {
   deviceId: string

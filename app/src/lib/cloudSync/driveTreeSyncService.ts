@@ -44,7 +44,9 @@ import {
   PARTITION_FORMAT_VERSION,
   assemblePeerDataFile,
   buildManifest,
+  decodeManifestProperties,
   decodePartition,
+  encodeManifestProperties,
   encodePartition,
   partitionFileName,
   partitionMimeType,
@@ -351,19 +353,32 @@ type PeerOutcome =
 
 async function mergeOnePeer(manifestFile: DriveFile, current: DataFile): Promise<PeerOutcome> {
   try {
-    const bytes = await downloadFileById(manifestFile.id)
-    if (!bytes) return { status: 'failed' }
-    const manifest = JSON.parse(new TextDecoder().decode(bytes)) as SyncManifest
+    // Hashes e singletons locais, lidos sempre do estado **atual** (disciplina do CS-24/CS-29).
+    const base = await storage.getSyncManifestBase()
+    const localHashes = toHashMap(base?.hashes ?? [])
+
+    // CS-53: o caminho rápido não faz round-trip nenhum — a tabela de partições do peer veio junto
+    // do `files.list` que já listou os manifestos. `user`/`settings` não viajam nas propriedades:
+    // o merge nunca lê `remote.user`, e de `settings` só usa `fileUpdatedAt`, que vem nos
+    // metadados; o resto é completado com os nossos, o que é semanticamente idêntico.
+    const light = decodeManifestProperties(manifestFile.appProperties, manifestFile.name)
+    let manifest: SyncManifest
+    if (light && base) {
+      manifest = {
+        ...light,
+        user: base.user,
+        settings: { ...base.settings, fileUpdatedAt: light.fileUpdatedAt },
+      } as SyncManifest
+      trackSyncBytes('sync.drive.manifestFromProperties', 1)
+    } else {
+      const bytes = await downloadFileById(manifestFile.id)
+      if (!bytes) return { status: 'failed' }
+      manifest = JSON.parse(new TextDecoder().decode(bytes)) as SyncManifest
+    }
 
     // Peer à frente em formato de transporte ou em schema: pular, nunca mesclar às cegas (S-20).
     if (manifest.formatVersion > PARTITION_FORMAT_VERSION) return { status: 'newer-schema' }
     if (manifest.schemaVersion > CURRENT_SCHEMA_VERSION) return { status: 'newer-schema' }
-
-    // Hashes locais lidos **agora**, depois do round-trip de rede — nunca um snapshot anterior
-    // (mesma disciplina do CS-24/CS-29). A garantia de que pular é seguro é a monotonicidade
-    // documentada em `planFetch`, mas ler fresco reduz buscas inúteis.
-    const base = await storage.getSyncManifestBase()
-    const localHashes = toHashMap(base?.hashes ?? [])
 
     const plan = planFetch(manifest, localHashes)
     trackSyncBytes('sync.drive.partitionsTotal', plan.total)
@@ -509,13 +524,13 @@ async function publishOwnTree(
   const uploadedIds = await mapWithConcurrency(keys, async (key) => {
     const { bytes, gzip } = await encodePartition(rowsByKey[key] ?? [])
     const name = partitionFileName(key, gzip)
-    const id = await uploadFileToFolder({
+    const upload = await uploadFileToFolder({
       parentId: folderId,
       name,
       blob: new Blob([bytes as BlobPart], { type: partitionMimeType(gzip) }),
       fileId: fileIdsByName.get(name),
     })
-    return { name, id, recreated: id !== fileIdsByName.get(name) && fileIdsByName.has(name) }
+    return { name, ...upload }
   })
 
   // Um id em cache que se revelou morto (o upload teve de recriar o arquivo) significa que a pasta
@@ -535,13 +550,21 @@ async function publishOwnTree(
     fileIdsByName,
     publishedAt: new Date().toISOString(),
   })
-  const manifestFileId = await uploadFileToFolder({
+  // CS-53: a tabela de partições vai também em `appProperties`, na mesma chamada. O `files.list`
+  // da raiz passa a devolvê-la, e o leitor deixa de baixar o manifesto. Quando não cabe nos limites
+  // da API (cofre com histórico muito longo), `encodeManifestProperties` devolve null e o leitor
+  // volta a baixar — o arquivo continua sendo publicado exatamente como antes.
+  const properties = encodeManifestProperties(manifest)
+  if (!properties) trackSyncBytes('sync.drive.publish.propertiesTooLarge', 1)
+  const manifestUpload = await uploadFileToFolder({
     parentId: rootId,
     name: manifestName(deviceId),
     blob: new Blob([JSON.stringify(manifest)], { type: 'application/json' }),
     fileId:
       published.manifestFileId ?? rootChildren?.find((f) => f.name === manifestName(deviceId))?.id,
+    appProperties: properties ?? undefined,
   })
+  const manifestFileId = manifestUpload.id
 
   savePublished({
     hashes: Object.fromEntries(localHashes),

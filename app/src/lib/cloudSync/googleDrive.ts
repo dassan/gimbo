@@ -241,6 +241,11 @@ export interface DriveFile {
   name: string
   mimeType: string
   modifiedTime: string
+  /**
+   * CS-53: metadados privados do app, devolvidos pelo próprio `files.list`. É o que permite ao
+   * leitor descobrir os hashes de um peer sem baixar o manifesto — um round-trip a menos.
+   */
+  appProperties?: Record<string, string>
 }
 
 /**
@@ -267,7 +272,7 @@ async function listFiles(query: string): Promise<DriveFile[]> {
   do {
     const params = new URLSearchParams({
       q: query,
-      fields: 'nextPageToken,files(id,name,mimeType,modifiedTime)',
+      fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,appProperties)',
       pageSize: '1000',
     })
     if (pageToken) params.set('pageToken', pageToken)
@@ -340,29 +345,48 @@ export async function uploadFileToFolder(params: {
   name: string
   blob: Blob
   fileId?: string
-}): Promise<string> {
+  /** CS-53: gravadas junto do conteúdo, na mesma chamada — força o modo multipart. */
+  appProperties?: Record<string, string>
+}): Promise<{ id: string; recreated: boolean }> {
   trackSyncBytes('sync.drive.upload.bytes', params.blob.size)
 
+  const multipartBody = (metadata: Record<string, unknown>): FormData => {
+    const form = new FormData()
+    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }))
+    form.append('file', params.blob)
+    return form
+  }
+
   if (params.fileId) {
-    const res = await authorizedFetch(
-      `${UPLOAD_ENDPOINT}/${params.fileId}?uploadType=media&fields=id`,
-      { method: 'PATCH', headers: { 'Content-Type': params.blob.type }, body: params.blob }
-    )
-    if (res.ok) return params.fileId
+    // Com appProperties o update também é multipart: conteúdo e metadados numa chamada só, em vez
+    // de um PATCH de mídia seguido de um PATCH de metadados (que dobraria o round-trip mais caro).
+    const res = params.appProperties
+      ? await authorizedFetch(
+          `${UPLOAD_ENDPOINT}/${params.fileId}?uploadType=multipart&fields=id`,
+          { method: 'PATCH', body: multipartBody({ appProperties: params.appProperties }) }
+        )
+      : await authorizedFetch(`${UPLOAD_ENDPOINT}/${params.fileId}?uploadType=media&fields=id`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': params.blob.type },
+          body: params.blob,
+        })
+    if (res.ok) return { id: params.fileId, recreated: false }
     // 404: o arquivo foi apagado no Drive desde que guardamos o id — recria em vez de falhar.
     if (res.status !== 404) throw new Error(`Failed to update ${params.name} on Drive`)
   }
 
-  const metadata = { name: params.name, parents: [params.parentId] }
-  const form = new FormData()
-  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }))
-  form.append('file', params.blob)
   const res = await authorizedFetch(`${UPLOAD_ENDPOINT}?uploadType=multipart&fields=id`, {
     method: 'POST',
-    body: form,
+    body: multipartBody({
+      name: params.name,
+      parents: [params.parentId],
+      ...(params.appProperties ? { appProperties: params.appProperties } : {}),
+    }),
   })
   if (!res.ok) throw new Error(`Failed to create ${params.name} on Drive`)
-  return ((await res.json()) as { id: string }).id
+  // `recreated` só é verdadeiro quando havia um id que se revelou morto — é o sinal de que a pasta
+  // no Drive divergiu do que temos em cache. Um arquivo novo de verdade não é divergência.
+  return { id: ((await res.json()) as { id: string }).id, recreated: params.fileId !== undefined }
 }
 
 export function createGoogleDriveProvider(): CloudProvider & {
