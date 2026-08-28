@@ -229,6 +229,10 @@ arquitetura, adicionar depois se algum dia for a fonte de um relato parecido.
      Otimizar acima de uma query que ignora o índice mede o gargalo errado.
   4. A quarta, com o `CS-51` aplicado e 4 ciclos, fechou: sync incremental **7,5-8,3s** (desvio de
      ~350ms), trabalho local em **9%** do total, ~270 KB por ciclo contra ~28 MB do monolítico.
+  5. A quinta (`CS-52`/`CS-53`) atacou o que sobrou pela ótica certa — **o que o usuário espera**,
+     não o que o sync faz. Tirar a publicação do caminho percebido e ler o manifesto do peer via
+     `appProperties` levou o sync incremental a **3,0-3,4s em 3 chamadas**, o piso deste desenho.
+     Fechamento do épico: **~4x mais rápido que o transporte monolítico, com 40% das chamadas.**
 
   Resultado prático: o `EXPLAIN QUERY PLAN` via `window.__storage.query()` no console — a mesma
   ferramenta do `M-72` — continua sendo o drill-down que resolve, quando a métrica agregada diz
