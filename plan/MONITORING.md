@@ -212,6 +212,23 @@ arquitetura, adicionar depois se algum dia for a fonte de um relato parecido.
 
 ## Changelog
 
+- **CS-37 a CS-51 (2026-08-26/27)** — transporte particionado de sync no Drive, e o ciclo de
+  medição que o corrigiu. Vale ler pelo **método**, não só pelo resultado: três rodadas de
+  telemetria real derrubaram, uma por vez, três hipóteses minhas.
+  1. A primeira coleta confirmou o ganho de bytes (push por salvamento de ~14MB para **136 KB**) e
+     revelou que o gargalo tinha mudado de lugar: um manifesto de 3,5 KB custava ~1,1s para baixar
+     e ~2s para subir. Transporte deixou de ser *bandwidth-bound* e virou *latency-bound*.
+  2. A segunda rodada, com os papéis dos navegadores **invertidos**, confirmou isso de forma
+     limpa — os números seguiram o papel do dispositivo, não a engine.
+  3. A terceira mostrou que as otimizações do `CS-50` **pioraram** tudo. Investigar por quê levou
+     ao `CS-51`: `date LIKE '2026%'` dava `SCAN` (varredura completa) em dois caminhos quentes.
+     Otimizar acima de uma query que ignora o índice mede o gargalo errado.
+  4. A quarta, com o `CS-51` aplicado e 4 ciclos, fechou: sync incremental **7,5-8,3s** (desvio de
+     ~350ms), trabalho local em **9%** do total, ~270 KB por ciclo contra ~28 MB do monolítico.
+
+  Resultado prático: o `EXPLAIN QUERY PLAN` via `window.__storage.query()` no console — a mesma
+  ferramenta do `M-72` — continua sendo o drill-down que resolve, quando a métrica agregada diz
+  "está lento" mas não diz onde.
 - **M-71 (2026-08-20)** — camada criada (este documento).
 - **M-72 (2026-08-20)** — `getTransactions()` sem filtro travava 52-55s na hidratação inicial.
   Medido com esta camada + drill-down manual via `window.__storage.query()` no console
