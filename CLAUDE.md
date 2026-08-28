@@ -218,7 +218,7 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 ## Estado Atual (2026-08-22)
 
 **Schema em memória v19** | **Schema físico SQLite v16** (`migrations/v1..v16.sql`) | Cobertura: ~96% statements
-**1111 testes unitários** (41 arquivos) + **140 testes E2E** (perfis `chromium` e `mobile-chrome`)
+**1112 testes unitários** (41 arquivos) + **140 testes E2E** (perfis `chromium` e `mobile-chrome`)
 
 > Os dois números de schema são independentes e **não coincidem**: `CURRENT_SCHEMA_VERSION` (v17,
 > em `lib/storage/schema.ts`) versiona o `DataFile` em memória; `PRAGMA user_version` (v13)
@@ -269,6 +269,13 @@ Features concluídas desde 2026-05-27:
   2. Otimizar acima de uma query que ignora o índice **mede o gargalo errado**: as três otimizações do `CS-50` estavam certas em desenho e, medidas antes do `CS-51`, pareceram pioras. Repetir a medição com os papéis dos dispositivos invertidos, e mais de uma vez, foi o que separou sinal de ruído.
 
   Em aberto: `CS-49` (e2e entre dois contextos de browser reais trocando uma árvore de partições — hoje há cobertura dos dois lados separadamente, não juntos). Ver `plan/BACKLOG.md` CS-37 a CS-51, `plan/MONITORING.md` §"Transporte particionado" e o changelog de lá.
+
+- **M-89** (2026-08-28) — achado incidental ao ler as coletas reais do `M-87`:
+  `buildBugReportSnapshot()` lia `import.meta.env.VITE_APP_VERSION`, variável nunca definida em
+  lugar nenhum — todo bug report saía com `"appVersion": "unknown"`, inclusive a telemetria de sync
+  das sessões `CS-20` a `CS-55`, num épico cujo método era comparar coletas antes e depois de cada
+  correção. Passou a usar `__APP_VERSION__` (mesma fonte do rodapé de Configurações), com teste de
+  regressão.
 
 - **M-87** (2026-08-28) — usuário relatou que, ao recarregar a página, o app fica alguns segundos
   mostrando só o fundo da tela antes de a interface aparecer. O projeto não tinha **nenhuma**
