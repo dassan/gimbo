@@ -62,6 +62,13 @@ duas ressalvas honestas: isto mede *criação*, não *edição* (uma correção 
 aparece aqui, e o campo que mostraria isso é justamente o inutilizável), e reflete o uso de uma
 pessoa só.
 
+O carimbo do `sync_gimbo.py` **tem conserto** e vale consertar (`CS-57`) — mas pelo bem do sync, não
+deste épico: é a hipótese líder, ainda aberta, do `CS-36`, onde um dispositivo pulou 19 de 20 anos
+no hash-skip e o outro não pulou nenhum. Dois cofres semeados por execuções diferentes do script
+carregam `updated_at` distintos para linhas de conteúdo idêntico, e o hash do ano diverge
+corretamente sobre uma diferença que não existe. Nada disso muda o desenho abaixo: mesmo com o
+campo consertado, ele continua não sendo o detector certo (§7).
+
 **Por isso o desenho abaixo não depende dela para estar correto** — só para ser rápido. Ver §6.
 
 ## 5. Desenho
@@ -176,7 +183,14 @@ descobriu o bug de normalização do `updatedAt` antes que qualquer leitura depe
 
 ## 7. O que **não** fazer
 
-- Não usar `updated_at` como detector de modificação (§4) — o `sync_gimbo.py` o inutiliza.
+- Não usar `updated_at` como detector de partição suja. **O motivo não é o `sync_gimbo.py`** (esse
+  problema tem conserto — `CS-57`), e sim que ele é um campo de *cronologia*, não um mecanismo de
+  invalidação: (a) **deleção não deixa `updated_at`** — a linha sumiu, e o agregado daquele ano
+  ficaria velho para sempre; (b) descobrir "o que mudou desde T" por varredura exige um índice novo
+  em `updated_at` e ainda assim só chega ao ano *novo* de uma transação que mudou de data, nunca ao
+  antigo — que é justamente o que precisa ser recomputado; (c) `replaceAll()` (merge de sync,
+  import) troca tudo de uma vez, sem passar por carimbo de linha. O `applyTransactionDelta` já
+  entrega os anos afetados de forma síncrona, no momento da escrita, cobrindo os três casos.
 - Não reimplementar detecção de partição suja: `table_hashes` + `applyTransactionDelta` já fazem.
 - Não repetir o teste do `json_group_array` sem hipótese nova — 1,03x, medido (`M-91`).
 - Não deixar a onda 1 gravar nada (§6.1).

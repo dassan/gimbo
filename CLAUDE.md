@@ -376,7 +376,12 @@ Itens em aberto:
   mecanismo novo, e a correção **não** pode depender da hipótese de que o passado muda pouco
   (confirmada em 1,2% no cofre real, mas ela decide só o custo); (2) o risco mais grave é o diff do
   `M-73` rodar contra uma janela e emitir `DELETE` para 22 mil transações — nenhuma escrita antes de
-  `hydration === 'complete'`, com guarda dentro de `debouncedApplyMutation()`.
+  `hydration === 'complete'`, com guarda dentro de `debouncedApplyMutation()`. Registrado no mesmo
+  fôlego o `CS-57`: o `sync_gimbo.py` recarimba `updated_at` em linhas que não mudaram (um único
+  valor distinto em 26.576 linhas do cofre real), o que é a hipótese líder do `CS-36` — hash de ano
+  divergindo sobre uma diferença que não existe no dado financeiro. Consertável, e vale consertar
+  pelo sync; não muda nada no `HY`, onde `updated_at` continua sendo o detector errado por razões
+  próprias.
 
 - **M-88** — Boot: 2,5s de tela vazia num cofre grande, 87% em `loadDataFile()` (diagnóstico
   fechado no `M-87`, correção não iniciada). Três caminhos combináveis, decisão de produto: dar
