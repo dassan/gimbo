@@ -24,7 +24,7 @@ import { CURRENT_SCHEMA_VERSION, SchemaVersionError } from '@/lib/storage/schema
 import type { Transaction } from '@/types'
 
 const USER = {
-  name: 'Fábio',
+  name: 'E2E User',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 }

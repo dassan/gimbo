@@ -17,7 +17,7 @@ import { test, expect, type Page } from '@playwright/test'
 const fixture = {
   schemaVersion: 4,
   user: {
-    name: 'Fábio',
+    name: 'E2E User',
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   },
@@ -124,7 +124,7 @@ test('CS-41: getSyncManifestBase devolve singletons e hashes, sem a sentinela __
 }) => {
   const base = await page.evaluate(async () => (window as Win).__storage.getSyncManifestBase())
 
-  expect(base.user.name).toBe('Fábio')
+  expect(base.user.name).toBe('E2E User')
   expect(base.settings.fileUpdatedAt).toBe('2026-01-02T00:00:00.000Z')
 
   const keys = base.hashes.map((h: { key: string }) => h.key).sort()

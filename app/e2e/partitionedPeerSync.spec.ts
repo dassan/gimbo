@@ -97,7 +97,7 @@ const SHARED_TX = tx('tx-compartilhada', '2024-07-15', 50, '2024-07-15T10:00:00.
 function vaultFixture(fileCreatedAt: string, transactions: unknown[]) {
   return {
     schemaVersion: 4,
-    user: { name: 'Fábio', createdAt: fileCreatedAt, updatedAt: fileCreatedAt },
+    user: { name: 'E2E User', createdAt: fileCreatedAt, updatedAt: fileCreatedAt },
     settings: { fileCreatedAt, fileUpdatedAt: fileCreatedAt, auditLogRetentionLimit: 200 },
     accounts: SHARED_ACCOUNTS,
     categories: SHARED_CATEGORIES,
