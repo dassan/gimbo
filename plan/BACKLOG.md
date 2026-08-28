@@ -695,6 +695,34 @@ badge da navbar e o banner de reconexão ficariam mostrando um estado órfão do
 
 ---
 
+## Hidratação por Janela + Agregação em SQL — épico HY
+
+> Desenho completo em `plan/BOOT_HYDRATION.md`. Origem: `M-88`, instruído pelos números do `M-87`,
+> `M-90` e `M-91`. **Nada implementado** — os itens abaixo são a decomposição proposta.
+>
+> Princípio que segura o épico: **a correção não depende da hipótese de que o passado muda pouco.**
+> A invalidação por partição já existe (`table_hashes` do `CS-32` + os anos que o
+> `applyTransactionDelta` já calcula); a hipótese — confirmada em 1,2% de escrita no passado contra
+> 24,4% de agendamento do futuro, no cofre real — decide só o custo de manutenção, nunca se o saldo
+> exibido está certo.
+
+| ID | Descrição | Prioridade | Status |
+|------|-------------|------------|--------|
+| HY-01 | **Tabela `transaction_aggregates` (migration `v17.sql`) + manutenção incremental nos 3 pontos de escrita.** Chave = a mesma partição de ano de `table_hashes` (`CS-32`), colunas `(year, account_id, side, type, is_paid) → sum_amount, row_count`, derivadas da fórmula de saldo que `getReserveBalance`/Dashboard/NetWorth já usam (`isCashRealized` filtrando `isPaid`; lado `peer` para o `transferAccountId` de TRANSFER/CREDIT_PAYMENT). Recomputa por `date >= ? AND date < ?` (`yearRange()`), **nunca `LIKE`** (`CS-51`). Instrumentada em `writeSmallTables`/`applyTransactionDelta`/`replaceAll` — nenhuma das ~20 mutações de `useDataStore.ts` muda. **Nenhuma mudança de leitura**, exatamente como a Fase 2a do `CS-32`: escreve uma tabela que ninguém lê ainda. | média | aberto |
+| HY-02 | **Backfill de `transaction_aggregates` por sentinela de versão.** Mesmo padrão de `ensureTableHashesCurrent` (`CS-34`/`CS-39`): tabela vazia **ou** produzida por outro `AGG_VERSION` → recomputa tudo uma vez. Chamado no `init()` e no fim do caminho de sucesso de `importDb()` — o `CS-34` mostrou que esquecer o segundo faz um `.db` importado só ganhar o backfill no reload seguinte. | média | aberto |
+| HY-03 | **Atualizar `scripts/sync_gimbo.py` junto do bump de schema físico v17** (`SCHEMA_DDL` + `PRAGMA user_version`) e `MAX_KNOWN_DB_VERSION`. Armadilha recorrente, já esquecida no `M-51` e no `M-64`; sem isso o `runMigrations()` pula o DDL ao importar o `.db` gerado. | média | aberto |
+| HY-04 | **Custo real da manutenção, medido antes de assumir o HY-2.** Métrica por mutação do recompute de agregado (quantos anos, quanto tempo), colhida no cofre real. É o número que diz se a hipótese do passado estável se sustenta no uso, e não só no `created_at` histórico. | média | aberto |
+| HY-05 | **`hydration: 'window' \| 'complete'` no `DataFile` + leitura em duas ondas.** Onda 1 = tabelas pequenas + agregados + `date >= corte`; onda 2 = o resto, em segundo plano. Saldo na onda 1 = `account.balance` + Σ agregados + soma em JS da janela — exato, não aproximado. | média | aberto |
+| HY-06 | **Guarda de escrita durante a onda 1 — risco mais grave do épico.** `debouncedApplyMutation()` recusa persistir um `DataFile` incompleto: sem isso, o diff do `M-73` veria 22 mil transações ausentes e emitiria `DELETE` para todas. Mesma família do `CS-24` (perda silenciosa). A guarda é o que protege; desabilitar FAB/drawer com feedback é só a parte visível. | alta | aberto |
+| HY-07 | **Manutenção de boot passa para a onda 2.** `refreshRecurrenceHorizons()` (`B-22`) e `ensureQuadrantesBatch()` (`BX-07`) precisam do histórico completo — rodá-las sobre uma janela geraria dado errado por desenho, não por acaso. | média | aberto |
+| HY-08 | **Gating por tipo das telas que exigem histórico.** `Analytics`, faturas antigas, busca e auditoria passam a exigir `CompleteDataFile`, de modo que o TypeScript recuse compilar uma tela que leia histórico na onda 1. Camada mais forte das três defesas contra número errado (`BOOT_HYDRATION.md` §5.4). | média | aberto |
+| HY-09 | **Teste de propriedade: `saldo(agregado + janela) === saldo(cofre inteiro)`,** por conta, cobrindo transação movida de ano, `isPaid` alternado, TRANSFER e CREDIT_PAYMENT cruzando a fronteira do corte, deleção com lápide, import e merge. Mais a conferência de fronteira: `row_count` dos agregados + linhas da janela == `COUNT(*)` da tabela. | alta | aberto |
+| HY-10 | **`hydration.balanceMismatch` — verificação em produção que reporta e nunca bloqueia.** Ao fim da onda 2, recalcular pelo caminho completo e comparar com o que a onda 1 exibiu. Mesmo padrão do `sync.drive.partitionHashMismatch` (`CS-46`), que existe justamente para pegar regressão silenciosa em campo. | média | aberto |
+| HY-11 | **Métricas `hydration.wave1`/`hydration.wave2`** e validação contra dado real (build de produção, rodadas intercaladas, mediana — `M-91`). Estimativa a bater: primeira tela em ~0,5s contra 2,3s. Se a onda 2 competir com a interação logo após o boot, fatiá-la por ano. | média | aberto |
+| HY-12 | **Corte da janela: decisão de produto em aberto.** Início do ano corrente (simples, alinhado à partição do agregado) ou últimos N meses (janela estável o ano todo, desalinhada do ano). No cofre real, `date >= 2026-01-01` são 4.527 linhas — 17% do cofre. | média | aberto |
+
+---
+
 ## Saúde Financeira — F-29
 
 Página `/health` focada em dívida e seu peso no orçamento (≠ Patrimônio, que é F-24). Decisões de produto e design, conceitos e fórmulas em `plan/FINANCIAL_HEALTH.md`. A Fase 1 (design mockado) está **resolvida**; as decisões de produto foram tomadas (ver doc §6) e destravam as fases de implementação. **Ordem das fases é dependente** — `LOAN` (Fase 2) antes do motor de dívida (Fase 3), que soma o saldo de empréstimos.

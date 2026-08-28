@@ -31,6 +31,7 @@ Workflow de desenvolvimento IA + humano definido em `plan/RULES.md`.
 | Cenários de sync | `plan/SYNC_SCENARIOS.md` | 20 cenários: SQLite atual (S-01..07), multi-desktop por pasta (S-16..20), nuvem (S-08..15); Parte 4 é o diário da sessão de otimização `CS-24..36` |
 | Brainstorm de sync | `plan/FABLE-BRAINSTORM.md` | Análise das 7 alternativas de sync multi-dispositivo, matriz de trade-offs, roadmap faseado e decisões |
 | Transporte particionado de sync | `plan/SYNC_PARTITIONED_TRANSPORT.md` | Proposta original que originou o épico. **Implementada em `CS-37..CS-51`** (2026-08-27) com dois desvios deliberados: manifesto na raiz (não dentro da pasta do dispositivo) e payload JSON gzipado (não `.db` por partição) — ver a entrada de estado abaixo |
+| Hidratação por janela | `plan/BOOT_HYDRATION.md` | Desenho do épico `HY` (agregação em SQL + hidratação em duas ondas) — **proposta, nada implementado**; ler junto de `MONITORING.md` §"Onde estão os 2,3s do `loadDataFile`" |
 | Histórico de storage | `plan/STORAGE.md` | Decisão e migração JSON/FSA → SQLite/OPFS |
 | Telemetria e bug report | `plan/METRICS.md` | Decisões de privacidade, arquitetura do F-26 (Bug Report System), tasks TASK-BR-01 a BR-08 |
 | Monitoramento de performance | `plan/MONITORING.md` | Camada dev-only de instrumentação (`lib/perfMonitor.ts`, `PerfPanel`), pontos instrumentados, por que não Prometheus/Grafana (M-71) |
@@ -364,6 +365,18 @@ Itens em aberto:
 > **Nada disso está em produção até rodar `npm run deploy`** — os headers e a fonte self-hospedada só valem no build publicado.
 
 - **Cofre protegido por senha** — épico separado, decidido em 2026-08-19: bloqueio por senha com expiração por inatividade, e criptografia em repouso. **Reverte parcialmente o `X-1` do `PRD.md`** ("Criptografia do arquivo local", hoje listado como fora de escopo permanente) e encosta no `CS-18`. Ainda não desenhado — decisão pendente: se o backup exportado continua abrível em qualquer ferramenta SQLite ou vira blob opaco.
+
+- **Épico HY (hidratação por janela + agregação em SQL)** — desenhado em `plan/BOOT_HYDRATION.md`
+  (`HY-01` a `HY-12` no backlog), **nada implementado**. Ataca o que sobrou do `M-88` depois do
+  `M-90`: os ~2,3s até os números aparecerem, dos quais 95% é o SQLite materializando 26.576 linhas
+  (`M-91`). Ideia: agregado por partição de ano (`SUM` não materializa linha — `COUNT(*)` custa
+  89ms) + hidratação em duas ondas, com janela de `date >= corte` (17% do cofre real). **Dois
+  pontos que qualquer sessão futura precisa respeitar:** (1) a detecção de "passado modificado" já
+  existe — `table_hashes` (`CS-32`) e os anos que `applyTransactionDelta` calcula —, não construir
+  mecanismo novo, e a correção **não** pode depender da hipótese de que o passado muda pouco
+  (confirmada em 1,2% no cofre real, mas ela decide só o custo); (2) o risco mais grave é o diff do
+  `M-73` rodar contra uma janela e emitir `DELETE` para 22 mil transações — nenhuma escrita antes de
+  `hydration === 'complete'`, com guarda dentro de `debouncedApplyMutation()`.
 
 - **M-88** — Boot: 2,5s de tela vazia num cofre grande, 87% em `loadDataFile()` (diagnóstico
   fechado no `M-87`, correção não iniciada). Três caminhos combináveis, decisão de produto: dar
