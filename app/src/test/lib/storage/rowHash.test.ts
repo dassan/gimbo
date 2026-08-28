@@ -10,6 +10,8 @@ import {
   savedPeriodRowKey,
   auditEntryRowKey,
   transactionRowKey,
+  deletedIdRowKey,
+  HASH_VERSION,
 } from '@/lib/storage/rowHash'
 import type {
   RawAccount,
@@ -256,5 +258,127 @@ describe('row key functions detect a change in every field', () => {
     }
     const baseHash = hashRow(auditEntryRowKey(base))
     expect(hashRow(auditEntryRowKey({ ...base, summary: 'Changed' }))).not.toBe(baseHash)
+  })
+})
+
+// ─── CS-39: pinagem do esquema de hash ────────────────────────────────────────
+
+const PIN = {
+  account: makeFullAccount(),
+  category: {
+    id: 'cat-1',
+    parentId: 'cat-parent',
+    name: 'Mercado',
+    icon: 'cart',
+    color: '#ff0000',
+    type: 'EXPENSE',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  } as RawCategory,
+  tag: {
+    id: 'tag-1',
+    name: 'Casa',
+    color: '#00ff00',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  } as RawTag,
+  budget: {
+    id: 'bud-1',
+    name: 'Lazer',
+    emoji: '🎬',
+    color: '#0000ff',
+    kind: 'spending',
+    target: 500,
+    period: { mode: 'date', date: '2026-01' },
+    archivedAt: '2026-02-01T00:00:00.000Z',
+    recipeSlug: 'quadrantes',
+    recipeSlot: 1,
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    targetSource: 'manual',
+  } as RawBudget,
+  valuation: {
+    id: 'val-1',
+    accountId: 'acc-1',
+    date: '2026-01-31',
+    marketValue: 1234,
+  } as RawValuation,
+  savedPeriod: {
+    id: 'sp-1',
+    name: 'Janeiro',
+    start: '2026-01-01',
+    end: '2026-01-31',
+  } as RawSavedPeriod,
+  auditEntry: {
+    id: 'audit-1',
+    timestamp: '2026-01-01T00:00:00.000Z',
+    action: 'CREATE',
+    entity: 'transaction',
+    entityId: 'tx-1',
+    summary: 'Criou',
+  } as RawAuditEntry,
+  deletedId: 'deleted-1',
+  transaction: makeFullTransaction(),
+}
+
+/**
+ * Valores congelados do esquema de hash vigente. **Se um destes falhar, não "conserte" o número:**
+ * você mudou uma função de `rowHash.ts`, e o efeito é que dois dispositivos em versões diferentes
+ * do app passam a calcular hashes distintos para dado idêntico — o hash-skip do sync deixa de
+ * convergir entre eles. O procedimento é bumpar `HASH_VERSION` em `lib/storage/rowHash.ts` **e**
+ * atualizar os literais abaixo, nessa ordem. `ensureTableHashesCurrent()` (worker.ts) cuida de
+ * invalidar e recomputar as `table_hashes` já gravadas quando a versão muda.
+ */
+const PINNED_HASHES = {
+  version: 1,
+  account: 1036428690,
+  category: 2381249970,
+  tag: 2039225961,
+  budget: 3290489023,
+  valuation: 2714327257,
+  savedPeriod: 1657429824,
+  auditEntry: 3945033005,
+  deletedId: 2643702044,
+  transaction: 2832041127,
+} as const
+
+describe('CS-39 — esquema de hash pinado', () => {
+  const BUMP = 'mudou uma função de rowHash.ts? bumpe HASH_VERSION e atualize PINNED_HASHES'
+
+  it(`HASH_VERSION está em ${PINNED_HASHES.version} — ${BUMP}`, () => {
+    expect(HASH_VERSION).toBe(PINNED_HASHES.version)
+  })
+
+  it.each([
+    ['account', () => hashRow(accountRowKey(PIN.account)), PINNED_HASHES.account],
+    ['category', () => hashRow(categoryRowKey(PIN.category)), PINNED_HASHES.category],
+    ['tag', () => hashRow(tagRowKey(PIN.tag)), PINNED_HASHES.tag],
+    ['budget', () => hashRow(budgetRowKey(PIN.budget)), PINNED_HASHES.budget],
+    ['valuation', () => hashRow(valuationRowKey(PIN.valuation)), PINNED_HASHES.valuation],
+    ['savedPeriod', () => hashRow(savedPeriodRowKey(PIN.savedPeriod)), PINNED_HASHES.savedPeriod],
+    ['auditEntry', () => hashRow(auditEntryRowKey(PIN.auditEntry)), PINNED_HASHES.auditEntry],
+    ['deletedId', () => hashRow(deletedIdRowKey(PIN.deletedId)), PINNED_HASHES.deletedId],
+    ['transaction', () => hashRow(transactionRowKey(PIN.transaction)), PINNED_HASHES.transaction],
+  ])('%s mantém o hash congelado', (_name, compute, expected) => {
+    expect(compute(), BUMP).toBe(expected)
+  })
+})
+
+/**
+ * Pré-condição da segurança do hash-skip, e o teste mais importante deste arquivo.
+ *
+ * O sync pula uma partição quando o hash do peer bate com o local, e a justificativa de que isso
+ * não perde dado é: hash igual ⇒ multiconjunto de linhas idêntico **incluindo `updatedAt`** ⇒ as
+ * linhas omitidas jamais venceriam o LWW de `mergeForSync` contra o que já está local. Se alguém
+ * tirar `updatedAt` de uma row key, passa a existir "hash igual, LWW diferente" — e o skip vira
+ * perda silenciosa de dado, a pior falha que esta otimização pode produzir.
+ */
+describe('CS-39 — updatedAt participa de toda row key que o carrega', () => {
+  it.each([
+    ['account', (v: string) => accountRowKey({ ...PIN.account, updatedAt: v })],
+    ['category', (v: string) => categoryRowKey({ ...PIN.category, updatedAt: v })],
+    ['tag', (v: string) => tagRowKey({ ...PIN.tag, updatedAt: v })],
+    ['budget', (v: string) => budgetRowKey({ ...PIN.budget, updatedAt: v })],
+    ['transaction', (v: string) => transactionRowKey({ ...PIN.transaction, updatedAt: v })],
+  ])('%s: mudar só updatedAt muda a chave', (_name, keyOf) => {
+    expect(keyOf('2026-01-01T00:00:00.000Z')).not.toBe(keyOf('2026-06-01T00:00:00.000Z'))
   })
 })

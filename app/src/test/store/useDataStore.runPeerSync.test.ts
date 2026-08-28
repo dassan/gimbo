@@ -29,7 +29,7 @@ const { pullAndMergeMock, pushIfNeededMock } = vi.hoisted(() => ({
   pullAndMergeMock: vi.fn(),
   pushIfNeededMock: vi.fn(),
 }))
-vi.mock('@/lib/cloudSync/syncService', () => ({
+vi.mock('@/lib/cloudSync/driveTreeSyncService', () => ({
   pullAndMerge: pullAndMergeMock,
   pushIfNeeded: pushIfNeededMock,
 }))

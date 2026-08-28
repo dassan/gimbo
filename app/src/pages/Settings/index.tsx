@@ -75,6 +75,7 @@ import {
   getGoogleAccountEmail,
 } from '@/lib/cloudSync/googleAuth'
 import { clearGoogleDriveCache } from '@/lib/cloudSync/googleDrive'
+import { clearDriveTreeSyncState } from '@/lib/cloudSync/driveTreeSyncService'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import {
@@ -488,6 +489,7 @@ export default function Settings() {
   async function handleDisconnectGoogle() {
     await revokeGoogleAuth()
     clearGoogleDriveCache()
+    clearDriveTreeSyncState()
     setGoogleConnected(false)
     setGoogleEmail(null)
     useDataStore.setState({ syncStatus: 'idle', lastSyncedAt: null })
@@ -602,6 +604,12 @@ export default function Settings() {
     setImportResult(null)
     try {
       await storage.importBlob(file)
+      // CS-47: o cofre local foi substituído, então tudo o que o sync "já viu" deixou de valer.
+      // Sem isto, a marca d'água por peer continua dizendo "já mesclei essa versão" e o app pula
+      // para sempre justamente o peer que tem o dado que o import acabou de descartar — e o cache
+      // de "último publicado" faria o dispositivo anunciar um manifesto que não descreve mais o
+      // seu conteúdo.
+      clearDriveTreeSyncState()
       const imported = await storage.loadDataFile()
       if (imported) loadData(imported)
       setImportResult({ status: 'success' })

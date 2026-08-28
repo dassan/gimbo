@@ -202,3 +202,60 @@ test('mover uma transação de 2025 pra 2026 (editar a data) muda os dois hashes
   expect(after2025?.hash_value).not.toBe(before2025?.hash_value)
   expect(after2026?.hash_value).not.toBe(before2026?.hash_value)
 })
+
+// CS-39 — a sentinela `__meta/hash_version` e a invalidação que ela habilita.
+//
+// Antes disto, `ensureTableHashesCurrent` (então `backfillTableHashesIfNeeded`) só olhava se a
+// tabela estava vazia. Uma mudança no esquema de hash de `rowHash.ts` entre versões do app deixava
+// todas as linhas já gravadas calculadas pelas regras antigas, e nada as recomputava — o que no
+// transporte particionado significa dois dispositivos que nunca convergem no hash-skip.
+
+test('CS-39: grava a sentinela de HASH_VERSION e a mantém fora do mapa de partições', async ({
+  page,
+}) => {
+  const hashes = await getTableHashes(page)
+
+  const sentinel = findHash(hashes, '__meta', 'hash_version')
+  expect(sentinel, 'sentinela __meta/hash_version ausente').toBeDefined()
+  expect(sentinel?.hash_value).toBeGreaterThan(0)
+
+  // A sentinela não é uma partição: nenhuma tabela real se chama __meta.
+  expect(hashes.filter((h) => h.table_name === '__meta')).toHaveLength(1)
+})
+
+test('CS-39: uma sentinela de outra versão invalida e recomputa os hashes no boot', async ({
+  page,
+}) => {
+  const before = await getTableHashes(page)
+  const before2026 = findHash(before, 'transactions', '2026')
+  expect(before2026).toBeDefined()
+
+  // Simula um cofre gravado por uma versão anterior do esquema de hash: valores de partição
+  // corrompidos (como se tivessem vindo de outras funções de row key) e a sentinela numa versão
+  // que este app não reconhece.
+  await page.evaluate(async () => {
+    const storage = (window as Record<string, unknown>).__storage as {
+      query(sql: string, params?: unknown[]): Promise<unknown[]>
+    }
+    await storage.query('UPDATE table_hashes SET hash_value = 999999, row_count = 42')
+    await storage.query(
+      "UPDATE table_hashes SET hash_value = 999 WHERE table_name = '__meta' AND partition_key = 'hash_version'"
+    )
+  })
+
+  const corrupted = await getTableHashes(page)
+  expect(findHash(corrupted, 'transactions', '2026')?.hash_value).toBe(999999)
+
+  await page.reload()
+  await page.waitForFunction(() => !!(window as Record<string, unknown>).__storage)
+
+  const after = await getTableHashes(page)
+  // Recomputado do estado real, então volta a bater exatamente com o que havia antes da corrupção.
+  expect(findHash(after, 'transactions', '2026')?.hash_value).toBe(before2026?.hash_value)
+  expect(findHash(after, 'transactions', '2026')?.row_count).toBe(before2026?.row_count)
+  expect(findHash(after, 'accounts')?.hash_value).toBe(findHash(before, 'accounts')?.hash_value)
+  // E a sentinela volta para a versão corrente, senão o recompute rodaria a cada boot.
+  expect(findHash(after, '__meta', 'hash_version')?.hash_value).toBe(
+    findHash(before, '__meta', 'hash_version')?.hash_value
+  )
+})

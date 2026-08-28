@@ -1,4 +1,5 @@
-﻿import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { formatDateLocal } from '@/lib/utils'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '../fixtures/dataFile'
 import type {
@@ -48,7 +49,7 @@ function makeTransaction(overrides: Partial<Transaction> = {}): Transaction {
     categoryId: 'cat-1',
     amount: 100,
     type: 'EXPENSE',
-    date: new Date().toISOString().slice(0, 10),
+    date: formatDateLocal(new Date()),
     description: 'Test',
     isPaid: true,
     tags: [],
@@ -509,7 +510,7 @@ describe('CREDIT_PAYMENT handling (CC-21)', () => {
       categoryId: '',
       amount: 1200,
       type: 'CREDIT_PAYMENT',
-      date: new Date().toISOString().slice(0, 10),
+      date: formatDateLocal(new Date()),
       description: 'Pagamento fatura',
       isPaid: true,
       tags: [],
@@ -536,7 +537,7 @@ describe('CREDIT_PAYMENT handling (CC-21)', () => {
       categoryId: '',
       amount: 500,
       type: 'CREDIT_PAYMENT',
-      date: new Date().toISOString().slice(0, 10),
+      date: formatDateLocal(new Date()),
       description: '',
       isPaid: true,
       tags: [],
@@ -571,7 +572,7 @@ describe('CREDIT_PAYMENT handling (CC-21)', () => {
       categoryId: cat.id,
       amount: 100,
       type: 'EXPENSE',
-      date: new Date().toISOString().slice(0, 10),
+      date: formatDateLocal(new Date()),
       description: 'Feira',
       isPaid: true,
       tags: [],
