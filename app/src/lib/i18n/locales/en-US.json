@@ -863,5 +863,14 @@
       "terms": "Terms of Service",
       "origin": "About the name"
     }
+  },
+  "vaultBusy": {
+    "title": "Gimbo is already open",
+    "blockedBody": "Your vault is open in another tab or window. To protect your data, it can only be active in one place at a time.",
+    "revokedBody": "Another tab took over your vault. Nothing was lost — everything you did here was already saved.",
+    "useHere": "Use here",
+    "takingOver": "Taking over...",
+    "failed": "The other tab did not respond. It may be stuck — close it and try again.",
+    "dismissedHint": "You can take over at any time with “Use here”."
   }
 }

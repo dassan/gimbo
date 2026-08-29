@@ -863,5 +863,14 @@
       "terms": "Termos de Uso",
       "origin": "Sobre o nome"
     }
+  },
+  "vaultBusy": {
+    "title": "O Gimbo já está aberto",
+    "blockedBody": "Seu cofre está aberto em outra aba ou janela. Para proteger seus dados, ele só pode ficar ativo em um lugar por vez.",
+    "revokedBody": "Outra aba assumiu o controle do seu cofre. Nada foi perdido — tudo que você fez aqui já estava salvo.",
+    "useHere": "Usar aqui",
+    "takingOver": "Assumindo...",
+    "failed": "A outra aba não respondeu. Ela pode estar travada — feche-a e tente de novo.",
+    "dismissedHint": "Você pode assumir o controle a qualquer momento por “Usar aqui”."
   }
 }

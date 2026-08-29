@@ -2431,7 +2431,25 @@ async function benchWrite(rounds: number): Promise<WriteBenchResult> {
 
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
+/**
+ * HY-21 — fecha o banco e larga tudo que ele segura: o `SyncAccessHandle` do OPFS e o lock interno
+ * da VFS. É o que permite a outra aba assumir o cofre; sem isto, ceder a posse no nível do app
+ * deixaria o arquivo preso mesmo assim.
+ *
+ * `db` vai a 0 para que qualquer chamada posterior falhe alto em vez de usar um ponteiro morto — a
+ * aba que cedeu a posse não deve continuar operando, ela mostra a tela de "aberto em outra aba".
+ */
+async function closeDb(): Promise<void> {
+  if (db === 0) return
+  const closing = db
+  db = 0
+  await sqlite3.close(closing)
+}
+
 async function dispatch(method: string, args: unknown[]): Promise<unknown> {
+  if (db === 0 && method !== 'close') {
+    throw new Error('[storage-worker] cofre fechado: outra aba assumiu o controle')
+  }
   switch (method) {
     // M-87: no-op cuja única função é resolver depois do `init()` — a fila encadeia a partir dele,
     // então a duração desta chamada, medida na thread principal, é o tempo de partida do storage.
@@ -2455,6 +2473,8 @@ async function dispatch(method: string, args: unknown[]): Promise<unknown> {
       return applyMutation(args[0], args[1])
     case 'clearAll':
       return clearAll()
+    case 'close':
+      return closeDb()
     case 'readPeer':
       return readForeignDataFile(args[0] as ArrayBuffer)
     case 'syncManifestBase':

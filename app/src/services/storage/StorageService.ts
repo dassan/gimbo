@@ -546,6 +546,14 @@ export class StorageService {
     return this.call<WriteBenchResult>('benchWrite', [rounds])
   }
 
+  /**
+   * HY-21 — fecha o banco para que outra aba possa assumir o cofre. Depois disto o serviço não
+   * serve mais: toda chamada falha, por desenho.
+   */
+  close(): Promise<void> {
+    return this.call<void>('close')
+  }
+
   async createTransaction(data: CreateTransactionData): Promise<Transaction> {
     const id = uuid()
     const now = new Date().toISOString()
