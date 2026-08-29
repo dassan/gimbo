@@ -18,7 +18,9 @@ import {
   formatCurrency,
   cn,
   parseDateLocal,
+  computeAccountBalances,
   isCashRealized,
+  sumBalances,
   getTxInvoicePeriod,
   getInvoiceDueDate,
   getInvoicePaid,
@@ -190,29 +192,16 @@ export default function Transactions() {
         .filter((a) => filterAccountId === 'all' || a.id === filterAccountId)
         .map((a) => a.id)
     )
-    const initial = data.accounts
-      .filter((a) => scopeIds.has(a.id))
-      .reduce((s, a) => s + a.balance, 0)
-
     // Realized balance of the in-scope accounts up to and including `upTo` (null = all time).
-    const balanceUpTo = (upTo: Date | null): number => {
-      let total = initial
-      for (const tx of data.transactions) {
-        if (upTo && parseDateLocal(tx.date) > upTo) continue
-        if (!isCashRealized(tx)) continue // realized cash only
-        if (tx.type === 'TRANSFER') {
-          if (scopeIds.has(tx.accountId)) total -= tx.amount
-          if (tx.transferAccountId && scopeIds.has(tx.transferAccountId)) total += tx.amount
-        } else if (tx.type === 'CREDIT_PAYMENT') {
-          // Real outflow from the funding (non-CREDIT) account (B-16).
-          if (tx.transferAccountId && scopeIds.has(tx.transferAccountId)) total -= tx.amount
-        } else if (scopeIds.has(tx.accountId)) {
-          if (tx.type === 'INCOME') total += tx.amount
-          else if (tx.type === 'EXPENSE') total -= tx.amount
-        }
-      }
-      return total
-    }
+    // HY-0: mesmo motor de saldo do Dashboard/Patrimônio/reserva — aqui somado, porque o rodapé
+    // mostra o total do recorte e não conta a conta.
+    const seeds = new Map(
+      data.accounts.filter((a) => scopeIds.has(a.id)).map((a) => [a.id, a.balance] as const)
+    )
+    const balanceUpTo = (upTo: Date | null): number =>
+      sumBalances(
+        computeAccountBalances(data.transactions, seeds, upTo ? { asOf: upTo } : undefined)
+      )
 
     const dayBeforeStart = startDate
       ? new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() - 1)
