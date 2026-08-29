@@ -175,6 +175,13 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 - **Nunca** deixar falha de backup em pasta interromper o fluxo principal
 - **Nunca** adicionar `TODO` no código — vai para `BACKLOG.md`
 - **Nunca** usar `console.log` em produção
+- **Nunca** abrir um banco com `sqlite3.open_v2()` direto — usar `openDbExclusive()`
+  (`services/storage/worker.ts`). O cofre é gravado em formato WAL desde o `HY-20`, e esta VFS não
+  abre um arquivo WAL em modo de bloqueio normal (sem `xShmMap`/`xShmLock`, o SQLite recusa). O
+  `locking_mode=EXCLUSIVE` tem que vir **antes de qualquer leitura**: um único `PRAGMA user_version`
+  disparado antes dele derruba a abertura inteira — foi o que quebrou `readForeignDataFile` quando o
+  WAL entrou. Exceção: o harness de benchmark (`withScratchDb`), que controla o modo de propósito e
+  normaliza cada cópia para rollback antes de medir.
 - **Nunca** disparar mais de uma chamada `wa-sqlite` concorrente (`Promise.all`/afins) contra o mesmo `dbPtr` direto dentro do worker (`services/storage/worker.ts`), fora da fila `enqueue()` — o build usado (`wa-sqlite-async`) é Asyncify e só suporta **uma chamada em voo por vez**; duas em paralelo corrompem o módulo WASM inteiro (`RuntimeError: unreachable executed`, irrecuperável sem reload). `StorageService.ts` pode usar `Promise.all` porque cada chamada passa por `postMessage`/`enqueue()` e é serializada antes de chegar no wasm; código que já roda **dentro** de uma task do worker (ex.: `readDataFileFromDb`) tem que ser sequencial (`await` um de cada vez). Causou o `CS-28` (2026-08-25) — crash real ao importar, introduzido pelo próprio `CS-26`.
 
 ### Testes
@@ -219,7 +226,7 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 ## Estado Atual (2026-08-22)
 
 **Schema em memória v19** | **Schema físico SQLite v16** (`migrations/v1..v16.sql`) | Cobertura: ~96% statements
-**1117 testes unitários** (42 arquivos) + **140 testes E2E** (perfis `chromium` e `mobile-chrome`)
+**1165 testes unitários** (45 arquivos) + **147 testes E2E** (perfis `chromium` e `mobile-chrome`)
 
 > Os dois números de schema são independentes e **não coincidem**: `CURRENT_SCHEMA_VERSION` (v17,
 > em `lib/storage/schema.ts`) versiona o `DataFile` em memória; `PRAGMA user_version` (v13)
@@ -287,6 +294,49 @@ Features concluídas desde 2026-05-27:
   4,0s a 8,0s na mesma sessão numa máquina carregada — comparar aqui exige rodadas intercaladas e
   mediana. Ver `M-88` (atualizado) para por que a fatia por janela esbarra num bloqueio de correção:
   saldos derivam do histórico completo, então uma fatia mostraria números errados, não incompletos.
+
+- **Épico HY / M-88 resolvido** (2026-08-29) — boot lento de cofre grande, corrigido em **duas
+  linhas**, depois de uma investigação que refutou três hipóteses antes da certa. O desenho original
+  (`plan/BOOT_HYDRATION.md`: agregado por ano, hidratação em duas ondas, `hydration` no `DataFile`,
+  `CompleteDataFile`, guarda de escrita — `HY-01` a `HY-12`) **nunca foi implementado e não deve
+  ser**: atacava um gargalo que não era o gargalo.
+
+  **A causa raiz (`HY-16`):** `OriginPrivateFileSystemVFS` só abre o `SyncAccessHandle` do OPFS sob
+  lock **exclusivo** e o **fecha** quando o lock cai (`xLock`/`xUnlock`). Em modo de bloqueio normal
+  — o de sempre — toda leitura de página caía no caminho lento: `getFile()` + `Blob.slice()` +
+  `arrayBuffer()`, três operações assíncronas por página de 4KB, num arquivo de 3.489 páginas. E o
+  `PRAGMA journal_mode=WAL` que o `worker.ts` rodava em toda abertura era **no-op silencioso**
+  (`HY-19`): sem `xShmMap` na VFS o SQLite recusa WAL devolvendo o modo atual, sem erro — o cofre
+  rodou em `delete` desde sempre, onde cada transação cria, escreve e apaga um arquivo de journal
+  no OPFS.
+
+  **A correção (`HY-20`):** `openDbExclusive()` retém `locking_mode=EXCLUSIVE` **antes de qualquer
+  leitura**, e só então `runMigrationsOn` liga o WAL — que agora pega. Medido no cofre real (26.576
+  transações): **leitura completa 1.974ms → 770ms (2,6x), update de linha única 24,3ms → 0,4ms
+  (60x)**. O segundo número também explica retroativamente boa parte dos 79ms do `applyMutation`
+  (`M-73`). Página ficou em 4KB: 64KB compraria só mais 1,24x e custaria 12,5x de WAL mais uma
+  migration (`HY-17`; `HY-18` descartado).
+
+  **O custo (`HY-21`):** o cofre virou de aba única, e sem tratamento a segunda aba **não falha —
+  trava**. `lib/vaultOwnership.ts` + `components/VaultBusyScreen.tsx` trocam a trava por uma escolha
+  ("Usar aqui"/"Cancelar", padrão do WhatsApp Web); o dono libera o lock só **depois** de
+  `storage.close()` fechar o banco, então conseguir o lock é prova de que o cofre está livre.
+
+  **`HY-14`, valioso por conta própria:** a regra de saldo existia em **cinco** cópias (Dashboard e
+  Configurações literalmente idênticas, `getReserveBalance`, `applyTx` do Patrimônio, `balanceUpTo`
+  de Lançamentos), três já divergentes entre si. Unificadas em `computeAccountBalances()`, com as
+  antigas preservadas no teste para provar equivalência.
+
+  **Três hipóteses refutadas, cada uma por uma coleta em vez de um épico:** poda de colunas
+  (`HY-13`, 1,0-1,2x — dentro do ruído), leitura em lotes (`HY-15`, ficou **mais lenta**) e
+  desfragmentação por `VACUUM` (`HY-17`, não rendeu nada). A ferramenta que refutou está no
+  repositório sob `?bench` (`lib/storage/columnBench.ts`, `window.__bench`), deliberadamente fora do
+  gate `DEV` — build de produção não tem nada atrás daquele gate, e o ritual do `M-87`/`M-91` exige
+  medir em produção. Ver `plan/MONITORING.md` §"Benchmark de leitura" e o changelog de lá.
+
+  **O que sobra:** o piso de materializar linha (671-950ms conforme a sessão), única coisa que uma
+  janela ainda cortaria — reabrir o `BOOT_HYDRATION.md` só se ele voltar a incomodar, sabendo que
+  rende menos do que aquele desenho estimava e que os riscos continuam os mesmos.
 
 - **M-90 / M-89** (2026-08-28) — continuação direta do `M-87`. **M-90:** `App.tsx` deixou de
   renderizar nada enquanto hidrata — novo `components/BootSkeleton.tsx` (silhueta do app, medidas
@@ -366,27 +416,6 @@ Itens em aberto:
 
 - **Cofre protegido por senha** — épico separado, decidido em 2026-08-19: bloqueio por senha com expiração por inatividade, e criptografia em repouso. **Reverte parcialmente o `X-1` do `PRD.md`** ("Criptografia do arquivo local", hoje listado como fora de escopo permanente) e encosta no `CS-18`. Ainda não desenhado — decisão pendente: se o backup exportado continua abrível em qualquer ferramenta SQLite ou vira blob opaco.
 
-- **Épico HY (hidratação por janela + agregação em SQL)** — desenhado em `plan/BOOT_HYDRATION.md`
-  (`HY-01` a `HY-12` no backlog), **nada implementado**. Ataca o que sobrou do `M-88` depois do
-  `M-90`: os ~2,3s até os números aparecerem, dos quais 95% é o SQLite materializando 26.576 linhas
-  (`M-91`). Ideia: agregado por partição de ano (`SUM` não materializa linha — `COUNT(*)` custa
-  89ms) + hidratação em duas ondas, com janela de `date >= corte` (17% do cofre real). **Dois
-  pontos que qualquer sessão futura precisa respeitar:** (1) a detecção de "passado modificado" já
-  existe — `table_hashes` (`CS-32`) e os anos que `applyTransactionDelta` calcula —, não construir
-  mecanismo novo, e a correção **não** pode depender da hipótese de que o passado muda pouco
-  (confirmada em 1,2% no cofre real, mas ela decide só o custo); (2) o risco mais grave é o diff do
-  `M-73` rodar contra uma janela e emitir `DELETE` para 22 mil transações — nenhuma escrita antes de
-  `hydration === 'complete'`, com guarda dentro de `debouncedApplyMutation()`. Registrado no mesmo
-  fôlego o `CS-57`: o `sync_gimbo.py` recarimba `updated_at` em linhas que não mudaram (um único
-  valor distinto em 26.576 linhas do cofre real), o que é a hipótese líder do `CS-36` — hash de ano
-  divergindo sobre uma diferença que não existe no dado financeiro. Consertável, e vale consertar
-  pelo sync; não muda nada no `HY`, onde `updated_at` continua sendo o detector errado por razões
-  próprias.
-
-- **M-88** — Boot: 2,5s de tela vazia num cofre grande, 87% em `loadDataFile()` (diagnóstico
-  fechado no `M-87`, correção não iniciada). Três caminhos combináveis, decisão de produto: dar
-  feedback visual (hoje `App.tsx` não renderiza nada enquanto hidrata), tirar a leitura completa do
-  caminho crítico, ou baratear a leitura em si. Média prioridade.
 - **M-74** — `TransactionDrawer` desvincula silenciosamente a Caixinha ao editar uma transação. Achado incidental ao validar o M-73 (`e2e/mutationDelta.spec.ts`): o formulário de edição carrega/resubmete `tags` corretamente, mas nunca leva `budgetIds` de volta — qualquer edição (mesmo só valor, sem mexer na data) apaga o vínculo com a Caixinha, silenciosamente. Bug de UI pré-existente, não relacionado a persistência; não corrigido nesta sessão (média prioridade).
 - **MB-08** — Analytics responsivo para mobile (média prioridade; parcial — aba Categorias resolvida em `MB-18`, as outras 4 abas — CashFlow, Contas, Tags, Faturas — seguem sem versão mobile)
 - **BK-04** — Banner de re-permissão da pasta de backup no startup (média prioridade)

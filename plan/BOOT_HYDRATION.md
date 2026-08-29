@@ -4,8 +4,32 @@
 > instruída pelos números do `M-87`, `M-90` e `M-91`. Mesmo papel que
 > `plan/SYNC_PARTITIONED_TRANSPORT.md` teve para o épico `CS-37..CS-55`.
 >
-> **Nada aqui está implementado.** Ler `plan/MONITORING.md` §"Onde estão os 2,3s do `loadDataFile`"
-> antes — este documento assume aqueles números.
+> **⚠️ ÉPICO ENCERRADO SEM SER IMPLEMENTADO. Nada de §5 a §9 deve ser construído.**
+>
+> O `M-88` foi resolvido em 2026-08-29 por `HY-20`: `locking_mode=EXCLUSIVE` + `journal_mode=WAL`,
+> duas linhas em `runMigrationsOn`, leitura 2,6x e escrita 60x. A VFS do OPFS só mantém o
+> `SyncAccessHandle` aberto sob lock exclusivo; sem ele cada página passava por `getFile()` +
+> `Blob.slice()` + `arrayBuffer()`. Agregados, janela, `hydration` no `DataFile`, `CompleteDataFile`
+> e guarda de escrita atacavam um gargalo que não era o gargalo.
+>
+> Sobra o piso de materializar linha (671-950ms), que só uma janela cortaria. Reabrir este desenho
+> **apenas** se esse piso voltar a incomodar — sabendo que ele rende menos do que §8 estimava e que
+> os riscos do §6 continuam iguais.
+>
+> **Ler §4.1 antes de qualquer coisa.** O `HY-16`
+> (2026-08-29) encontrou a causa raiz do boot lento — travessia Asyncify por página lida na VFS do
+> OPFS —, e uma página de 64KB entrega 5,3x na leitura fria com um PRAGMA e um `VACUUM` de 1,3s.
+> As §5 a §9 abaixo descrevem um épico (agregados, janela, `hydration`, guarda de escrita) que
+> atacava um gargalo que não era o gargalo. Ficam como registro, e como plano B caso o custo de
+> escrita (`HY-17`) reprove a página maior.
+>
+> **Atualizado em 2026-08-28**, depois de ler o código que este desenho assumia. Duas fases
+> preparatórias foram executadas (`HY-13`, `HY-14`) e três pontos do desenho mudaram — §4.1 (eixo
+> de colunas), §5.0 (motor único de saldo), §6.1 (o vetor de perda de dado é o sync) e §9.1 (a
+> janela é um conjunto de anos). O restante segue proposta.
+>
+> Ler `plan/MONITORING.md` §"Onde estão os 2,3s do `loadDataFile`" antes — este documento assume
+> aqueles números.
 
 ---
 
@@ -71,7 +95,78 @@ campo consertado, ele continua não sendo o detector certo (§7).
 
 **Por isso o desenho abaixo não depende dela para estar correto** — só para ser rápido. Ver §6.
 
+## 4.1 O que a medição do `HY-13` mudou (2026-08-29)
+
+O §2 concluiu que o custo é proporcional a linhas materializadas e que agregar em SQL resolveria.
+A ferramenta construída para testar o eixo de colunas mediu isso de verdade, no cofre real, em
+build de produção, e mudou duas coisas.
+
+**Podar coluna não paga.** 20 → 9 colunas rendeu 1,00-1,21x em quatro medições, com as amostras se
+sobrepondo — contra 2,1-2,5x previstos. O eixo de colunas está descartado, e com ele a divisão de
+tipo (`CoreTransaction`) que ele obrigaria a introduzir.
+
+**O custo é super-linear no tamanho do resultado, e só no navegador.**
+
+| | linhas | wa-sqlite/OPFS | SQLite nativo |
+|---|---|---|---|
+| `all20win` | 4.673 | 230ms | 24,5ms (9,2x) |
+| `all20` | 26.576 (5,7x) | 8.377ms (**38x**) | 142ms (5,8x) |
+
+Expoente 2,1 — quadrático. Não é I/O da tabela: `SELECT id` usa índice de cobertura, nunca toca a
+tabela, e ainda assim custa 1.856ms contra 18ms nativo. O que custa é **produzir N linhas em JS
+dentro do worker**, e o custo por linha piora conforme o resultado cresce. Pressão de heap/coleta de
+lixo explica o expoente.
+
+### O desfecho (2026-08-29)
+
+As duas hipóteses acima — poda de coluna e leitura em lotes — foram **refutadas por medição**, e a
+segunda refutação é que levou à resposta. Se fatiar não ajuda, o custo não está no acúmulo do
+resultado; está em algo proporcional ao arquivo. É a VFS: `OriginPrivateFileSystemVFS.xRead`
+envolve toda leitura de página em `handleAsync()`, o unwind/rewind da pilha WASM do Asyncify, e o
+cofre tem 3.489 páginas de 4KB.
+
+| | páginas | leitura fria | por página |
+|---|---|---|---|
+| 4KB (hoje) | 3.489 | 8.141ms | 2,06ms |
+| 64KB | 237 | **1.527ms** | 2,43ms |
+
+O piso de materializar as 26.576 linhas — medido com cache grande o bastante para não ler página
+nenhuma — é de **950ms**. Todo o resto é travessia, e ela custa o mesmo para 4KB e para 64KB.
+
+**O que este épico inteiro pretendia entregar, uma linha de PRAGMA entrega:** leitura fria 5,3x mais
+rápida, sem tabela de agregados, sem janela, sem `hydration` no `DataFile`, sem `CompleteDataFile`,
+sem guarda de escrita e sem nenhum dos riscos de perda de dado do §6. Falta medir o custo de
+escrita (`HY-17`) para escolher o tamanho de página, e depois aplicar (`HY-18`).
+
+O parágrafo abaixo é o raciocínio que levou até aqui, mantido porque a hipótese que ele levanta
+também foi medida e reprovada:
+
+**Consequência para este épico, e ela é grande:** existe um terceiro caminho que o desenho não
+considerou. Se o custo é super-linear no tamanho do resultado, **ler o mesmo total em K lotes
+recupera o regime linear** — pelo expoente medido, ~1,2s com 5 lotes e ~310ms com 20, para o cofre
+**inteiro**. Sem janela, sem `hydration` no `DataFile`, sem guarda de escrita, sem tabela de
+agregados, sem `CompleteDataFile`, sem risco de perda de dado. O `HY-15` mede isso; **nada do
+`HY-01` em diante deve começar antes dessa coleta**, porque ela pode reduzir o épico a uma mudança
+pequena em `getTransactions()`.
+
+Se o ganho por lotes vier menor que o esperado, a janela por anos continua valendo — e vale **mais**
+do que o §8 estimou, porque a super-linearidade trabalha a favor dela: cortar para 26,5% das linhas
+não rende 3,8x, rende algo perto de 38x na consulta.
+
 ## 5. Desenho
+
+### 5.0 Pré-requisito, feito: um único motor de saldo (`HY-14`)
+
+O §5.4.2 propõe provar `saldo(agregado + janela) === saldo(cofre inteiro)`. Não havia o que provar:
+a regra existia em **cinco** cópias — Dashboard e Configurações (cópia literal uma da outra),
+`getReserveBalance`, `applyTx`/`computeAssetBalances` do Patrimônio Líquido e o `balanceUpTo` do
+rodapé de Lançamentos —, e três delas já tinham divergido em detalhes.
+
+Agora é uma só: `computeAccountBalances(transactions, seeds, { after?, asOf? })` em `lib/utils.ts`.
+As sementes decidem quais contas participam (é assim que CREDIT fica de fora), e as opções de data
+deixam **visível no ponto de chamada** o que estava enterrado: o Dashboard conta lançamento futuro
+já marcado como pago; Patrimônio e Lançamentos cortam em hoje. Essa divergência é anterior a este
+épico e segue em aberto como decisão de produto — o que mudou é que agora dá para vê-la.
 
 ### 5.1 Não construir detector de modificação do passado — já existe um
 
@@ -91,7 +186,7 @@ raramente (barato) ou sempre (caro). Recomputar um ano é um `SUM` sobre ~2 mil 
 
 ### 5.2 O agregado, derivado da fórmula de saldo que o código já usa
 
-`getReserveBalance`/Dashboard/NetWorth aplicam a mesma regra (`CLAUDE.md`, "Saldo de conta"):
+`computeAccountBalances` (§5.0) aplica a regra do `CLAUDE.md` ("Saldo de conta"):
 `balance + INCOME − EXPENSE − TRANSFER − CREDIT_PAYMENT`, com `isCashRealized()` filtrando
 INCOME/EXPENSE por `isPaid` e TRANSFER/CREDIT_PAYMENT creditando/debitando a conta do outro lado
 via `transferAccountId`. O agregado precisa cobrir exatamente isso:
@@ -159,10 +254,24 @@ descobriu o bug de normalização do `updatedAt` antes que qualquer leitura depe
 1. **`diffTransactions` contra uma janela apagaria 83% do cofre.** `mutate()` persiste por diff
    (`M-73`) entre `_lastPersisted` e o estado atual. Se o usuário editar algo durante a onda 1, o
    diff verá 22 mil transações "ausentes" e emitirá `DELETE` para todas. É o risco mais grave deste
-   épico e da mesma família do `CS-24` (perda silenciosa de dado). **Mitigação obrigatória:**
-   nenhuma escrita antes de `hydration === 'complete'` — FAB/drawer desabilitados com feedback
-   explícito —, e uma guarda dentro de `debouncedApplyMutation()` que recusa persistir um
-   `DataFile` que não seja completo. A guarda é o que protege; a UI só evita a frustração.
+   épico e da mesma família do `CS-24` (perda silenciosa de dado).
+
+   **Corrigido em 2026-08-28 (`HY-06`): o vetor principal não é o FAB, é o sync**, e a mitigação
+   originalmente proposta aqui — uma guarda dentro de `debouncedApplyMutation()` — não o cobria.
+   `App.tsx` dispara `runPeerSync()` imediatamente depois de hidratar, passando `get().data` ao
+   merge; o `computeDelta` escopado por ano (`driveTreeSyncService.ts`, `CS-52`) compara o ano
+   inteiro lido do disco contra `merged.transactions` filtrado pelo mesmo ano, e com um `DataFile`
+   de janela esse segundo lado vem **vazio** — `DELETE` para o ano inteiro. Esse caminho chama
+   `storage.applyMutation()` direto, que é a exceção reconhecida do `M-73`, e portanto passa ao
+   largo de qualquer guarda no debounce. `startSyncPolling()`, na linha seguinte, mantém o risco
+   vivo enquanto o app estiver aberto.
+
+   **Mitigação obrigatória, revisada:** a guarda vai **no tipo** —
+   `applyMutation(data: CompleteDataFile, …)` —, que cobre `mutate()` e sync por compilação, e
+   `runPeerSync()`/`startSyncPolling()` só começam depois da onda 2. Desabilitar FAB/drawer é só a
+   parte visível. Bônus da mesma mudança: `refreshRecurrenceHorizons()`/`ensureQuadrantesBatch()`
+   (§6.2) hoje rodam no caminho crítico do boot e clonam o `DataFile` inteiro — tirá-las de lá é
+   ganho que o §8 não contabiliza.
 2. **Manutenção de boot precisa do histórico.** `refreshRecurrenceHorizons()` (`B-22`) decide o
    topo de cada série pela última ocorrência conhecida, e `ensureQuadrantesBatch()` (`BX-07`) pode
    sugerir meta por histórico. Ambas passam para a onda 2. Rodá-las sobre uma janela não geraria
@@ -209,8 +318,16 @@ leitura isolada (`M-91`).
 
 ## 9. Decisões em aberto para o humano
 
-1. **Corte da janela:** início do ano corrente (simples, alinhado à partição) ou últimos N meses
-   (janela estável o ano todo, mas desalinhada do ano que o agregado usa)?
+1. ~~**Corte da janela:** início do ano corrente ou últimos N meses?~~ **Respondido em
+   2026-08-28: nenhum dos dois.** A janela é um **conjunto de anos**, sempre `{ano corrente, ano
+   anterior}`. `getInvoicePeriod` rola a fatura para frente, então uma compra em 28/12 num cartão
+   que fecha dia 25 pertence à fatura de janeiro; com corte em 1º de janeiro, o limite disponível e
+   o total de faturas ficariam errados o mês inteiro — e o agregado **não** conserta, porque
+   `getOpenCreditBalance` precisa de linha, não de soma. Custo no cofre real: 4.527 linhas (17%) →
+   7.054 (26,5%). Em troca, o risco §6.5 (dinheiro contado duas vezes) deixa de existir por
+   construção: agregado = todo ano fora da janela, mesma chave do `table_hashes`, sem data solta em
+   lugar nenhum. Pelo mesmo mecanismo dá para descartar o futuro distante (2028-2034 = 1.936 linhas,
+   7,3%, pura projeção de recorrência).
 2. **Onda 1 read-only** é aceitável como comportamento de produto, mesmo durando ~2s?
 3. **Escopo do HY-2:** só o Dashboard na onda 1, ou já incluir a tela de Lançamentos (que é onde o
    usuário mais cai vindo de um refresh)?
