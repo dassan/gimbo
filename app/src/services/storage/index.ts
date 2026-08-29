@@ -1,4 +1,9 @@
 import { StorageService } from './StorageService'
+import {
+  printColumnBench,
+  printPageSizeBench,
+  printWriteBench,
+} from '@/lib/storage/columnBenchReport'
 import { mergeForSync } from '@/lib/cloudSync/merge'
 import { diffTransactions } from '@/lib/storage/transactionDiff'
 import {
@@ -41,4 +46,27 @@ if (import.meta.env.DEV) {
       verifyPartition,
     },
   }
+}
+
+// HY/Fase 0 — ferramenta de medição, **fora** do gate `import.meta.env.DEV` de propósito.
+//
+// O `M-87` e o `M-91` documentam que medir boot em `npm run dev` leva à conclusão errada, e um
+// build de produção não tem nada que esteja atrás daquele gate. Ou este gancho sobrevive ao build,
+// ou a medição não segue o ritual que o próprio projeto estabeleceu. Mesma exceção reconhecida do
+// `lib/cloudSync/syncMetrics.ts`, e pelo mesmo motivo: o número que interessa só existe no
+// dispositivo e no cofre reais — inclusive no celular, onde o boot dói mais e onde nenhum gancho
+// de desenvolvimento chega.
+//
+// O custo em produção é a leitura de `location.search` no carregamento e um `if` que não entra;
+// `benchColumns()` só é referenciado dentro dele.
+if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('bench')) {
+  ;(window as unknown as Record<string, unknown>).__bench = {
+    columns: (rounds?: number) => storage.benchColumns(rounds).then(printColumnBench),
+    pages: () => storage.benchPageSize().then(printPageSizeBench),
+    writes: (rounds?: number) => storage.benchWrite(rounds).then(printWriteBench),
+  }
+  // eslint-disable-next-line no-console -- é a saída da ferramenta, não depuração
+  console.info(
+    '[gimbo] benchmark pronto — `__bench.columns()`, `__bench.pages()` ou `__bench.writes()`'
+  )
 }

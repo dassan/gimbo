@@ -26,6 +26,18 @@ import type {
   User,
   Valuation,
 } from '@/types'
+import {
+  benchVariants,
+  fitCostModel,
+  linearity,
+  median,
+  permute,
+  type BenchSample,
+  type BenchVariant,
+  type ColumnBenchResult,
+  type PageSizeBenchResult,
+  type WriteBenchResult,
+} from '@/lib/storage/columnBench'
 
 // ─── DTOs ─────────────────────────────────────────────────────────────────────
 
@@ -442,6 +454,104 @@ export class StorageService {
         })
       )
     })
+  }
+
+  // ─── HY/Fase 0 — benchmark de colunas ──────────────────────────────────────
+
+  /**
+   * Mede o custo de ler `transactions` variando **colunas** (1, 9, 20) e **anos** (tabela inteira
+   * vs. janela de 2 anos), para decidir se o épico de hidratação (`plan/BOOT_HYDRATION.md`) deve
+   * podar coluna, podar ano, ou os dois.
+   *
+   * Devolve as duas metades separadas, porque elas têm remédios diferentes e uma esconde a outra
+   * quando medidas juntas (mesma lição do `M-91`): `worker` é o SQLite materializando linha;
+   * `endToEnd` repete a mesma consulta pela RPC normal e portanto inclui `postMessage` mais a
+   * montagem de um objeto por linha aqui nesta thread. A diferença entre as duas é o custo da
+   * fronteira.
+   *
+   * Não é caminho de produto: só o gate `?bench` chama isto, e um cofre grande leva minutos.
+   */
+  async benchColumns(rounds = 3): Promise<ColumnBenchResult> {
+    const worker = await this.call<{
+      rows: number
+      yearSpan: [number, number]
+      samples: BenchSample[]
+    }>('benchColumns', [rounds])
+
+    const variants = benchVariants(new Date().getFullYear(), worker.yearSpan[0], worker.yearSpan[1])
+    const collected = new Map<string, number[]>()
+    const rowCount = new Map<string, number>()
+
+    const runVariant = async (variant: BenchVariant): Promise<{ ms: number; rows: number }> => {
+      const startedAt = performance.now()
+      let total = 0
+      for (const step of variant.steps) {
+        total += (await this.query(step.sql, step.params)).length
+      }
+      return { ms: performance.now() - startedAt, rows: total }
+    }
+
+    // Mesmo aquecimento descartado, mesma permutação e mesma pausa do lado do worker — comparar as
+    // duas metades só faz sentido se as duas pagarem o mesmo protocolo de medição.
+    for (const variant of variants) await runVariant(variant)
+
+    for (let round = 0; round < rounds; round++) {
+      for (const variant of permute(variants, round)) {
+        await new Promise((resolve) => setTimeout(resolve, 150))
+        const { ms, rows } = await runVariant(variant)
+        const list = collected.get(variant.name)
+        if (list) list.push(ms)
+        else collected.set(variant.name, [ms])
+        rowCount.set(variant.name, rows)
+      }
+    }
+
+    const endToEnd: BenchSample[] = variants.map((variant) => {
+      const values = collected.get(variant.name) ?? []
+      return {
+        name: variant.name,
+        columns: variant.columns,
+        scope: variant.scope,
+        chunks: variant.steps.length,
+        rows: rowCount.get(variant.name) ?? 0,
+        samples: values,
+        medianMs: median(values),
+      }
+    })
+
+    return {
+      rows: worker.rows,
+      rounds,
+      yearSpan: worker.yearSpan,
+      worker: worker.samples,
+      endToEnd,
+      model: fitCostModel(worker.samples, worker.rows),
+      linearity: linearity(worker.samples),
+    }
+  }
+
+  /**
+   * HY-16 — custo por página lida, medido sobre cópias do cofre em arquivo de rascunho. Nunca toca
+   * o `db` real: uma das variantes roda `VACUUM` para reescrever com páginas de 64KB.
+   */
+  benchPageSize(): Promise<PageSizeBenchResult> {
+    return this.call<PageSizeBenchResult>('benchPageSize')
+  }
+
+  /**
+   * HY-17 — o outro lado do `HY-16`: quanto a escrita piora com página maior. Mesma disciplina —
+   * tudo sobre cópias em arquivo de rascunho, o cofre real nunca é tocado.
+   */
+  benchWrite(rounds = 10): Promise<WriteBenchResult> {
+    return this.call<WriteBenchResult>('benchWrite', [rounds])
+  }
+
+  /**
+   * HY-21 — fecha o banco para que outra aba possa assumir o cofre. Depois disto o serviço não
+   * serve mais: toda chamada falha, por desenho.
+   */
+  close(): Promise<void> {
+    return this.call<void>('close')
   }
 
   async createTransaction(data: CreateTransactionData): Promise<Transaction> {

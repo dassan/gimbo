@@ -797,45 +797,111 @@ export function deriveMonthlyIncome(
   }
 }
 
-// ─── Financial Health — Reserve Balance Engine (HE-13/HE-14) ─────────────────
+// ─── Account balances — motor único (HY-0) ───────────────────────────────────
 //
-// Sums the derived balance of every account marked as part of the emergency reserve
-// (RESERVE_ELIGIBLE_TYPES + reserveMetadata present). Mirrors the standard non-CREDIT
-// balance formula documented in CLAUDE.md (balance + INCOME − EXPENSE − TRANSFER −
-// CREDIT_PAYMENT, invoice payment debiting the paying account via transferAccountId) —
-// RETAIL/SAVINGS are never VALUATION_ELIGIBLE, so no Valuation replay is needed here.
+// A regra de saldo do `CLAUDE.md` ("Saldo de conta — derivado de transações") existia em **cinco**
+// cópias: Dashboard, Configurações, `getReserveBalance` aqui embaixo, o `applyTx`/
+// `computeAssetBalances` do Patrimônio Líquido e o `balanceUpTo` do rodapé de Lançamentos. Duas
+// delas eram cópia literal uma da outra; as outras três tinham divergido em detalhes que ninguém
+// tinha motivo para notar (ver as duas notas de comportamento abaixo).
+//
+// Unificar não é arrumação: o épico de hidratação (`plan/BOOT_HYDRATION.md`) quer provar que
+// `saldo(agregado + janela) === saldo(cofre inteiro)`, e não há o que provar equivalente enquanto
+// a fórmula tiver cinco encarnações. Esta é a única.
 
-export function getReserveBalance(transactions: Transaction[], accounts: Account[]): number {
-  const reserveAccounts = accounts.filter(
-    (a) => RESERVE_ELIGIBLE_TYPES.includes(a.type) && a.reserveMetadata
-  )
-  if (reserveAccounts.length === 0) return 0
+export interface BalanceReplayOptions {
+  /**
+   * Ignora transações **até** esta data, inclusive. Usado pela reavaliação de ativos, que retoma
+   * a partir da última cotação conhecida em vez do saldo inicial.
+   */
+  after?: Date
+  /**
+   * Ignora transações **depois** desta data. O Patrimônio Líquido e o rodapé de Lançamentos
+   * passam uma data; o Dashboard e Configurações não passam nada — lá o saldo inclui lançamento
+   * futuro já marcado como pago. A divergência é antiga e deliberadamente preservada aqui: ela
+   * fica visível no ponto de chamada em vez de enterrada em cinco corpos de função.
+   */
+  asOf?: Date
+}
 
-  const reserveIds = new Set(reserveAccounts.map((a) => a.id))
-  const balances = new Map<string, number>(reserveAccounts.map((a) => [a.id, a.balance]))
+/**
+ * Reaplica o caixa realizado das transações sobre um mapa de saldos iniciais, devolvendo um mapa
+ * novo. **Só as contas presentes em `seeds` participam** — é assim que o chamador exclui contas
+ * CREDIT (cujo número exibido é limite disponível, não saldo), contas arquivadas ou, no caso da
+ * reserva de emergência, tudo que não esteja marcado como reserva.
+ *
+ * Regras (B-15/B-16, iguais às que as cinco cópias aplicavam):
+ * - `INCOME`/`EXPENSE` só contam se `isCashRealized` — isto é, se `isPaid`;
+ * - `TRANSFER` sempre conta: debita a conta de origem e credita `transferAccountId`;
+ * - `CREDIT_PAYMENT` debita **apenas** quem pagou (`transferAccountId`) — o lado do cartão aparece
+ *   no limite disponível, nunca em saldo.
+ */
+export function computeAccountBalances(
+  transactions: Transaction[],
+  seeds: Map<string, number>,
+  options: BalanceReplayOptions = {}
+): Map<string, number> {
+  const { after, asOf } = options
+  const balances = new Map(seeds)
+  const add = (id: string, delta: number) => {
+    const current = balances.get(id)
+    if (current !== undefined) balances.set(id, current + delta)
+  }
 
   for (const tx of transactions) {
+    if (after !== undefined || asOf !== undefined) {
+      const date = parseDateLocal(tx.date)
+      if (after !== undefined && date <= after) continue
+      if (asOf !== undefined && date > asOf) continue
+    }
+
+    // Antes do teste de realização de propósito: `isCashRealized` já devolve true para
+    // CREDIT_PAYMENT (não existe toggle de pago para ele), então a ordem não muda o resultado —
+    // mas deixa explícito que o lado do cartão nunca entra em saldo.
     if (tx.type === 'CREDIT_PAYMENT') {
-      if (tx.transferAccountId && reserveIds.has(tx.transferAccountId)) {
-        balances.set(tx.transferAccountId, (balances.get(tx.transferAccountId) ?? 0) - tx.amount)
-      }
+      if (tx.transferAccountId !== undefined) add(tx.transferAccountId, -tx.amount)
       continue
     }
+
     if (!isCashRealized(tx)) continue
-    if (reserveIds.has(tx.accountId)) {
-      if (tx.type === 'INCOME')
-        balances.set(tx.accountId, (balances.get(tx.accountId) ?? 0) + tx.amount)
-      if (tx.type === 'EXPENSE')
-        balances.set(tx.accountId, (balances.get(tx.accountId) ?? 0) - tx.amount)
-      if (tx.type === 'TRANSFER')
-        balances.set(tx.accountId, (balances.get(tx.accountId) ?? 0) - tx.amount)
-    }
-    if (tx.type === 'TRANSFER' && tx.transferAccountId && reserveIds.has(tx.transferAccountId)) {
-      balances.set(tx.transferAccountId, (balances.get(tx.transferAccountId) ?? 0) + tx.amount)
+
+    if (tx.type === 'INCOME') add(tx.accountId, tx.amount)
+    else if (tx.type === 'EXPENSE') add(tx.accountId, -tx.amount)
+    else if (tx.type === 'TRANSFER') {
+      add(tx.accountId, -tx.amount)
+      // Sem guarda de auto-transferência: origem e destino iguais se anulam, que é o
+      // comportamento de 4 das 5 cópias. A 5ª (`computeAssetBalances`, do Patrimônio) pulava o
+      // destino nesse caso e deixava o valor debitado. A UI impede escolher a mesma conta dos dois
+      // lados (`TransactionDrawer`), então isso só alcança dado vindo de import/sync malformado.
+      if (tx.transferAccountId !== undefined) add(tx.transferAccountId, tx.amount)
     }
   }
 
-  return [...balances.values()].reduce((sum, v) => sum + v, 0)
+  return balances
+}
+
+/** Soma de todos os saldos derivados — o formato que o rodapé de Lançamentos e a reserva usam. */
+export function sumBalances(balances: Map<string, number>): number {
+  let total = 0
+  for (const value of balances.values()) total += value
+  return total
+}
+
+// ─── Financial Health — Reserve Balance Engine (HE-13/HE-14) ─────────────────
+//
+// Sums the derived balance of every account marked as part of the emergency reserve
+// (RESERVE_ELIGIBLE_TYPES + reserveMetadata present) — a `computeAccountBalances` cujo conjunto
+// de sementes é só a reserva. RETAIL/SAVINGS nunca são VALUATION_ELIGIBLE, então não há
+// reavaliação por cotação a considerar aqui.
+
+export function getReserveBalance(transactions: Transaction[], accounts: Account[]): number {
+  const seeds = new Map(
+    accounts
+      .filter((a) => RESERVE_ELIGIBLE_TYPES.includes(a.type) && a.reserveMetadata)
+      .map((a) => [a.id, a.balance] as const)
+  )
+  if (seeds.size === 0) return 0
+  return sumBalances(computeAccountBalances(transactions, seeds))
 }
 
 // ─── Financial Health — Monthly Cost Engine (HE-12, D7) ──────────────────────

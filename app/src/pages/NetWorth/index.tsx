@@ -23,7 +23,7 @@ import {
   getCurrentInvoiceBalance,
   getLoanLiability,
   getDebtBreakdown,
-  isCashRealized,
+  computeAccountBalances,
   type DebtGroup,
 } from '@/lib/utils'
 import StatCard from '@/components/StatCard'
@@ -73,20 +73,11 @@ function getIssuerColor(issuerIcon?: string): string {
 
 const VALUATION_ELIGIBLE: AccountType[] = ['STOCKS', 'CRYPTO', 'FOREX', 'ASSET']
 
-function applyTx(sum: number, tx: Transaction, accountId: string): number {
-  if (tx.accountId === accountId) {
-    // B-15: unpaid INCOME/EXPENSE are not realized; TRANSFER always counts (no isPaid toggle).
-    if (tx.type === 'INCOME') return isCashRealized(tx) ? sum + tx.amount : sum
-    if (tx.type === 'EXPENSE') return isCashRealized(tx) ? sum - tx.amount : sum
-    if (tx.type === 'TRANSFER') return sum - tx.amount // outgoing
-  } else if (tx.transferAccountId === accountId) {
-    // Incoming transfer, or a CREDIT_PAYMENT funded from this account (cash leaves it). B-16.
-    if (tx.type === 'TRANSFER') return sum + tx.amount
-    if (tx.type === 'CREDIT_PAYMENT') return sum - tx.amount
-  }
-  return sum
-}
-
+/**
+ * Saldo de uma conta elegível a cotação (`VALUATION_ELIGIBLE`): retoma da última cotação conhecida
+ * e reaplica só o que veio depois dela. Sem cotação, cai no replay completo a partir do saldo
+ * inicial.
+ */
 function getAssetBalance(
   account: Account,
   transactions: Transaction[],
@@ -95,70 +86,45 @@ function getAssetBalance(
   const today = new Date()
 
   if (VALUATION_ELIGIBLE.includes(account.type)) {
-    const accValuations = valuations
+    const latest = valuations
       .filter((v) => v.accountId === account.id && parseDateLocal(v.date) <= today)
-      .sort((a, b) => parseDateLocal(b.date).getTime() - parseDateLocal(a.date).getTime())
+      .sort((a, b) => parseDateLocal(b.date).getTime() - parseDateLocal(a.date).getTime())[0]
 
-    const latest = accValuations[0]
     if (latest) {
-      const baseDate = parseDateLocal(latest.date)
-      const delta = transactions
-        .filter((tx) => {
-          const d = parseDateLocal(tx.date)
-          if (d <= baseDate || d > today) return false
-          // Include txs on this account plus incoming transfers / outgoing card payments
-          // funded from it (applyTx applies the right sign per type).
-          return tx.accountId === account.id || tx.transferAccountId === account.id
-        })
-        .reduce((sum, tx) => applyTx(sum, tx, account.id), 0)
-      return latest.marketValue + delta
+      const seeds = new Map([[account.id, latest.marketValue]])
+      const options = { after: parseDateLocal(latest.date), asOf: today }
+      return computeAccountBalances(transactions, seeds, options).get(account.id) ?? 0
     }
   }
 
-  // No valuation (or non-eligible account): full replay from initial balance
-  const delta = transactions
-    .filter((tx) => {
-      const d = parseDateLocal(tx.date)
-      if (d > today) return false
-      return (
-        tx.accountId === account.id ||
-        (tx.type === 'TRANSFER' && tx.transferAccountId === account.id)
-      )
-    })
-    .reduce((sum, tx) => applyTx(sum, tx, account.id), 0)
-
-  return account.balance + delta
+  // Sem cotação (ou tipo não elegível): replay completo a partir do saldo inicial.
+  const seeds = new Map([[account.id, account.balance]])
+  return computeAccountBalances(transactions, seeds, { asOf: today }).get(account.id) ?? 0
 }
 
 /**
- * Balances for all asset accounts in a single pass over the transactions, to avoid the
- * O(accounts × transactions) cost of calling getAssetBalance per account (noticeable with
- * long histories). Valuation-eligible accounts keep their per-account replay (few of them).
+ * Saldos de todas as contas de ativo numa passada só sobre as transações, para evitar o custo
+ * O(contas × transações) de chamar getAssetBalance por conta (perceptível com históricos longos).
+ * Contas elegíveis a cotação mantêm o replay individual (são poucas).
  */
 function computeAssetBalances(
   assetAccounts: Account[],
   transactions: Transaction[],
   valuations: Valuation[]
 ): Record<string, number> {
-  const today = new Date()
   const result: Record<string, number> = {}
-  const replayed = new Set<string>()
-  for (const a of assetAccounts) {
-    if (VALUATION_ELIGIBLE.includes(a.type)) {
-      result[a.id] = getAssetBalance(a, transactions, valuations)
-      replayed.add(a.id)
+  const seeds = new Map<string, number>()
+  for (const account of assetAccounts) {
+    if (VALUATION_ELIGIBLE.includes(account.type)) {
+      result[account.id] = getAssetBalance(account, transactions, valuations)
     } else {
-      result[a.id] = a.balance // seed with initial balance
+      seeds.set(account.id, account.balance)
     }
   }
-  for (const tx of transactions) {
-    if (parseDateLocal(tx.date) > today) continue
-    const a1 = tx.accountId
-    if (a1 in result && !replayed.has(a1)) result[a1] = applyTx(result[a1], tx, a1)
-    const a2 = tx.transferAccountId
-    if (a2 && a2 !== a1 && a2 in result && !replayed.has(a2)) {
-      result[a2] = applyTx(result[a2], tx, a2)
-    }
+  // As contas com cotação ficam fora das sementes: elas já foram replayadas acima a partir da
+  // cotação, e reaplicar as mesmas transações aqui as contaria duas vezes.
+  for (const [id, balance] of computeAccountBalances(transactions, seeds, { asOf: new Date() })) {
+    result[id] = balance
   }
   return result
 }

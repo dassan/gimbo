@@ -346,8 +346,158 @@ JS↔WASM. Não repetir este teste sem uma hipótese nova.
 > intercaladas e mediana — uma leitura isolada não distingue otimização de sorte. É a mesma
 > armadilha do `CS-50`, em outra roupa.
 
+## Benchmark de leitura (`?bench`, sobrevive ao build de produção)
+
+`HY-13`. Ferramenta de medição sob demanda, não telemetria: nada é coletado sozinho, nada vai para
+o bug report. `lib/storage/columnBench.ts` define as variantes de leitura de `transactions` e o
+worker (`benchColumns`) as roda contra o cofre local devolvendo **só números**, nunca as linhas.
+
+**Como rodar:** `npm run preview`, abrir com `?bench` na URL, esperar o app carregar,
+`await __bench.columns()` no console. Leva alguns minutos num cofre grande (segura a fila do
+worker) e imprime a tabela, o teste de linearidade, os ganhos e uma linha JSON copiável.
+
+**Por que fora do gate `import.meta.env.DEV`,** ao contrário do `perfMonitor.ts`: um build de
+produção não tem nada que esteja atrás daquele gate, e o `M-87`/`M-91` documentam que medir boot em
+`npm run dev` leva à conclusão errada. Mesma exceção reconhecida do `syncMetrics.ts`. O custo em
+produção é ler `location.search` no carregamento e um `if` que não entra.
+
+### Primeira coleta real (Chrome 151, 26.576 transações, build de produção, 2 execuções)
+
+| variante | linhas | colunas | worker (mediana) | SQLite nativo, mesmo arquivo |
+|---|---|---|---|---|
+| `count` | — | 0 | 87 / 84ms | 0,1ms |
+| `id` | 26.576 | 1 | 1.818 / 1.894ms | 18,3ms |
+| `core9` | 26.576 | 9 | 7.121 / 8.273ms | 82,6ms |
+| `all20` | 26.576 | 20 | 8.377 / 8.867ms | 142,2ms |
+| `all20win` | 4.673 | 20 | **230 / 220ms** | 24,5ms |
+
+**Dois resultados, um deles contrariando a hipótese que motivou a ferramenta:**
+
+1. **Podar coluna não paga.** 20 → 9 colunas rendeu 1,00-1,21x nas quatro medições, com as amostras
+   de `core9` (5.826-8.425ms) e `all20` (7.751-9.430ms) se sobrepondo. A previsão era 2,1-2,5x. O
+   eixo de colunas foi descartado, e o custo de tipo que ele cobraria (`CoreTransaction` propagado
+   pelo app) com ele.
+2. **O custo é super-linear no tamanho do resultado.** A mesma consulta, mesmas 20 colunas: 5,7x
+   mais linhas custaram **38x** mais tempo — expoente 2,1. No SQLite nativo, sobre o mesmo arquivo,
+   a mesma razão dá 5,8x, proporcional. E a comparação com o nativo escala junto: `all20win` é 9,2x
+   mais lento que o nativo, `all20` é 61x.
+
+**Correção a uma inferência do `M-91`:** o `COUNT(*)` de 89ms que sustentava "ler o arquivo não é o
+custo, materializar linha é" usa **índice de cobertura** (`EXPLAIN QUERY PLAN`:
+`SCAN transactions USING COVERING INDEX idx_transactions_recurrence`) e nunca toca a tabela — não
+prova nada sobre o custo de ler o arquivo. Mas o `SELECT id` também é índice de cobertura
+(`sqlite_autoindex_transactions_1`) e ainda assim custa 1.856ms no navegador contra 18ms nativo.
+Somando as duas coisas: não é I/O da tabela nem número de células — o que custa, e custa mais que
+proporcionalmente, é **produzir N linhas em JS dentro do worker**. Pressão de heap/coleta de lixo é
+o candidato que explica o expoente ~2 (o custo total de coleta cresce com o produto do número de
+coletas pelo heap vivo).
+
+> **Armadilha de método, cometida aqui:** a primeira versão do harness "intercalava" as variantes
+> rotacionando a lista a cada rodada. Rotacionar uma sequência cíclica **preserva o antecessor de
+> cada elemento** — toda consulta sempre teve o mesmo vizinho, e a intercalação não intercalava
+> nada. O sintoma foi uma variante de 4.673 linhas × 9 colunas medindo 1.827ms contra 230ms da
+> mesma consulta com *mais* colunas: ela rodava sempre logo depois da leitura de 26.576 linhas e
+> herdava a conta de memória dela. Hoje é uma permutação determinística por rodada
+> (`permute()`), mais uma pausa curta entre variantes. **O número de `core9win` da primeira coleta
+> deve ser descartado.**
+
+### A causa raiz, encontrada (`HY-16`, 2026-08-29)
+
+A leitura em lotes (`HY-15`) foi **refutada** — as mesmas 26.576 linhas em 2, 5 ou 20 consultas
+custaram 10.460 / 8.829 / 10.760ms contra 7.835ms da leitura única. Isso eliminou "acúmulo do
+resultado em JS" e sobrou uma explicação que fecha com tudo:
+
+> `OriginPrivateFileSystemVFS.xRead` envolve **toda** leitura de página em `handleAsync()` — o
+> unwind/rewind da pilha WASM inteira do Asyncify — mesmo com o `SyncAccessHandle` já aberto, onde
+> a leitura em si é instantânea. O custo do boot é **número de páginas**, não linhas nem bytes.
+
+Medido com `__bench.pages()`, sobre cópias do cofre real em arquivo de rascunho:
+
+| | páginas | frio | quente | por página (frio − piso) |
+|---|---|---|---|---|
+| `p4096` | 3.489 | 8.141ms | 5.350ms | **2,06ms** |
+| `p4096` + cache 64MB | 3.489 | 9.281ms | **950ms** | — |
+| `p65536` | 237 | **1.527ms** | 1.370ms | **2,43ms** |
+
+Os 950ms da linha do meio são a chave: com cache grande o banco inteiro cabe, nenhuma página é
+lida, e o que sobra é o piso de materializar 26.576 linhas (0,036ms/linha). Todo o resto é página —
+e **o custo por página quase não muda entre 4KB e 64KB**, apesar de uma carregar 16x mais bytes.
+
+**Leitura fria 5,3x mais rápida com uma linha de PRAGMA e um `VACUUM` de 1,3s.** E explica
+retroativamente as duas refutações: colunas e lotes leem exatamente as mesmas páginas. A janela de
+2 anos parecia mágica (260ms) porque suas ~286 páginas cabem no cache padrão de 2MB e ficavam
+quentes entre as rodadas — o "expoente 2,1" nunca foi uma curva, era um degrau de cache.
+
+O que falta antes de aplicar é o outro lado: `__bench.writes()` (`HY-17`) varre 4KB/16KB/32KB/64KB
+medindo update de linha única, lote de 50 updates espalhados, tamanho do WAL, `wal_checkpoint` e a
+releitura de ano que toda mutação paga (`CS-32`). Página maior reescreve mais por mutação, e o
+salvamento é o caminho que o usuário sente — o boot ele espera uma vez.
+
+### O desfecho: bloqueio exclusivo + WAL (`HY-19`/`HY-20`, 2026-08-29)
+
+A varredura de escrita (`__bench.writes()`, 7 variantes sobre cópias) fechou o cenário e derrubou a
+última hipótese: **`VACUUM` sozinho não rende nada** (1.974 → 2.005ms). E o trade-off que se
+esperava — leitura melhor, escrita pior — **não existe**:
+
+| | leitura fria | update 1 | update 50 | WAL |
+|---|---|---|---|---|
+| como estava (p4096, delete, normal) | 1.974ms | 24,3ms | 76,2ms | — |
+| p16384 | 958ms | 16,5ms | 36,6ms | — |
+| p65536 | 809ms | 23,8ms | 31,8ms | — |
+| **p4096 + WAL/exclusivo** | **770ms** | **0,4ms** | 9,6ms | 173 KB |
+| p65536 + WAL/exclusivo | 623ms | 0,4ms | 5,9ms | 2,16 MB |
+
+O mecanismo, lido no código da VFS depois que os números pararam de fazer sentido: `xOpen` **não**
+pega o `SyncAccessHandle` para o banco principal, `xLock` só o pega no lock **exclusivo**, e
+`xUnlock` o **fecha** assim que o lock cai. Durante uma leitura o handle é `null` e cada página cai
+no caminho lento — `getFile()` + `Blob.slice()` + `arrayBuffer()`, três operações assíncronas por
+página de 4KB. Com `locking_mode=EXCLUSIVE` o lock nunca cai, o handle fica aberto, e `xRead` lê de
+forma síncrona. O comentário do próprio arquivo já dizia: *"Not using an access handle is slower
+but allows multiple readers."*
+
+E o WAL, que só é alcançável com o bloqueio exclusivo nesta VFS (sem `xShmMap`), elimina o outro
+custo: em `delete`, **toda transação cria, escreve e apaga um arquivo de journal no OPFS**.
+
+**Duas linhas, leitura 2,6x e escrita 60x.** Trocar o tamanho de página compraria só mais 1,24x e
+custaria 12,5x de WAL mais uma migration — descartado. O que sobra é o piso de materializar linha
+(671-950ms conforme a sessão), que nenhuma dessas alavancas remove.
+
+Custo aceito: o cofre virou de aba única (`HY-21`, `lib/vaultOwnership.ts`).
+
+`e2e/columnBench.spec.ts` trava o que uma coleta de minutos não pode descobrir tarde demais: as
+variantes rodam contra wa-sqlite real, a janela lê **só** os dois anos que promete (o erro do
+`CS-51` em outra roupa), as variantes em lotes cobrem o cofre inteiro exatamente uma vez, e o
+número de colunas declarado bate com o que o SQLite devolve.
+
 ## Changelog
 
+- **HY-19/HY-20/HY-21 (2026-08-29)** — o épico fecha em duas linhas (seção acima). A lição que
+  vale guardar não é o número: é que **um pragma pode não pegar e não avisar**. O
+  `PRAGMA journal_mode=WAL` estava no código desde sempre, com um comentário explicando o
+  benefício, e nunca surtiu efeito — o SQLite recusa WAL sem memória compartilhada devolvendo o
+  modo atual, sem erro. Só apareceu porque uma ferramenta de medição passou a **ler de volta** o
+  modo efetivo em vez de assumir o pedido. Onde um ajuste é silenciosamente ignorável, ler de volta
+  é barato e a alternativa é anos de crença errada.
+- **HY-16 (2026-08-29)** — causa raiz do boot lento (seção acima): travessia Asyncify por página
+  lida. A lição de método é a mais cara desta série: **três hipóteses plausíveis foram refutadas
+  antes da certa** (célula, acúmulo em JS, lotes), e cada refutação custou uma coleta em vez de um
+  épico. A que valeu não veio de medir mais fino o que já se olhava — veio de ler o código da VFS
+  depois que os números pararam de fazer sentido. Quando uma medição contradiz a hipótese **e** a
+  alternativa óbvia, o próximo passo é a camada de baixo, não outra variante.
+- **HY-13 — primeira coleta (2026-08-29)** — a hipótese que motivou a ferramenta (custo por
+  célula, poda de colunas) foi **reprovada em 1,0-1,2x**, e no lugar dela apareceu um achado maior:
+  o custo é super-linear no tamanho do resultado (expoente 2,1), e só no navegador — o mesmo
+  arquivo no SQLite nativo é proporcional. Duas lições de método: uma ferramenta de medição vale
+  principalmente quando **derruba** a hipótese de quem a construiu, barato e cedo; e um harness de
+  benchmark precisa do mesmo rigor do código que ele mede — a "intercalação" por rotação não
+  intercalava nada, e produziu um número impossível que só não virou conclusão porque era
+  fisicamente absurdo (menos colunas custando 8x mais).
+- **HY-13/HY-14 (2026-08-28)** — benchmark de leitura (seção acima) e motor único de saldo
+  (`computeAccountBalances`). A lição do segundo vale para além do épico: a regra de saldo estava em
+  **cinco** cópias, duas delas literais, e ninguém tinha percebido que três já haviam divergido —
+  auto-transferência e `CREDIT_PAYMENT` no replay sem cotação davam resultados diferentes
+  dependendo da tela. Nenhum teste pegava isso porque cada tela testava a própria cópia. Antes de
+  otimizar um cálculo espalhado, vale contar quantas versões dele existem.
 - **M-91 (2026-08-28)** — atribuição de dentro do `loadDataFile` (seção acima). Duas lições: uma
   fase opaca que domina o boot é indistinguível de um mistério — abrir a caixa custou 3 métricas e
   respondeu em uma tarde o que estava em aberto desde o `M-87`; e uma hipótese de otimização

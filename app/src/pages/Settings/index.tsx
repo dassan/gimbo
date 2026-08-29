@@ -84,7 +84,7 @@ import {
   uuid,
   now,
   getOpenCreditBalance,
-  isCashRealized,
+  computeAccountBalances,
   RESERVE_ELIGIBLE_TYPES,
 } from '@/lib/utils'
 import { AUDIT_RETENTION_DEFAULT } from '@/lib/storage/schema'
@@ -716,55 +716,24 @@ export default function Settings() {
   // For all other account types: standard flow (INCOME+, EXPENSE−, TRANSFER−).
   const accountBalances = useMemo<Record<string, number>>(() => {
     if (!data) return {}
+
+    // HY-0: mesmo motor único do Dashboard (`computeAccountBalances`) — este bloco era cópia
+    // literal daquele, e as duas divergiriam na primeira correção feita só de um lado.
     const map: Record<string, number> = {}
-
-    // Standard flow for non-CREDIT accounts: seed with initialBalance (account.balance),
-    // then apply transactions. This lets users set a starting balance at account creation.
-    data.accounts
-      .filter((a) => a.type !== 'CREDIT')
-      .forEach((a) => {
-        map[a.id] = a.balance
-      })
-
-    data.transactions.forEach((tx) => {
-      // CREDIT_PAYMENT funds leave the paying (non-CREDIT) account; the card side is
-      // reflected in its available limit (outstanding). Handle before the CREDIT skip.
-      if (tx.type === 'CREDIT_PAYMENT') {
-        if (tx.transferAccountId) {
-          const payer = data.accounts.find((a) => a.id === tx.transferAccountId)
-          if (payer && payer.type !== 'CREDIT') {
-            map[tx.transferAccountId] = (map[tx.transferAccountId] ?? 0) - tx.amount
-          }
-        }
-        return
-      }
-      const account = data.accounts.find((a) => a.id === tx.accountId)
-      if (!account || account.type === 'CREDIT') return
-      // B-15: account balances reflect realized cash; TRANSFER is always realized.
-      if (!isCashRealized(tx)) return
-      if (tx.type === 'INCOME') map[tx.accountId] = (map[tx.accountId] ?? 0) + tx.amount
-      if (tx.type === 'EXPENSE') map[tx.accountId] = (map[tx.accountId] ?? 0) - tx.amount
-      if (tx.type === 'TRANSFER') {
-        map[tx.accountId] = (map[tx.accountId] ?? 0) - tx.amount
-        if (tx.transferAccountId) {
-          const dest = data.accounts.find((a) => a.id === tx.transferAccountId)
-          if (dest && dest.type !== 'CREDIT') {
-            map[tx.transferAccountId] = (map[tx.transferAccountId] ?? 0) + tx.amount
-          }
-        }
-      }
-    })
+    const seeds = new Map(
+      data.accounts.filter((a) => a.type !== 'CREDIT').map((a) => [a.id, a.balance] as const)
+    )
+    for (const [id, balance] of computeAccountBalances(data.transactions, seeds)) {
+      map[id] = balance
+    }
 
     // CREDIT accounts: available limit = creditMetadata.limit − current invoice balance
     data.accounts
       .filter((a) => a.type === 'CREDIT')
       .forEach((account) => {
-        if (!account.creditMetadata) {
-          map[account.id] = 0
-          return
-        }
-        const openBalance = getOpenCreditBalance(data.transactions, account)
-        map[account.id] = account.creditMetadata.limit - openBalance
+        map[account.id] = account.creditMetadata
+          ? account.creditMetadata.limit - getOpenCreditBalance(data.transactions, account)
+          : 0
       })
 
     return map

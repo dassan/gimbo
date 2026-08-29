@@ -8,11 +8,13 @@ import { validateDataFile } from '@/lib/storage/schema'
 import { isDemoMode, loadDemoData } from '@/lib/demo'
 import { clearBackupDirHandle } from '@/lib/backupDir'
 import { startSyncPolling } from '@/lib/cloudSync/syncScheduler'
+import { claimVault } from '@/lib/vaultOwnership'
 import { markAppVisible, markBootInstant, measureBoot, measureBootSync } from '@/lib/bootMetrics'
 import AppLayout from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import UpdateToast from '@/components/UpdateToast'
 import BootSkeleton from '@/components/BootSkeleton'
+import VaultBusyScreen from '@/components/VaultBusyScreen'
 import Landing from '@/pages/Landing'
 import Onboarding from '@/pages/Onboarding'
 import Dashboard from '@/pages/Dashboard'
@@ -43,6 +45,8 @@ export default function App() {
   const data = useDataStore((s) => s.data)
   const [hydrated, setHydrated] = useState(false)
   const [initError, setInitError] = useState<string | null>(null)
+  // HY-21: o cofre é de aba única desde que o banco passou a ser aberto com bloqueio exclusivo.
+  const [vaultBusy, setVaultBusy] = useState<'blocked' | 'revoked' | null>(null)
 
   useEffect(() => {
     const root = document.documentElement
@@ -77,6 +81,7 @@ export default function App() {
 
   useEffect(() => {
     async function init() {
+      let blockedOnVault = false
       try {
         initWorkspace()
         void i18n.changeLanguage(useWorkspaceStore.getState().workspace.locale)
@@ -109,6 +114,24 @@ export default function App() {
           }
         }
 
+        // HY-21: antes de tocar o storage. O banco é aberto com `locking_mode=EXCLUSIVE`, e uma
+        // segunda aba não falharia com erro — ficaria pendurada num lock para sempre. Perguntar
+        // primeiro converte essa trava silenciosa numa escolha do usuário.
+        const claim = await claimVault(async () => {
+          // Outra aba pediu a posse: solta o banco antes de o lock ser liberado, senão o arquivo
+          // continuaria preso e a outra aba assumiria só no nome.
+          await storage.close()
+          useDataStore.getState().clearData()
+          setVaultBusy('revoked')
+        })
+        if (claim === 'busy') {
+          // `return` levaria ao `finally`, que carimbaria `boot.dataReady` — um boot que nunca
+          // leu o cofre não deve aparecer na linha do tempo do `M-87` como se tivesse lido.
+          setVaultBusy('blocked')
+          blockedOnVault = true
+          return
+        }
+
         // M-87: as duas fases que dominam o boot de um cofre grande, medidas separadamente —
         // `boot.storageReady` é a partida do motor (worker + wasm + OPFS + migrations + hashes),
         // que independe do tamanho do cofre; `boot.loadDataFile` é a leitura do cofre, que
@@ -135,17 +158,26 @@ export default function App() {
       } catch (err) {
         setInitError(err instanceof Error ? err.message : 'Erro ao carregar dados locais')
       } finally {
-        // M-87: instante em que os dados ficaram prontos e o React foi liberado para renderizar.
-        // Lido junto de `boot.firstRender`/`boot.appVisible`, separa "carregar" de "desenhar".
-        markBootInstant('boot.dataReady')
+        if (!blockedOnVault) {
+          // M-87: instante em que os dados ficaram prontos e o React foi liberado para renderizar.
+          // Lido junto de `boot.firstRender`/`boot.appVisible`, separa "carregar" de "desenhar".
+          markBootInstant('boot.dataReady')
+        }
         setHydrated(true)
       }
     }
     void init()
+    // Sem limpeza que solte a posse: ela é do processo, não deste componente. `vaultOwnership`
+    // libera no `pagehide`, que é o evento que de fato marca a saída — desmontar o `App` sob o
+    // double-invoke do `<StrictMode>` não significa que a aba está indo embora.
   }, [initWorkspace, loadData, refreshRecurrenceHorizons, ensureQuadrantesBatch])
 
   // M-90: enquanto o cofre é lido, a tela mostra a silhueta do app em vez de nada. Não acelera o
   // boot — encurta o tempo até a primeira coisa aparecer, de ~2,8s para ~150ms num cofre real.
+  // Antes do esqueleto: sem o cofre não há o que carregar, e mostrar silhueta de carregamento
+  // enquanto se espera uma decisão do usuário seria mentir sobre o estado.
+  if (vaultBusy) return <VaultBusyScreen reason={vaultBusy} />
+
   if (!hydrated)
     return (
       <>
