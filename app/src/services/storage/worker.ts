@@ -248,7 +248,7 @@ async function init(): Promise<void> {
     const vfs = new OriginPrivateFileSystemVFS() as SQLiteVFS
     sqlite3.vfs_register(vfs, /* makeDefault */ true)
 
-    db = await sqlite3.open_v2(DB_FILENAME)
+    db = await openDbExclusive(DB_FILENAME)
   })
 
   await measureInit('boot.worker.migrations', () => runMigrationsOn(db))
@@ -302,10 +302,39 @@ const MIGRATIONS: ReadonlyArray<readonly [version: number, sql: string]> = [
 //
 // 2. **Guarda de versão futura.** Antes só o caminho de peer comparava contra MAX_KNOWN_DB_VERSION;
 //    o boot e o import abriam um arquivo de versão desconhecida e liam com o schema velho.
+/**
+ * Abre um banco e retém o bloqueio exclusivo **antes de qualquer leitura**.
+ *
+ * A ordem não é estilo. Desde o `HY-20` o cofre é gravado em WAL, e um arquivo com cabeçalho de
+ * WAL não pode sequer ser lido por esta VFS em modo de bloqueio normal — ela não implementa
+ * `xShmMap`/`xShmLock`, e sem memória compartilhada o SQLite recusa a abertura. Um único
+ * `PRAGMA user_version` disparado antes deste pragma derruba a leitura inteira: foi o que quebrou
+ * a leitura de peer quando o WAL entrou, porque `readForeignDataFile` inspecionava a versão do
+ * arquivo antes de rodar as migrations.
+ *
+ * O bloqueio exclusivo também é a maior alavanca de leitura do projeto — ver `runMigrationsOn`.
+ */
+async function openDbExclusive(name: string): Promise<number> {
+  const dbPtr = await sqlite3.open_v2(name)
+  await sqlite3.run(dbPtr, 'PRAGMA locking_mode=EXCLUSIVE')
+  return dbPtr
+}
+
 async function runMigrationsOn(dbPtr: number): Promise<void> {
-  // WAL mode gives better read concurrency and enables clean export via checkpoint.
-  // This is idempotent — safe to call on every open. Fica fora da transação de propósito:
-  // `PRAGMA journal_mode` não pode ser trocado dentro de uma.
+  // HY-19/HY-20: o WAL só pega porque `openDbExclusive` já reteve o bloqueio exclusivo. Sem ele
+  // esta linha é um **no-op silencioso** — `OriginPrivateFileSystemVFS` não implementa
+  // `xShmMap`/`xShmLock`, e sem memória compartilhada o SQLite recusa o WAL devolvendo o modo
+  // atual, sem erro. O cofre rodou em `delete` desde sempre, apesar desta linha existir (`HY-19`).
+  //
+  // O par (bloqueio exclusivo + WAL) é a maior alavanca de desempenho que este projeto encontrou.
+  // A VFS só abre o `SyncAccessHandle` no lock exclusivo e o **fecha** quando o lock cai, então em
+  // modo normal toda leitura de página cai no caminho lento — `getFile()` + `Blob.slice()` +
+  // `arrayBuffer()`, três operações assíncronas por página de 4KB. E em `delete` toda transação
+  // cria, escreve e apaga um arquivo de journal no OPFS, pela mesma VFS cara.
+  //
+  // Medido no cofre real (26.576 transações, `plan/MONITORING.md`): leitura completa 1.974ms →
+  // 770ms, e update de uma linha 24,3ms → 0,4ms. Custo aceito: uma segunda aba não consegue abrir
+  // o mesmo cofre — tratado em `lib/vaultOwnership.ts`, com aviso e opção de assumir o controle.
   await sqlite3.run(dbPtr, 'PRAGMA journal_mode=WAL')
 
   // M-71/PERFORMANCE.md: sem isto, b-trees temporárias de GROUP BY/ORDER BY (ex.:
@@ -417,7 +446,7 @@ async function importDb(data: ArrayBuffer): Promise<void> {
   // ── 2. Valida a cópia: abre, guarda de versão, migra e lê de verdade ─────────
   let stagingDb: number
   try {
-    stagingDb = await sqlite3.open_v2(stagingName)
+    stagingDb = await openDbExclusive(stagingName)
   } catch {
     await removeDbFiles(root, stagingName)
     throw new Error(`${ERR_DB_UNREADABLE}: o arquivo não é um banco SQLite válido`)
@@ -474,7 +503,7 @@ async function importDb(data: ArrayBuffer): Promise<void> {
         // Não existe — nada a fazer.
       }
     }
-    db = await sqlite3.open_v2(DB_FILENAME)
+    db = await openDbExclusive(DB_FILENAME)
     await runMigrationsOn(db)
     // CS-34: importDb() reabre `db` fora do caminho de boot de init() — sem isto, um .db
     // importado sem table_hashes só ganharia o backfill no próximo reload da página, não neste
@@ -493,7 +522,7 @@ async function importDb(data: ArrayBuffer): Promise<void> {
             // Não existe — nada a fazer.
           }
         }
-        db = await sqlite3.open_v2(DB_FILENAME)
+        db = await openDbExclusive(DB_FILENAME)
         await runMigrationsOn(db)
       } catch {
         // Restauração falhou também. Preserva o snapshot em disco em vez de apagá-lo no `finally`
@@ -509,7 +538,7 @@ async function importDb(data: ArrayBuffer): Promise<void> {
       // falharia até um reload, mesmo o erro sendo recuperável. Best-effort de propósito — se
       // nem isso funcionar, o erro original abaixo continua sendo o que descreve a falha.
       try {
-        db = await sqlite3.open_v2(DB_FILENAME)
+        db = await openDbExclusive(DB_FILENAME)
         await runMigrationsOn(db)
       } catch {
         // Worker segue inutilizável até um reload; o erro propagado abaixo já diz ao usuário
@@ -1938,7 +1967,7 @@ async function readForeignDataFile(buffer: ArrayBuffer): Promise<ReadPeerResult>
 
   let tempDb: number
   try {
-    tempDb = await sqlite3.open_v2(tempName)
+    tempDb = await openDbExclusive(tempName)
   } catch {
     await cleanup()
     return { ok: false, reason: 'unreadable' }
@@ -2170,6 +2199,11 @@ async function withScratchDb<T>(
       // O cofre exportado vem em formato WAL, que esta VFS não abre em bloqueio normal. Normaliza
       // toda cópia para rollback aqui, para a conexão que mede poder escolher livremente o seu
       // modo — inclusive `normal`, que é justamente o controle da medição.
+      // `execWithParams` e não `run`: estes pragmas devolvem linha, e converter WAL→rollback com
+      // a linha por drenar deixa o statement sem finalizar — o `close` seguinte falha com
+      // "unable to close due to unfinalized statements".
+      await sqlite3.execWithParams(prepared, 'PRAGMA locking_mode=EXCLUSIVE')
+      await sqlite3.execWithParams(prepared, 'PRAGMA journal_mode=DELETE')
       await prepare(prepared)
     } finally {
       await sqlite3.close(prepared)
