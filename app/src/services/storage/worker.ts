@@ -25,6 +25,19 @@ import v15Schema from './migrations/v15.sql?raw'
 import v16Schema from './migrations/v16.sql?raw'
 import { ERR_DB_UNREADABLE, ERR_SCHEMA_TOO_NEW } from './errors'
 import {
+  benchVariants,
+  median,
+  permute,
+  PAGE_BENCH_READ,
+  WRITE_BENCH_VARIANTS,
+  type BenchSample,
+  type BenchVariant,
+  type PageSizeBenchEntry,
+  type PageSizeBenchResult,
+  type WriteBenchEntry,
+  type WriteBenchResult,
+} from '@/lib/storage/columnBench'
+import {
   hashRow,
   combineHashes,
   accountRowKey,
@@ -2026,6 +2039,362 @@ async function exportRawBytes(): Promise<ArrayBuffer> {
   return readFileBytes(root, DB_FILENAME)
 }
 
+// ─── HY/Fase 0 — benchmark de colunas ─────────────────────────────────────────
+
+/**
+ * Roda o A/B de `lib/storage/columnBench.ts` contra o cofre local e devolve **só números** — nunca
+ * as linhas, que num cofre real são dezenas de MB e transformariam a medição no seu próprio
+ * gargalo (o `postMessage` de volta).
+ *
+ * Mede aqui dentro, e não na thread principal, porque é aqui que o custo está: o `M-91` atribuiu
+ * ~95% do `loadDataFile` ao SQLite materializando linha, ~4% ao `postMessage` e ~5% à montagem de
+ * objeto do outro lado. A ida e volta completa é medida separadamente pelo `StorageService`.
+ *
+ * Segura a fila do worker por vários minutos num cofre grande — é uma ferramenta de medição
+ * deliberada, disparada à mão por `?bench`, nunca por caminho de produto.
+ */
+async function benchColumns(rounds: number): Promise<{
+  rows: number
+  yearSpan: [number, number]
+  samples: BenchSample[]
+}> {
+  // Busca de índice, não varredura — o intervalo de anos define as fatias das variantes em lotes.
+  const { rows: spanRows } = await sqlite3.execWithParams(
+    db,
+    'SELECT MIN(date), MAX(date) FROM transactions'
+  )
+  const minDate = (spanRows[0]?.[0] as string | null) ?? `${new Date().getFullYear()}-01-01`
+  const maxDate = (spanRows[0]?.[1] as string | null) ?? minDate
+  const yearSpan: [number, number] = [Number(minDate.slice(0, 4)), Number(maxDate.slice(0, 4))]
+
+  const variants = benchVariants(new Date().getFullYear(), yearSpan[0], yearSpan[1])
+  const collected = new Map<string, number[]>()
+  const rowCount = new Map<string, number>()
+
+  const runVariant = async (variant: BenchVariant): Promise<{ ms: number; rows: number }> => {
+    const startedAt = performance.now()
+    let total = 0
+    for (const step of variant.steps) {
+      const { rows } = await sqlite3.execWithParams(db, step.sql, step.params)
+      total += rows.length
+    }
+    return { ms: performance.now() - startedAt, rows: total }
+  }
+
+  // Aquecimento descartado: a primeira leitura de cada consulta paga o cache de página do OPFS.
+  for (const variant of variants) await runVariant(variant)
+
+  for (let round = 0; round < rounds; round++) {
+    for (const variant of permute(variants, round)) {
+      // Uma pausa curta entre variantes. Não força coleta de lixo — nada em JS força —, mas dá ao
+      // runtime a janela ociosa em que ele recolhe o resultado anterior, em vez de cobrá-la da
+      // próxima consulta. É a mesma contaminação que a permutação acima ataca, por outro lado.
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      const { ms, rows } = await runVariant(variant)
+      const list = collected.get(variant.name)
+      if (list) list.push(ms)
+      else collected.set(variant.name, [ms])
+      rowCount.set(variant.name, rows)
+    }
+  }
+
+  const samples: BenchSample[] = variants.map((variant) => {
+    const values = collected.get(variant.name) ?? []
+    return {
+      name: variant.name,
+      columns: variant.columns,
+      scope: variant.scope,
+      chunks: variant.steps.length,
+      rows: rowCount.get(variant.name) ?? 0,
+      samples: values,
+      medianMs: median(values),
+    }
+  })
+
+  // O ajuste de custo e o teste de linearidade ficam do lado do `StorageService`, que é quem tem as
+  // duas metades (worker e ida-e-volta) para relatar juntas.
+  return { rows: samples.find((s) => s.name === 'all20')?.rows ?? 0, yearSpan, samples }
+}
+
+/**
+ * HY-16 — mede o custo por **página lida**, isolando-o do custo por linha.
+ *
+ * Roda sempre sobre uma **cópia** do cofre num arquivo de rascunho (a mesma mecânica de
+ * `readForeignDataFile`), nunca sobre o `db` real: uma das variantes precisa rodar `VACUUM` para
+ * reescrever o banco com páginas de 64KB, e isso jamais deve tocar o cofre do usuário a partir de
+ * uma ferramenta de medição.
+ *
+ * Três entradas, e a comparação entre elas responde uma pergunta cada:
+ * - `p4096` — controle: o cofre como está hoje. `coldMs` é o que o boot paga.
+ * - `p4096+cache` — mesmo banco, cache grande o bastante para tudo. `warmMs` sem páginas para ler
+ *   isola o custo puro de materializar linha; a diferença para `coldMs` é a conta das páginas.
+ * - `p65536` — o mesmo conteúdo com 16x menos páginas. Se o gargalo é a travessia por página, é
+ *   aqui que ele desaparece.
+ */
+/**
+ * Executa `body` contra uma **cópia** do cofre num arquivo de rascunho, e apaga tudo no fim.
+ *
+ * Compartilhado pelas duas ferramentas de medição de página. Nada aqui toca o `db` real: uma das
+ * variantes roda `VACUUM` para reescrever o banco, e uma ferramenta de medição jamais deve fazer
+ * isso no cofre do usuário.
+ *
+ * `prepare` roda antes de um fecha-e-reabre e vale para o que fica **no arquivo** (`page_size` +
+ * `VACUUM`); `body` recebe uma conexão nova, de cache vazio — a condição do boot. Confundir os dois
+ * momentos faz uma variante de cache medir o cache padrão, porque `cache_size` é por conexão.
+ */
+async function withScratchDb<T>(
+  bytes: ArrayBuffer,
+  prepare: (dbPtr: number) => Promise<void>,
+  body: (dbPtr: number, name: string) => Promise<T>
+): Promise<T> {
+  const root = await navigator.storage.getDirectory()
+  const name = `bench-scratch-${crypto.randomUUID()}.db`
+  const cleanup = async () => {
+    for (const suffix of ['', '-wal', '-journal'] as const) {
+      try {
+        await root.removeEntry(name + suffix)
+      } catch {
+        // Best-effort — o sufixo pode nem existir.
+      }
+    }
+  }
+
+  const fileHandle = await root.getFileHandle(name, { create: true })
+  const writable = await fileHandle.createWritable()
+  await writable.write(bytes)
+  await writable.close()
+
+  try {
+    const prepared = await sqlite3.open_v2(name)
+    try {
+      // O cofre exportado vem em formato WAL, que esta VFS não abre em bloqueio normal. Normaliza
+      // toda cópia para rollback aqui, para a conexão que mede poder escolher livremente o seu
+      // modo — inclusive `normal`, que é justamente o controle da medição.
+      await prepare(prepared)
+    } finally {
+      await sqlite3.close(prepared)
+    }
+
+    const reopened = await sqlite3.open_v2(name)
+    try {
+      return await body(reopened, name)
+    } finally {
+      await sqlite3.close(reopened)
+    }
+  } finally {
+    await cleanup()
+  }
+}
+
+async function benchScalar(dbPtr: number, sql: string): Promise<number> {
+  const { rows } = await sqlite3.execWithParams(dbPtr, sql)
+  return (rows[0]?.[0] as number | null) ?? 0
+}
+
+async function benchTimedRead(
+  dbPtr: number,
+  sql: string,
+  params?: SQLiteCompatibleType[]
+): Promise<{ ms: number; rows: number }> {
+  const startedAt = performance.now()
+  const { rows } = await sqlite3.execWithParams(dbPtr, sql, params)
+  return { ms: performance.now() - startedAt, rows: rows.length }
+}
+
+/**
+ * HY-16 — mede o custo por **página lida**, isolando-o do custo por linha.
+ *
+ * - `p4096` — controle: o cofre como está hoje. `coldMs` é o que o boot paga.
+ * - `p4096+cache` — mesmo banco, cache grande o bastante para tudo. `warmMs` sem páginas para ler
+ *   isola o custo puro de materializar linha; a diferença para `coldMs` é a conta das páginas.
+ * - `p65536` — o mesmo conteúdo com 16x menos páginas.
+ */
+async function benchPageSize(): Promise<PageSizeBenchResult> {
+  const bytes = await exportDb()
+  const entries: PageSizeBenchEntry[] = []
+  let vacuumMs = 0
+
+  const measure = async (
+    label: string,
+    prepare: (dbPtr: number) => Promise<void>,
+    configure?: (dbPtr: number) => Promise<void>
+  ): Promise<void> => {
+    const entry = await withScratchDb(bytes, prepare, async (dbPtr) => {
+      // Antes da leitura fria: o cache continua vazio, só maior.
+      if (configure) await configure(dbPtr)
+      const pageSize = await benchScalar(dbPtr, 'PRAGMA page_size')
+      const pageCount = await benchScalar(dbPtr, 'PRAGMA page_count')
+      const cacheSizeKb = -(await benchScalar(dbPtr, 'PRAGMA cache_size'))
+      const cold = await benchTimedRead(dbPtr, PAGE_BENCH_READ)
+      const warm = await benchTimedRead(dbPtr, PAGE_BENCH_READ)
+      return {
+        label,
+        pageSize,
+        pageCount,
+        cacheSizeKb,
+        coldMs: cold.ms,
+        warmMs: warm.ms,
+        rows: cold.rows,
+      } satisfies PageSizeBenchEntry
+    })
+    entries.push(entry)
+  }
+
+  await measure('p4096', async () => {
+    // Controle: nada a preparar — é o cofre exatamente como está hoje.
+  })
+
+  await measure(
+    'p4096+cache',
+    async () => {
+      // Nada muda no arquivo — só na conexão que mede.
+    },
+    async (dbPtr) => {
+      await sqlite3.run(dbPtr, 'PRAGMA cache_size = -65536')
+    }
+  )
+
+  await measure('p65536', async (dbPtr) => {
+    const startedAt = performance.now()
+    await sqlite3.run(dbPtr, 'PRAGMA page_size = 65536')
+    await sqlite3.run(dbPtr, 'VACUUM')
+    vacuumMs = performance.now() - startedAt
+  })
+
+  return { entries, vacuumMs }
+}
+
+/**
+ * HY-17 — o outro lado da moeda do `HY-16`: quanto a escrita piora com página maior.
+ *
+ * Varre 4 tamanhos porque a decisão provavelmente não é binária. Todas as cópias passam por
+ * `VACUUM`, inclusive a de 4KB, para que a única diferença entre elas seja o tamanho da página e
+ * não o grau de fragmentação.
+ */
+async function benchWrite(rounds: number): Promise<WriteBenchResult> {
+  const bytes = await exportDb()
+  const entries: WriteBenchEntry[] = []
+
+  for (const variant of WRITE_BENCH_VARIANTS) {
+    let vacuumMs = 0
+    const entry = await withScratchDb(
+      bytes,
+      async (dbPtr) => {
+        if (!variant.vacuum) return
+        const startedAt = performance.now()
+        // `page_size` não muda por `VACUUM` com o banco em WAL — silenciosamente. Por isso o
+        // journal mode só é escolhido depois, na conexão que mede.
+        await sqlite3.run(dbPtr, `PRAGMA page_size = ${variant.pageSize}`)
+        await sqlite3.run(dbPtr, 'VACUUM')
+        vacuumMs = performance.now() - startedAt
+      },
+      async (dbPtr, name) => {
+        // Sem `locking_mode=EXCLUSIVE` o WAL não pega nesta VFS (sem `xShmMap`), e o SQLite
+        // devolve o modo atual sem erro — foi assim que o `journal_mode=WAL` do `init()` passou
+        // despercebido por tanto tempo. Lê de volta o modo efetivo em vez de assumir o pedido.
+        const lockingMode = variant.wal ? 'exclusive' : 'normal'
+        await sqlite3.run(dbPtr, `PRAGMA locking_mode = ${lockingMode}`)
+        if (variant.wal) await sqlite3.run(dbPtr, 'PRAGMA journal_mode = WAL')
+        const { rows: modeRows } = await sqlite3.execWithParams(dbPtr, 'PRAGMA journal_mode')
+        const journalMode = String(modeRows[0]?.[0] ?? 'unknown')
+        const pageSize = await benchScalar(dbPtr, 'PRAGMA page_size')
+        const pageCount = await benchScalar(dbPtr, 'PRAGMA page_count')
+
+        const cold = await benchTimedRead(dbPtr, PAGE_BENCH_READ)
+
+        // Ids espalhados por todos os anos, colhidos pelo índice de data — updates concentrados
+        // numa página só mediriam o melhor caso e não a forma de um merge de sync.
+        const { rows: spanRows } = await sqlite3.execWithParams(
+          dbPtr,
+          'SELECT MIN(date), MAX(date) FROM transactions'
+        )
+        const minYear = Number(String(spanRows[0]?.[0] ?? '2026-01-01').slice(0, 4))
+        const maxYear = Number(String(spanRows[0]?.[1] ?? '2026-01-01').slice(0, 4))
+        const ids: string[] = []
+        for (let year = minYear; year <= maxYear; year++) {
+          const { rows } = await sqlite3.execWithParams(
+            dbPtr,
+            'SELECT id FROM transactions WHERE date >= ? AND date < ? LIMIT 10',
+            yearRange(String(year))
+          )
+          for (const row of rows) ids.push(row[0] as string)
+        }
+
+        // A releitura de um ano que toda mutação paga depois de gravar (CS-32).
+        const rehash = await benchTimedRead(
+          dbPtr,
+          'SELECT * FROM transactions WHERE date >= ? AND date < ?',
+          yearRange(String(maxYear))
+        )
+
+        const stamp = new Date().toISOString()
+        const updateIds = async (batch: string[]): Promise<number> => {
+          const startedAt = performance.now()
+          await sqlite3.run(dbPtr, 'BEGIN')
+          for (const id of batch) {
+            await sqlite3.run(dbPtr, 'UPDATE transactions SET updated_at = ? WHERE id = ?', [
+              stamp,
+              id,
+            ])
+          }
+          await sqlite3.run(dbPtr, 'COMMIT')
+          return performance.now() - startedAt
+        }
+
+        const singles: number[] = []
+        for (let round = 0; round < rounds; round++) {
+          const id = ids[round % ids.length]
+          if (id !== undefined) singles.push(await updateIds([id]))
+        }
+
+        // Lotes disjuntos enquanto houver id para isso — repetir o mesmo lote mediria páginas já
+        // sujas e já em cache, que é o melhor caso, não o caso.
+        const batchSize = Math.min(50, ids.length)
+        const batches: number[] = []
+        for (let batch = 0; batch < 3 && batchSize > 0; batch++) {
+          const offset = (batch * batchSize) % ids.length
+          const slice = [...ids.slice(offset), ...ids.slice(0, offset)].slice(0, batchSize)
+          batches.push(await updateIds(slice))
+        }
+
+        // Antes do checkpoint, que trunca o WAL: é o tamanho dele que mede a amplificação. Em
+        // `delete` não existe `-wal`; o campo `journalMode` explica o zero.
+        let walBytes = 0
+        try {
+          const root = await navigator.storage.getDirectory()
+          const walHandle = await root.getFileHandle(`${name}-wal`)
+          walBytes = (await walHandle.getFile()).size
+        } catch {
+          // Sem arquivo de WAL — 0 é a resposta honesta.
+        }
+
+        const checkpointStart = performance.now()
+        await sqlite3.run(dbPtr, 'PRAGMA wal_checkpoint(FULL)')
+        const checkpointMs = performance.now() - checkpointStart
+
+        return {
+          label: variant.label,
+          vacuumed: variant.vacuum,
+          pageSize,
+          pageCount,
+          journalMode,
+          lockingMode,
+          vacuumMs,
+          coldReadMs: cold.ms,
+          yearRehashMs: rehash.ms,
+          update1Ms: median(singles),
+          update50Ms: median(batches),
+          walBytes,
+          checkpointMs,
+        } satisfies WriteBenchEntry
+      }
+    )
+    entries.push(entry)
+  }
+
+  return { rounds, entries }
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 async function dispatch(method: string, args: unknown[]): Promise<unknown> {
@@ -2058,6 +2427,13 @@ async function dispatch(method: string, args: unknown[]): Promise<unknown> {
       return readSyncManifestBase()
     case 'readPartitions':
       return readPartitions(args[0] as string[])
+    // HY/Fase 0 — ferramenta de medição, disparada só por `?bench` (ver services/storage/index.ts)
+    case 'benchColumns':
+      return benchColumns(args[0] as number)
+    case 'benchPageSize':
+      return benchPageSize()
+    case 'benchWrite':
+      return benchWrite(args[0] as number)
     default:
       throw new Error(`[storage-worker] Unknown method: ${method}`)
   }
