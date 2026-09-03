@@ -861,7 +861,8 @@
       "tagline": "Finanças pessoais, sem intermediários.",
       "privacy": "Privacidade",
       "terms": "Termos de Uso",
-      "origin": "Sobre o nome"
+      "origin": "Sobre o nome",
+      "github": "GitHub"
     }
   },
   "vaultBusy": {

@@ -18,9 +18,14 @@ import {
   Gift,
   Smartphone,
 } from 'lucide-react'
+import GithubIcon from '@/components/GithubIcon'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { cn } from '@/lib/utils'
 import type { Locale } from '@/types'
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const GITHUB_REPO_URL = 'https://github.com/dassan/gimbo'
 
 export default function Landing() {
   const { t, i18n } = useTranslation()
@@ -345,6 +350,15 @@ export default function Landing() {
             >
               {t('landing.footer.origin')}
             </Link>
+            <a
+              href={GITHUB_REPO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs text-on-surface/50 transition-colors hover:text-on-surface"
+            >
+              <GithubIcon size={13} />
+              {t('landing.footer.github')}
+            </a>
           </div>
         </div>
       </footer>
