@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import BugReportDialog from '@/components/BugReportDialog'
+import GithubIcon from '@/components/GithubIcon'
 import {
   Landmark,
   Tag as TagIcon,
@@ -117,6 +118,10 @@ type Section =
   | 'preferences'
   | 'backup'
   | 'history'
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const GITHUB_REPO_URL = 'https://github.com/dassan/gimbo'
 
 // ─── Credit issuer config ─────────────────────────────────────────────────────
 
@@ -830,7 +835,15 @@ export default function Settings() {
               ))}
             </SidebarGroup>
 
-            <p className="mt-6 px-3 text-[11px] text-on-surface/25">v{__APP_VERSION__}</p>
+            <a
+              href={GITHUB_REPO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-6 inline-flex items-center gap-1.5 px-3 text-[11px] text-on-surface/25 transition-colors hover:text-on-surface/50"
+            >
+              <GithubIcon size={12} />
+              <span>v{__APP_VERSION__}</span>
+            </a>
           </div>
         )}
 
@@ -873,7 +886,15 @@ export default function Settings() {
               ))}
             </SidebarGroup>
 
-            <p className="mt-6 px-3 text-[11px] text-on-surface/25">v{__APP_VERSION__}</p>
+            <a
+              href={GITHUB_REPO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-6 inline-flex items-center gap-1.5 px-3 text-[11px] text-on-surface/25 transition-colors hover:text-on-surface/50"
+            >
+              <GithubIcon size={12} />
+              <span>v{__APP_VERSION__}</span>
+            </a>
           </aside>
 
           {/* ── Content — desktop always, mobile only once a section is chosen ── */}
