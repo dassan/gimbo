@@ -130,7 +130,7 @@ export default function Navbar({ vaultName = '', onNewTransaction }: NavbarProps
                     ? `${t('settings.multiDeviceLastSynced')} ${new Date(lastSyncedAt).toLocaleString()}`
                     : undefined
               }
-              className="hidden sm:flex h-8 w-8 items-center justify-center rounded-full"
+              className="flex h-8 w-8 items-center justify-center rounded-full"
             >
               {syncStatus === 'syncing' ? (
                 <RefreshCw size={16} strokeWidth={1.75} className="animate-spin text-primary" />
