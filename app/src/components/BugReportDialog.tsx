@@ -113,7 +113,7 @@ function BugReportContent({ onClose, prefillTitle }: ContentProps) {
         aria-labelledby="bug-report-title"
         className="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
-        <div className="relative flex w-full max-w-lg flex-col gap-5 rounded-3xl bg-white p-6 shadow-xl">
+        <div className="relative flex w-full max-w-lg flex-col gap-5 rounded-3xl bg-surface-container p-6 shadow-xl">
           {/* Header */}
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
