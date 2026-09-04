@@ -26,7 +26,7 @@ export default function WelcomeModal({ onClose }: Props) {
     if (dontShow) localStorage.setItem(DISMISSED_KEY, 'true')
     localStorage.removeItem(PENDING_KEY)
     onClose()
-    void navigate('/settings', { state: { section: 'backup' } })
+    void navigate('/settings/backup')
   }
 
   function handleDocLink() {
