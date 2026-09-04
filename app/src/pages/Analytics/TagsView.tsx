@@ -137,7 +137,7 @@ export default function TagsView({
                 className={cn(
                   'px-3 py-1 text-xs font-medium transition-all',
                   filterMode === 'OR'
-                    ? 'bg-on-surface text-white'
+                    ? 'bg-surface-container-highest text-on-surface'
                     : 'text-on-surface/50 hover:text-on-surface/70'
                 )}
               >
@@ -148,7 +148,7 @@ export default function TagsView({
                 className={cn(
                   'px-3 py-1 text-xs font-medium transition-all',
                   filterMode === 'AND'
-                    ? 'bg-on-surface text-white'
+                    ? 'bg-surface-container-highest text-on-surface'
                     : 'text-on-surface/50 hover:text-on-surface/70'
                 )}
               >
