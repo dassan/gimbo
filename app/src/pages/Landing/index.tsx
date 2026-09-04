@@ -132,6 +132,12 @@ export default function Landing() {
             >
               {t('landing.nav.faq')}
             </a>
+            <Link
+              to="/mobile-install"
+              className="text-sm text-on-surface/60 transition-colors hover:text-on-surface"
+            >
+              {t('landing.nav.mobileInstall')}
+            </Link>
           </nav>
 
           <div className="flex items-center gap-3">

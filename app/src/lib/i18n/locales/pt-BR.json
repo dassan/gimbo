@@ -747,6 +747,22 @@
       "s3Body": "A qualquer momento, é possível exportar todo o seu histórico como um único arquivo .db, uma cópia que você guarda, transfere ou leva para outro dispositivo, sem depender de ninguém.",
       "s4Title": "O que isso não cobre",
       "s4Body": "Se você limpar os dados do navegador ou desinstalá-lo sem ter feito um backup, o conteúdo é perdido; o mesmo risco de qualquer informação guardada só localmente. Por isso vale configurar um backup assim que começar a usar o Gimbo."
+    },
+    "mobileInstall": {
+      "title": "Como instalar o Gimbo no celular",
+      "intro": "O Gimbo não passa por loja de aplicativos — ele se instala direto do navegador, com ícone próprio na tela inicial e sem barra de endereço. Funciona em Android e iOS, com os mesmos dados, sempre local no seu aparelho.",
+      "androidTitle": "Android (Google Chrome)",
+      "androidStep1": "Abra gimbo.com.br no Chrome.",
+      "androidStep2": "Toque no menu ⋮, no canto superior direito.",
+      "androidStep3": "Toque em \"Instalar aplicativo\" (ou \"Adicionar à tela inicial\", conforme a versão do Chrome).",
+      "androidStep4": "Confirme. O ícone do Gimbo aparece na tela inicial e abre em tela cheia, como um app comum.",
+      "iosTitle": "iPhone e iPad (Safari)",
+      "iosStep1": "Abra gimbo.com.br no Safari — precisa ser o Safari; outros navegadores no iPhone, mesmo usando o mesmo motor por baixo, não mostram essa opção.",
+      "iosStep2": "Toque no ícone de Compartilhar (o quadrado com a seta para cima), na barra inferior.",
+      "iosStep3": "Role a lista de opções e toque em \"Adicionar à Tela de Início\".",
+      "iosStep4": "Toque em \"Adicionar\". O Gimbo aparece como um app na tela inicial, sem a interface do Safari.",
+      "storeTitle": "Por que não está na App Store nem na Play Store",
+      "storeBody": "É uma escolha deliberada, não uma limitação. O Gimbo funciona hoje sem depender de aprovação de terceiros, conta ou coleta de dados — instalar direto do navegador preserva exatamente isso."
     }
   },
   "bugReport": {
@@ -774,6 +790,7 @@
       "features": "Funcionalidades",
       "privacy": "Privacidade",
       "faq": "Perguntas frequentes",
+      "mobileInstall": "Instalar no celular",
       "cta": "Criar meu Cofre"
     },
     "hero": {

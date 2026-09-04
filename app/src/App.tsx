@@ -35,6 +35,7 @@ import PrivacyPolicy from '@/pages/Legal/PrivacyPolicy'
 import TermsOfService from '@/pages/Legal/TermsOfService'
 import NameOrigin from '@/pages/Legal/NameOrigin'
 import WhyLocalStorage from '@/pages/Legal/WhyLocalStorage'
+import MobileInstall from '@/pages/Legal/MobileInstall'
 
 export default function App() {
   const initWorkspace = useWorkspaceStore((s) => s.init)
@@ -212,6 +213,7 @@ export default function App() {
             <Route path="/terms" element={<TermsOfService />} />
             <Route path="/origin" element={<NameOrigin />} />
             <Route path="/why-local-storage" element={<WhyLocalStorage />} />
+            <Route path="/mobile-install" element={<MobileInstall />} />
 
             {isLoaded ? (
               <Route element={<AppLayout />}>
