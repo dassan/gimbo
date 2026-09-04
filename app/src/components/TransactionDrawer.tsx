@@ -65,13 +65,17 @@ const TYPE_CONFIG: Record<TxType, { label: string; color: string; bg: string; bt
       label: 'transactions.transfer',
       color: 'text-on-surface',
       bg: 'bg-surface-container-high',
-      btnClass: 'bg-on-surface hover:brightness-110',
+      // bg-on-surface inverts to a pale mint in dark mode (see index.css .dark), which combined
+      // with the footer's hardcoded text-white left this button illegible — surface-container-
+      // highest/on-surface is the same body-text pairing used everywhere else, so it stays
+      // legible in both themes.
+      btnClass: 'bg-surface-container-highest text-on-surface hover:brightness-110',
     },
     CREDIT_PAYMENT: {
       label: 'transactions.creditPayment',
       color: 'text-on-surface',
       bg: 'bg-surface-container-high',
-      btnClass: 'bg-on-surface hover:brightness-110',
+      btnClass: 'bg-surface-container-highest text-on-surface hover:brightness-110',
     },
   }
 

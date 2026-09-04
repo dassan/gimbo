@@ -45,7 +45,10 @@ export default function FaturasView({
 }: FaturasViewProps) {
   const { t, i18n } = useTranslation()
 
-  const creditAccounts = useMemo(() => accounts.filter((a) => a.type === 'CREDIT'), [accounts])
+  const creditAccounts = useMemo(
+    () => accounts.filter((a) => a.type === 'CREDIT' && !a.archived),
+    [accounts]
+  )
 
   const { chartData, gridRows } = useMemo(() => {
     const months: { label: string; fullLabel: string; m: number; y: number }[] = []

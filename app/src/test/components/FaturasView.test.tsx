@@ -239,6 +239,39 @@ describe('FaturasView — R-18(b): multiple cards', () => {
     expect(capturedRows.data[0]?.['card-1']).toBe(300) // 100 + 200
     expect(capturedRows.data[0]?.['card-2']).toBe(50)
   })
+
+  it('excludes archived cards from the chart bars and legend, even with charges in period', () => {
+    const active = makeCreditAccount({
+      id: 'card-active',
+      name: 'Nubank',
+      creditMetadata: { limit: 5000, closingDay: 20, dueDay: 10 },
+    })
+    const archived = makeCreditAccount({
+      id: 'card-archived',
+      name: 'Itaú (antigo)',
+      archived: true,
+      creditMetadata: { limit: 3000, closingDay: 20, dueDay: 10 },
+    })
+    const transactions = [
+      makeTx({ id: 'tx-active', accountId: 'card-active', date: '2026-04-10', amount: 150 }),
+      makeTx({ id: 'tx-archived', accountId: 'card-archived', date: '2026-04-10', amount: 80 }),
+    ]
+
+    render(
+      <FaturasView
+        transactions={transactions}
+        accounts={[active, archived]}
+        startDate={APR_START}
+        endDate={APR_END}
+        shadowClass={SHADOW}
+      />
+    )
+
+    expect(screen.getByTestId('bar-card-active')).toBeInTheDocument()
+    expect(screen.queryByTestId('bar-card-archived')).not.toBeInTheDocument()
+    expect(capturedRows.data[0]?.['card-active']).toBe(150)
+    expect(capturedRows.data[0]?.['card-archived']).toBeUndefined()
+  })
 })
 
 // ─── R-18 (c): CREDIT_PAYMENT excluded ───────────────────────────────────────
