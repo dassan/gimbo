@@ -39,8 +39,12 @@ Decisoes de projeto (acordadas):
     quando o Organizze os retorna como `archived` -> espelha o status de arquivamento do
     Organizze na primeira migracao; em re-syncs incrementais, o `archived` de contas ja
     existentes vem do --base (o toggle do Gimbo e que vale).
-  - Recorrencia: cada ocorrencia do Organizze entra como transacao avulsa (fiel ao extrato);
-    as colunas recurrence_* ficam NULL (transacoes vindas da base conservam seus valores).
+  - Recorrencia: o Organizze nao expoe um id de agrupamento estavel por ocorrencia de conta
+    fixa (so o registro da "proxima ocorrencia", endpoint que este script nao consulta) -> as
+    colunas recurrence_* sao inferidas por heuristica (`assign_recurrence`, ver comentario na
+    definicao): agrupa por (conta, categoria, descricao normalizada) e valida a cadencia pelo
+    espacamento real entre datas (semanal/quinzenal/mensal). Serie que nao bate cadencia
+    conhecida fica sem vinculo, igual ao comportamento antigo.
   - Timestamps das transacoes (B-32): `created_at` vem do Organizze (quando o lancamento foi
     criado la) e `updated_at` e o timestamp do run. Sao coisas diferentes de proposito — o
     primeiro alimenta o "Ultimos Lancamentos" do Dashboard (ordenado por createdAt, B-24), o
@@ -68,6 +72,7 @@ import argparse
 import calendar
 import os
 import sqlite3
+import statistics
 import sys
 import time
 import uuid as uuidlib
@@ -759,6 +764,90 @@ def merge_records(base, fresh, window_start: date, window_end: date):
             "transactions": transactions, "txtags": txtags}, carried
 
 
+# ─── Recorrencia heuristica ────────────────────────────────────────────────────
+# Ao contrario de parcelamento (CC-34), o Organizze nao expoe nenhum campo estavel
+# de agrupamento por ocorrencia de conta fixa — só o registro da "proxima ocorrencia"
+# existe (endpoint que este script nao consulta). Agrupa por (conta pagadora,
+# categoria, descricao normalizada) e valida a cadencia pelo espacamento real entre
+# as datas — sem exigir valor parecido, porque conta de consumo (luz/gas) varia mes
+# a mes. Roda sobre o conjunto final (pos-merge), nao so a janela fresca do run: mais
+# historico = deteccao de cadencia mais confiavel, e o parent_id e determinístico
+# (uuid5 da propria chave), entao o resultado nao muda de um run pro outro.
+RECURRENCE_BANDS = [
+    ("weekly", 5, 10),
+    ("biweekly", 11, 20),
+    ("monthly", 25, 35),
+]
+
+
+def classify_cadence(gaps_days):
+    """Frequencia reconhecida pelo Gimbo (weekly/biweekly/monthly) cuja banda cobre
+    a MAIORIA dos intervalos (dias) entre ocorrencias consecutivas, ou None se
+    nenhuma banda tiver maioria (cadencia irregular, ou coincidencia de descricao/
+    conta/categoria que nao e de fato uma serie).
+
+    Vota por banda em vez de olhar so a mediana agregada: com poucos intervalos (2-3,
+    o caso comum aqui), a mediana de dois gaps bem distintos pode cair "por acidente"
+    dentro de uma banda sem que nenhum dos dois gaps individuais se pareca com aquela
+    cadencia (ex.: [9, 50] dias -> mediana 29.5, dentro da banda mensal, mas nenhum
+    dos dois intervalos e realmente mensal) — maioria por-gap evita esse falso positivo.
+    """
+    if not gaps_days:
+        return None
+    best_freq, best_count = None, 0
+    for freq, lo, hi in RECURRENCE_BANDS:
+        count = sum(1 for g in gaps_days if lo <= g <= hi)
+        if count > best_count:
+            best_freq, best_count = freq, count
+    if best_count == 0 or best_count / len(gaps_days) <= 0.5:
+        return None
+    return best_freq
+
+
+def assign_recurrence(transactions: dict) -> dict:
+    """Marca `recurrence_parent_id`/`recurrence_frequency` em serie, em memoria
+    (mutando os rows do dict `transactions`). So agrupa INCOME/EXPENSE avulsos
+    (parcelamento tem seu proprio agrupamento e e mutuamente exclusivo com
+    recorrencia no TransactionDrawer). Falha sempre para o lado seguro: descricao
+    mudou -> serie quebra em duas (perde o vinculo, nao funde errado); cadencia fora
+    das bandas conhecidas -> fica sem recurrence (identico ao comportamento de hoje).
+    """
+    groups: dict = {}
+    for row in transactions.values():
+        if row["type"] not in ("INCOME", "EXPENSE"):
+            continue
+        if row.get("installment_parent_id"):
+            continue
+        desc_norm = (row.get("description") or "").strip().lower()
+        if not desc_norm:
+            continue
+        key = (row["account_id"], row.get("category_id"), desc_norm)
+        groups.setdefault(key, []).append(row)
+
+    tagged_series = tagged_txs = 0
+    for key, rows in groups.items():
+        dates = sorted({r["date"] for r in rows})
+        if len(dates) < 2:
+            continue
+        gaps = []
+        for prev, cur in zip(dates, dates[1:]):
+            d1, d2 = parse_date_str(prev), parse_date_str(cur)
+            if d1 and d2:
+                gaps.append((d2 - d1).days)
+        freq = classify_cadence(gaps)
+        if freq is None:
+            continue
+        parent_id = gid("recurrence", f"{key[0]}|{key[1]}|{key[2]}")
+        for row in rows:
+            row["recurrence_parent_id"] = parent_id
+            row["recurrence_frequency"] = freq
+            row["recurrence_end_date"] = None
+        tagged_series += 1
+        tagged_txs += len(rows)
+
+    return {"series": tagged_series, "transactions": tagged_txs}
+
+
 # ─── Escrita do SQLite ────────────────────────────────────────────────────────
 
 SCHEMA_DDL = """
@@ -1049,6 +1138,8 @@ def main():
         fresh["txtags"] = {tt for tt in fresh["txtags"] if tt[0] in fresh["transactions"]}
         records = fresh
 
+    recurrence_stats = assign_recurrence(records["transactions"])
+
     write_db(args.out, user_name, args.email, records)
 
     size_kb = os.path.getsize(args.out) // 1024
@@ -1058,6 +1149,7 @@ def main():
     print(f"  Categorias:  {len(records['categories'])} (inclui 2 fallback)")
     print(f"  Tags:        {len(records['tags'])}")
     print(f"  Transacoes:  {len(records['transactions'])} (frescas na janela: {stats['transactions']}, {stats['unpaid']} nao pagas)")
+    print(f"  Recorrencia: {recurrence_stats['series']} series detectadas ({recurrence_stats['transactions']} transacoes)")
     if incremental:
         print(f"  Preservadas: {carried} transacoes fora da janela (vindas da base)")
     print(f"  Ignorados:   {stats['skipped_dest']} (espelho de transferencia) + {stats['skipped_no_account']} (conta nao encontrada)")

@@ -993,7 +993,16 @@ fora dela vindas da base. Cadastros (contas/cartões/categorias/tags) são unido
   (`"#despesaFixa"`); o script remove esse prefixo (`.strip().lstrip("#")`) antes de gravar — a
   UI do Gimbo já prefixa `#` ao exibir tags (M-52).
 - **`--end` futuro** inclui lançamentos agendados/recorrentes e parcelas a vencer (chegam com `paid=false` → `isPaid=false` no Gimbo). Default = hoje.
-- **Recorrência**: cada ocorrência do Organizze entra como transação avulsa (fiel ao extrato); as colunas `recurrence_*` ficam NULL. Não há reconstrução de séries M-35.
+- **Recorrência (heurística)**: o Organizze não expõe um id de agrupamento estável por
+  ocorrência de conta fixa (só o registro da "próxima ocorrência", endpoint que o script não
+  consulta) — `assign_recurrence()` reconstrói as séries M-35 depois do merge, agrupando por
+  (conta pagadora, categoria, descrição normalizada) e validando a cadência pelo espaçamento
+  real entre as datas (maioria dos intervalos numa banda semanal/quinzenal/mensal — sem exigir
+  valor parecido, já que conta de consumo como luz/gás varia mês a mês). Série que não bate
+  cadência conhecida, ou que só aparece uma vez, fica sem `recurrence_*` (mesmo efeito de antes).
+  `recurrence_parent_id` é determinístico (`uuid5` da própria chave), então o resultado não muda
+  de um run para o outro. Parcelamentos (`installment_parent_id` já setado) são sempre excluídos
+  do agrupamento.
 - **Estornos (B-16/M-22)**: valores positivos no cartão (crédito/estorno no Organizze) são gravados como `INCOME` na conta `CREDIT` (preserva o sinal), abatendo a fatura — não como `EXPENSE`.
 - **`referenceMonth`/`invoiceDueDate` (CC-31/CC-33)**: associação à fatura real do Organizze via
   `credit_card_invoice_id`/`paid_credit_card_invoice_id`, chaveada por `(card_id, invoice_id)`.
