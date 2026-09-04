@@ -747,6 +747,22 @@
       "s3Body": "At any time, you can export your entire history as a single .db file, a copy you keep, move, or take to another device, without depending on anyone.",
       "s4Title": "What this doesn't cover",
       "s4Body": "If you clear your browser data or uninstall it without having backed up, the content is lost; the same risk as any information kept only locally. That's why it's worth setting up a backup as soon as you start using Gimbo."
+    },
+    "mobileInstall": {
+      "title": "How to install Gimbo on your phone",
+      "intro": "Gimbo doesn't go through an app store — it installs straight from the browser, with its own icon on your home screen and no address bar. It works on Android and iOS, with the same data, always local on your device.",
+      "androidTitle": "Android (Google Chrome)",
+      "androidStep1": "Open gimbo.com.br in Chrome.",
+      "androidStep2": "Tap the ⋮ menu, top right corner.",
+      "androidStep3": "Tap \"Install app\" (or \"Add to Home screen\", depending on your Chrome version).",
+      "androidStep4": "Confirm. Gimbo's icon appears on your home screen and opens full-screen, like any other app.",
+      "iosTitle": "iPhone and iPad (Safari)",
+      "iosStep1": "Open gimbo.com.br in Safari — it has to be Safari; other browsers on iPhone, even though they run the same engine underneath, don't show this option.",
+      "iosStep2": "Tap the Share icon (the square with an arrow pointing up), in the bottom bar.",
+      "iosStep3": "Scroll the list of options and tap \"Add to Home Screen\".",
+      "iosStep4": "Tap \"Add\". Gimbo appears as an app on your home screen, without Safari's interface.",
+      "storeTitle": "Why it's not on the App Store or Play Store",
+      "storeBody": "It's a deliberate choice, not a limitation. Gimbo works today without depending on third-party approval, an account, or data collection — installing straight from the browser keeps exactly that."
     }
   },
   "bugReport": {
@@ -774,6 +790,7 @@
       "features": "Features",
       "privacy": "Privacy",
       "faq": "FAQ",
+      "mobileInstall": "Install on mobile",
       "cta": "Create my Vault"
     },
     "hero": {
