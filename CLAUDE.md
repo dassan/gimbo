@@ -480,21 +480,3 @@ Ferramentas de desenvolvimento (2026-06-08, atualizado em 2026-08-12):
 > `read_base_data`/`write_db` para preservar `budgets` e `quadrantes_enabled` do `--base`, no
 > mesmo espírito de como `balance`/`include_in_balance`/`archived` já são preservados por id —
 > ainda não implementado, decisão de produto em aberto.
-
-> **Recorrência (M-92, 2026-09-04):** usuário relatou que "excluir deste mês em diante" (M-35) não
-> funcionava em lançamentos vindos do Organizze (ex.: CPFL) — o app já suporta a operação, mas
-> `sync_gimbo.py` sempre gravou `recurrence_*` como `NULL`, porque o Organizze não expõe um id de
-> agrupamento estável por ocorrência de conta fixa (confirmado via `list_recurrences`/`get_transaction`
-> do MCP: o id de série só existe no registro da "próxima ocorrência", não em cada lançamento
-> passado). Corrigido com `assign_recurrence()`, heurística que roda sobre o conjunto final
-> pós-merge: agrupa por (conta, categoria, descrição normalizada) e valida a cadência exigindo que
-> a *maioria* dos intervalos entre datas caia numa banda conhecida (semanal/quinzenal/mensal) — não
-> só a mediana agregada, que pode cair "por acidente" numa banda com só 2-3 pontos sem que nenhum
-> intervalo individual pareça aquela cadência (caso pego em teste ad-hoc antes de fechar a
-> implementação). Ajuste pedido pelo usuário: banda quinzenal existe porque o cofre real tem uma
-> recorrência quinzenal genuína ("Diarista"), não só mensal. Sem checagem de valor parecido (luz/gás
-> variam mês a mês). Falha sempre pro lado seguro: descrição mudando quebra a série em duas (nunca
-> funde errado); cadência fora das bandas fica sem vínculo (comportamento antigo). Parcelamentos
-> (`installment_parent_id` setado) são excluídos do agrupamento. Sem teste automatizado formal —
-> só smoke test ad-hoc; considerar um `scripts/*.test.py` se o script ganhar mais lógica heurística
-> no futuro.
