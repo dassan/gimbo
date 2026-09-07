@@ -513,15 +513,12 @@ describe('CreditCardPage — M-59: installment badge on invoice rows', () => {
   })
 })
 
-// ─── M-64: original purchase date on invoice rows ──────────────────────────────
+// ─── M-94: redundant account name on invoice rows ──────────────────────────────
 
-describe('CreditCardPage — M-64: original purchase date on invoice rows', () => {
-  it('shows the original purchase date for installments past the 1st', () => {
+describe('CreditCardPage — M-94: account name on invoice rows', () => {
+  it('does not show the card name on a regular charge — this is already the card page', () => {
     const creditAccount = makeCreditAccountFixed()
-    const expense = makeTransaction({
-      description: 'Compra parcelada',
-      installment: { parentId: 'p1', currentIndex: 2, total: 3, purchaseDate: '2024-09-18' },
-    })
+    const expense = makeTransaction({ description: 'Compra normal' })
 
     useDataStore.setState({
       data: makeDataFile({ accounts: [creditAccount], transactions: [expense] }),
@@ -529,38 +526,28 @@ describe('CreditCardPage — M-64: original purchase date on invoice rows', () =
 
     render(<CreditCardPage />)
 
-    expect(screen.getByText('transactions.purchaseDateShort')).toBeInTheDocument()
+    expect(screen.queryByText(`· ${creditAccount.name}`)).not.toBeInTheDocument()
   })
 
-  it('omits the purchase date on the 1st installment (same as its own date)', () => {
+  it('shows the funding account on a CREDIT_PAYMENT row — not redundant, it is a different account', () => {
     const creditAccount = makeCreditAccountFixed()
-    const expense = makeTransaction({
-      description: 'Compra parcelada',
-      installment: { parentId: 'p1', currentIndex: 1, total: 3, purchaseDate: todayStr },
+    const retail = makeRetailAccount()
+    const periodKey = invoicePeriodKey(
+      getInvoicePeriod(todayStr, creditAccount.creditMetadata!.closingDay)
+    )
+    const payment = makeTransaction({
+      type: 'CREDIT_PAYMENT',
+      amount: 100,
+      transferAccountId: 'acc-retail',
+      referenceMonth: periodKey,
     })
 
     useDataStore.setState({
-      data: makeDataFile({ accounts: [creditAccount], transactions: [expense] }),
+      data: makeDataFile({ accounts: [creditAccount, retail], transactions: [payment] }),
     })
 
     render(<CreditCardPage />)
 
-    expect(screen.queryByText('transactions.purchaseDateShort')).not.toBeInTheDocument()
-  })
-
-  it('omits the purchase date for installments without purchaseDate (legacy data)', () => {
-    const creditAccount = makeCreditAccountFixed()
-    const expense = makeTransaction({
-      description: 'Compra parcelada',
-      installment: { parentId: 'p1', currentIndex: 2, total: 3 },
-    })
-
-    useDataStore.setState({
-      data: makeDataFile({ accounts: [creditAccount], transactions: [expense] }),
-    })
-
-    render(<CreditCardPage />)
-
-    expect(screen.queryByText('transactions.purchaseDateShort')).not.toBeInTheDocument()
+    expect(screen.getByText(`· ${retail.name}`)).toBeInTheDocument()
   })
 })

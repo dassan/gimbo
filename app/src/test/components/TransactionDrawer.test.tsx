@@ -10,7 +10,7 @@ import type { Transaction } from '@/types'
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'pt-BR' } }),
 }))
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -1059,5 +1059,51 @@ describe('TransactionDrawer — description autocomplete (M-80)', () => {
     await userEvent.keyboard('{Escape}')
     expect(screen.queryByText('Padaria Central')).not.toBeInTheDocument()
     expect(descInput).toHaveValue('Pad')
+  })
+})
+
+// ─── M-95: original purchase date, moved here from the credit-card invoice list (M-64) ────────
+
+describe('TransactionDrawer — original purchase date in edit mode (M-95)', () => {
+  it('shows the original purchase date for installments past the 1st', () => {
+    const tx: Transaction = {
+      ...testTransaction,
+      installment: { parentId: 'p1', currentIndex: 2, total: 3, purchaseDate: '2024-01-10' },
+    }
+    renderDrawer({ transaction: tx })
+    expect(screen.getByText('transactions.originalPurchaseDate')).toBeInTheDocument()
+  })
+
+  it('omits it on the 1st installment (same date as the transaction itself)', () => {
+    const tx: Transaction = {
+      ...testTransaction,
+      installment: {
+        parentId: 'p1',
+        currentIndex: 1,
+        total: 3,
+        purchaseDate: testTransaction.date,
+      },
+    }
+    renderDrawer({ transaction: tx })
+    expect(screen.queryByText('transactions.originalPurchaseDate')).not.toBeInTheDocument()
+  })
+
+  it('omits it for installments without purchaseDate (legacy data)', () => {
+    const tx: Transaction = {
+      ...testTransaction,
+      installment: { parentId: 'p1', currentIndex: 2, total: 3 },
+    }
+    renderDrawer({ transaction: tx })
+    expect(screen.queryByText('transactions.originalPurchaseDate')).not.toBeInTheDocument()
+  })
+
+  it('omits it for a transaction with no installment data', () => {
+    renderDrawer({ transaction: testTransaction })
+    expect(screen.queryByText('transactions.originalPurchaseDate')).not.toBeInTheDocument()
+  })
+
+  it('omits it in create mode', () => {
+    renderDrawer()
+    expect(screen.queryByText('transactions.originalPurchaseDate')).not.toBeInTheDocument()
   })
 })

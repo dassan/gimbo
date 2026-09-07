@@ -746,7 +746,10 @@ function InvoiceTxRow({
         <p className="text-sm font-semibold text-on-surface truncate">{title}</p>
         <div className="flex items-center gap-2 mt-0.5">
           {!isPayment && cat && <span className="text-xs text-on-surface/40">{cat.name}</span>}
-          {acc && <span className="text-xs text-on-surface/30">· {acc.name}</span>}
+          {/* M-94: acc here is always this same card for a non-payment row (redundant with the
+              page header) — only CREDIT_PAYMENT resolves a different account (the funding
+              account), which is genuinely useful info, so it stays visible. */}
+          {isPayment && acc && <span className="text-xs text-on-surface/30">· {acc.name}</span>}
           {/* M-59: installment badge — current/total parcel, mirrors M-50 in Lançamentos */}
           {tx.installment && (
             <span
@@ -757,33 +760,6 @@ function InvoiceTxRow({
               className="rounded-full bg-surface-container-high px-2 py-0.5 text-[10px] font-medium text-on-surface/50"
             >
               {tx.installment.currentIndex}/{tx.installment.total}
-            </span>
-          )}
-          {/* M-64: original purchase date — only past the 1st installment (otherwise == tx.date) */}
-          {tx.installment && tx.installment.purchaseDate && tx.installment.currentIndex > 1 && (
-            <span
-              title={t('transactions.originalPurchaseDate', {
-                date: parseDateLocal(tx.installment.purchaseDate).toLocaleDateString(
-                  i18n.language,
-                  {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: '2-digit',
-                  }
-                ),
-              })}
-              className="text-[10px] text-on-surface/30"
-            >
-              {t('transactions.purchaseDateShort', {
-                date: parseDateLocal(tx.installment.purchaseDate).toLocaleDateString(
-                  i18n.language,
-                  {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: '2-digit',
-                  }
-                ),
-              })}
             </span>
           )}
         </div>

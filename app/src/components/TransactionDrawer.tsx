@@ -18,6 +18,7 @@ import {
   getCurrentInvoiceBalance,
   getTxInvoicePeriod,
   invoicePeriodKey,
+  parseDateLocal,
   todayStr,
   sortCategoriesHierarchical,
   filterArchivedAccounts,
@@ -80,7 +81,7 @@ const TYPE_CONFIG: Record<TxType, { label: string; color: string; bg: string; bt
   }
 
 export default function TransactionDrawer({ open, onClose, transaction }: TransactionDrawerProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const isMobile = useIsMobile()
   const data = useDataStore((s) => s.data)
   const addTransaction = useDataStore((s) => s.addTransaction)
@@ -670,6 +671,22 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                 </button>
               )}
             </div>
+            {/* M-95: original purchase date for installments past the 1st — moved here from the
+                credit-card invoice list (M-64), which showed it inline on every row regardless of
+                whether the user cared; only relevant when reviewing a specific installment. */}
+            {isEditMode &&
+              transaction?.installment &&
+              transaction.installment.purchaseDate &&
+              transaction.installment.currentIndex > 1 && (
+                <p className="mt-2 text-xs text-on-surface/40">
+                  {t('transactions.originalPurchaseDate', {
+                    date: parseDateLocal(transaction.installment.purchaseDate).toLocaleDateString(
+                      i18n.language,
+                      { day: '2-digit', month: '2-digit', year: 'numeric' }
+                    ),
+                  })}
+                </p>
+              )}
           </div>
 
           {/* ── CREDIT_PAYMENT: two-account layout ─────────────────────────── */}
