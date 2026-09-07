@@ -48,6 +48,14 @@ Decisoes de projeto (acordadas):
     uma coincidencia de compras do dia a dia — validado contra o cofre real do usuario antes de
     reimplementar (ver M-93 em plan/BACKLOG.md para os dados). Serie que nao bate os criterios
     fica sem vinculo, igual ao comportamento antigo.
+  - Categorias duplicadas (M-102): uma categoria do Organizze com o mesmo nome (normalizado,
+    sem acento/case) e o mesmo type de uma categoria de nivel superior ja existente na --base
+    reusa o id da --base em vez de ganhar um id novo — sem isto, categoria padrao do onboarding
+    do Gimbo (CS-23) + categoria do Organizze com o mesmo nome (ex.: "Alimentacao") duplicavam
+    a cada sync incremental, porque os dois lados geram ids independentes. So funciona quando a
+    --base tem exatamente uma categoria para aquele nome — duplicata ja existente (de antes
+    desta correcao) precisa ser resolvida a mao (apagar a categoria redundante) antes que a
+    reconciliacao automatica entre em vigor para aquele nome; ver `build_categories`.
   - Timestamps das transacoes (B-32): `created_at` vem do Organizze (quando o lancamento foi
     criado la) e `updated_at` e o timestamp do run. Sao coisas diferentes de proposito — o
     primeiro alimenta o "Ultimos Lancamentos" do Dashboard (ordenado por createdAt, B-24), o
@@ -77,6 +85,7 @@ import os
 import sqlite3
 import sys
 import time
+import unicodedata
 import uuid as uuidlib
 from datetime import date, datetime
 
@@ -539,12 +548,56 @@ def build_accounts(contas, cartoes, base_accounts, ts):
     return rows, account_id_map, card_id_map
 
 
-def build_categories(categorias, ts):
-    """Retorna (categories_rows, category_id_map, fb_exp, fb_inc). parent_id ja resolvido p/ uuid."""
+def normalize_category_name(name: str) -> str:
+    """Nome normalizado (sem acento, minusculo, sem espaco nas pontas) para comparar
+    categorias de fontes diferentes (M-102) — 'Alimentação' e 'alimentacao ' batem."""
+    sem_acento = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode("ascii")
+    return sem_acento.strip().lower()
+
+
+def build_categories(categorias, ts, base_categories=None):
+    """Retorna (categories_rows, category_id_map, fb_exp, fb_inc, reused). parent_id ja
+    resolvido p/ uuid.
+
+    M-102: uma categoria de nivel superior do Organizze com o MESMO nome (normalizado) e
+    MESMO type de uma categoria ja existente na --base reusa o id da --base em vez de ganhar
+    um id novo deterministico — sem isto, toda categoria padrao criada no onboarding do Gimbo
+    (CS-23, sempre de nivel superior) que tambem existir no Organizze (ex.: "Alimentacao")
+    duplica a cada sync incremental, porque os dois lados geram ids independentes que nunca
+    colidem na uniao "base ∪ fresco" de merge_records(). So compara nivel superior:
+    subcategorias reais do Organizze nao tem equivalente nas categorias padrao (todas de
+    nivel superior), entao a colisao relevante e so nesse nivel.
+
+    Deliberadamente NAO reconcilia quando ja existem 2+ categorias na --base com a mesma
+    chave (nome+type) — duplicata ja existente e resolvida a mao pelo usuario (fluxo atual);
+    adivinhar qual das duas e "a certa" arriscaria orfanar transacoes num snapshot completo
+    (que substitui a --base inteira pelo resultado deste merge).
+    """
+    base_categories = base_categories or {}
+    base_by_key: dict = {}
+    ambiguous = set()
+    for row in base_categories.values():
+        if row.get("parent_id"):
+            continue
+        key = (normalize_category_name(row["name"]), row["type"])
+        if key in base_by_key and base_by_key[key] != row["id"]:
+            ambiguous.add(key)
+        else:
+            base_by_key[key] = row["id"]
+    for key in ambiguous:
+        del base_by_key[key]
+
     category_id_map = {}
     intermediarias = []
+    reused = 0
     for cat in categorias:
+        cat_type = KIND_TYPE_MAP.get(cat.get("kind", "expenses"), "EXPENSE")
         uid = gid("category", cat["id"])
+        if not cat["parent_id"]:
+            existing_id = base_by_key.get((normalize_category_name(cat["name"]), cat_type))
+            if existing_id:
+                uid = existing_id
+                reused += 1
         category_id_map[cat["id"]] = uid
         intermediarias.append(
             {
@@ -553,7 +606,7 @@ def build_categories(categorias, ts):
                 "name": cat["name"],
                 "icon": get_icon(cat["name"]),
                 "color": normalize_color(cat.get("color")),
-                "type": KIND_TYPE_MAP.get(cat.get("kind", "expenses"), "EXPENSE"),
+                "type": cat_type,
             }
         )
 
@@ -571,7 +624,7 @@ def build_categories(categorias, ts):
     fb_inc = gid("category", "fallback-income")
     rows.append({"id": fb_exp, "parent_id": None, "name": "Outros (Despesas)", "icon": "circle", "color": "#808080", "type": "EXPENSE", "created_at": ts, "updated_at": ts})
     rows.append({"id": fb_inc, "parent_id": None, "name": "Outras Receitas", "icon": "circle", "color": "#2BCA9A", "type": "INCOME", "created_at": ts, "updated_at": ts})
-    return rows, category_id_map, fb_exp, fb_inc
+    return rows, category_id_map, fb_exp, fb_inc, reused
 
 
 def build_transactions(lancamentos, account_id_map, card_id_map, category_id_map, fb_exp, fb_inc, ts,
@@ -1156,9 +1209,12 @@ def main():
     if incremental and base_data is None:
         print("[aviso] modo incremental sem base existente — historico fora da janela NAO sera preservado neste run.")
     base_accounts = base_data["accounts"] if base_data else {}
+    base_categories = base_data["categories"] if base_data else {}
 
     accounts_rows, account_id_map, card_id_map = build_accounts(contas, cartoes, base_accounts, ts)
-    categories_rows, category_id_map, fb_exp, fb_inc = build_categories(categorias, ts)
+    categories_rows, category_id_map, fb_exp, fb_inc, categories_reused = build_categories(
+        categorias, ts, base_categories
+    )
     tx_rows, tag_rows, txtag_rows, stats = build_transactions(
         lancamentos, account_id_map, card_id_map, category_id_map, fb_exp, fb_inc, ts,
         invoice_month_map, invoice_due_map
@@ -1187,7 +1243,7 @@ def main():
     print("\n=== Resumo ===")
     print(f"  Modo:        {modo}")
     print(f"  Contas:      {len(records['accounts'])} (frescas: {len(contas)} banco + {len(cartoes)} cartao)")
-    print(f"  Categorias:  {len(records['categories'])} (inclui 2 fallback)")
+    print(f"  Categorias:  {len(records['categories'])} (inclui 2 fallback, {categories_reused} reconciliadas por nome com a base — M-102)")
     print(f"  Tags:        {len(records['tags'])}")
     print(f"  Recorrencia: {recurrence_stats['series']} series detectadas ({recurrence_stats['transactions']} transacoes)")
     print(f"  Transacoes:  {len(records['transactions'])} (frescas na janela: {stats['transactions']}, {stats['unpaid']} nao pagas)")
