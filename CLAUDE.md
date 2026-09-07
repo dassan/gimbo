@@ -411,6 +411,27 @@ Features concluídas desde 2026-05-27:
 > sem esperar um patch novo do Vite; não é um item de ação.
 
 Itens em aberto:
+- **Relatório de uso real (2026-09-07)** — 11 itens mapeados pelo usuário usando o Gimbo no dia a dia,
+  registrados em `plan/BACKLOG.md` (detalhes técnicos e decisões pendentes em cada entrada).
+  **Resolvidos no mesmo dia (lote 1, escolhido com o usuário): `B-34`** (autocomplete de descrição
+  não seleciona mais conta/cartão arquivado como fonte — só o default ativo do M-42 sobrevive),
+  **`M-94`/`M-95`** (lista de lançamentos do cartão: fonte redundante removida — só `CREDIT_PAYMENT`
+  continua mostrando a conta pagadora —, data de compra original movida da lista para o detalhe do
+  lançamento no `TransactionDrawer`) e **`B-35`** (label "Minhas Contas" alinhado com a lista no
+  Dashboard; o mesmo bug no painel "Meus Cartões", achado junto, corrigido no mesmo commit).
+  **Em aberto:** `B-36` (termo "Ledger" sobrevive em 5 strings de copy, sem tradução para
+  "Cofre"/M-69), `M-93` (nova heurística de recorrência no sync do Organizze — reabre o `M-92`
+  revertido, **precisa de esclarecimento do usuário sobre a causa da reversão antes de
+  reimplementar**), `M-96`/`M-97` (Modificações Recentes ganhar horário exato + dispositivo de
+  origem; novo campo opcional de nome de dispositivo em Configurações — **decisão de design
+  pendente**: nome de dispositivo precisa sincronizar entre pares, não pode viver só no OPFS local),
+  `M-98` (categorias iniciais deixam de vir pré-criadas por padrão — **tensão com CS-23**, que fixou
+  os ids justamente para convergência de merge; resolver sem quebrar essa garantia), `M-99`
+  (Dashboard: clicar numa conta navega para Lançamentos filtrado), `MB-20` (ocultar flag
+  pago/não-pago na lista de Lançamentos em mobile). **Fora do backlog, adiado pelo próprio
+  usuário:** `M-100`, como medir quantas pessoas usam o Gimbo — em tensão direta com o
+  posicionamento zero-coleta/local-first do projeto (`M-69`) e com o `SEC-17` em aberto (que pede
+  para **desligar** o beacon do Cloudflare Web Analytics, não usá-lo).
 - **SEC-01 a SEC-16** — Auditoria de segurança pré-open-source (2026-08-18/19, branch `dassan/security-audit`) — ver `plan/BACKLOG.md` seção "Segurança — Auditoria Pré-Open-Source (SEC)". **0 Critical, 2 High, 3 Medium, 4 Low, 5 Info**, mais `SEC-15`/`SEC-16` achados ao implementar e verificar as correções. Nenhum achado foi causado por tornar o código público (histórico git limpo de segredos, `.env` nunca versionado). **Resolvidos: SEC-01 a SEC-09, SEC-14 e SEC-15** — redirect URIs do OAuth verificadas, headers de segurança em produção (`app/public/_headers`, com CSP), `refresh_token` do Google fora do `localStorage` (cifrado em IndexedDB + teto de 30 dias), import que valida antes de destruir o cofre, migrations atômicas com resgate de boot, fonte Inter self-hospedada, actions fixadas por SHA, escopo do bug report reduzido, `legacy-peer-deps` removido e `THIRD-PARTY-NOTICES.md`. **Aceitos: SEC-10 a SEC-13.** **Em aberto: `SEC-16`** e **`SEC-17`** (beacon do Cloudflare Web Analytics injetado no proxy, não no build — a CSP já o bloqueia; falta desligar em Web Analytics → Manage site → Disable). **`SEC-16`** — separar o OAuth client de dev do de produção. Hoje há um só, acumulando as URIs de `localhost` e de `gimbo.com.br`, e o `npm run deploy` builda com o mesmo `.env` do desenvolvimento — dev e produção compartilham a credencial. A criação do segundo client é ação manual no Google Cloud Console; a divisão em `.env.development`/`.env.production` (o Vite carrega por modo) é a parte deste repositório. > **O `SEC-01` foi resolvido com ressalva:** as URIs de `localhost` seguem registradas por decisão do mantenedor, para não interromper o desenvolvimento — risco baixo (o redirect entrega o código na máquina da própria vítima, sob HTTPS autoassinado), e o `SEC-16` elimina o trade-off por construção. Confirmado que **não há resquício do domínio antigo da Vercel** na allowlist.
 > **Nada disso está em produção até rodar `npm run deploy`** — os headers e a fonte self-hospedada só valem no build publicado.
 
