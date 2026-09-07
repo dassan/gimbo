@@ -12,8 +12,12 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'pt-BR' } }),
 }))
 
+// M-99: mutable per-test search string so a single test can simulate a deep link
+// (?account=<id>) without pulling in a real router.
+let mockSearch = ''
 vi.mock('react-router-dom', () => ({
   useOutletContext: () => ({ openTransactionDrawer: vi.fn() }),
+  useSearchParams: () => [new URLSearchParams(mockSearch)],
 }))
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -67,6 +71,7 @@ function makeTransaction(overrides: Partial<Transaction> = {}): Transaction {
 
 beforeEach(() => {
   useDataStore.setState({ data: null })
+  mockSearch = ''
 })
 
 // ─── Period selector — dropdown ───────────────────────────────────────────────
@@ -771,5 +776,42 @@ describe('Transactions — period balances', () => {
     expect(screen.getByText('transactions.projectedBalance').closest('div')?.textContent).toContain(
       '3.800,00'
     )
+  })
+})
+
+// ─── M-99: deep-link from Dashboard pre-selects the account filter ────────────
+
+describe('Transactions — M-99: ?account= query param pre-selects the account filter', () => {
+  it('shows only transactions from the account named in the URL', () => {
+    const accountA = makeRetailAccount({ id: 'acc-a', name: 'Conta A' })
+    const accountB = makeRetailAccount({ id: 'acc-b', name: 'Conta B' })
+    const txA = makeTransaction({ id: 'tx-a', accountId: 'acc-a', description: 'Da Conta A' })
+    const txB = makeTransaction({ id: 'tx-b', accountId: 'acc-b', description: 'Da Conta B' })
+
+    mockSearch = 'account=acc-b'
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [accountA, accountB], transactions: [txA, txB] }),
+    })
+
+    render(<Transactions />)
+
+    expect(screen.getByText('Da Conta B')).toBeInTheDocument()
+    expect(screen.queryByText('Da Conta A')).not.toBeInTheDocument()
+  })
+
+  it('falls back to "all" when there is no ?account= param', () => {
+    const accountA = makeRetailAccount({ id: 'acc-a', name: 'Conta A' })
+    const accountB = makeRetailAccount({ id: 'acc-b', name: 'Conta B' })
+    const txA = makeTransaction({ id: 'tx-a', accountId: 'acc-a', description: 'Da Conta A' })
+    const txB = makeTransaction({ id: 'tx-b', accountId: 'acc-b', description: 'Da Conta B' })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [accountA, accountB], transactions: [txA, txB] }),
+    })
+
+    render(<Transactions />)
+
+    expect(screen.getByText('Da Conta A')).toBeInTheDocument()
+    expect(screen.getByText('Da Conta B')).toBeInTheDocument()
   })
 })

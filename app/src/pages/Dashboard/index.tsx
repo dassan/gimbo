@@ -291,6 +291,7 @@ export default function Dashboard() {
                   typeLabel={t(`accounts.${acc.type.toLowerCase()}`)}
                   issuerIcon={acc.issuerIcon}
                   isReserve={acc.reserveMetadata !== undefined}
+                  onClick={() => void navigate(`/transactions?account=${acc.id}`)}
                 />
               ))}
             </div>
@@ -368,6 +369,7 @@ function AccountRow({
   typeLabel,
   issuerIcon,
   isReserve,
+  onClick,
 }: {
   name: string
   type: AccountType
@@ -375,6 +377,7 @@ function AccountRow({
   typeLabel: string
   issuerIcon?: string
   isReserve?: boolean
+  onClick?: () => void
 }) {
   const isNegative = balance < 0
   // M-34: use the institution brand color when an issuer is set; otherwise the account-type color.
@@ -382,7 +385,16 @@ function AccountRow({
     issuerIcon && issuerIcon !== 'generic' ? CREDIT_ISSUER_COLORS[issuerIcon] : undefined
   const badgeColor = issuerColor ?? ACCOUNT_TYPE_COLORS[type]
   return (
-    <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-surface-container-low transition-colors">
+    <div
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={onClick ? (e) => e.key === 'Enter' && onClick() : undefined}
+      className={cn(
+        'flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors',
+        onClick && 'cursor-pointer hover:bg-surface-container-low'
+      )}
+    >
       <div
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white"
         style={{ backgroundColor: badgeColor }}

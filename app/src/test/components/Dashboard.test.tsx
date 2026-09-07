@@ -1,5 +1,5 @@
 ﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, fireEvent } from '@testing-library/react'
 import Dashboard from '@/pages/Dashboard'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '@/test/fixtures/dataFile'
@@ -11,8 +11,9 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'pt-BR' } }),
 }))
 
+const mockNavigate = vi.fn()
 vi.mock('react-router-dom', () => ({
-  useNavigate: () => vi.fn(),
+  useNavigate: () => mockNavigate,
 }))
 
 vi.mock('recharts', () => ({
@@ -73,6 +74,7 @@ function makeTransaction(overrides: Partial<Transaction> = {}): Transaction {
 
 beforeEach(() => {
   useDataStore.setState({ data: null })
+  mockNavigate.mockClear()
 })
 
 // ─── CC-13: accountBalances bifurcation for CREDIT accounts ──────────────────
@@ -601,5 +603,23 @@ describe('Dashboard — recent transactions: transfer rows', () => {
 
     expect(screen.getByText('transactions.creditPayment')).toBeInTheDocument()
     expect(screen.getByText(/Conta A → Cartão 1/)).toBeInTheDocument()
+  })
+})
+
+// ─── M-99: clicking an account in "Minhas Contas" navigates to Lançamentos filtered ────────────
+
+describe('Dashboard — M-99: account row navigates to filtered Lançamentos', () => {
+  it('navigates to /transactions?account=<id> when an account row is clicked', () => {
+    const account = makeRetailAccount()
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account], transactions: [] }),
+    })
+
+    render(<Dashboard />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Conta Corrente/ }))
+
+    expect(mockNavigate).toHaveBeenCalledWith('/transactions?account=acc-retail')
   })
 })
