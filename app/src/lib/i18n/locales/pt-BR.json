@@ -93,7 +93,7 @@
     "suggestionFallbackToast_other": "{{count}} quadrantes sem histórico suficiente — metas definidas manualmente."
   },
   "onboarding": {
-    "headline": "Seu Ledger,\nSua Liberdade.",
+    "headline": "Seu Cofre,\nSua Liberdade.",
     "subtitle": "Privacidade em primeiro lugar. Gimbo transforma sua gestão financeira em uma experiência silenciosa e segura.",
     "tabNew": "Novo Cofre",
     "tabImport": "Importar Dados",
@@ -114,7 +114,7 @@
     "folderButton": "Selecionar pasta e restaurar",
     "folderNoDevices": "Nenhum computador encontrado nessa pasta. Verifique se é a pasta correta e se a sincronização multi-dispositivo já foi ativada em outro computador.",
     "folderImportError": "Não foi possível restaurar a partir dessa pasta.",
-    "footer": "The Fluid Ledger",
+    "footer": "The Fluid Vault",
     "privacyPolicy": "Política de Privacidade",
     "termsOfService": "Termos de Serviço",
     "aboutName": "Sobre o Nome"
@@ -352,7 +352,7 @@
     "subcategoriesTipDesc": "Organizar por subcategorias permite relatórios mais granulares.",
     "addCategory": "Adicionar Categoria",
     "editCategory": "Editar Categoria",
-    "addCategorySub": "Organize seu ledger com classificação personalizada",
+    "addCategorySub": "Organize seu cofre com classificação personalizada",
     "categoryName": "Nome da Categoria",
     "categoryNamePlaceholder": "Ex: Alimentação",
     "iconPicker": "Ícone",
@@ -509,7 +509,7 @@
   },
   "audit": {
     "title": "Modificações Recentes",
-    "subtitle": "Histórico de alterações do seu ledger",
+    "subtitle": "Histórico de alterações do seu cofre",
     "noEntries": "Nenhuma modificação registrada",
     "create": "Criação",
     "update": "Atualização",

@@ -9,7 +9,7 @@
   },
   "nav": {
     "dashboard": "Overview",
-    "transactions": "Ledger",
+    "transactions": "Transactions",
     "budgets": "Budgets",
     "analytics": "Reports",
     "netWorth": "Net Worth",
@@ -93,7 +93,7 @@
     "suggestionFallbackToast_other": "{{count}} quadrants had no history to suggest from — targets set manually."
   },
   "onboarding": {
-    "headline": "Your Ledger,\nYour Freedom.",
+    "headline": "Your Vault,\nYour Freedom.",
     "subtitle": "Privacy first. Gimbo transforms your financial management into a silent, secure editorial experience.",
     "tabNew": "New Vault",
     "tabImport": "Import Data",
@@ -114,7 +114,7 @@
     "folderButton": "Select folder and restore",
     "folderNoDevices": "No computers found in that folder. Make sure it's the right folder and that multi-device sync was already enabled on another computer.",
     "folderImportError": "Couldn't restore from that folder.",
-    "footer": "The Fluid Ledger",
+    "footer": "The Fluid Vault",
     "privacyPolicy": "Privacy Policy",
     "termsOfService": "Terms of Service",
     "aboutName": "About the Name"
@@ -352,7 +352,7 @@
     "subcategoriesTipDesc": "Organizing by subcategories enables more granular reports.",
     "addCategory": "Add Category",
     "editCategory": "Edit Category",
-    "addCategorySub": "Organize your ledger with custom classification",
+    "addCategorySub": "Organize your vault with custom classification",
     "categoryName": "Category Name",
     "categoryNamePlaceholder": "e.g. Fine Dining",
     "iconPicker": "Icon Picker",
@@ -509,7 +509,7 @@
   },
   "audit": {
     "title": "Recent Changes",
-    "subtitle": "Your ledger modification history",
+    "subtitle": "Your vault modification history",
     "noEntries": "No modifications recorded",
     "create": "Created",
     "update": "Updated",
