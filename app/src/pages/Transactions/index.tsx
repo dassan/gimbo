@@ -821,7 +821,9 @@ function TxRow({
             </>
           )}
         </div>
-        <div className="flex h-8 w-8 items-center justify-center rounded-full">
+        {/* MB-20: hidden on mobile to reclaim row space — still visible in the transaction's own
+            detail (TransactionDrawer already has an explicit "Pago" toggle, B-10). */}
+        <div className="hidden h-8 w-8 items-center justify-center rounded-full sm:flex">
           {tx.isPaid ? (
             <CheckCircle2 size={20} className="text-primary" strokeWidth={1.5} />
           ) : (
