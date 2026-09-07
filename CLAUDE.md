@@ -413,7 +413,7 @@ Features concluídas desde 2026-05-27:
 Itens em aberto:
 - **Relatório de uso real (2026-09-07)** — 11 itens mapeados pelo usuário usando o Gimbo no dia a dia,
   registrados em `plan/BACKLOG.md` (detalhes técnicos e decisões pendentes em cada entrada), branch
-  `dassan/quick-fixes-uso-real`. **Resolvidos (lotes 1 a 4, escolhidos com o usuário): `B-34`**
+  `dassan/quick-fixes-uso-real`. **Resolvidos (lotes 1 a 5, escolhidos com o usuário): `B-34`**
   (autocomplete de descrição não seleciona mais conta/cartão arquivado como fonte — só o default
   ativo do M-42 sobrevive), **`M-94`/`M-95`** (lista de lançamentos do cartão: fonte redundante
   removida — só `CREDIT_PAYMENT` continua mostrando a conta pagadora —, data de compra original
@@ -428,7 +428,7 @@ Itens em aberto:
   filtrado), **`M-96`/`M-97`** (lote 3 — Modificações Recentes ganha horário exato + dispositivo
   de origem; nova entidade sincronizada `DeviceInfo` para o nome de dispositivo, schema v19→v20,
   migration `v17.sql`, integrada ao transporte particionado — decisão confirmada com o usuário de
-  sincronizar de verdade em vez de manter só localmente) e **`M-93`** (lote 4 — nova heurística de
+  sincronizar de verdade em vez de manter só localmente), **`M-93`** (lote 4 — nova heurística de
   recorrência em `scripts/sync_gimbo.py`, reabre o `M-92` revertido em `70d36e3`; causa raiz
   investigada e confirmada contra o cofre real do usuário antes de reimplementar — sem exigir
   valor igual, a v1 confundia compras do dia a dia coincidindo numa banda de cadência com
@@ -438,9 +438,18 @@ Itens em aberto:
   `plan/BACKLOG.md` para os detalhes técnicos completos de todos os lotes. **Achado incidental do
   M-93, virou item novo: `M-101`** (lançamento simulado/projetado com flag de contabilizar ou não
   no saldo — usuário usa uma conta real como hack pra simular saldo futuro; registrado para
-  desenho futuro, não iniciado). **Em aberto:** `M-98` (categorias iniciais deixam de vir
-  pré-criadas por padrão — **tensão com CS-23**, que fixou os ids justamente para convergência de
-  merge; resolver sem quebrar essa garantia). **Fora do
+  desenho futuro, não iniciado). **`M-98` foi descartado pelo próprio usuário** (2026-09-08) ao
+  reconsiderar: era uma solução geral (cofre novo nasce vazio de categorias) para um problema
+  pessoal específico (categoria "Alimentação" duplicada ao importar o Organizze por cima de um
+  cofre que já tinha as categorias-padrão do onboarding, CS-23). Investigar essa duplicata levou
+  ao **`M-102`** (lote 5, resolvido) — hoje não existe nenhum sinal visual que distinga duas
+  categorias homônimas em lugar nenhum do app (nem a lista de Configurações, nem o `<select>`
+  nativo do seletor de categoria no `TransactionDrawer`); em vez de atacar isso na UI (mais caro),
+  a correção foi na raiz, em `scripts/sync_gimbo.py`: `build_categories()` agora reconcilia por
+  nome normalizado (sem acento/case) + tipo contra a `--base`, reusando o id já existente em vez
+  de gerar um novo — só quando não há ambiguidade (2+ categorias já duplicadas para o mesmo nome
+  na `--base` não são fundidas automaticamente, para não arriscar orfanar transações num snapshot
+  completo). **Fora do
   backlog, adiado pelo próprio usuário:** `M-100`, como medir quantas pessoas usam o Gimbo — em
   tensão direta com o posicionamento zero-coleta/local-first do projeto (`M-69`) e com o `SEC-17`
   em aberto (que pede para **desligar** o beacon do Cloudflare Web Analytics, não usá-lo).
