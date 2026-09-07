@@ -225,7 +225,7 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 
 ## Estado Atual (2026-08-22)
 
-**Schema em memória v19** | **Schema físico SQLite v16** (`migrations/v1..v16.sql`) | Cobertura: ~96% statements
+**Schema em memória v20** | **Schema físico SQLite v17** (`migrations/v1..v17.sql`) | Cobertura: ~96% statements
 **1165 testes unitários** (45 arquivos) + **147 testes E2E** (perfis `chromium` e `mobile-chrome`)
 
 > Os dois números de schema são independentes e **não coincidem**: `CURRENT_SCHEMA_VERSION` (v17,
@@ -413,7 +413,7 @@ Features concluídas desde 2026-05-27:
 Itens em aberto:
 - **Relatório de uso real (2026-09-07)** — 11 itens mapeados pelo usuário usando o Gimbo no dia a dia,
   registrados em `plan/BACKLOG.md` (detalhes técnicos e decisões pendentes em cada entrada), branch
-  `dassan/quick-fixes-uso-real`. **Resolvidos (lotes 1 e 2, escolhidos com o usuário): `B-34`**
+  `dassan/quick-fixes-uso-real`. **Resolvidos (lotes 1, 2 e 3, escolhidos com o usuário): `B-34`**
   (autocomplete de descrição não seleciona mais conta/cartão arquivado como fonte — só o default
   ativo do M-42 sobrevive), **`M-94`/`M-95`** (lista de lançamentos do cartão: fonte redundante
   removida — só `CREDIT_PAYMENT` continua mostrando a conta pagadora —, data de compra original
@@ -424,14 +424,16 @@ Itens em aberto:
   essa tela; o mesmo ícone no Dashboard não precisou de tratamento, o painel já é desktop-only),
   **`B-36`** (termo "Ledger" trocado por "Cofre"/"Vault" nas 5 strings de copy; a tagline de marca
   "The Fluid Ledger" virou "The Fluid Vault", preservando a decisão de mantê-la em inglês nos dois
-  locales) e **`M-99`** (Dashboard: clicar numa conta navega para `/transactions?account=<id>` já
-  filtrado). **Em aberto:** `M-93` (nova heurística de recorrência no sync do Organizze — reabre o
-  `M-92` revertido, **precisa de esclarecimento do usuário sobre a causa da reversão antes de
-  reimplementar**), `M-96`/`M-97` (Modificações Recentes ganhar horário exato + dispositivo de
-  origem; novo campo opcional de nome de dispositivo em Configurações — **decisão de design
-  pendente**: nome de dispositivo precisa sincronizar entre pares, não pode viver só no OPFS local),
-  `M-98` (categorias iniciais deixam de vir pré-criadas por padrão — **tensão com CS-23**, que fixou
-  os ids justamente para convergência de merge; resolver sem quebrar essa garantia). **Fora do
+  locales), **`M-99`** (Dashboard: clicar numa conta navega para `/transactions?account=<id>` já
+  filtrado) e **`M-96`/`M-97`** (lote 3 — Modificações Recentes ganha horário exato + dispositivo
+  de origem; nova entidade sincronizada `DeviceInfo` para o nome de dispositivo, schema v19→v20,
+  migration `v17.sql`, integrada ao transporte particionado — decisão confirmada com o usuário de
+  sincronizar de verdade em vez de manter só localmente; ver `plan/BACKLOG.md` para os detalhes
+  técnicos completos). **Em aberto:** `M-93` (nova heurística de recorrência no sync do Organizze —
+  reabre o `M-92` revertido, **precisa de esclarecimento do usuário sobre a causa da reversão antes
+  de reimplementar**), `M-98` (categorias iniciais deixam de vir pré-criadas por padrão — **tensão
+  com CS-23**, que fixou os ids justamente para convergência de merge; resolver sem quebrar essa
+  garantia). **Fora do
   backlog, adiado pelo próprio usuário:** `M-100`, como medir quantas pessoas usam o Gimbo — em
   tensão direta com o posicionamento zero-coleta/local-first do projeto (`M-69`) e com o `SEC-17`
   em aberto (que pede para **desligar** o beacon do Cloudflare Web Analytics, não usá-lo).
