@@ -255,7 +255,12 @@ export default function Dashboard() {
         {/* My Accounts — standard accounts with includeInBalance */}
         <div className={cn('rounded-2xl bg-surface-container p-5 sm:p-6', shadowClass)}>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-on-surface">{t('dashboard.myAccounts')}</h3>
+            {/* B-35: pl-3 mirrors the pr-3 on the balance block below, so the title aligns with
+                AccountRow's content (which is itself inset by px-3) instead of the outer card
+                edge. */}
+            <h3 className="text-sm font-semibold text-on-surface pl-3">
+              {t('dashboard.myAccounts')}
+            </h3>
             {visibleAccounts.length > 0 && (
               <div className="text-right pr-3">
                 <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium leading-none mb-0.5">
@@ -295,7 +300,8 @@ export default function Dashboard() {
         {/* My Cards */}
         <div className={cn('rounded-2xl bg-surface-container p-5 sm:p-6', shadowClass)}>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-on-surface">{t('dashboard.myCards')}</h3>
+            {/* B-35: same pl-3/pr-3 mirroring as the "Minhas Contas" panel above. */}
+            <h3 className="text-sm font-semibold text-on-surface pl-3">{t('dashboard.myCards')}</h3>
             {creditAccounts.length > 0 && (
               <div className="text-right pr-3">
                 <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium leading-none mb-0.5">
@@ -448,7 +454,11 @@ function RecentTransactionsHeader({
 }) {
   return (
     <div className="flex items-center justify-between mb-4">
-      <h3 className="text-sm font-semibold text-on-surface">{t('dashboard.recentTransactions')}</h3>
+      {/* B-35 follow-up: same pl-3 fix as "Minhas Contas"/"Meus Cartões" — aligns the title with
+          TransactionRow's content below, which is inset by px-3. */}
+      <h3 className="text-sm font-semibold text-on-surface pl-3">
+        {t('dashboard.recentTransactions')}
+      </h3>
       <button onClick={onViewAll} className="text-xs font-medium text-primary hover:underline">
         {t('dashboard.viewAll')}
       </button>
