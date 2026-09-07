@@ -15,6 +15,7 @@ import type {
   CategoryType,
   CreditMetadata,
   DataFile,
+  DeviceInfo,
   Installment,
   LoanMetadata,
   Recurrence,
@@ -745,6 +746,13 @@ export class StorageService {
     return rows.map(rowToBudget)
   }
 
+  // ─── Devices (M-96/M-97) ───────────────────────────────────────────────────────
+
+  async getDevices(): Promise<DeviceInfo[]> {
+    const rows = await this.query('SELECT * FROM devices ORDER BY updated_at')
+    return rows.map(rowToDevice)
+  }
+
   // ─── Export / Import ─────────────────────────────────────────────────────────
 
   async exportBlob(): Promise<Blob> {
@@ -835,6 +843,7 @@ export class StorageService {
       deletedIds,
       savedPeriods,
       budgets,
+      devices,
     ] = await Promise.all([
       this.getAccounts(),
       this.getCategories(),
@@ -847,6 +856,7 @@ export class StorageService {
       this.getDeletedIds(),
       this.getSavedPeriods(),
       this.getBudgets(),
+      this.getDevices(),
     ])
 
     return {
@@ -862,6 +872,7 @@ export class StorageService {
       deletedIds,
       savedPeriods,
       budgets,
+      devices,
     }
   }
 
@@ -1079,12 +1090,24 @@ function rowToBudget(row: Row): Budget {
 }
 
 function rowToAuditEntry(row: Row): AuditEntry {
-  return {
+  const entry: AuditEntry = {
     id: row.id as string,
     timestamp: row.timestamp as string,
     action: row.action as AuditAction,
     entity: row.entity as AuditEntity,
     entityId: row.entity_id as string,
     summary: row.summary as string,
+  }
+  if (row.device_id !== null && row.device_id !== undefined) {
+    entry.deviceId = row.device_id as string
+  }
+  return entry
+}
+
+function rowToDevice(row: Row): DeviceInfo {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    updatedAt: row.updated_at as string,
   }
 }

@@ -9,6 +9,7 @@ import { isDemoMode, loadDemoData } from '@/lib/demo'
 import { clearBackupDirHandle } from '@/lib/backupDir'
 import { startSyncPolling } from '@/lib/cloudSync/syncScheduler'
 import { claimVault } from '@/lib/vaultOwnership'
+import { getDeviceId } from '@/lib/cloudSync/deviceId'
 import { markAppVisible, markBootInstant, measureBoot, measureBootSync } from '@/lib/bootMetrics'
 import AppLayout from '@/components/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -86,6 +87,11 @@ export default function App() {
       try {
         initWorkspace()
         void i18n.changeLanguage(useWorkspaceStore.getState().workspace.locale)
+        // M-96: warm the OPFS-backed device id cache unconditionally (independent of the vault,
+        // of any multi-device mode being on) so it's already resolved by the time the first
+        // mutation tags an AuditEntry with it (useDataStore.ts's makeEntry, synchronous — OPFS
+        // access isn't). Fire and forget: never awaited, never blocks boot.
+        void getDeviceId()
 
         if (isDemoMode()) {
           loadData(await loadDemoData())

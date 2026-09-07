@@ -63,6 +63,43 @@ function LocationDisplay() {
   return <div data-testid="location-display">{location.pathname}</div>
 }
 
+// M-96/M-97: refreshDeviceList()'s getDeviceId() call needs navigator.storage — without it,
+// selfDeviceId stays null (the try/catch swallows it) and every device-name test would be a
+// no-op. Minimal in-memory fake, same shape as deviceId.test.ts's own.
+function installFakeOpfs() {
+  const files = new Map<string, string>()
+  const fileHandle = {
+    getFile: () => Promise.resolve({ text: () => Promise.resolve(files.get('device-id') ?? '') }),
+    createWritable: () => {
+      let buffer = ''
+      return Promise.resolve({
+        write: (s: string) => {
+          buffer += s
+          return Promise.resolve()
+        },
+        close: () => {
+          files.set('device-id', buffer)
+          return Promise.resolve()
+        },
+      })
+    },
+  }
+  Object.defineProperty(navigator, 'storage', {
+    configurable: true,
+    value: {
+      getDirectory: () =>
+        Promise.resolve({
+          getFileHandle: (name: string, options?: { create?: boolean }) => {
+            if (!files.has(name) && !options?.create) {
+              return Promise.reject(new DOMException('NotFoundError', 'NotFoundError'))
+            }
+            return Promise.resolve(fileHandle)
+          },
+        }),
+    },
+  })
+}
+
 function renderSettings(initialPath = '/settings') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
@@ -723,5 +760,90 @@ describe('Settings — BX-12: sugestão de meta por histórico', () => {
     renderSettings('/settings/recipes/quadrantes')
     await user.click(screen.getByRole('button', { name: 'budgets.quadrantesInferLabel' }))
     expect(useDataStore.getState().data?.settings.quadrantesInferFromHistory).toBe(true)
+  })
+})
+
+// ─── Settings — M-97: device name ──────────────────────────────────────────────
+
+describe('Settings — M-97: device name', () => {
+  it("saving a name upserts this device's own DeviceInfo entry", async () => {
+    installFakeOpfs()
+    const user = userEvent.setup()
+    renderSettings('/settings/vault')
+
+    const input = await screen.findByPlaceholderText('settings.deviceNamePlaceholder')
+    await user.type(input, 'Notebook do Trabalho')
+    await user.click(screen.getByText('settings.saveDeviceName'))
+
+    expect(await screen.findByText('settings.deviceNameSaved')).toBeInTheDocument()
+    const devices = useDataStore.getState().data?.devices ?? []
+    expect(devices).toHaveLength(1)
+    expect(devices[0].name).toBe('Notebook do Trabalho')
+  })
+
+  it('pre-fills the field with the name already saved for this device', async () => {
+    installFakeOpfs()
+    // Same device id the fake OPFS will hand back on first getDeviceId() call — seed
+    // devices with a matching entry so the effect finds a name to pre-fill.
+    const { getDeviceId } = await import('@/lib/cloudSync/deviceId')
+    const id = await getDeviceId()
+    useDataStore.setState({
+      data: makeDataFile({ devices: [{ id, name: 'iPhone da Ana', updatedAt: '2026-01-01' }] }),
+    })
+
+    renderSettings('/settings/vault')
+
+    expect(await screen.findByDisplayValue('iPhone da Ana')).toBeInTheDocument()
+  })
+})
+
+// ─── Settings — M-96: audit log shows device and exact time ──────────────────
+
+describe('Settings — M-96: audit log shows device and exact time', () => {
+  it('shows the friendly device name for an entry made on a known peer device', async () => {
+    installFakeOpfs()
+    useDataStore.setState({
+      data: makeDataFile({
+        devices: [{ id: 'peer-1', name: 'MacBook do Trabalho', updatedAt: '2026-01-01' }],
+        auditLog: [
+          {
+            id: 'audit-1',
+            timestamp: '2026-01-01T12:00:00.000Z',
+            action: 'CREATE',
+            entity: 'account',
+            entityId: 'acc-1',
+            summary: 'Conta criada: Nubank',
+            deviceId: 'peer-1',
+          },
+        ],
+      }),
+    })
+
+    renderSettings('/settings/history')
+
+    expect(await screen.findByText('MacBook do Trabalho')).toBeInTheDocument()
+  })
+
+  it('omits the device line for a legacy entry with no deviceId', async () => {
+    installFakeOpfs()
+    useDataStore.setState({
+      data: makeDataFile({
+        auditLog: [
+          {
+            id: 'audit-1',
+            timestamp: '2026-01-01T12:00:00.000Z',
+            action: 'CREATE',
+            entity: 'account',
+            entityId: 'acc-1',
+            summary: 'Conta criada: Nubank',
+          },
+        ],
+      }),
+    })
+
+    renderSettings('/settings/history')
+
+    expect(await screen.findByText('Conta criada: Nubank')).toBeInTheDocument()
+    expect(screen.queryByText('settings.multiDeviceThisDevice')).not.toBeInTheDocument()
   })
 })

@@ -819,7 +819,10 @@ CREATE TABLE IF NOT EXISTS transaction_tags (
 );
 CREATE TABLE IF NOT EXISTS audit_log (
   id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, action TEXT NOT NULL,
-  entity TEXT NOT NULL, entity_id TEXT NOT NULL, summary TEXT NOT NULL
+  entity TEXT NOT NULL, entity_id TEXT NOT NULL, summary TEXT NOT NULL,
+  -- M-96/app schema v17: dispositivo de origem, nunca populado pelo Organizze (o script roda
+  -- num único processo, sem conceito de "dispositivo" na origem) — sempre NULL.
+  device_id TEXT
 );
 CREATE TABLE IF NOT EXISTS deleted_ids (id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS valuations (
@@ -869,7 +872,13 @@ CREATE TABLE IF NOT EXISTS table_hashes (
   hash_value INTEGER NOT NULL, row_count INTEGER NOT NULL,
   PRIMARY KEY (table_name, partition_key)
 );
-PRAGMA user_version = 16;
+-- M-96/M-97/app schema v17: dispositivo que já se nomeou (deviceId -> nome amigável). Nunca
+-- populada pelo Organizze (sem conceito de "dispositivo" na origem) — fica sempre vazia, mesmo
+-- tratamento de budgets/saved_periods acima.
+CREATE TABLE IF NOT EXISTS devices (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+PRAGMA user_version = 17;
 """
 
 

@@ -28,6 +28,7 @@ function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
     deletedIds: [],
     savedPeriods: [],
     budgets: [],
+    devices: [],
     ...overrides,
   }
 }

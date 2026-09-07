@@ -23,6 +23,7 @@ import v13Schema from './migrations/v13.sql?raw'
 import v14Schema from './migrations/v14.sql?raw'
 import v15Schema from './migrations/v15.sql?raw'
 import v16Schema from './migrations/v16.sql?raw'
+import v17Schema from './migrations/v17.sql?raw'
 import { ERR_DB_UNREADABLE, ERR_SCHEMA_TOO_NEW } from './errors'
 import {
   benchVariants,
@@ -48,6 +49,7 @@ import {
   savedPeriodRowKey,
   auditEntryRowKey,
   deletedIdRowKey,
+  deviceRowKey,
   transactionRowKey,
   HASH_VERSION,
 } from '@/lib/storage/rowHash'
@@ -138,6 +140,12 @@ export type RawAuditEntry = {
   entity: string
   entityId: string
   summary: string
+  deviceId?: string
+}
+export type RawDevice = {
+  id: string
+  name: string
+  updatedAt: string
 }
 export type RawValuation = {
   id: string
@@ -178,6 +186,7 @@ type RawDataFile = {
   deletedIds: string[]
   savedPeriods: RawSavedPeriod[]
   budgets: RawBudget[]
+  devices: RawDevice[]
 }
 
 // ─── SQLite state ─────────────────────────────────────────────────────────────
@@ -208,7 +217,7 @@ const DB_FILENAME = 'gimbo.db'
 // this number was written by a newer app build and must be skipped, not partially migrated.
 // Bump this alongside every new migrations/vN.sql (same trap as data/sync_gimbo.py — see
 // CLAUDE.md "Armadilha recorrente").
-const MAX_KNOWN_DB_VERSION = 16
+const MAX_KNOWN_DB_VERSION = 17
 
 // ─── Initialization ───────────────────────────────────────────────────────────
 
@@ -283,6 +292,7 @@ const MIGRATIONS: ReadonlyArray<readonly [version: number, sql: string]> = [
   [14, v14Schema],
   [15, v15Schema],
   [16, v16Schema],
+  [17, v17Schema],
 ]
 
 // Applies pending migrations to an arbitrary db pointer — the main `db` on every open, or a
@@ -639,6 +649,16 @@ async function refreshSmallTableHashes(d: RawDataFile, ts: string): Promise<void
     combineHashes(d.deletedIds.map((id) => hashRow(deletedIdRowKey(id)))),
     d.deletedIds.length
   )
+  await upsertTableHash(
+    'devices',
+    '',
+    combineHashes(
+      (d.devices ?? []).map((dev) =>
+        hashRow(deviceRowKey({ ...dev, updatedAt: dev.updatedAt ?? ts }))
+      )
+    ),
+    (d.devices ?? []).length
+  )
   // CS-39: quem escreve hash também registra sob qual esquema escreveu. Esta função roda em toda
   // mutação (via writeSmallTables) e em todo replaceAll, então a sentinela nunca fica atrás das
   // partições que ela descreve — sem isto, um replaceAll (import, restauração, merge de sync)
@@ -765,6 +785,7 @@ async function writeSmallTables(d: RawDataFile, ts: string): Promise<void> {
   // Clear in dependency order (junction tables and leaves first)
   await sqlite3.run(db, 'DELETE FROM audit_log')
   await sqlite3.run(db, 'DELETE FROM deleted_ids')
+  await sqlite3.run(db, 'DELETE FROM devices')
   await sqlite3.run(db, 'DELETE FROM valuations')
   await sqlite3.run(db, 'DELETE FROM saved_periods')
   await sqlite3.run(db, 'DELETE FROM budgets')
@@ -907,14 +928,31 @@ async function writeSmallTables(d: RawDataFile, ts: string): Promise<void> {
   for (const entry of d.auditLog) {
     await sqlite3.run(
       db,
-      'INSERT INTO audit_log (id, timestamp, action, entity, entity_id, summary) VALUES (?, ?, ?, ?, ?, ?)',
-      [entry.id, entry.timestamp, entry.action, entry.entity, entry.entityId, entry.summary]
+      'INSERT INTO audit_log (id, timestamp, action, entity, entity_id, summary, device_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [
+        entry.id,
+        entry.timestamp,
+        entry.action,
+        entry.entity,
+        entry.entityId,
+        entry.summary,
+        entry.deviceId ?? null,
+      ]
     )
   }
 
   // tombstones
   for (const id of d.deletedIds) {
     await sqlite3.run(db, 'INSERT OR IGNORE INTO deleted_ids (id) VALUES (?)', [id])
+  }
+
+  // devices (M-96/M-97)
+  for (const dev of d.devices ?? []) {
+    await sqlite3.run(db, 'INSERT INTO devices (id, name, updated_at) VALUES (?, ?, ?)', [
+      dev.id,
+      dev.name,
+      dev.updatedAt ?? ts,
+    ])
   }
 
   await refreshSmallTableHashes(d, ts)
@@ -1491,12 +1529,24 @@ async function readAuditLog(dbPtr: number): Promise<RawAuditEntry[]> {
     entity: r.entity as string,
     entityId: r.entity_id as string,
     summary: r.summary as string,
+    ...(r.device_id !== null && r.device_id !== undefined
+      ? { deviceId: r.device_id as string }
+      : {}),
   }))
 }
 
 async function readDeletedIds(dbPtr: number): Promise<string[]> {
   const deletedRows = await queryRows(dbPtr, 'SELECT id FROM deleted_ids')
   return deletedRows.map((r) => r.id as string)
+}
+
+async function readDevices(dbPtr: number): Promise<RawDevice[]> {
+  const deviceRows = await queryRows(dbPtr, 'SELECT * FROM devices ORDER BY updated_at')
+  return deviceRows.map((r) => ({
+    id: r.id as string,
+    name: r.name as string,
+    updatedAt: r.updated_at as string,
+  }))
 }
 
 async function readUserAndSettings(
@@ -1539,6 +1589,7 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
   const budgets = await readBudgets(dbPtr)
   const auditLog = await readAuditLog(dbPtr)
   const deletedIds = await readDeletedIds(dbPtr)
+  const devices = await readDevices(dbPtr)
 
   return {
     ...base,
@@ -1551,6 +1602,7 @@ async function readDataFileFromDb(dbPtr: number): Promise<RawDataFile | null> {
     deletedIds,
     savedPeriods,
     budgets,
+    devices,
   }
 }
 
@@ -1641,6 +1693,7 @@ async function readDataFileFromDbSelective(
     'budgets',
     'audit_log',
     'deleted_ids',
+    'devices',
   ] as const
   const matches = (table: string) => {
     const skip = hashesMatch(peerHashes, localHashes, `${table}:`)
@@ -1656,6 +1709,7 @@ async function readDataFileFromDbSelective(
   const budgets = matches('budgets') ? [] : await readBudgets(dbPtr)
   const auditLog = matches('audit_log') ? [] : await readAuditLog(dbPtr)
   const deletedIds = matches('deleted_ids') ? [] : await readDeletedIds(dbPtr)
+  const devices = matches('devices') ? [] : await readDevices(dbPtr)
 
   // Descobre os anos que o peer de fato tem (nunca lê um ano que só existe localmente — não há
   // nada pra buscar dele) e lê só os que divergirem do hash local.
@@ -1681,6 +1735,7 @@ async function readDataFileFromDbSelective(
       deletedIds,
       savedPeriods,
       budgets,
+      devices,
     },
     stats: {
       tablesSkipped,
@@ -1790,6 +1845,14 @@ async function ensureTableHashesCurrent(dbPtr: number): Promise<void> {
     '',
     combineHashes(data.deletedIds.map((id) => hashRow(deletedIdRowKey(id)))),
     data.deletedIds.length
+  )
+  await upsert(
+    'devices',
+    '',
+    combineHashes(
+      data.devices.map((d) => hashRow(deviceRowKey({ ...d, updatedAt: d.updatedAt ?? ts })))
+    ),
+    data.devices.length
   )
 
   const byYear = new Map<string, RawTransaction[]>()
@@ -1928,6 +1991,9 @@ async function readPartitions(keys: string[]): Promise<Record<string, unknown[]>
       case 'deleted_ids':
         out[key] = await readDeletedIds(db)
         break
+      case 'devices':
+        out[key] = await readDevices(db)
+        break
       case 'transactions':
         out[key] = byYear.get(partition) ?? []
         break
@@ -2020,6 +2086,7 @@ async function clearAll(): Promise<void> {
     await sqlite3.run(db, 'DELETE FROM transaction_budgets')
     await sqlite3.run(db, 'DELETE FROM audit_log')
     await sqlite3.run(db, 'DELETE FROM deleted_ids')
+    await sqlite3.run(db, 'DELETE FROM devices')
     await sqlite3.run(db, 'DELETE FROM transactions')
     await sqlite3.run(db, 'DELETE FROM valuations')
     await sqlite3.run(db, 'DELETE FROM saved_periods')

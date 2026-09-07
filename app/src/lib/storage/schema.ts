@@ -5,7 +5,7 @@ import { detectBrowserLocale, defaultCurrencyForLocale } from '@/lib/storage/wor
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 19
+export const CURRENT_SCHEMA_VERSION = 20
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -172,9 +172,27 @@ const AuditEntrySchema = z.object({
   id: z.string(),
   timestamp: z.string(),
   action: z.enum(['CREATE', 'UPDATE', 'DELETE']),
-  entity: z.enum(['account', 'category', 'tag', 'transaction', 'user', 'savedPeriod', 'budget']),
+  entity: z.enum([
+    'account',
+    'category',
+    'tag',
+    'transaction',
+    'user',
+    'savedPeriod',
+    'budget',
+    'device',
+  ]),
   entityId: z.string(),
   summary: z.string(),
+  deviceId: z.string().optional(), // M-96: absent on entries from before this field existed
+})
+
+// M-96/M-97: see the comment on DeviceInfo (types/index.ts) for why this is a top-level synced
+// entity instead of living inside Settings.
+const DeviceInfoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  updatedAt: z.string(),
 })
 
 export const DataFileSchema = z.object({
@@ -190,6 +208,7 @@ export const DataFileSchema = z.object({
   deletedIds: z.array(z.string()).default([]), // tombstone — B-11; absent in v1/v2 files defaults to []
   savedPeriods: z.array(SavedPeriodSchema).default([]), // M-45; absent in older files defaults to []
   budgets: z.array(BudgetSchema).default([]), // F-30/BX-03; absent in older files defaults to []
+  devices: z.array(DeviceInfoSchema).default([]), // M-97; absent in older files defaults to []
 })
 
 /**
@@ -216,6 +235,7 @@ export const PARTITION_SCHEMAS = {
   budgets: z.array(BudgetSchema),
   audit_log: z.array(AuditEntrySchema),
   deleted_ids: z.array(z.string()),
+  devices: z.array(DeviceInfoSchema),
 } as const
 
 /** Os singletons, que nunca são particionados — viajam no manifesto (CS-40). */
@@ -390,6 +410,14 @@ export function migrateDataFile(data: DataFile): DataFile {
     migrated = { ...migrated, schemaVersion: 19 }
   }
 
+  // v19 → v20: adds the DeviceInfo entity (M-96/M-97) — a `devices` array (DataFile) mapping
+  // deviceId → friendly name, and `AuditEntry.deviceId` identifying which device made each
+  // change. Both Zod-defaulted/optional via DataFileSchema.parse, so existing records only need
+  // the version bump.
+  if (migrated.schemaVersion === 19) {
+    migrated = { ...migrated, schemaVersion: 20 }
+  }
+
   return migrated
 }
 
@@ -416,6 +444,7 @@ export function createEmptyDataFile(name: string): DataFile {
     deletedIds: [],
     savedPeriods: [],
     budgets: [],
+    devices: [],
   }
 }
 

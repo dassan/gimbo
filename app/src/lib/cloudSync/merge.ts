@@ -53,6 +53,11 @@ export function mergeForSync(local: DataFile, remote: DataFile): DataFile {
   const valuations = notDeleted(unionByIdLocalWins(local.valuations, remote.valuations))
   const savedPeriods = notDeleted(unionByIdLocalWins(local.savedPeriods, remote.savedPeriods))
   const budgets = notDeleted(unionByIdLWW(local.budgets, remote.budgets))
+  // M-97: union by id, LWW by updatedAt — same as accounts/categories/tags/budgets. Each device
+  // only ever writes its own entry (by its own deviceId), so in practice there's never a real
+  // conflict on the same id from two writers; LWW is just the same safety net every other synced
+  // entity already gets.
+  const devices = notDeleted(unionByIdLWW(local.devices, remote.devices))
 
   const auditById = new Map<string, AuditEntry>()
   for (const entry of local.auditLog) auditById.set(entry.id, entry)
@@ -83,5 +88,6 @@ export function mergeForSync(local: DataFile, remote: DataFile): DataFile {
     deletedIds,
     savedPeriods,
     budgets,
+    devices,
   }
 }
