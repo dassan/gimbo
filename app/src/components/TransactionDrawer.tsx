@@ -294,10 +294,17 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   // M-80: fill category/account/tags from a past occurrence of the same description. Amount
   // is deliberately left untouched — it's rarely the same twice, and the amount field is the
   // first thing the user fills in anyway (auto-focused on open).
+  // B-34: if the suggestion's account was archived since that past transaction, don't apply it —
+  // it would silently defeat the M-42 guarantee that a new transaction always defaults to an
+  // active account. Category/tags still come from the suggestion; the account keeps whatever
+  // active default was already selected.
   function selectDescriptionSuggestion(s: DescriptionSuggestion) {
     setDescription(s.description)
     setCategoryId(s.categoryId)
-    if (s.accountId !== accountId) handleAccountChange(s.accountId)
+    const suggestedAccount = (data?.accounts ?? []).find((a) => a.id === s.accountId)
+    if (suggestedAccount && !suggestedAccount.archived && s.accountId !== accountId) {
+      handleAccountChange(s.accountId)
+    }
     setSelectedTags(s.tags)
     setShowDescSuggestions(false)
     setActiveSuggestionIndex(-1)
