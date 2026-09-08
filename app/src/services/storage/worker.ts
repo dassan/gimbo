@@ -824,7 +824,11 @@ async function writeSmallTables(d: RawDataFile, ts: string): Promise<void> {
   await sqlite3.run(db, 'DELETE FROM valuations')
   await sqlite3.run(db, 'DELETE FROM saved_periods')
   await sqlite3.run(db, 'DELETE FROM budgets')
-  await sqlite3.run(db, 'DELETE FROM hypotheses') // cascades hypothesis_items
+  // `ON DELETE CASCADE` never fires here — this connection never runs `PRAGMA foreign_keys = ON`
+  // (SQLite defaults it off), so the child table needs its own explicit DELETE, same as
+  // transaction_tags/transaction_budgets before transactions elsewhere in this file.
+  await sqlite3.run(db, 'DELETE FROM hypothesis_items')
+  await sqlite3.run(db, 'DELETE FROM hypotheses')
   await sqlite3.run(db, 'DELETE FROM categories')
   await sqlite3.run(db, 'DELETE FROM tags')
   await sqlite3.run(db, 'DELETE FROM accounts')
@@ -2212,7 +2216,8 @@ async function clearAll(): Promise<void> {
     await sqlite3.run(db, 'DELETE FROM valuations')
     await sqlite3.run(db, 'DELETE FROM saved_periods')
     await sqlite3.run(db, 'DELETE FROM budgets')
-    await sqlite3.run(db, 'DELETE FROM hypotheses') // cascades hypothesis_items
+    await sqlite3.run(db, 'DELETE FROM hypothesis_items') // FK cascade never fires, see writeSmallTables
+    await sqlite3.run(db, 'DELETE FROM hypotheses')
     await sqlite3.run(db, 'DELETE FROM categories')
     await sqlite3.run(db, 'DELETE FROM tags')
     await sqlite3.run(db, 'DELETE FROM accounts')
