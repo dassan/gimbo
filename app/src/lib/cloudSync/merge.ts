@@ -58,6 +58,9 @@ export function mergeForSync(local: DataFile, remote: DataFile): DataFile {
   // conflict on the same id from two writers; LWW is just the same safety net every other synced
   // entity already gets.
   const devices = notDeleted(unionByIdLWW(local.devices, remote.devices))
+  // M-101: union by id, LWW by updatedAt — same as budgets/devices. Never a real
+  // Transaction/Account, so this is purely additive plumbing, no balance-contamination risk.
+  const hypotheses = notDeleted(unionByIdLWW(local.hypotheses, remote.hypotheses))
 
   const auditById = new Map<string, AuditEntry>()
   for (const entry of local.auditLog) auditById.set(entry.id, entry)
@@ -89,5 +92,6 @@ export function mergeForSync(local: DataFile, remote: DataFile): DataFile {
     savedPeriods,
     budgets,
     devices,
+    hypotheses,
   }
 }

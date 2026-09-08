@@ -16,6 +16,8 @@ import type {
   CreditMetadata,
   DataFile,
   DeviceInfo,
+  Hypothesis,
+  HypothesisItem,
   Installment,
   LoanMetadata,
   Recurrence,
@@ -753,6 +755,25 @@ export class StorageService {
     return rows.map(rowToDevice)
   }
 
+  // ─── Hypotheses (M-101/Simulações) — never linked to any real Transaction/Account ──────────
+
+  async getHypotheses(): Promise<Hypothesis[]> {
+    const [hypothesisRows, itemRows] = await Promise.all([
+      this.query('SELECT * FROM hypotheses ORDER BY created_at'),
+      this.query('SELECT * FROM hypothesis_items ORDER BY hypothesis_id'),
+    ])
+    const itemsByHypothesis = new Map<string, HypothesisItem[]>()
+    for (const row of itemRows) {
+      const hypothesisId = row.hypothesis_id as string
+      const list = itemsByHypothesis.get(hypothesisId) ?? []
+      list.push(rowToHypothesisItem(row))
+      itemsByHypothesis.set(hypothesisId, list)
+    }
+    return hypothesisRows.map((row) =>
+      rowToHypothesis(row, itemsByHypothesis.get(row.id as string) ?? [])
+    )
+  }
+
   // ─── Export / Import ─────────────────────────────────────────────────────────
 
   async exportBlob(): Promise<Blob> {
@@ -844,6 +865,7 @@ export class StorageService {
       savedPeriods,
       budgets,
       devices,
+      hypotheses,
     ] = await Promise.all([
       this.getAccounts(),
       this.getCategories(),
@@ -857,6 +879,7 @@ export class StorageService {
       this.getSavedPeriods(),
       this.getBudgets(),
       this.getDevices(),
+      this.getHypotheses(),
     ])
 
     return {
@@ -873,6 +896,7 @@ export class StorageService {
       savedPeriods,
       budgets,
       devices,
+      hypotheses,
     }
   }
 
@@ -1110,4 +1134,42 @@ function rowToDevice(row: Row): DeviceInfo {
     name: row.name as string,
     updatedAt: row.updated_at as string,
   }
+}
+
+function rowToHypothesisItem(row: Row): HypothesisItem {
+  const item: HypothesisItem = {
+    id: row.id as string,
+    kind: row.kind as HypothesisItem['kind'],
+    description: row.description as string,
+    type: row.type as HypothesisItem['type'],
+    amount: row.amount as number,
+    startDate: row.start_date as string,
+  }
+  if (row.installment_count !== null && row.installment_count !== undefined) {
+    item.installmentCount = row.installment_count as number
+  }
+  if (row.frequency !== null && row.frequency !== undefined) {
+    item.frequency = row.frequency as HypothesisItem['frequency']
+  }
+  if (row.end_date !== null && row.end_date !== undefined) {
+    item.endDate = row.end_date as string
+  }
+  if (row.category_id !== null && row.category_id !== undefined) {
+    item.categoryId = row.category_id as string
+  }
+  return item
+}
+
+function rowToHypothesis(row: Row, items: HypothesisItem[]): Hypothesis {
+  const h: Hypothesis = {
+    id: row.id as string,
+    name: row.name as string,
+    enabled: Boolean(row.enabled),
+    items,
+    createdAt: row.created_at as string,
+  }
+  if (row.updated_at !== null && row.updated_at !== undefined) {
+    h.updatedAt = row.updated_at as string
+  }
+  return h
 }

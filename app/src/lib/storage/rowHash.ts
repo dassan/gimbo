@@ -15,6 +15,8 @@ import type {
   RawSavedPeriod,
   RawAuditEntry,
   RawDevice,
+  RawHypothesis,
+  RawHypothesisItem,
 } from '@/services/storage/worker'
 
 /**
@@ -38,7 +40,7 @@ import type {
  * `rowHash.test.ts`: ele fixa este número junto de um hash literal por `*RowKey`, então mudar
  * qualquer função sem bumpar falha no CI com instruções.
  */
-export const HASH_VERSION = 2
+export const HASH_VERSION = 3
 
 const FNV_OFFSET_BASIS = 0x811c9dc5
 const FNV_PRIME = 0x01000193
@@ -137,6 +139,37 @@ export function deletedIdRowKey(id: string): string {
 
 export function deviceRowKey(d: RawDevice): string {
   return [d.id, d.name, d.updatedAt].join(SEP)
+}
+
+export function hypothesisItemRowKey(i: RawHypothesisItem): string {
+  return [
+    i.id,
+    i.kind,
+    i.description,
+    i.type,
+    i.amount,
+    i.startDate,
+    i.installmentCount ?? '',
+    i.frequency ?? '',
+    i.endDate ?? '',
+    i.categoryId ?? '',
+  ].join(SEP)
+}
+
+// Itens ordenados por row-key antes de juntar — mesmo cuidado de tags/budgetIds em
+// transactionRowKey: a ordem de `items` não deve mudar o hash.
+export function hypothesisRowKey(h: RawHypothesis): string {
+  return [
+    h.id,
+    h.name,
+    h.enabled ? 1 : 0,
+    h.createdAt,
+    h.updatedAt ?? '',
+    h.items
+      .map((i) => hypothesisItemRowKey(i))
+      .sort()
+      .join(','),
+  ].join(SEP)
 }
 
 /**

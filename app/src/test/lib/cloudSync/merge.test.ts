@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mergeForSync } from '@/lib/cloudSync/merge'
-import type { Account, AuditEntry, Budget, DataFile, Transaction } from '@/types'
+import type { Account, AuditEntry, Budget, DataFile, Hypothesis, Transaction } from '@/types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -29,6 +29,7 @@ function makeDataFile(overrides: Partial<DataFile> = {}): DataFile {
     savedPeriods: [],
     budgets: [],
     devices: [],
+    hypotheses: [],
     ...overrides,
   }
 }
@@ -70,6 +71,18 @@ function makeBudget(overrides: Partial<Budget> = {}): Budget {
     kind: 'expense',
     target: 1000,
     period: { mode: 'range', start: '2026-01-01', end: '2026-12-31' },
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
+function makeHypothesis(overrides: Partial<Hypothesis> = {}): Hypothesis {
+  return {
+    id: 'hy-1',
+    name: 'Pós-graduação',
+    enabled: true,
+    items: [],
+    createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
   }
@@ -299,6 +312,40 @@ describe('mergeForSync', () => {
     const remote = makeDataFile({ budgets: [makeBudget({ id: 'bx-1' })] })
     const result = mergeForSync(local, remote)
     expect(result.budgets).toHaveLength(0)
+  })
+
+  // M-101: mesma mecânica de budgets/devices — union por id, LWW por updatedAt, tombstone.
+  it('keeps a hypothesis that only exists in remote', () => {
+    const local = makeDataFile()
+    const remote = makeDataFile({ hypotheses: [makeHypothesis({ id: 'hy-remote' })] })
+    const result = mergeForSync(local, remote)
+    expect(result.hypotheses.map((h) => h.id)).toEqual(['hy-remote'])
+  })
+
+  it('keeps a hypothesis that only exists in local', () => {
+    const local = makeDataFile({ hypotheses: [makeHypothesis({ id: 'hy-local' })] })
+    const remote = makeDataFile()
+    const result = mergeForSync(local, remote)
+    expect(result.hypotheses.map((h) => h.id)).toEqual(['hy-local'])
+  })
+
+  it('on hypothesis collision, the greater updatedAt wins (remote newer)', () => {
+    const local = makeDataFile({
+      hypotheses: [makeHypothesis({ enabled: true, updatedAt: '2026-01-01T00:00:00.000Z' })],
+    })
+    const remote = makeDataFile({
+      hypotheses: [makeHypothesis({ enabled: false, updatedAt: '2026-02-01T00:00:00.000Z' })],
+    })
+    const result = mergeForSync(local, remote)
+    expect(result.hypotheses).toHaveLength(1)
+    expect(result.hypotheses[0].enabled).toBe(false)
+  })
+
+  it('removes a hypothesis present on the other side when it is in deletedIds', () => {
+    const local = makeDataFile({ deletedIds: ['hy-1'] })
+    const remote = makeDataFile({ hypotheses: [makeHypothesis({ id: 'hy-1' })] })
+    const result = mergeForSync(local, remote)
+    expect(result.hypotheses).toHaveLength(0)
   })
 
   it('carries budgetIds along for free as part of the transaction merge (no dedicated logic)', () => {
