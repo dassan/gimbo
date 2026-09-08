@@ -29,6 +29,7 @@ import CreditCardPage from '@/pages/CreditCard'
 import About from '@/pages/About'
 import NetWorth from '@/pages/NetWorth'
 import Health from '@/pages/Health'
+import Simulacoes from '@/pages/Simulacoes'
 import WhyBrowserStorage from '@/pages/Docs/WhyBrowserStorage'
 import BackupLocal from '@/pages/Docs/BackupLocal'
 import CloudSync from '@/pages/Docs/CloudSync'
@@ -233,6 +234,7 @@ export default function App() {
                 <Route path="/settings/recipes/:slug" element={<RecipeSettings />} />
                 <Route path="/net-worth" element={<NetWorth />} />
                 <Route path="/health" element={<Health />} />
+                <Route path="/simulacoes" element={<Simulacoes />} />
                 <Route path="/credit-card/:accountId" element={<CreditCardPage />} />
                 <Route path="/gimbo" element={<About />} />
                 <Route path="/docs/why-browser-storage" element={<WhyBrowserStorage />} />
