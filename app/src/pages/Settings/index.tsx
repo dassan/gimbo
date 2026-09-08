@@ -327,6 +327,8 @@ export default function Settings() {
     syncStatus,
     lastSyncedAt,
     runPeerSync,
+    refreshRecurrenceHorizons,
+    ensureQuadrantesBatch,
   } = useDataStore()
   const loadData = useDataStore((s) => s.loadData)
   const {
@@ -640,7 +642,14 @@ export default function Settings() {
       // seu conteúdo.
       clearDriveTreeSyncState()
       const imported = await storage.loadDataFile()
-      if (imported) loadData(imported)
+      if (imported) {
+        loadData(imported)
+        // Import never goes through App.tsx's boot effect, o único outro lugar que chama isto —
+        // sem isto, uma série/lote atrasado só seria corrigido no próximo reload completo (mesma
+        // lacuna que o CS-34 já achou pra table_hashes, agora pro B-22/BX-07).
+        refreshRecurrenceHorizons()
+        ensureQuadrantesBatch()
+      }
       setImportResult({ status: 'success' })
     } catch (err) {
       // SEC-05: a partir daqui o cofre atual está garantidamente intacto — o import só toca
