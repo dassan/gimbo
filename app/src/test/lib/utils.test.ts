@@ -36,8 +36,13 @@ import {
   getBudgetStatus,
   buildDescriptionIndex,
   matchDescriptionSuggestions,
+  getSimulationMonths,
+  getMonthlyNetFlow,
+  getCategoryMonthlyTotals,
+  getHypothesisMonthlyImpact,
+  getSimulationProjection,
 } from '@/lib/utils'
-import type { Account, Budget, Category, Transaction } from '@/types'
+import type { Account, Budget, Category, Hypothesis, Transaction } from '@/types'
 
 describe('formatCurrency', () => {
   it('formats BRL with comma decimal separator', () => {
@@ -204,6 +209,17 @@ function makeBudget(overrides: Partial<Budget> = {}): Budget {
     kind: 'expense',
     target: 1000,
     period: { mode: 'range', start: '2026-01-01', end: '2026-12-31' },
+    ...overrides,
+  }
+}
+
+function makeHypothesis(overrides: Partial<Hypothesis> = {}): Hypothesis {
+  return {
+    id: 'hy-1',
+    name: 'Pós-graduação',
+    enabled: true,
+    items: [],
+    createdAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
   }
 }
@@ -1343,6 +1359,377 @@ describe('getRecurringCommitment (M-63)', () => {
     })
     expect(getRecurringCommitment([a, b], '2028-02-01')).toBe(300)
     expect(getRecurringCommitment([], '2028-02-01')).toBe(0)
+  })
+})
+
+describe('getSimulationMonths (M-101)', () => {
+  it('returns 12 months starting at the reference month', () => {
+    expect(getSimulationMonths('2028-03-15')).toEqual([
+      '2028-03',
+      '2028-04',
+      '2028-05',
+      '2028-06',
+      '2028-07',
+      '2028-08',
+      '2028-09',
+      '2028-10',
+      '2028-11',
+      '2028-12',
+      '2029-01',
+      '2029-02',
+    ])
+  })
+})
+
+describe('getMonthlyNetFlow (M-101)', () => {
+  const months = getSimulationMonths('2028-01-15')
+
+  it('sums real income/expense per month, ignoring TRANSFER/CREDIT_PAYMENT', () => {
+    const txs = [
+      makeTx({ id: 't1', type: 'INCOME', amount: 1000, date: '2028-01-05' }),
+      makeTx({ id: 't2', type: 'EXPENSE', amount: 300, date: '2028-01-20' }),
+      makeTx({ id: 't3', type: 'TRANSFER', amount: 999, date: '2028-01-10' }),
+      makeTx({ id: 't4', type: 'CREDIT_PAYMENT', amount: 999, date: '2028-01-10' }),
+    ]
+    const result = getMonthlyNetFlow(txs, months)
+    expect(result[0]).toEqual({ month: '2028-01', income: 1000, expense: 300, net: 700 })
+    expect(result[1]).toEqual({ month: '2028-02', income: 0, expense: 0, net: 0 })
+  })
+
+  it('includes projected occurrences of an open-ended recurring series beyond what is materialized', () => {
+    const recurring = makeTx({
+      id: 'rec-parent',
+      type: 'EXPENSE',
+      amount: 50,
+      date: '2028-01-10',
+      isPaid: true,
+      recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+    })
+    const result = getMonthlyNetFlow([recurring], months)
+    expect(result.every((m) => m.expense === 50)).toBe(true)
+  })
+})
+
+describe('getCategoryMonthlyTotals (M-101)', () => {
+  const months = getSimulationMonths('2028-01-15')
+
+  it('sums only the requested category, real + projected', () => {
+    const inCategory = makeTx({
+      id: 'rec-parent',
+      categoryId: 'cat-food',
+      type: 'EXPENSE',
+      amount: 100,
+      date: '2028-01-10',
+      isPaid: true,
+      recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+    })
+    const otherCategory = makeTx({ id: 't2', categoryId: 'cat-other', amount: 500 })
+    const totals = getCategoryMonthlyTotals([inCategory, otherCategory], 'cat-food', months)
+    expect(totals.get('2028-01')).toBe(100)
+    expect(totals.get('2028-06')).toBe(100) // projetado
+  })
+
+  it('returns a map with every requested month, zeroed when there is nothing', () => {
+    const totals = getCategoryMonthlyTotals([], 'cat-food', months)
+    expect([...totals.values()]).toEqual(months.map(() => 0))
+  })
+})
+
+describe('getHypothesisMonthlyImpact (M-101)', () => {
+  const months = getSimulationMonths('2028-01-15')
+
+  it('ONE_TIME contributes only in its own month, signed by type', () => {
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'ONE_TIME',
+          description: 'Entrada da pós',
+          type: 'EXPENSE',
+          amount: 2000,
+          startDate: '2028-02-10',
+        },
+      ],
+    })
+    const impact = getHypothesisMonthlyImpact(hypothesis, months, [])
+    expect(impact.get('2028-02')).toBe(-2000)
+    expect(impact.get('2028-01')).toBe(0)
+    expect(impact.get('2028-03')).toBe(0)
+  })
+
+  it('INSTALLMENT contributes in N consecutive months from startDate', () => {
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'INSTALLMENT',
+          description: 'Parcelas da pós',
+          type: 'EXPENSE',
+          amount: 500,
+          startDate: '2028-01-10',
+          installmentCount: 3,
+        },
+      ],
+    })
+    const impact = getHypothesisMonthlyImpact(hypothesis, months, [])
+    expect(impact.get('2028-01')).toBe(-500)
+    expect(impact.get('2028-02')).toBe(-500)
+    expect(impact.get('2028-03')).toBe(-500)
+    expect(impact.get('2028-04')).toBe(0)
+  })
+
+  it('RECURRING contributes every month until endDate, then stops', () => {
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'RECURRING',
+          description: 'Reajuste salarial',
+          type: 'INCOME',
+          amount: 300,
+          startDate: '2028-01-10',
+          frequency: 'monthly',
+          endDate: '2028-03-31',
+        },
+      ],
+    })
+    const impact = getHypothesisMonthlyImpact(hypothesis, months, [])
+    expect(impact.get('2028-01')).toBe(300)
+    expect(impact.get('2028-02')).toBe(300)
+    expect(impact.get('2028-03')).toBe(300)
+    expect(impact.get('2028-04')).toBe(0)
+  })
+
+  it('RECURRING without endDate runs through the end of the simulation window', () => {
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'RECURRING',
+          description: 'Nova assinatura',
+          type: 'EXPENSE',
+          amount: 40,
+          startDate: '2028-01-10',
+          frequency: 'monthly',
+        },
+      ],
+    })
+    const impact = getHypothesisMonthlyImpact(hypothesis, months, [])
+    expect([...impact.values()].every((v) => v === -40)).toBe(true)
+  })
+
+  it('CATEGORY_TARGET resolves by delta against the baseline, adding extra spend when under target', () => {
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'CATEGORY_TARGET',
+          description: 'Alimentação',
+          type: 'EXPENSE',
+          amount: 650,
+          startDate: '2028-01-01',
+          categoryId: 'cat-food',
+        },
+      ],
+    })
+    // Sem nenhum gasto real/projetado na categoria — o delta inteiro (650) é despesa extra.
+    const impact = getHypothesisMonthlyImpact(hypothesis, months, [])
+    expect(impact.get('2028-01')).toBe(-650)
+  })
+
+  it("CATEGORY_TARGET's delta shrinks or flips once a real series in the same category is already there", () => {
+    const recurring = makeTx({
+      id: 'rec-parent',
+      categoryId: 'cat-food',
+      type: 'EXPENSE',
+      amount: 500,
+      date: '2028-01-10',
+      isPaid: true,
+      recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+    })
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'CATEGORY_TARGET',
+          description: 'Alimentação',
+          type: 'EXPENSE',
+          amount: 650,
+          startDate: '2028-01-01',
+          categoryId: 'cat-food',
+        },
+      ],
+    })
+    // Baseline já projeta 500/mês — o alvo de 650 só exige 150 de despesa extra.
+    const impact = getHypothesisMonthlyImpact(hypothesis, months, [recurring])
+    expect(impact.get('2028-01')).toBe(-150)
+  })
+
+  // A propriedade central que motivou resolver CATEGORY_TARGET por delta em vez de valor fixo: o
+  // já-projetado muda quando uma série real na mesma categoria termina dentro da janela, então o
+  // delta pro mesmo alvo (650) tem que mudar de mês pra mês junto com ele.
+  it("CATEGORY_TARGET's delta is recomputed per month, not a single fixed value", () => {
+    // Série limitada (com endDate): M-35 materializa toda a série na criação — uma linha real por
+    // ocorrência, não uma projeção — então o fixture precisa das três linhas (jan/fev/mar), não
+    // só a primeira.
+    const bounded = ['2028-01-10', '2028-02-10', '2028-03-10'].map((date, i) =>
+      makeTx({
+        id: `rec-${i}`,
+        categoryId: 'cat-food',
+        type: 'EXPENSE',
+        amount: 500,
+        date,
+        isPaid: true,
+        recurrence: { frequency: 'monthly', parentId: 'rec-0', endDate: '2028-03-31' },
+      })
+    )
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'CATEGORY_TARGET',
+          description: 'Alimentação',
+          type: 'EXPENSE',
+          amount: 650,
+          startDate: '2028-01-01',
+          categoryId: 'cat-food',
+        },
+      ],
+    })
+    const impact = getHypothesisMonthlyImpact(hypothesis, months, bounded)
+    expect(impact.get('2028-02')).toBe(-150) // baseline 500 ainda ativo: delta = 650-500
+    expect(impact.get('2028-04')).toBe(-650) // série real já terminou: delta = 650-0
+  })
+
+  it('CATEGORY_TARGET respects startDate/endDate — no contribution outside its own window', () => {
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'CATEGORY_TARGET',
+          description: 'Alimentação',
+          type: 'EXPENSE',
+          amount: 650,
+          startDate: '2028-03-01',
+          endDate: '2028-05-31',
+          categoryId: 'cat-food',
+        },
+      ],
+    })
+    const impact = getHypothesisMonthlyImpact(hypothesis, months, [])
+    expect(impact.get('2028-02')).toBe(0)
+    expect(impact.get('2028-03')).toBe(-650)
+    expect(impact.get('2028-05')).toBe(-650)
+    expect(impact.get('2028-06')).toBe(0)
+  })
+
+  it('sums multiple items in the same month', () => {
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'ONE_TIME',
+          description: 'Entrada',
+          type: 'EXPENSE',
+          amount: 100,
+          startDate: '2028-01-10',
+        },
+        {
+          id: 'i2',
+          kind: 'ONE_TIME',
+          description: 'Reembolso',
+          type: 'INCOME',
+          amount: 40,
+          startDate: '2028-01-20',
+        },
+      ],
+    })
+    const impact = getHypothesisMonthlyImpact(hypothesis, months, [])
+    expect(impact.get('2028-01')).toBe(-60)
+  })
+})
+
+describe('getSimulationProjection (M-101)', () => {
+  it('starts from the real total balance (excluding CREDIT) and accumulates the baseline net flow', () => {
+    const account = makeAccount({ id: 'acc-1', type: 'RETAIL', balance: 1000 })
+    const income = makeTx({
+      id: 't1',
+      accountId: 'acc-1',
+      type: 'INCOME',
+      amount: 500,
+      isPaid: true,
+    })
+    const points = getSimulationProjection([income], [account], [], '2028-01-15')
+    expect(points).toHaveLength(12)
+    expect(points[0].baselineBalance).toBe(1500)
+    expect(points[0].adjustedBalance).toBe(1500)
+  })
+
+  it('only enabled hypotheses affect the adjusted line — baseline never moves', () => {
+    const account = makeAccount({ id: 'acc-1', type: 'RETAIL', balance: 1000 })
+    const enabled = makeHypothesis({
+      id: 'hy-on',
+      enabled: true,
+      items: [
+        {
+          id: 'i1',
+          kind: 'ONE_TIME',
+          description: 'Entrada',
+          type: 'EXPENSE',
+          amount: 200,
+          startDate: '2028-01-10',
+        },
+      ],
+    })
+    const disabled = makeHypothesis({
+      id: 'hy-off',
+      enabled: false,
+      items: [
+        {
+          id: 'i2',
+          kind: 'ONE_TIME',
+          description: 'Ignorada',
+          type: 'EXPENSE',
+          amount: 9999,
+          startDate: '2028-01-10',
+        },
+      ],
+    })
+    const points = getSimulationProjection([], [account], [enabled, disabled], '2028-01-15')
+    expect(points[0].baselineBalance).toBe(1000)
+    expect(points[0].adjustedBalance).toBe(800) // só a hipótese ligada entra
+  })
+
+  it('never shows one line per hypothesis — the adjusted line is a single sum of every enabled one', () => {
+    const account = makeAccount({ id: 'acc-1', type: 'RETAIL', balance: 0 })
+    const a = makeHypothesis({
+      id: 'hy-a',
+      items: [
+        {
+          id: 'i1',
+          kind: 'ONE_TIME',
+          description: 'A',
+          type: 'EXPENSE',
+          amount: 100,
+          startDate: '2028-01-10',
+        },
+      ],
+    })
+    const b = makeHypothesis({
+      id: 'hy-b',
+      items: [
+        {
+          id: 'i2',
+          kind: 'ONE_TIME',
+          description: 'B',
+          type: 'EXPENSE',
+          amount: 50,
+          startDate: '2028-01-10',
+        },
+      ],
+    })
+    const points = getSimulationProjection([], [account], [a, b], '2028-01-15')
+    expect(points[0].adjustedBalance).toBe(-150)
   })
 })
 
