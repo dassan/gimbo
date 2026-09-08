@@ -1,10 +1,14 @@
-﻿import { describe, it, expect, vi, beforeEach } from 'vitest'
+﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import Settings from '@/pages/Settings'
 import RecipeSettings from '@/pages/Settings/RecipeSettings'
-import { useDataStore, __resetPersistenceBaselineForTests } from '@/store/useDataStore'
+import {
+  useDataStore,
+  __resetPersistenceBaselineForTests,
+  __cancelPendingDebounceForTests,
+} from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { createDefaultWorkspace } from '@/lib/storage/schema'
 import { makeDataFile } from '@/test/fixtures/dataFile'
@@ -53,6 +57,16 @@ beforeEach(() => {
   vi.mocked(storage).exportBlob.mockResolvedValue(new Blob())
   vi.mocked(storage).importBlob.mockResolvedValue(undefined)
   vi.mocked(storage).loadDataFile.mockResolvedValue(null)
+})
+
+// Many tests here mutate the store without waiting out the real 300ms debounce
+// (debouncedApplyMutation, module-level timer) — whichever one runs last in the file leaves it
+// pending past the whole suite's lifetime, firing as an unhandled exception once the mocked
+// `storage` module is out of scope (seen in CI twice: B-37's test, then again on the very next
+// PR — a version-only bump — proving it wasn't that test specifically). `afterEach`, not
+// `beforeEach`, so it also covers the last test in the file.
+afterEach(() => {
+  __cancelPendingDebounceForTests()
 })
 
 // MB-16: Settings now reads its active section from the URL (/settings or
@@ -176,13 +190,6 @@ describe('Settings — restoring from the backup folder tops up stale recurring 
 
     const transactions = useDataStore.getState().data?.transactions ?? []
     expect(transactions.length).toBeGreaterThan(1)
-
-    // refreshRecurrenceHorizons() schedules a real 300ms debounced write
-    // (debouncedApplyMutation — a module-level timer, not mocked/faked in this file). Let it
-    // settle before the test ends, or it fires later during/after an unrelated test once this
-    // one's local `stale`/mock setup is out of scope — an unhandled exception in CI (not a real
-    // assertion failure, but it still fails the run).
-    await new Promise((resolve) => setTimeout(resolve, 500))
   })
 })
 
