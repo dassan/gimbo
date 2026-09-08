@@ -63,6 +63,15 @@ export default function DatePicker({
   const { t } = useTranslation()
   const isMobile = useIsMobile()
   const [open, setOpen] = useState(false)
+  // dassan/ui-adjustments: the popup is `position: absolute` inside whatever scroll container
+  // hosts this field — `overflow: hidden/auto` on that ancestor only clips it when the
+  // ancestor's height is a definite value, not when it's `auto` (a real CSS quirk: an
+  // auto-height box's clip region isn't reliably applied to out-of-flow descendants that extend
+  // past it). A field near the bottom of a short modal has no room below, so the calendar spills
+  // out past the modal's rounded edge onto the backdrop instead of being clipped. Flipping to
+  // open upward when there isn't enough room below sidesteps the problem instead of depending on
+  // a container that may or may not actually clip.
+  const [openUpward, setOpenUpward] = useState(false)
   const reference = value ? parseDateLocal(value) : new Date()
   const [viewYear, setViewYear] = useState(reference.getFullYear())
   const [viewMonth, setViewMonth] = useState(reference.getMonth())
@@ -86,6 +95,11 @@ export default function DatePicker({
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
+  // Generous estimate of the calendar's own rendered height (measured ~340-360px across month
+  // lengths) plus margin — only used to decide a direction, never for layout, so an approximate
+  // constant is fine.
+  const CALENDAR_HEIGHT_ESTIMATE = 380
+
   function handleFocus() {
     const ref = value ? parseDateLocal(value) : new Date()
     setViewYear(ref.getFullYear())
@@ -93,6 +107,11 @@ export default function DatePicker({
     setText(displayValue)
     setIsFocused(true)
     setOpen(true)
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (rect) {
+      const spaceBelow = window.innerHeight - rect.bottom
+      setOpenUpward(spaceBelow < CALENDAR_HEIGHT_ESTIMATE && rect.top > spaceBelow)
+    }
   }
 
   function handleOpenMobile() {
@@ -281,7 +300,10 @@ export default function DatePicker({
 
       {open && (
         <div
-          className="absolute left-0 top-full mt-2 z-30 w-72 rounded-2xl bg-surface-container-high border border-outline-variant p-4"
+          className={cn(
+            'absolute left-0 z-30 w-72 rounded-2xl bg-surface-container-high border border-outline-variant p-4',
+            openUpward ? 'bottom-full mb-2' : 'top-full mt-2'
+          )}
           style={{ boxShadow: '0px 8px 24px rgba(0,0,0,0.3)' }}
         >
           {calendarBody}
