@@ -40,6 +40,7 @@ import {
   getMonthlyNetFlow,
   getCategoryMonthlyTotals,
   getHypothesisMonthlyImpact,
+  getHypothesisMonthlyFlow,
   getSimulationProjection,
 } from '@/lib/utils'
 import type { Account, Budget, Category, Hypothesis, Transaction } from '@/types'
@@ -1649,6 +1650,93 @@ describe('getHypothesisMonthlyImpact (M-101)', () => {
   })
 })
 
+describe('getHypothesisMonthlyFlow (M-101)', () => {
+  const months = getSimulationMonths('2028-01-15')
+
+  it('separates income and expense instead of only the net — the base for the bars', () => {
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'ONE_TIME',
+          description: 'Entrada',
+          type: 'EXPENSE',
+          amount: 100,
+          startDate: '2028-01-10',
+        },
+        {
+          id: 'i2',
+          kind: 'ONE_TIME',
+          description: 'Reembolso',
+          type: 'INCOME',
+          amount: 40,
+          startDate: '2028-01-20',
+        },
+      ],
+    })
+    const flow = getHypothesisMonthlyFlow(hypothesis, months, [])
+    expect(flow.get('2028-01')).toEqual({ income: 40, expense: 100 })
+  })
+
+  it("getHypothesisMonthlyImpact's net equals income minus expense of this function", () => {
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'CATEGORY_TARGET',
+          description: 'Alimentação',
+          type: 'EXPENSE',
+          amount: 650,
+          startDate: '2028-01-01',
+          categoryId: 'cat-food',
+        },
+      ],
+    })
+    const recurring = makeTx({
+      id: 'rec-parent',
+      categoryId: 'cat-food',
+      type: 'EXPENSE',
+      amount: 500,
+      date: '2028-01-10',
+      isPaid: true,
+      recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+    })
+    const flow = getHypothesisMonthlyFlow(hypothesis, months, [recurring])
+    const impact = getHypothesisMonthlyImpact(hypothesis, months, [recurring])
+    for (const month of months) {
+      const { income, expense } = flow.get(month)!
+      expect(impact.get(month)).toBe(income - expense)
+    }
+  })
+
+  it('a CATEGORY_TARGET below the baseline produces a negative expense delta (less spending)', () => {
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'CATEGORY_TARGET',
+          description: 'Alimentação',
+          type: 'EXPENSE',
+          amount: 300,
+          startDate: '2028-01-01',
+          categoryId: 'cat-food',
+        },
+      ],
+    })
+    const recurring = makeTx({
+      id: 'rec-parent',
+      categoryId: 'cat-food',
+      type: 'EXPENSE',
+      amount: 500,
+      date: '2028-01-10',
+      isPaid: true,
+      recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+    })
+    const flow = getHypothesisMonthlyFlow(hypothesis, months, [recurring])
+    expect(flow.get('2028-01')!.expense).toBe(-200) // alvo 300 - baseline 500
+  })
+})
+
 describe('getSimulationProjection (M-101)', () => {
   it('starts from the real total balance (excluding CREDIT) and accumulates the baseline net flow', () => {
     const account = makeAccount({ id: 'acc-1', type: 'RETAIL', balance: 1000 })
@@ -1730,6 +1818,134 @@ describe('getSimulationProjection (M-101)', () => {
     })
     const points = getSimulationProjection([], [account], [a, b], '2028-01-15')
     expect(points[0].adjustedBalance).toBe(-150)
+  })
+
+  it('bars: baseline income/expense are the real monthly flow, untouched by hypotheses', () => {
+    const account = makeAccount({ id: 'acc-1', type: 'RETAIL', balance: 0 })
+    const income = makeTx({
+      id: 't1',
+      type: 'INCOME',
+      amount: 1000,
+      date: '2028-01-05',
+      isPaid: true,
+    })
+    const expense = makeTx({
+      id: 't2',
+      type: 'EXPENSE',
+      amount: 300,
+      date: '2028-01-20',
+      isPaid: true,
+    })
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'ONE_TIME',
+          description: 'Extra',
+          type: 'EXPENSE',
+          amount: 9999,
+          startDate: '2028-01-10',
+        },
+      ],
+    })
+    const points = getSimulationProjection([income, expense], [account], [hypothesis], '2028-01-15')
+    expect(points[0].baselineIncome).toBe(1000)
+    expect(points[0].baselineExpense).toBe(300)
+  })
+
+  it('bars: adjustedIncome/adjustedExpense fold in every enabled hypothesis for that month', () => {
+    const account = makeAccount({ id: 'acc-1', type: 'RETAIL', balance: 0 })
+    const income = makeTx({
+      id: 't1',
+      type: 'INCOME',
+      amount: 1000,
+      date: '2028-01-05',
+      isPaid: true,
+    })
+    const expense = makeTx({
+      id: 't2',
+      type: 'EXPENSE',
+      amount: 300,
+      date: '2028-01-20',
+      isPaid: true,
+    })
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'ONE_TIME',
+          description: 'Bônus',
+          type: 'INCOME',
+          amount: 500,
+          startDate: '2028-01-10',
+        },
+        {
+          id: 'i2',
+          kind: 'ONE_TIME',
+          description: 'Extra',
+          type: 'EXPENSE',
+          amount: 200,
+          startDate: '2028-01-10',
+        },
+      ],
+    })
+    const points = getSimulationProjection([income, expense], [account], [hypothesis], '2028-01-15')
+    expect(points[0].adjustedIncome).toBe(1500)
+    expect(points[0].adjustedExpense).toBe(500)
+  })
+
+  it('bars: a disabled hypothesis never changes the adjusted bars', () => {
+    const account = makeAccount({ id: 'acc-1', type: 'RETAIL', balance: 0 })
+    const expense = makeTx({
+      id: 't1',
+      type: 'EXPENSE',
+      amount: 300,
+      date: '2028-01-20',
+      isPaid: true,
+    })
+    const disabled = makeHypothesis({
+      enabled: false,
+      items: [
+        {
+          id: 'i1',
+          kind: 'ONE_TIME',
+          description: 'Ignorada',
+          type: 'EXPENSE',
+          amount: 9999,
+          startDate: '2028-01-10',
+        },
+      ],
+    })
+    const points = getSimulationProjection([expense], [account], [disabled], '2028-01-15')
+    expect(points[0].adjustedExpense).toBe(300)
+  })
+
+  it('bars: adjustedExpense never goes negative even when a CATEGORY_TARGET overshoots the baseline', () => {
+    const account = makeAccount({ id: 'acc-1', type: 'RETAIL', balance: 0 })
+    const recurring = makeTx({
+      id: 'rec-parent',
+      categoryId: 'cat-food',
+      type: 'EXPENSE',
+      amount: 100,
+      date: '2028-01-10',
+      isPaid: true,
+      recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+    })
+    const hypothesis = makeHypothesis({
+      items: [
+        {
+          id: 'i1',
+          kind: 'CATEGORY_TARGET',
+          description: 'Alimentação',
+          type: 'EXPENSE',
+          amount: 0,
+          startDate: '2028-01-01',
+          categoryId: 'cat-food',
+        },
+      ],
+    })
+    const points = getSimulationProjection([recurring], [account], [hypothesis], '2028-01-15')
+    expect(points[0].adjustedExpense).toBeGreaterThanOrEqual(0)
   })
 })
 

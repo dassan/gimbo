@@ -685,7 +685,9 @@
     "emptyTitle": "No hypotheses yet",
     "emptyBody": "Create a hypothesis to simulate the impact of a decision — grad school, a new car, a raise — on your budget over the next 12 months, without posting anything to your real accounts.",
     "enabled": "Active in projection",
-    "chartTitle": "Balance projection — next 12 months"
+    "chartTitle": "Balance, income and expense projection — next 12 months",
+    "income": "Income",
+    "expenses": "Expenses"
   },
   "welcome": {
     "title": "Welcome to Gimbo",

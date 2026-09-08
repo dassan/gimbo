@@ -685,7 +685,9 @@
     "emptyTitle": "Nenhuma hipótese ainda",
     "emptyBody": "Crie uma hipótese para simular o impacto de uma decisão — uma pós-graduação, uma troca de carro, um reajuste — no seu orçamento dos próximos 12 meses, sem lançar nada nas suas contas reais.",
     "enabled": "Ativa na projeção",
-    "chartTitle": "Projeção de saldo — próximos 12 meses"
+    "chartTitle": "Projeção de saldo, entradas e saídas — próximos 12 meses",
+    "income": "Entradas",
+    "expenses": "Saídas"
   },
   "welcome": {
     "title": "Bem-vindo ao Gimbo",

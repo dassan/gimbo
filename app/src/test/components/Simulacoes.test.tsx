@@ -11,17 +11,21 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'pt-BR' } }),
 }))
 
-// Mirrors the recharts mock in CashFlowView.test.tsx — captures LineChart's data/children so
-// tests can assert on which series were rendered without a real SVG chart in jsdom.
-const capturedLines = vi.hoisted(() => ({ names: [] as string[] }))
+// Mirrors the recharts mock in CashFlowView.test.tsx — captures which series (bars + lines) got
+// rendered so tests can assert on it without a real SVG chart in jsdom.
+const capturedSeries = vi.hoisted(() => ({ names: [] as string[] }))
 
 vi.mock('recharts', () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  LineChart: ({ children }: { children: React.ReactNode }) => (
+  ComposedChart: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="simulacoes-chart">{children}</div>
   ),
+  Bar: ({ name }: { name: string }) => {
+    if (!capturedSeries.names.includes(name)) capturedSeries.names.push(name)
+    return null
+  },
   Line: ({ name }: { name: string }) => {
-    if (!capturedLines.names.includes(name)) capturedLines.names.push(name)
+    if (!capturedSeries.names.includes(name)) capturedSeries.names.push(name)
     return null
   },
   XAxis: () => null,
@@ -55,8 +59,12 @@ function makeHypothesis(overrides: Partial<Hypothesis> = {}): Hypothesis {
 
 beforeEach(() => {
   useDataStore.setState({ data: null })
-  capturedLines.names = []
+  capturedSeries.names = []
 })
+
+// Bars are always rendered (they already fold in every enabled hypothesis, per
+// getSimulationProjection) — only the adjusted-balance line is conditional.
+const BARS = ['adjustedIncome', 'adjustedExpense']
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -67,7 +75,7 @@ describe('Simulacoes page', () => {
   it('does not crash when data is null, and shows the empty state', () => {
     render(<Simulacoes />)
     expect(screen.getByText('simulacoes.emptyTitle')).toBeInTheDocument()
-    expect(capturedLines.names).toEqual(['baselineBalance'])
+    expect(capturedSeries.names).toEqual([...BARS, 'baselineBalance'])
   })
 
   it('renders the header and the empty state when there are no hypotheses', () => {
@@ -80,13 +88,13 @@ describe('Simulacoes page', () => {
   it('only renders the baseline line when there is no enabled hypothesis', () => {
     useDataStore.setState({ data: makeDataFile() })
     render(<Simulacoes />)
-    expect(capturedLines.names).toEqual(['baselineBalance'])
+    expect(capturedSeries.names).toEqual([...BARS, 'baselineBalance'])
   })
 
   it('renders both lines once an enabled hypothesis exists', () => {
     useDataStore.setState({ data: makeDataFile({ hypotheses: [makeHypothesis()] }) })
     render(<Simulacoes />)
-    expect(capturedLines.names).toEqual(['baselineBalance', 'adjustedBalance'])
+    expect(capturedSeries.names).toEqual([...BARS, 'baselineBalance', 'adjustedBalance'])
   })
 
   it('renders only the baseline line when the only hypothesis is disabled', () => {
@@ -94,7 +102,7 @@ describe('Simulacoes page', () => {
       data: makeDataFile({ hypotheses: [makeHypothesis({ enabled: false })] }),
     })
     render(<Simulacoes />)
-    expect(capturedLines.names).toEqual(['baselineBalance'])
+    expect(capturedSeries.names).toEqual([...BARS, 'baselineBalance'])
   })
 
   it('renders a card per hypothesis with its item count', () => {

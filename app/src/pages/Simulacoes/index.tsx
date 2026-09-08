@@ -5,10 +5,11 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FlaskConical, Plus } from 'lucide-react'
 import {
+  Bar,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -33,11 +34,11 @@ export default function Simulacoes() {
     [data]
   )
   const hasActive = hypotheses.some((h) => h.enabled)
-  const baselineLabel = t('simulacoes.baseline')
-  const adjustedLabel = t('simulacoes.adjusted')
   const seriesLabel: Record<string, string> = {
-    baselineBalance: baselineLabel,
-    adjustedBalance: adjustedLabel,
+    baselineBalance: t('simulacoes.baseline'),
+    adjustedBalance: t('simulacoes.adjusted'),
+    adjustedIncome: t('simulacoes.income'),
+    adjustedExpense: t('simulacoes.expenses'),
   }
 
   function openNew() {
@@ -69,12 +70,13 @@ export default function Simulacoes() {
         </button>
       </div>
 
-      {/* ── Gráfico: baseline vs. baseline + hipóteses ativas (nunca uma linha por hipótese) ── */}
+      {/* ── Gráfico: barras de entrada/saída (já com as hipóteses ativas somadas) + baseline vs.
+          baseline + hipóteses ativas nas linhas de saldo (nunca uma série por hipótese) ── */}
       <div className="rounded-2xl bg-surface-container p-6 space-y-4 shadow-card">
         <p className="text-xs font-medium text-on-surface/50">{t('simulacoes.chartTitle')}</p>
         <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={points} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+            <ComposedChart data={points} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(25,28,29,0.04)" vertical={false} />
               <XAxis
                 dataKey="month"
@@ -106,6 +108,22 @@ export default function Simulacoes() {
                 wrapperStyle={{ fontSize: 12, paddingTop: 16 }}
                 formatter={(value) => seriesLabel[String(value)] ?? String(value)}
               />
+              {/* Entradas/saídas já recalculadas com toda hipótese ativa somada (getSimulationProjection) —
+                  reage a ligar/desligar uma hipótese do mesmo jeito que as linhas de saldo. */}
+              <Bar
+                dataKey="adjustedIncome"
+                name="adjustedIncome"
+                fill="#2D6A4F"
+                radius={[4, 4, 0, 0]}
+                maxBarSize={32}
+              />
+              <Bar
+                dataKey="adjustedExpense"
+                name="adjustedExpense"
+                fill="#C0392B"
+                radius={[4, 4, 0, 0]}
+                maxBarSize={32}
+              />
               <Line
                 type="monotone"
                 dataKey="baselineBalance"
@@ -122,14 +140,14 @@ export default function Simulacoes() {
                   type="monotone"
                   dataKey="adjustedBalance"
                   name="adjustedBalance"
-                  stroke="#C0392B"
+                  stroke="#1F3A5F"
                   strokeWidth={2}
                   strokeDasharray="5 5"
                   dot={false}
                   activeDot={{ r: 4 }}
                 />
               )}
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
       </div>

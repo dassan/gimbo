@@ -348,24 +348,34 @@ export function getCategoryMonthlyTotals(
   return totals
 }
 
+export interface HypothesisMonthlyFlow {
+  income: number
+  expense: number
+}
+
 /**
- * Impacto mensal de uma hipótese na janela de simulação — soma dos itens, cada `kind` com sua
- * própria regra de geração. `CATEGORY_TARGET` resolve por delta contra `getCategoryMonthlyTotals`
- * (ver comentário ali) em vez de substituir o mês; os demais são puramente aditivos.
+ * Como `getHypothesisMonthlyImpact`, mas separado em entrada/saída em vez de só o líquido — a
+ * base das barras de Entradas x Saídas da tela de Simulações (o líquido por si só não diz se um
+ * mês ficou mais pesado em despesa ou mais forte em receita). Mesma regra de geração por `kind`;
+ * `CATEGORY_TARGET` resolve por delta contra `getCategoryMonthlyTotals` (ver comentário ali) em
+ * vez de substituir o mês — o delta pode ser negativo (baseline já acima do alvo), reduzindo o
+ * lado correspondente em vez de somar.
  */
-export function getHypothesisMonthlyImpact(
+export function getHypothesisMonthlyFlow(
   hypothesis: Hypothesis,
   months: string[],
   transactions: Transaction[]
-): Map<string, number> {
-  const impact = new Map(months.map((m) => [m, 0]))
-  if (months.length === 0) return impact
+): Map<string, HypothesisMonthlyFlow> {
+  const flow = new Map(months.map((m) => [m, { income: 0, expense: 0 }]))
+  if (months.length === 0) return flow
   const monthSet = new Set(months)
   const lastMonth = months[months.length - 1]
 
-  const add = (month: string, amount: number) => {
-    const current = impact.get(month)
-    if (current !== undefined) impact.set(month, current + amount)
+  const add = (month: string, type: 'INCOME' | 'EXPENSE', amount: number) => {
+    const bucket = flow.get(month)
+    if (!bucket) return
+    if (type === 'EXPENSE') bucket.expense += amount
+    else bucket.income += amount
   }
 
   // Lazy + cacheado por categoria: só computa quando a hipótese de fato tem um item
@@ -383,14 +393,12 @@ export function getHypothesisMonthlyImpact(
   const MAX_ITERATIONS = 60 // generoso pra 12 meses mesmo em frequência semanal (~52 ocorrências)
 
   for (const item of hypothesis.items) {
-    const sign = item.type === 'EXPENSE' ? -1 : 1
-
     if (item.kind === 'ONE_TIME') {
-      add(item.startDate.slice(0, 7), sign * item.amount)
+      add(item.startDate.slice(0, 7), item.type, item.amount)
     } else if (item.kind === 'INSTALLMENT') {
       const count = item.installmentCount ?? 0
       for (let i = 0; i < count; i++) {
-        add(advanceByFrequency(item.startDate, 'monthly', i).slice(0, 7), sign * item.amount)
+        add(advanceByFrequency(item.startDate, 'monthly', i).slice(0, 7), item.type, item.amount)
       }
     } else if (item.kind === 'RECURRING') {
       const frequency = item.frequency ?? 'monthly'
@@ -398,7 +406,7 @@ export function getHypothesisMonthlyImpact(
         const date = advanceByFrequency(item.startDate, frequency, i)
         if (date.slice(0, 7) > lastMonth) break
         if (item.endDate && date > item.endDate) break
-        add(date.slice(0, 7), sign * item.amount)
+        add(date.slice(0, 7), item.type, item.amount)
       }
     } else if (item.kind === 'CATEGORY_TARGET' && item.categoryId) {
       const startMonth = item.startDate.slice(0, 7)
@@ -406,11 +414,27 @@ export function getHypothesisMonthlyImpact(
       for (const month of months) {
         if (!monthSet.has(month) || month < startMonth) continue
         if (endMonth && month > endMonth) continue
-        add(month, sign * (item.amount - categoryTotal(item.categoryId, month)))
+        add(month, item.type, item.amount - categoryTotal(item.categoryId, month))
       }
     }
   }
 
+  return flow
+}
+
+/**
+ * Impacto mensal líquido de uma hipótese — deriva de `getHypothesisMonthlyFlow` (income −
+ * expense); mantido como função própria porque comparar só o líquido (sem separar por lado) é o
+ * suficiente para quem só quer o efeito no saldo acumulado.
+ */
+export function getHypothesisMonthlyImpact(
+  hypothesis: Hypothesis,
+  months: string[],
+  transactions: Transaction[]
+): Map<string, number> {
+  const flow = getHypothesisMonthlyFlow(hypothesis, months, transactions)
+  const impact = new Map<string, number>()
+  for (const [month, { income, expense }] of flow) impact.set(month, income - expense)
   return impact
 }
 
@@ -418,12 +442,19 @@ export interface SimulationMonthPoint {
   month: string // "YYYY-MM"
   baselineBalance: number
   adjustedBalance: number
+  baselineIncome: number
+  baselineExpense: number
+  adjustedIncome: number
+  adjustedExpense: number
 }
 
 /**
- * Saldo acumulado mês a mês na janela de simulação — baseline (real + projetado) vs. baseline +
- * Σ impacto de toda hipótese `enabled`. Nunca uma linha por hipótese (decisão de produto — o
- * gráfico compara só duas linhas, não N).
+ * Saldo acumulado e barras de entrada/saída mês a mês na janela de simulação — baseline (real +
+ * projetado) vs. baseline + Σ impacto de toda hipótese `enabled`. Nunca uma linha/barra por
+ * hipótese (decisão de produto — o gráfico compara só duas séries, não N). `adjustedIncome`/
+ * `adjustedExpense` nunca ficam negativos (piso em 0, só para exibição da barra); `adjustedBalance`
+ * usa o delta líquido sem esse piso, então continua batendo com a soma exata dos impactos mesmo
+ * no caso extremo (raro) de um `CATEGORY_TARGET` reduzir um lado a menos que zero.
  */
 export function getSimulationProjection(
   transactions: Transaction[],
@@ -441,18 +472,34 @@ export function getSimulationProjection(
   )
   const startingBalance = sumBalances(computeAccountBalances(transactions, seeds))
 
-  const impacts = hypotheses
+  const flows = hypotheses
     .filter((h) => h.enabled)
-    .map((h) => getHypothesisMonthlyImpact(h, months, transactions))
+    .map((h) => getHypothesisMonthlyFlow(h, months, transactions))
 
   let baselineBalance = startingBalance
   let adjustedBalance = startingBalance
   return months.map((month, i) => {
     baselineBalance += flow[i].net
-    let adjustedNet = flow[i].net
-    for (const impact of impacts) adjustedNet += impact.get(month) ?? 0
-    adjustedBalance += adjustedNet
-    return { month, baselineBalance, adjustedBalance }
+
+    let incomeDelta = 0
+    let expenseDelta = 0
+    for (const f of flows) {
+      const bucket = f.get(month)
+      if (!bucket) continue
+      incomeDelta += bucket.income
+      expenseDelta += bucket.expense
+    }
+    adjustedBalance += flow[i].net + incomeDelta - expenseDelta
+
+    return {
+      month,
+      baselineBalance,
+      adjustedBalance,
+      baselineIncome: flow[i].income,
+      baselineExpense: flow[i].expense,
+      adjustedIncome: Math.max(0, flow[i].income + incomeDelta),
+      adjustedExpense: Math.max(0, flow[i].expense + expenseDelta),
+    }
   })
 }
 
