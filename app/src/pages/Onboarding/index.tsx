@@ -21,6 +21,8 @@ export default function Onboarding() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const loadData = useDataStore((s) => s.loadData)
+  const refreshRecurrenceHorizons = useDataStore((s) => s.refreshRecurrenceHorizons)
+  const ensureQuadrantesBatch = useDataStore((s) => s.ensureQuadrantesBatch)
   const setLocale = useWorkspaceStore((s) => s.setLocale)
 
   const [tab, setTab] = useState<Tab>('new')
@@ -51,7 +53,14 @@ export default function Onboarding() {
     try {
       await storage.importBlob(file)
       const imported = await storage.loadDataFile()
-      if (imported) loadData(imported)
+      if (imported) {
+        loadData(imported)
+        // Import never goes through App.tsx's boot effect, which is the only other place these
+        // run — without this, a series/lote atrasado só seria corrigido no próximo reload
+        // completo (mesma lacuna que o CS-34 já achou pra table_hashes, agora pro B-22/BX-07).
+        refreshRecurrenceHorizons()
+        ensureQuadrantesBatch()
+      }
       void navigate('/dashboard')
     } catch {
       setFileError(t('onboarding.importFileError'))
@@ -111,7 +120,11 @@ export default function Onboarding() {
       await createFolderProvider(deviceId).upload(await storage.exportBlob())
 
       const imported = await storage.loadDataFile()
-      if (imported) loadData(imported)
+      if (imported) {
+        loadData(imported)
+        refreshRecurrenceHorizons()
+        ensureQuadrantesBatch()
+      }
       void navigate('/dashboard')
     } catch {
       setFileError(t('onboarding.folderImportError'))

@@ -8,6 +8,7 @@ import type {
   Valuation,
   SavedPeriod,
   Budget,
+  Hypothesis,
   AuditEntry,
   AuditAction,
   AuditEntity,
@@ -134,6 +135,7 @@ function buildSummary(
     savedPeriod: 'Período salvo',
     budget: 'Caixinha',
     device: 'Dispositivo',
+    hypothesis: 'Hipótese',
   }
   const actionLabel: Record<AuditAction, string> = {
     CREATE: 'criada',
@@ -240,6 +242,12 @@ interface DataStore {
   // BX-07: gera o lote mensal da receita Quadrantes se ainda não existir (idempotente) —
   // chamada em todo boot do app e no mount de /budgets. No-op se a receita estiver desligada.
   ensureQuadrantesBatch: () => void
+
+  // M-101/Simulações: nunca uma Transaction/Account real — ver types/index.ts.
+  addHypothesis: (hypothesis: Hypothesis) => void
+  updateHypothesis: (hypothesis: Hypothesis) => void
+  deleteHypothesis: (id: string) => void
+  toggleHypothesis: (id: string) => void
 
   updateUser: (patch: Partial<DataFile['user']>) => void
   // M-97: upserts this device's own DeviceInfo entry (id = this device's own deviceId). Async
@@ -1008,6 +1016,98 @@ export const useDataStore = create<DataStore>((set, get) => ({
         }),
       }
     }),
+
+  // ── Simulações (M-101) — nunca uma Transaction/Account real ─────────────────
+
+  addHypothesis: (hypothesis) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const ts = now()
+          d.hypotheses.push({ ...hypothesis, createdAt: ts, updatedAt: ts })
+          addAudit(
+            d,
+            makeEntry(
+              'CREATE',
+              'hypothesis',
+              hypothesis.id,
+              buildSummary('CREATE', 'hypothesis', hypothesis.name)
+            )
+          )
+        },
+        'hypothesis_created'
+      )
+    ),
+
+  updateHypothesis: (hypothesis) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const i = d.hypotheses.findIndex((h) => h.id === hypothesis.id)
+          if (i !== -1) d.hypotheses[i] = { ...hypothesis, updatedAt: now() }
+          addAudit(
+            d,
+            makeEntry(
+              'UPDATE',
+              'hypothesis',
+              hypothesis.id,
+              buildSummary('UPDATE', 'hypothesis', hypothesis.name)
+            )
+          )
+        },
+        'hypothesis_updated'
+      )
+    ),
+
+  deleteHypothesis: (id) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const name = d.hypotheses.find((h) => h.id === id)?.name ?? id
+          d.hypotheses = d.hypotheses.filter((h) => h.id !== id)
+          d.deletedIds = [...new Set([...d.deletedIds, id])]
+          addAudit(
+            d,
+            makeEntry('DELETE', 'hypothesis', id, buildSummary('DELETE', 'hypothesis', name))
+          )
+        },
+        'hypothesis_deleted'
+      )
+    ),
+
+  // Liga/desliga uma hipótese na projeção de Simulações — switch reversível de verdade (não um
+  // arquivamento unidirecional como archiveBudget), já que comparar cenários ligando/desligando é
+  // o uso central da tela.
+  toggleHypothesis: (id) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const hypothesis = d.hypotheses.find((h) => h.id === id)
+          if (!hypothesis) return
+          hypothesis.enabled = !hypothesis.enabled
+          hypothesis.updatedAt = now()
+          addAudit(
+            d,
+            makeEntry(
+              'UPDATE',
+              'hypothesis',
+              id,
+              buildSummary(
+                'UPDATE',
+                'hypothesis',
+                hypothesis.name,
+                hypothesis.enabled ? 'ativada' : 'desativada'
+              )
+            )
+          )
+        },
+        'hypothesis_toggled'
+      )
+    ),
 
   // ── User / Settings ───────────────────────────────────────────────────────
 

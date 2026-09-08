@@ -23,6 +23,7 @@ export type AuditEntity =
   | 'savedPeriod'
   | 'budget'
   | 'device'
+  | 'hypothesis'
 
 // ─── Entities ─────────────────────────────────────────────────────────────────
 
@@ -192,6 +193,37 @@ export interface Budget {
   targetSource?: 'auto' | 'manual'
 }
 
+// M-101 (Simulações): a hypothesis is never a real Transaction/Account — see plan/BACKLOG.md
+// M-101 and CLAUDE.md decision log for why. ONE_TIME/INSTALLMENT/RECURRING are generated
+// occurrences over the simulation horizon; CATEGORY_TARGET is resolved as a delta against
+// whatever is already projected for that category each month, not a fixed replicated value
+// (the already-projected total shifts when a real series in the same category ends within the
+// horizon — see getHypothesisMonthlyImpact in lib/utils.ts).
+export type HypothesisItemKind = 'ONE_TIME' | 'INSTALLMENT' | 'RECURRING' | 'CATEGORY_TARGET'
+
+export interface HypothesisItem {
+  id: string // UUID
+  kind: HypothesisItemKind
+  description: string
+  type: 'INCOME' | 'EXPENSE'
+  amount: number // ONE_TIME/RECURRING: value per occurrence; INSTALLMENT: value per installment;
+  // CATEGORY_TARGET: monthly target for the category
+  startDate: string // "YYYY-MM-DD"
+  installmentCount?: number // required for kind === 'INSTALLMENT'
+  frequency?: RecurrenceFrequency // required for kind === 'RECURRING'
+  endDate?: string // optional for kind === 'RECURRING' — absent = through the simulation horizon
+  categoryId?: string // required for kind === 'CATEGORY_TARGET'
+}
+
+export interface Hypothesis {
+  id: string // UUID
+  name: string
+  enabled: boolean
+  items: HypothesisItem[]
+  createdAt: string // ISO 8601
+  updatedAt?: string // ISO 8601 — last-write-wins timestamp for the cloud-sync merge engine (CS-04)
+}
+
 // ─── Root data.json shape ─────────────────────────────────────────────────────
 
 export interface DataFile {
@@ -208,6 +240,7 @@ export interface DataFile {
   savedPeriods: SavedPeriod[] // M-45: named custom date ranges saved from Reports
   budgets: Budget[] // F-30: caixinhas
   devices: DeviceInfo[] // M-97: devices that have named themselves
+  hypotheses: Hypothesis[] // M-101: Simulações — never a real Transaction/Account
 }
 
 // ─── workspace.json shape ─────────────────────────────────────────────────────

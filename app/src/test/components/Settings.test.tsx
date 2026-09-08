@@ -9,7 +9,7 @@ import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { createDefaultWorkspace } from '@/lib/storage/schema'
 import { makeDataFile } from '@/test/fixtures/dataFile'
 import { storage } from '@/services/storage'
-import { loadBackupDirHandle, writeBackupToDir } from '@/lib/backupDir'
+import { loadBackupDirHandle, writeBackupToDir, readBackupFromDir } from '@/lib/backupDir'
 import type { Account, Transaction } from '@/types'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -132,6 +132,57 @@ describe('Settings — BK-08: manual sync now', () => {
     // Success toast confirms the write completed; the backup was written to the folder.
     expect(await screen.findByText('settings.backupSyncDone')).toBeInTheDocument()
     expect(vi.mocked(writeBackupToDir)).toHaveBeenCalledWith(fakeHandle, expect.any(Blob))
+  })
+})
+
+// ─── Settings — import runs B-22/BX-07 maintenance right away (same gap CS-34 found for
+// table_hashes: App.tsx's boot effect is the only other place these run) ─────────────────────
+
+describe('Settings — restoring from the backup folder tops up stale recurring series', () => {
+  it('runs refreshRecurrenceHorizons right after import, not only on the next reload', async () => {
+    const fakeHandle = { name: 'MyBackups' } as unknown as FileSystemDirectoryHandle
+    vi.mocked(loadBackupDirHandle).mockResolvedValueOnce(fakeHandle)
+    vi.mocked(readBackupFromDir).mockResolvedValueOnce(new File(['bytes'], 'gimbo.db'))
+
+    // A single occurrence, months in the past relative to "now" — exactly the shape
+    // refreshRecurrenceHorizons tops up (B-22).
+    const stale = makeDataFile({
+      transactions: [
+        {
+          id: 'tx-1',
+          accountId: 'acc-1',
+          categoryId: 'cat-1',
+          amount: 100,
+          type: 'EXPENSE',
+          date: '2020-01-10',
+          description: 'Aluguel',
+          isPaid: true,
+          tags: [],
+          recurrence: { frequency: 'monthly', parentId: 'tx-1' },
+        },
+      ],
+    })
+    vi.mocked(storage).loadDataFile.mockResolvedValueOnce(stale)
+
+    const user = userEvent.setup()
+    renderSettings()
+    await user.click((await screen.findAllByText('settings.backupSync'))[0])
+
+    // First click asks for confirmation; the button's label flips and the second click restores.
+    await user.click(await screen.findByText('settings.backupRestoreFolder'))
+    await user.click(await screen.findByText('settings.backupRestoreConfirm'))
+
+    await screen.findByText('settings.importSuccess')
+
+    const transactions = useDataStore.getState().data?.transactions ?? []
+    expect(transactions.length).toBeGreaterThan(1)
+
+    // refreshRecurrenceHorizons() schedules a real 300ms debounced write
+    // (debouncedApplyMutation — a module-level timer, not mocked/faked in this file). Let it
+    // settle before the test ends, or it fires later during/after an unrelated test once this
+    // one's local `stale`/mock setup is out of scope — an unhandled exception in CI (not a real
+    // assertion failure, but it still fails the run).
+    await new Promise((resolve) => setTimeout(resolve, 500))
   })
 })
 

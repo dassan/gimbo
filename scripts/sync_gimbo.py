@@ -1052,7 +1052,20 @@ CREATE TABLE IF NOT EXISTS table_hashes (
 CREATE TABLE IF NOT EXISTS devices (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, updated_at TEXT NOT NULL
 );
-PRAGMA user_version = 17;
+-- M-101/app schema v18: Simulações. Nunca populadas pelo Organizze (sem conceito equivalente
+-- na origem, mesmo tratamento de budgets acima) — tabelas criadas vazias.
+CREATE TABLE IF NOT EXISTS hypotheses (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS hypothesis_items (
+  id TEXT PRIMARY KEY, hypothesis_id TEXT NOT NULL REFERENCES hypotheses(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL, description TEXT NOT NULL, type TEXT NOT NULL, amount REAL NOT NULL,
+  start_date TEXT NOT NULL, installment_count INTEGER, frequency TEXT, end_date TEXT,
+  category_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_hypothesis_items_hypothesis ON hypothesis_items(hypothesis_id);
+PRAGMA user_version = 18;
 """
 
 

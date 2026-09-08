@@ -5,7 +5,7 @@ import { detectBrowserLocale, defaultCurrencyForLocale } from '@/lib/storage/wor
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 20
+export const CURRENT_SCHEMA_VERSION = 21
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -181,10 +181,34 @@ const AuditEntrySchema = z.object({
     'savedPeriod',
     'budget',
     'device',
+    'hypothesis',
   ]),
   entityId: z.string(),
   summary: z.string(),
   deviceId: z.string().optional(), // M-96: absent on entries from before this field existed
+})
+
+// M-101 (Simulações): never a real Transaction/Account — see types/index.ts for why.
+const HypothesisItemSchema = z.object({
+  id: z.string(),
+  kind: z.enum(['ONE_TIME', 'INSTALLMENT', 'RECURRING', 'CATEGORY_TARGET']),
+  description: z.string(),
+  type: z.enum(['INCOME', 'EXPENSE']),
+  amount: z.number(),
+  startDate: z.string(),
+  installmentCount: z.number().int().min(1).optional(), // required for kind === 'INSTALLMENT'
+  frequency: z.enum(['weekly', 'biweekly', 'monthly']).optional(), // required for kind === 'RECURRING'
+  endDate: z.string().optional(),
+  categoryId: z.string().optional(), // required for kind === 'CATEGORY_TARGET'
+})
+
+const HypothesisSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  enabled: z.boolean(),
+  items: z.array(HypothesisItemSchema),
+  createdAt: z.string(),
+  updatedAt: z.string().optional(), // CS-04: last-write-wins timestamp for the cloud-sync merge engine
 })
 
 // M-96/M-97: see the comment on DeviceInfo (types/index.ts) for why this is a top-level synced
@@ -209,6 +233,7 @@ export const DataFileSchema = z.object({
   savedPeriods: z.array(SavedPeriodSchema).default([]), // M-45; absent in older files defaults to []
   budgets: z.array(BudgetSchema).default([]), // F-30/BX-03; absent in older files defaults to []
   devices: z.array(DeviceInfoSchema).default([]), // M-97; absent in older files defaults to []
+  hypotheses: z.array(HypothesisSchema).default([]), // M-101; absent in older files defaults to []
 })
 
 /**
@@ -236,6 +261,7 @@ export const PARTITION_SCHEMAS = {
   audit_log: z.array(AuditEntrySchema),
   deleted_ids: z.array(z.string()),
   devices: z.array(DeviceInfoSchema),
+  hypotheses: z.array(HypothesisSchema),
 } as const
 
 /** Os singletons, que nunca são particionados — viajam no manifesto (CS-40). */
@@ -418,6 +444,12 @@ export function migrateDataFile(data: DataFile): DataFile {
     migrated = { ...migrated, schemaVersion: 20 }
   }
 
+  // v20 → v21: adds the Hypothesis entity (M-101/Simulações) — a `hypotheses` array (DataFile).
+  // Zod-defaulted to [] via DataFileSchema.parse, so existing records only need the version bump.
+  if (migrated.schemaVersion === 20) {
+    migrated = { ...migrated, schemaVersion: 21 }
+  }
+
   return migrated
 }
 
@@ -445,6 +477,7 @@ export function createEmptyDataFile(name: string): DataFile {
     savedPeriods: [],
     budgets: [],
     devices: [],
+    hypotheses: [],
   }
 }
 

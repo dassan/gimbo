@@ -4,6 +4,7 @@ import type {
   Budget,
   Category,
   Currency,
+  Hypothesis,
   IncomeWindowMonths,
   RecurrenceFrequency,
   Transaction,
@@ -268,6 +269,238 @@ export function getRecurringCommitment(transactions: Transaction[], referenceDat
     total += template.amount * multiplier
   }
   return total
+}
+
+// ─── Simulações (M-101) ─────────────────────────────────────────────────────────
+//
+// Hypothesis nunca é uma Transaction/Account real (decisão de arquitetura, ver types/index.ts) —
+// este motor só lê o histórico real pra saber "o que já está projetado" e nunca escreve nada nele.
+// Janela fixa de 12 meses a partir de hoje (decisão de produto, não um seletor de período como
+// Analytics).
+
+export const SIMULATION_HORIZON_MONTHS = 12
+
+/** Os N meses ("YYYY-MM") da janela de simulação, a partir do mês de `referenceDate`. */
+export function getSimulationMonths(referenceDate: string): string[] {
+  const startMonth = `${referenceDate.slice(0, 7)}-01`
+  return Array.from({ length: SIMULATION_HORIZON_MONTHS }, (_, i) =>
+    advanceMonths(startMonth, i).slice(0, 7)
+  )
+}
+
+export interface MonthlyFlow {
+  month: string // "YYYY-MM"
+  income: number
+  expense: number
+  net: number
+}
+
+/**
+ * Baseline mensal (receita/despesa/saldo do mês) para a janela de simulação — funde
+ * `transactions` reais com `projectRecurringOccurrences` (M-62), do mesmo jeito que o Fluxo de
+ * Caixa de Relatórios já faz. Deliberadamente **não reaproveita** a lógica de `CashFlowView` —
+ * aquela carrega bucket semanal, replay de saldo de abertura por conta e vencimento de fatura de
+ * cartão, tudo irrelevante aqui; duplicar a fração pequena que interessa (soma mensal) é mais
+ * seguro do que abrir a lógica estável do Fluxo de Caixa para um novo consumidor.
+ */
+export function getMonthlyNetFlow(transactions: Transaction[], months: string[]): MonthlyFlow[] {
+  if (months.length === 0) return []
+  const horizonEnd = addDays(advanceMonths(`${months[months.length - 1]}-01`, 1), -1)
+  const merged = [...transactions, ...projectRecurringOccurrences(transactions, horizonEnd)]
+
+  const byMonth = new Map(months.map((m) => [m, { income: 0, expense: 0 }]))
+  for (const tx of merged) {
+    if (tx.type !== 'INCOME' && tx.type !== 'EXPENSE') continue
+    const bucket = byMonth.get(tx.date.slice(0, 7))
+    if (!bucket) continue
+    if (tx.type === 'INCOME') bucket.income += tx.amount
+    else bucket.expense += tx.amount
+  }
+
+  return months.map((month) => {
+    const { income, expense } = byMonth.get(month)!
+    return { month, income, expense, net: income - expense }
+  })
+}
+
+/**
+ * Total mensal já projetado (real + `projectRecurringOccurrences`) para uma categoria, na janela
+ * de simulação — a base do delta de um item `CATEGORY_TARGET` (nunca um valor fixo replicado: o
+ * já-projetado muda quando uma série real na mesma categoria termina dentro da janela).
+ */
+export function getCategoryMonthlyTotals(
+  transactions: Transaction[],
+  categoryId: string,
+  months: string[]
+): Map<string, number> {
+  const totals = new Map(months.map((m) => [m, 0]))
+  if (months.length === 0) return totals
+  const horizonEnd = addDays(advanceMonths(`${months[months.length - 1]}-01`, 1), -1)
+  const merged = [...transactions, ...projectRecurringOccurrences(transactions, horizonEnd)]
+
+  for (const tx of merged) {
+    if (tx.categoryId !== categoryId) continue
+    if (tx.type !== 'INCOME' && tx.type !== 'EXPENSE') continue
+    const month = tx.date.slice(0, 7)
+    const current = totals.get(month)
+    if (current !== undefined) totals.set(month, current + tx.amount)
+  }
+  return totals
+}
+
+export interface HypothesisMonthlyFlow {
+  income: number
+  expense: number
+}
+
+/**
+ * Como `getHypothesisMonthlyImpact`, mas separado em entrada/saída em vez de só o líquido — a
+ * base das barras de Entradas x Saídas da tela de Simulações (o líquido por si só não diz se um
+ * mês ficou mais pesado em despesa ou mais forte em receita). Mesma regra de geração por `kind`;
+ * `CATEGORY_TARGET` resolve por delta contra `getCategoryMonthlyTotals` (ver comentário ali) em
+ * vez de substituir o mês — o delta pode ser negativo (baseline já acima do alvo), reduzindo o
+ * lado correspondente em vez de somar.
+ */
+export function getHypothesisMonthlyFlow(
+  hypothesis: Hypothesis,
+  months: string[],
+  transactions: Transaction[]
+): Map<string, HypothesisMonthlyFlow> {
+  const flow = new Map(months.map((m) => [m, { income: 0, expense: 0 }]))
+  if (months.length === 0) return flow
+  const monthSet = new Set(months)
+  const lastMonth = months[months.length - 1]
+
+  const add = (month: string, type: 'INCOME' | 'EXPENSE', amount: number) => {
+    const bucket = flow.get(month)
+    if (!bucket) return
+    if (type === 'EXPENSE') bucket.expense += amount
+    else bucket.income += amount
+  }
+
+  // Lazy + cacheado por categoria: só computa quando a hipótese de fato tem um item
+  // CATEGORY_TARGET pra ela, e uma vez só mesmo com vários itens na mesma categoria.
+  const categoryTotalsCache = new Map<string, Map<string, number>>()
+  const categoryTotal = (categoryId: string, month: string): number => {
+    let totals = categoryTotalsCache.get(categoryId)
+    if (!totals) {
+      totals = getCategoryMonthlyTotals(transactions, categoryId, months)
+      categoryTotalsCache.set(categoryId, totals)
+    }
+    return totals.get(month) ?? 0
+  }
+
+  const MAX_ITERATIONS = 60 // generoso pra 12 meses mesmo em frequência semanal (~52 ocorrências)
+
+  for (const item of hypothesis.items) {
+    if (item.kind === 'ONE_TIME') {
+      add(item.startDate.slice(0, 7), item.type, item.amount)
+    } else if (item.kind === 'INSTALLMENT') {
+      const count = item.installmentCount ?? 0
+      for (let i = 0; i < count; i++) {
+        add(advanceByFrequency(item.startDate, 'monthly', i).slice(0, 7), item.type, item.amount)
+      }
+    } else if (item.kind === 'RECURRING') {
+      const frequency = item.frequency ?? 'monthly'
+      for (let i = 0; i < MAX_ITERATIONS; i++) {
+        const date = advanceByFrequency(item.startDate, frequency, i)
+        if (date.slice(0, 7) > lastMonth) break
+        if (item.endDate && date > item.endDate) break
+        add(date.slice(0, 7), item.type, item.amount)
+      }
+    } else if (item.kind === 'CATEGORY_TARGET' && item.categoryId) {
+      const startMonth = item.startDate.slice(0, 7)
+      const endMonth = item.endDate?.slice(0, 7)
+      for (const month of months) {
+        if (!monthSet.has(month) || month < startMonth) continue
+        if (endMonth && month > endMonth) continue
+        add(month, item.type, item.amount - categoryTotal(item.categoryId, month))
+      }
+    }
+  }
+
+  return flow
+}
+
+/**
+ * Impacto mensal líquido de uma hipótese — deriva de `getHypothesisMonthlyFlow` (income −
+ * expense); mantido como função própria porque comparar só o líquido (sem separar por lado) é o
+ * suficiente para quem só quer o efeito no saldo acumulado.
+ */
+export function getHypothesisMonthlyImpact(
+  hypothesis: Hypothesis,
+  months: string[],
+  transactions: Transaction[]
+): Map<string, number> {
+  const flow = getHypothesisMonthlyFlow(hypothesis, months, transactions)
+  const impact = new Map<string, number>()
+  for (const [month, { income, expense }] of flow) impact.set(month, income - expense)
+  return impact
+}
+
+export interface SimulationMonthPoint {
+  month: string // "YYYY-MM"
+  baselineBalance: number
+  adjustedBalance: number
+  baselineIncome: number
+  baselineExpense: number
+  adjustedIncome: number
+  adjustedExpense: number
+}
+
+/**
+ * Saldo acumulado e barras de entrada/saída mês a mês na janela de simulação — baseline (real +
+ * projetado) vs. baseline + Σ impacto de toda hipótese `enabled`. Nunca uma linha/barra por
+ * hipótese (decisão de produto — o gráfico compara só duas séries, não N). `adjustedIncome`/
+ * `adjustedExpense` nunca ficam negativos (piso em 0, só para exibição da barra); `adjustedBalance`
+ * usa o delta líquido sem esse piso, então continua batendo com a soma exata dos impactos mesmo
+ * no caso extremo (raro) de um `CATEGORY_TARGET` reduzir um lado a menos que zero.
+ */
+export function getSimulationProjection(
+  transactions: Transaction[],
+  accounts: Account[],
+  hypotheses: Hypothesis[],
+  referenceDate: string = todayStr()
+): SimulationMonthPoint[] {
+  const months = getSimulationMonths(referenceDate)
+  const flow = getMonthlyNetFlow(transactions, months)
+
+  // Mesmo cálculo do saldo total do Dashboard: exclui CREDIT (cujo número é limite disponível,
+  // nunca saldo).
+  const seeds = new Map(
+    accounts.filter((a) => a.type !== 'CREDIT').map((a) => [a.id, a.balance] as const)
+  )
+  const startingBalance = sumBalances(computeAccountBalances(transactions, seeds))
+
+  const flows = hypotheses
+    .filter((h) => h.enabled)
+    .map((h) => getHypothesisMonthlyFlow(h, months, transactions))
+
+  let baselineBalance = startingBalance
+  let adjustedBalance = startingBalance
+  return months.map((month, i) => {
+    baselineBalance += flow[i].net
+
+    let incomeDelta = 0
+    let expenseDelta = 0
+    for (const f of flows) {
+      const bucket = f.get(month)
+      if (!bucket) continue
+      incomeDelta += bucket.income
+      expenseDelta += bucket.expense
+    }
+    adjustedBalance += flow[i].net + incomeDelta - expenseDelta
+
+    return {
+      month,
+      baselineBalance,
+      adjustedBalance,
+      baselineIncome: flow[i].income,
+      baselineExpense: flow[i].expense,
+      adjustedIncome: Math.max(0, flow[i].income + incomeDelta),
+      adjustedExpense: Math.max(0, flow[i].expense + expenseDelta),
+    }
+  })
 }
 
 // ─── Credit Card — Invoice Engine ─────────────────────────────────────────────

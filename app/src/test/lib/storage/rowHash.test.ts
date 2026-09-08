@@ -12,6 +12,7 @@ import {
   transactionRowKey,
   deletedIdRowKey,
   deviceRowKey,
+  hypothesisRowKey,
   HASH_VERSION,
 } from '@/lib/storage/rowHash'
 import type {
@@ -24,6 +25,7 @@ import type {
   RawSavedPeriod,
   RawAuditEntry,
   RawDevice,
+  RawHypothesis,
 } from '@/services/storage/worker'
 
 function makeFullTransaction(overrides: Partial<RawTransaction> = {}): RawTransaction {
@@ -45,6 +47,28 @@ function makeFullTransaction(overrides: Partial<RawTransaction> = {}): RawTransa
     invoiceDueDate: '2026-02-10',
     updatedAt: '2026-01-15T10:00:00.000Z',
     createdAt: '2026-01-15T09:00:00.000Z',
+    ...overrides,
+  }
+}
+
+function makeFullHypothesis(overrides: Partial<RawHypothesis> = {}): RawHypothesis {
+  return {
+    id: 'hy-1',
+    name: 'Pós-graduação',
+    enabled: true,
+    items: [
+      {
+        id: 'item-1',
+        kind: 'INSTALLMENT',
+        description: 'Parcela',
+        type: 'EXPENSE',
+        amount: 500,
+        startDate: '2026-01-01',
+        installmentCount: 24,
+      },
+    ],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
   }
 }
@@ -261,6 +285,93 @@ describe('row key functions detect a change in every field', () => {
     const baseHash = hashRow(auditEntryRowKey(base))
     expect(hashRow(auditEntryRowKey({ ...base, summary: 'Changed' }))).not.toBe(baseHash)
   })
+
+  it('hypothesisRowKey', () => {
+    const base = makeFullHypothesis()
+    const baseHash = hashRow(hypothesisRowKey(base))
+    const overrides: Array<Partial<RawHypothesis>> = [
+      { name: 'Changed' },
+      { enabled: false },
+      { updatedAt: '2026-02-01T00:00:00.000Z' },
+      {
+        items: [
+          {
+            id: 'item-1',
+            kind: 'INSTALLMENT',
+            description: 'Parcela',
+            type: 'EXPENSE',
+            amount: 999,
+            startDate: '2026-01-01',
+            installmentCount: 24,
+          },
+        ],
+      },
+      { items: [] },
+    ]
+    for (const override of overrides) {
+      expect(
+        hashRow(hypothesisRowKey({ ...base, ...override })),
+        `field(s) ${Object.keys(override).join(',')} not detected`
+      ).not.toBe(baseHash)
+    }
+  })
+
+  it('hypothesisItemRowKey (via hypothesisRowKey) detects a change in every item field', () => {
+    const makeItem = (overrides: Partial<RawHypothesis['items'][number]> = {}) => ({
+      id: 'item-1',
+      kind: 'RECURRING' as const,
+      description: 'Assinatura',
+      type: 'EXPENSE' as const,
+      amount: 100,
+      startDate: '2026-01-01',
+      frequency: 'monthly',
+      endDate: '2026-12-31',
+      categoryId: 'cat-1',
+      ...overrides,
+    })
+    const base = makeFullHypothesis({ items: [makeItem()] })
+    const baseHash = hashRow(hypothesisRowKey(base))
+    const overrides: Array<Partial<RawHypothesis['items'][number]>> = [
+      { kind: 'CATEGORY_TARGET' },
+      { description: 'Changed' },
+      { type: 'INCOME' },
+      { amount: 999 },
+      { startDate: '2026-02-01' },
+      { installmentCount: 12 },
+      { frequency: 'weekly' },
+      { endDate: '2027-01-31' },
+      { categoryId: 'cat-2' },
+    ]
+    for (const override of overrides) {
+      const changed = makeFullHypothesis({ items: [makeItem(override)] })
+      expect(
+        hashRow(hypothesisRowKey(changed)),
+        `field(s) ${Object.keys(override).join(',')} not detected`
+      ).not.toBe(baseHash)
+    }
+  })
+
+  it('hypothesisRowKey ignores items reordering (same membership)', () => {
+    const item1 = {
+      id: 'item-1',
+      kind: 'ONE_TIME' as const,
+      description: 'A',
+      type: 'EXPENSE' as const,
+      amount: 100,
+      startDate: '2026-01-01',
+    }
+    const item2 = {
+      id: 'item-2',
+      kind: 'ONE_TIME' as const,
+      description: 'B',
+      type: 'EXPENSE' as const,
+      amount: 200,
+      startDate: '2026-02-01',
+    }
+    const a = makeFullHypothesis({ items: [item1, item2] })
+    const b = makeFullHypothesis({ items: [item2, item1] })
+    expect(hashRow(hypothesisRowKey(a))).toBe(hashRow(hypothesisRowKey(b)))
+  })
 })
 
 // ─── CS-39: pinagem do esquema de hash ────────────────────────────────────────
@@ -324,6 +435,7 @@ const PIN = {
     name: 'MacBook',
     updatedAt: '2026-01-01T00:00:00.000Z',
   } as RawDevice,
+  hypothesis: makeFullHypothesis(),
 }
 
 /**
@@ -335,7 +447,7 @@ const PIN = {
  * invalidar e recomputar as `table_hashes` já gravadas quando a versão muda.
  */
 const PINNED_HASHES = {
-  version: 2,
+  version: 3,
   account: 1036428690,
   category: 2381249970,
   tag: 2039225961,
@@ -348,6 +460,8 @@ const PINNED_HASHES = {
   deletedId: 2643702044,
   transaction: 2832041127,
   device: 3849676930,
+  // M-101: hypothesisRowKey is new (bumps HASH_VERSION 2→3).
+  hypothesis: 3175325234,
 } as const
 
 describe('CS-39 — esquema de hash pinado', () => {
@@ -368,6 +482,7 @@ describe('CS-39 — esquema de hash pinado', () => {
     ['deletedId', () => hashRow(deletedIdRowKey(PIN.deletedId)), PINNED_HASHES.deletedId],
     ['transaction', () => hashRow(transactionRowKey(PIN.transaction)), PINNED_HASHES.transaction],
     ['device', () => hashRow(deviceRowKey(PIN.device)), PINNED_HASHES.device],
+    ['hypothesis', () => hashRow(hypothesisRowKey(PIN.hypothesis)), PINNED_HASHES.hypothesis],
   ])('%s mantém o hash congelado', (_name, compute, expected) => {
     expect(compute(), BUMP).toBe(expected)
   })
@@ -390,6 +505,7 @@ describe('CS-39 — updatedAt participa de toda row key que o carrega', () => {
     ['budget', (v: string) => budgetRowKey({ ...PIN.budget, updatedAt: v })],
     ['transaction', (v: string) => transactionRowKey({ ...PIN.transaction, updatedAt: v })],
     ['device', (v: string) => deviceRowKey({ ...PIN.device, updatedAt: v })],
+    ['hypothesis', (v: string) => hypothesisRowKey({ ...PIN.hypothesis, updatedAt: v })],
   ])('%s: mudar só updatedAt muda a chave', (_name, keyOf) => {
     expect(keyOf('2026-01-01T00:00:00.000Z')).not.toBe(keyOf('2026-06-01T00:00:00.000Z'))
   })
