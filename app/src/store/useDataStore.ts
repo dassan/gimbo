@@ -1237,6 +1237,20 @@ export function __resetPersistenceBaselineForTests(): void {
   _lastPersisted = null
 }
 
+/**
+ * Cancela o timer pendente de `debouncedApplyMutation` (300ms, único a nível de módulo) — use em
+ * testes apenas. Sem isto, um teste que mutate o store sem esperar o debounce assentar deixa um
+ * `setTimeout` de verdade pendente; como cada mutate() só cancela o timer *anterior*, o do último
+ * teste do arquivo a mutar sobrevive até depois de todos os testes terminarem e explode como
+ * unhandled exception (mocks de módulo já fora de escopo) — falha intermitente no CI mesmo com
+ * todo teste passando (achado real: CS-... não, achado no B-37/M-101, dois PRs seguidos).
+ * Chamar em `afterEach` — `beforeEach` não cobre o último teste do arquivo.
+ */
+export function __cancelPendingDebounceForTests(): void {
+  if (_sqliteTimer) clearTimeout(_sqliteTimer)
+  _sqliteTimer = null
+}
+
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 function addAudit(data: DataFile, entry: AuditEntry) {
