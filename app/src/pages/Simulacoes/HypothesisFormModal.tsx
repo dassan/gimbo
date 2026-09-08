@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next'
 import { Info, Plus, Trash2, X } from 'lucide-react'
 import { cn, now, todayStr, uuid } from '@/lib/utils'
 import { useDataStore } from '@/store/useDataStore'
-import DatePicker from '@/components/DatePicker'
 import type { Hypothesis, HypothesisItem, HypothesisItemKind } from '@/types'
 
 function centsToStr(value: number): string {
@@ -345,9 +344,14 @@ function ItemEditor({ item, categories, onChange, onRemove, canRemove }: ItemEdi
         </div>
         <div>
           <label className={labelClass}>{t('simulacoes.startDate')}</label>
-          <DatePicker
+          {/* Native input, not the themed DatePicker: this row can sit anywhere in a short
+              modal (repeatable item list), and DatePicker's floating calendar has no reliable
+              way to stay inside such a compact card on every axis — the browser's own date
+              picker chrome is never bound by this page's layout. */}
+          <input
+            type="date"
             value={item.startDate}
-            onChange={(v) => onChange({ startDate: v })}
+            onChange={(e) => onChange({ startDate: e.target.value })}
             className={fieldClass}
           />
         </div>
@@ -369,9 +373,10 @@ function ItemEditor({ item, categories, onChange, onRemove, canRemove }: ItemEdi
       {(item.kind === 'RECURRING' || item.kind === 'CATEGORY_TARGET') && (
         <div>
           <label className={labelClass}>{t('simulacoes.endDateOptional')}</label>
-          <DatePicker
+          <input
+            type="date"
             value={item.endDate ?? ''}
-            onChange={(v) => onChange({ endDate: v || undefined })}
+            onChange={(e) => onChange({ endDate: e.target.value || undefined })}
             className={fieldClass}
           />
         </div>
