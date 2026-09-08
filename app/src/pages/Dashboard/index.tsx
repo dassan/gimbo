@@ -255,7 +255,12 @@ export default function Dashboard() {
         {/* My Accounts — standard accounts with includeInBalance */}
         <div className={cn('rounded-2xl bg-surface-container p-5 sm:p-6', shadowClass)}>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-on-surface">{t('dashboard.myAccounts')}</h3>
+            {/* B-35: pl-3 mirrors the pr-3 on the balance block below, so the title aligns with
+                AccountRow's content (which is itself inset by px-3) instead of the outer card
+                edge. */}
+            <h3 className="text-sm font-semibold text-on-surface pl-3">
+              {t('dashboard.myAccounts')}
+            </h3>
             {visibleAccounts.length > 0 && (
               <div className="text-right pr-3">
                 <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium leading-none mb-0.5">
@@ -286,6 +291,7 @@ export default function Dashboard() {
                   typeLabel={t(`accounts.${acc.type.toLowerCase()}`)}
                   issuerIcon={acc.issuerIcon}
                   isReserve={acc.reserveMetadata !== undefined}
+                  onClick={() => void navigate(`/transactions?account=${acc.id}`)}
                 />
               ))}
             </div>
@@ -295,7 +301,8 @@ export default function Dashboard() {
         {/* My Cards */}
         <div className={cn('rounded-2xl bg-surface-container p-5 sm:p-6', shadowClass)}>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-on-surface">{t('dashboard.myCards')}</h3>
+            {/* B-35: same pl-3/pr-3 mirroring as the "Minhas Contas" panel above. */}
+            <h3 className="text-sm font-semibold text-on-surface pl-3">{t('dashboard.myCards')}</h3>
             {creditAccounts.length > 0 && (
               <div className="text-right pr-3">
                 <p className="text-[10px] uppercase tracking-widest text-on-surface/40 font-medium leading-none mb-0.5">
@@ -362,6 +369,7 @@ function AccountRow({
   typeLabel,
   issuerIcon,
   isReserve,
+  onClick,
 }: {
   name: string
   type: AccountType
@@ -369,6 +377,7 @@ function AccountRow({
   typeLabel: string
   issuerIcon?: string
   isReserve?: boolean
+  onClick?: () => void
 }) {
   const isNegative = balance < 0
   // M-34: use the institution brand color when an issuer is set; otherwise the account-type color.
@@ -376,7 +385,16 @@ function AccountRow({
     issuerIcon && issuerIcon !== 'generic' ? CREDIT_ISSUER_COLORS[issuerIcon] : undefined
   const badgeColor = issuerColor ?? ACCOUNT_TYPE_COLORS[type]
   return (
-    <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-surface-container-low transition-colors">
+    <div
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={onClick ? (e) => e.key === 'Enter' && onClick() : undefined}
+      className={cn(
+        'flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors',
+        onClick && 'cursor-pointer hover:bg-surface-container-low'
+      )}
+    >
       <div
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white"
         style={{ backgroundColor: badgeColor }}
@@ -448,7 +466,11 @@ function RecentTransactionsHeader({
 }) {
   return (
     <div className="flex items-center justify-between mb-4">
-      <h3 className="text-sm font-semibold text-on-surface">{t('dashboard.recentTransactions')}</h3>
+      {/* B-35 follow-up: same pl-3 fix as "Minhas Contas"/"Meus Cartões" — aligns the title with
+          TransactionRow's content below, which is inset by px-3. */}
+      <h3 className="text-sm font-semibold text-on-surface pl-3">
+        {t('dashboard.recentTransactions')}
+      </h3>
       <button onClick={onViewAll} className="text-xs font-medium text-primary hover:underline">
         {t('dashboard.viewAll')}
       </button>

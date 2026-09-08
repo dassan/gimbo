@@ -14,6 +14,7 @@ import type {
   RawValuation,
   RawSavedPeriod,
   RawAuditEntry,
+  RawDevice,
 } from '@/services/storage/worker'
 
 /**
@@ -37,7 +38,7 @@ import type {
  * `rowHash.test.ts`: ele fixa este número junto de um hash literal por `*RowKey`, então mudar
  * qualquer função sem bumpar falha no CI com instruções.
  */
-export const HASH_VERSION = 1
+export const HASH_VERSION = 2
 
 const FNV_OFFSET_BASIS = 0x811c9dc5
 const FNV_PRIME = 0x01000193
@@ -127,11 +128,15 @@ export function savedPeriodRowKey(p: RawSavedPeriod): string {
 }
 
 export function auditEntryRowKey(e: RawAuditEntry): string {
-  return [e.id, e.timestamp, e.action, e.entity, e.entityId, e.summary].join(SEP)
+  return [e.id, e.timestamp, e.action, e.entity, e.entityId, e.summary, e.deviceId ?? ''].join(SEP)
 }
 
 export function deletedIdRowKey(id: string): string {
   return id
+}
+
+export function deviceRowKey(d: RawDevice): string {
+  return [d.id, d.name, d.updatedAt].join(SEP)
 }
 
 /**

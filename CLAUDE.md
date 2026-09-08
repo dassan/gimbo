@@ -225,7 +225,7 @@ cd app && npx playwright test      # opcional local, obrigatório no CI
 
 ## Estado Atual (2026-08-22)
 
-**Schema em memória v19** | **Schema físico SQLite v16** (`migrations/v1..v16.sql`) | Cobertura: ~96% statements
+**Schema em memória v20** | **Schema físico SQLite v17** (`migrations/v1..v17.sql`) | Cobertura: ~96% statements
 **1165 testes unitários** (45 arquivos) + **147 testes E2E** (perfis `chromium` e `mobile-chrome`)
 
 > Os dois números de schema são independentes e **não coincidem**: `CURRENT_SCHEMA_VERSION` (v17,
@@ -411,6 +411,48 @@ Features concluídas desde 2026-05-27:
 > sem esperar um patch novo do Vite; não é um item de ação.
 
 Itens em aberto:
+- **Relatório de uso real (2026-09-07)** — 11 itens mapeados pelo usuário usando o Gimbo no dia a dia,
+  registrados em `plan/BACKLOG.md` (detalhes técnicos e decisões pendentes em cada entrada), branch
+  `dassan/quick-fixes-uso-real`. **Resolvidos (lotes 1 a 5, escolhidos com o usuário): `B-34`**
+  (autocomplete de descrição não seleciona mais conta/cartão arquivado como fonte — só o default
+  ativo do M-42 sobrevive), **`M-94`/`M-95`** (lista de lançamentos do cartão: fonte redundante
+  removida — só `CREDIT_PAYMENT` continua mostrando a conta pagadora —, data de compra original
+  movida da lista para o detalhe do lançamento no `TransactionDrawer`), **`B-35`** (label "Minhas
+  Contas" alinhado com a lista no Dashboard; os mesmos bugs nos painéis "Meus Cartões" e "Últimos
+  Lançamentos", achados junto — o segundo apontado pelo próprio usuário numa revisão —, corrigidos
+  no mesmo commit), **`MB-20`** (flag pago/não-pago oculta na lista de Lançamentos em mobile — só
+  essa tela; o mesmo ícone no Dashboard não precisou de tratamento, o painel já é desktop-only),
+  **`B-36`** (termo "Ledger" trocado por "Cofre"/"Vault" nas 5 strings de copy; a tagline de marca
+  "The Fluid Ledger" virou "The Fluid Vault", preservando a decisão de mantê-la em inglês nos dois
+  locales), **`M-99`** (Dashboard: clicar numa conta navega para `/transactions?account=<id>` já
+  filtrado), **`M-96`/`M-97`** (lote 3 — Modificações Recentes ganha horário exato + dispositivo
+  de origem; nova entidade sincronizada `DeviceInfo` para o nome de dispositivo, schema v19→v20,
+  migration `v17.sql`, integrada ao transporte particionado — decisão confirmada com o usuário de
+  sincronizar de verdade em vez de manter só localmente), **`M-93`** (lote 4 — nova heurística de
+  recorrência em `scripts/sync_gimbo.py`, reabre o `M-92` revertido em `70d36e3`; causa raiz
+  investigada e confirmada contra o cofre real do usuário antes de reimplementar — sem exigir
+  valor igual, a v1 confundia compras do dia a dia coincidindo numa banda de cadência com
+  recorrência real, e cada falso positivo virava centenas de ocorrências fantasmas via
+  `refreshRecurrenceHorizons()`; corrigido exigindo mesmo valor + 3+ ocorrências + só últimos 6
+  meses, validado linha por linha pelo usuário e ponta-a-ponta via Playwright). Ver
+  `plan/BACKLOG.md` para os detalhes técnicos completos de todos os lotes. **Achado incidental do
+  M-93, virou item novo: `M-101`** (lançamento simulado/projetado com flag de contabilizar ou não
+  no saldo — usuário usa uma conta real como hack pra simular saldo futuro; registrado para
+  desenho futuro, não iniciado). **`M-98` foi descartado pelo próprio usuário** (2026-09-08) ao
+  reconsiderar: era uma solução geral (cofre novo nasce vazio de categorias) para um problema
+  pessoal específico (categoria "Alimentação" duplicada ao importar o Organizze por cima de um
+  cofre que já tinha as categorias-padrão do onboarding, CS-23). Investigar essa duplicata levou
+  ao **`M-102`** (lote 5, resolvido) — hoje não existe nenhum sinal visual que distinga duas
+  categorias homônimas em lugar nenhum do app (nem a lista de Configurações, nem o `<select>`
+  nativo do seletor de categoria no `TransactionDrawer`); em vez de atacar isso na UI (mais caro),
+  a correção foi na raiz, em `scripts/sync_gimbo.py`: `build_categories()` agora reconcilia por
+  nome normalizado (sem acento/case) + tipo contra a `--base`, reusando o id já existente em vez
+  de gerar um novo — só quando não há ambiguidade (2+ categorias já duplicadas para o mesmo nome
+  na `--base` não são fundidas automaticamente, para não arriscar orfanar transações num snapshot
+  completo). **Fora do
+  backlog, adiado pelo próprio usuário:** `M-100`, como medir quantas pessoas usam o Gimbo — em
+  tensão direta com o posicionamento zero-coleta/local-first do projeto (`M-69`) e com o `SEC-17`
+  em aberto (que pede para **desligar** o beacon do Cloudflare Web Analytics, não usá-lo).
 - **SEC-01 a SEC-16** — Auditoria de segurança pré-open-source (2026-08-18/19, branch `dassan/security-audit`) — ver `plan/BACKLOG.md` seção "Segurança — Auditoria Pré-Open-Source (SEC)". **0 Critical, 2 High, 3 Medium, 4 Low, 5 Info**, mais `SEC-15`/`SEC-16` achados ao implementar e verificar as correções. Nenhum achado foi causado por tornar o código público (histórico git limpo de segredos, `.env` nunca versionado). **Resolvidos: SEC-01 a SEC-09, SEC-14 e SEC-15** — redirect URIs do OAuth verificadas, headers de segurança em produção (`app/public/_headers`, com CSP), `refresh_token` do Google fora do `localStorage` (cifrado em IndexedDB + teto de 30 dias), import que valida antes de destruir o cofre, migrations atômicas com resgate de boot, fonte Inter self-hospedada, actions fixadas por SHA, escopo do bug report reduzido, `legacy-peer-deps` removido e `THIRD-PARTY-NOTICES.md`. **Aceitos: SEC-10 a SEC-13.** **Em aberto: `SEC-16`** e **`SEC-17`** (beacon do Cloudflare Web Analytics injetado no proxy, não no build — a CSP já o bloqueia; falta desligar em Web Analytics → Manage site → Disable). **`SEC-16`** — separar o OAuth client de dev do de produção. Hoje há um só, acumulando as URIs de `localhost` e de `gimbo.com.br`, e o `npm run deploy` builda com o mesmo `.env` do desenvolvimento — dev e produção compartilham a credencial. A criação do segundo client é ação manual no Google Cloud Console; a divisão em `.env.development`/`.env.production` (o Vite carrega por modo) é a parte deste repositório. > **O `SEC-01` foi resolvido com ressalva:** as URIs de `localhost` seguem registradas por decisão do mantenedor, para não interromper o desenvolvimento — risco baixo (o redirect entrega o código na máquina da própria vítima, sob HTTPS autoassinado), e o `SEC-16` elimina o trade-off por construção. Confirmado que **não há resquício do domínio antigo da Vercel** na allowlist.
 > **Nada disso está em produção até rodar `npm run deploy`** — os headers e a fonte self-hospedada só valem no build publicado.
 

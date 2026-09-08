@@ -45,6 +45,7 @@ const MINIMAL_VALID: DataFile = {
   deletedIds: [],
   savedPeriods: [],
   budgets: [],
+  devices: [],
 }
 
 // ─── applyRetention ───────────────────────────────────────────────────────────
@@ -352,11 +353,12 @@ describe('validateDataFile — v1 → v2 migration', () => {
     deletedIds: [],
     savedPeriods: [],
     budgets: [],
+    devices: [],
   }
 
   it('migrates a v1 file to schemaVersion 19 (current)', () => {
     const result = validateDataFile(V1_FILE)
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
   it('preserves all existing accounts during v1 → v2 migration', () => {
@@ -375,100 +377,106 @@ describe('validateDataFile — v1 → v2 migration', () => {
 
   it('accepts a v2 file and migrates it to schemaVersion 19', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 2 })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
   it('migrates a v3 file to schemaVersion 19', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 3, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
   it('migrates a v4 file to schemaVersion 19', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 4, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
   it('migrates a v5 file to schemaVersion 19 (B-18, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 5, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
   it('migrates a v6 file to schemaVersion 19 (CC-33, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 6, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
   it('migrates a v7 file to schemaVersion 19 (M-42, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 7, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
   it('migrates a v8 file to schemaVersion 19 (M-45, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 8, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
   it('migrates a v9 file to schemaVersion 19 (HE-04, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 9, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
   it('migrates a v10 file to schemaVersion 19 (M-64, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 10, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
   it('migrates a v11 file to schemaVersion 19 (HE-14, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 11, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
   it('migrates a v12 file to schemaVersion 19 (CS-04, backfills updatedAt)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 12, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
   it('migrates a v13 file to schemaVersion 19 (B-24, backfills createdAt from date)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 13, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
     expect(result.transactions[0].createdAt).toBe(result.transactions[0].date)
   })
 
   it('migrates a v14 file to schemaVersion 19 (F-30/BX-03, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 14, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
     expect(result.budgets).toEqual([])
   })
 
   it('migrates a v15 file to schemaVersion 19 (F-30/BX-07, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 15, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
     expect(result.settings.quadrantesEnabled).toBe(false)
   })
 
   it('migrates a v16 file to schemaVersion 19 (M-69, removes email — no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 16, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
   it('migrates a v17 file to schemaVersion 19 (F-30/BX-12, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 17, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
     expect(result.settings.quadrantesInferFromHistory).toBe(false)
   })
 
   it('migrates a v18 file to schemaVersion 19 (F-30/BX-12 revisão, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 18, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
-  it('accepts a v19 file without running migration (idempotent)', () => {
+  it('migrates a v19 file to schemaVersion 20 (M-96/M-97, no-op shape change)', () => {
     const result = validateDataFile({ ...V1_FILE, schemaVersion: 19, valuations: [] })
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
+    expect(result.devices).toEqual([])
   })
 
-  it('throws SchemaVersionError for a v20 file (future version)', () => {
-    expect(() => validateDataFile({ ...V1_FILE, schemaVersion: 20, valuations: [] })).toThrow(
+  it('accepts a v20 file without running migration (idempotent)', () => {
+    const result = validateDataFile({ ...V1_FILE, schemaVersion: 20, valuations: [] })
+    expect(result.schemaVersion).toBe(20)
+  })
+
+  it('throws SchemaVersionError for a v21 file (future version)', () => {
+    expect(() => validateDataFile({ ...V1_FILE, schemaVersion: 21, valuations: [] })).toThrow(
       SchemaVersionError
     )
   })
@@ -720,11 +728,12 @@ describe('validateDataFile — v2 → v3 migration (NW-08)', () => {
     deletedIds: [],
     savedPeriods: [],
     budgets: [],
+    devices: [],
   }
 
   it('migrates a v2 file to schemaVersion 19 (current)', () => {
     const result = validateDataFile(V2_FILE)
-    expect(result.schemaVersion).toBe(19)
+    expect(result.schemaVersion).toBe(20)
   })
 
   it('adds valuations: [] when field is absent in a v2 file', () => {
@@ -1142,6 +1151,7 @@ describe('validateDataFile — updatedAt backfill (CS-04)', () => {
     deletedIds: [],
     savedPeriods: [],
     budgets: [],
+    devices: [],
   }
 
   it('backfills updatedAt with the epoch on accounts, categories, tags and transactions', () => {

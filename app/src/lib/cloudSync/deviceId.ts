@@ -51,3 +51,15 @@ export async function getShortDeviceId(): Promise<string> {
   const id = await getDeviceId()
   return id.slice(0, 6)
 }
+
+/**
+ * M-96: synchronous read of whatever `getDeviceId()` has already resolved — `null` if nothing
+ * has called it yet in this session. Exists because `useDataStore.ts`'s `makeEntry()` tags every
+ * new `AuditEntry` with the device id, and that call site is synchronous (inside `mutate()`),
+ * while OPFS access is inherently async. `App.tsx` warms this up unconditionally at boot (fire
+ * and forget, before any mutation can happen), so in practice this is only ever null in the
+ * narrow window between script start and that warm-up resolving.
+ */
+export function getCachedDeviceId(): string | null {
+  return cached
+}

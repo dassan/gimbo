@@ -10,7 +10,7 @@ import type { Transaction } from '@/types'
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'pt-BR' } }),
 }))
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -953,14 +953,35 @@ describe('TransactionDrawer — description autocomplete (M-80)', () => {
     isPaid: true,
     tags: ['tag-1'],
   }
+  // B-34: an account archived after `archivedPastTx` was created — the suggestion must not
+  // apply it as the new transaction's account.
+  const archivedAccount = {
+    id: 'acc-archived',
+    name: 'Conta Antiga',
+    type: 'RETAIL' as const,
+    balance: 0,
+    includeInBalance: true,
+    archived: true,
+  }
+  const archivedPastTx: Transaction = {
+    id: 'tx-past-archived',
+    accountId: 'acc-archived',
+    categoryId: 'cat-2',
+    amount: 30,
+    type: 'EXPENSE',
+    date: '2026-05-01',
+    description: 'Farmácia Velha',
+    isPaid: true,
+    tags: [],
+  }
 
   beforeEach(() => {
     useDataStore.setState({
       data: makeDataFile({
-        accounts: [testAccount, otherAccount],
+        accounts: [testAccount, otherAccount, archivedAccount],
         categories: [testCategory, otherCategory],
         tags: [testTag1, testTag2],
-        transactions: [pastTx],
+        transactions: [pastTx, archivedPastTx],
       }),
     })
   })
@@ -999,6 +1020,21 @@ describe('TransactionDrawer — description autocomplete (M-80)', () => {
     expect(categorySelect).toHaveDisplayValue('Transporte')
   })
 
+  it('B-34: selecting a suggestion whose account was archived fills category/tags but keeps the default active account', async () => {
+    renderDrawer()
+    const descInput = screen.getByPlaceholderText('transactions.descriptionPlaceholder')
+    await userEvent.type(descInput, 'Farm')
+    await userEvent.click(screen.getByText('Farmácia Velha'))
+
+    expect(descInput).toHaveValue('Farmácia Velha')
+    const [accountSelect, categorySelect] = screen.getAllByRole('combobox')
+    // Category still comes from the suggestion...
+    expect(categorySelect).toHaveDisplayValue('Transporte')
+    // ...but the account was NOT switched to the archived one — stays on the M-42 default.
+    expect(accountSelect).toHaveDisplayValue('Conta Teste')
+    expect(accountSelect).not.toHaveDisplayValue('Conta Antiga')
+  })
+
   it('does not offer suggestions in edit mode', async () => {
     renderDrawer({ transaction: testTransaction })
     const descInput = screen.getByDisplayValue('Almoço')
@@ -1023,5 +1059,51 @@ describe('TransactionDrawer — description autocomplete (M-80)', () => {
     await userEvent.keyboard('{Escape}')
     expect(screen.queryByText('Padaria Central')).not.toBeInTheDocument()
     expect(descInput).toHaveValue('Pad')
+  })
+})
+
+// ─── M-95: original purchase date, moved here from the credit-card invoice list (M-64) ────────
+
+describe('TransactionDrawer — original purchase date in edit mode (M-95)', () => {
+  it('shows the original purchase date for installments past the 1st', () => {
+    const tx: Transaction = {
+      ...testTransaction,
+      installment: { parentId: 'p1', currentIndex: 2, total: 3, purchaseDate: '2024-01-10' },
+    }
+    renderDrawer({ transaction: tx })
+    expect(screen.getByText('transactions.originalPurchaseDate')).toBeInTheDocument()
+  })
+
+  it('omits it on the 1st installment (same date as the transaction itself)', () => {
+    const tx: Transaction = {
+      ...testTransaction,
+      installment: {
+        parentId: 'p1',
+        currentIndex: 1,
+        total: 3,
+        purchaseDate: testTransaction.date,
+      },
+    }
+    renderDrawer({ transaction: tx })
+    expect(screen.queryByText('transactions.originalPurchaseDate')).not.toBeInTheDocument()
+  })
+
+  it('omits it for installments without purchaseDate (legacy data)', () => {
+    const tx: Transaction = {
+      ...testTransaction,
+      installment: { parentId: 'p1', currentIndex: 2, total: 3 },
+    }
+    renderDrawer({ transaction: tx })
+    expect(screen.queryByText('transactions.originalPurchaseDate')).not.toBeInTheDocument()
+  })
+
+  it('omits it for a transaction with no installment data', () => {
+    renderDrawer({ transaction: testTransaction })
+    expect(screen.queryByText('transactions.originalPurchaseDate')).not.toBeInTheDocument()
+  })
+
+  it('omits it in create mode', () => {
+    renderDrawer()
+    expect(screen.queryByText('transactions.originalPurchaseDate')).not.toBeInTheDocument()
   })
 })

@@ -100,4 +100,20 @@ describe('deviceId', () => {
     expect(short).toBe(full.slice(0, 6))
     expect(short).toHaveLength(6)
   })
+
+  // M-96: getCachedDeviceId() is the synchronous escape hatch makeEntry() (useDataStore.ts)
+  // relies on — it must never touch OPFS itself, only read whatever getDeviceId() already cached.
+  it('getCachedDeviceId returns null before getDeviceId has ever resolved', async () => {
+    const { vi } = await import('vitest')
+    vi.resetModules()
+    installFakeOpfs()
+    const { getCachedDeviceId } = await import('@/lib/cloudSync/deviceId')
+    expect(getCachedDeviceId()).toBeNull()
+  })
+
+  it('getCachedDeviceId returns the resolved id once getDeviceId has been awaited', async () => {
+    const { getDeviceId, getCachedDeviceId } = await import('@/lib/cloudSync/deviceId')
+    const id = await getDeviceId()
+    expect(getCachedDeviceId()).toBe(id)
+  })
 })

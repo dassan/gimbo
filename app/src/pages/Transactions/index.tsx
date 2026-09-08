@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useOutletContext } from 'react-router-dom'
+import { useOutletContext, useSearchParams } from 'react-router-dom'
 import {
   Search,
   CheckCircle2,
@@ -45,7 +45,12 @@ export default function Transactions() {
 
   // ── Other filters ─────────────────────────────────────────────────────────
   const [search, setSearch] = useState('')
-  const [filterAccountId, setFilterAccountId] = useState<string>('all')
+  // M-99: deep-link from Dashboard's "Minhas Contas" (?account=<id>) — read once as the initial
+  // filter; not kept in sync with the URL afterward, same as every other filter here.
+  const [searchParams] = useSearchParams()
+  const [filterAccountId, setFilterAccountId] = useState<string>(
+    () => searchParams.get('account') ?? 'all'
+  )
   const [filterStatus, setFilterStatus] = useState<'all' | 'paid' | 'pending'>('all')
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense' | 'transfer'>('all')
   // B-15: footer totals reflect realized cash by default; toggle on to project unpaid entries.
@@ -821,7 +826,9 @@ function TxRow({
             </>
           )}
         </div>
-        <div className="flex h-8 w-8 items-center justify-center rounded-full">
+        {/* MB-20: hidden on mobile to reclaim row space — still visible in the transaction's own
+            detail (TransactionDrawer already has an explicit "Pago" toggle, B-10). */}
+        <div className="hidden h-8 w-8 items-center justify-center rounded-full sm:flex">
           {tx.isPaid ? (
             <CheckCircle2 size={20} className="text-primary" strokeWidth={1.5} />
           ) : (

@@ -15,7 +15,7 @@ import type {
 import { applyRetention } from '@/lib/storage/schema'
 import { storage } from '@/services/storage'
 import { loadBackupDirHandle, ensureBackupDirPermission, writeBackupToDir } from '@/lib/backupDir'
-import { getDeviceId } from '@/lib/cloudSync/deviceId'
+import { getDeviceId, getCachedDeviceId } from '@/lib/cloudSync/deviceId'
 import { createFolderProvider } from '@/lib/cloudSync/folderProvider'
 import { syncFromPeers } from '@/lib/cloudSync/folderSyncService'
 import { isMultiDeviceEnabled } from '@/lib/cloudSync/multiDeviceMode'
@@ -133,6 +133,7 @@ function buildSummary(
     user: 'Cofre',
     savedPeriod: 'Período salvo',
     budget: 'Caixinha',
+    device: 'Dispositivo',
   }
   const actionLabel: Record<AuditAction, string> = {
     CREATE: 'criada',
@@ -149,7 +150,19 @@ function makeEntry(
   entityId: string,
   summary: string
 ): AuditEntry {
-  return { id: uuid(), timestamp: now(), action, entity, entityId, summary }
+  // M-96: tags the entry with whichever device made it, if the id has resolved by now (App.tsx
+  // warms it up unconditionally at boot — see the comment there for why this can't just be
+  // `await getDeviceId()` here instead).
+  const deviceId = getCachedDeviceId()
+  return {
+    id: uuid(),
+    timestamp: now(),
+    action,
+    entity,
+    entityId,
+    summary,
+    ...(deviceId ? { deviceId } : {}),
+  }
 }
 
 // BX-08: associação automática por data — só na criação (nunca como reconciliação de fundo).
@@ -229,6 +242,9 @@ interface DataStore {
   ensureQuadrantesBatch: () => void
 
   updateUser: (patch: Partial<DataFile['user']>) => void
+  // M-97: upserts this device's own DeviceInfo entry (id = this device's own deviceId). Async
+  // because deviceId itself is OPFS-backed — see the comment on getCachedDeviceId().
+  setDeviceName: (name: string) => Promise<void>
   setRetentionLimit: (limit: number | null) => void
   // BX-07: liga/desliga a receita Quadrantes; ligar já dispara a geração do lote corrente.
   setQuadrantesEnabled: (enabled: boolean) => void
@@ -1005,6 +1021,26 @@ export const useDataStore = create<DataStore>((set, get) => ({
         )
       })
     ),
+
+  setDeviceName: async (name) => {
+    const id = await getDeviceId()
+    set((s) =>
+      mutate(s, (d) => {
+        const ts = now()
+        const existing = d.devices.find((dev) => dev.id === id)
+        d.devices = [...d.devices.filter((dev) => dev.id !== id), { id, name, updatedAt: ts }]
+        addAudit(
+          d,
+          makeEntry(
+            existing ? 'UPDATE' : 'CREATE',
+            'device',
+            id,
+            buildSummary(existing ? 'UPDATE' : 'CREATE', 'device', name)
+          )
+        )
+      })
+    )
+  },
 
   setRetentionLimit: (limit) =>
     set((s) => {

@@ -22,6 +22,7 @@ export type AuditEntity =
   | 'user'
   | 'savedPeriod'
   | 'budget'
+  | 'device'
 
 // ─── Entities ─────────────────────────────────────────────────────────────────
 
@@ -141,6 +142,17 @@ export interface AuditEntry {
   entity: AuditEntity
   entityId: string
   summary: string // human-readable, generated in active locale at mutation time
+  deviceId?: string // M-96: which device made this change — absent on entries from before this field existed
+}
+
+// M-96/M-97: a device that has ever named itself, so its friendly name can be shown on other
+// devices (in the audit log, in the multi-device list) instead of just the raw deviceId. Synced
+// as a normal top-level entity (union by id, LWW by updatedAt) — NOT nested inside `Settings`,
+// whose merge is whole-object local-wins and would never actually propagate a remote device's name.
+export interface DeviceInfo {
+  id: string // matches this device's deviceId (lib/cloudSync/deviceId.ts, OPFS-persisted)
+  name: string
+  updatedAt: string // ISO 8601 — last-write-wins timestamp for the cloud-sync merge engine
 }
 
 // M-45: a named custom date range, saved from the Reports period picker for reuse.
@@ -195,6 +207,7 @@ export interface DataFile {
   deletedIds: string[] // tombstone: IDs explicitly deleted on this device (B-11)
   savedPeriods: SavedPeriod[] // M-45: named custom date ranges saved from Reports
   budgets: Budget[] // F-30: caixinhas
+  devices: DeviceInfo[] // M-97: devices that have named themselves
 }
 
 // ─── workspace.json shape ─────────────────────────────────────────────────────

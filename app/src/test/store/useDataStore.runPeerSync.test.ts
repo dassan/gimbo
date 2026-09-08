@@ -20,7 +20,11 @@ vi.mock('@/lib/cloudSync/multiDeviceMode', () => ({
 }))
 
 const { getDeviceIdMock } = vi.hoisted(() => ({ getDeviceIdMock: vi.fn() }))
-vi.mock('@/lib/cloudSync/deviceId', () => ({ getDeviceId: getDeviceIdMock }))
+vi.mock('@/lib/cloudSync/deviceId', () => ({
+  getDeviceId: getDeviceIdMock,
+  // M-96: makeEntry() (useDataStore.ts) calls this synchronously on every audit entry.
+  getCachedDeviceId: () => null,
+}))
 
 const { syncFromPeersMock } = vi.hoisted(() => ({ syncFromPeersMock: vi.fn() }))
 vi.mock('@/lib/cloudSync/folderSyncService', () => ({ syncFromPeers: syncFromPeersMock }))

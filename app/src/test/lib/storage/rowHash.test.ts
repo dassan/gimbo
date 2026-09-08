@@ -11,6 +11,7 @@ import {
   auditEntryRowKey,
   transactionRowKey,
   deletedIdRowKey,
+  deviceRowKey,
   HASH_VERSION,
 } from '@/lib/storage/rowHash'
 import type {
@@ -22,6 +23,7 @@ import type {
   RawValuation,
   RawSavedPeriod,
   RawAuditEntry,
+  RawDevice,
 } from '@/services/storage/worker'
 
 function makeFullTransaction(overrides: Partial<RawTransaction> = {}): RawTransaction {
@@ -317,6 +319,11 @@ const PIN = {
   } as RawAuditEntry,
   deletedId: 'deleted-1',
   transaction: makeFullTransaction(),
+  device: {
+    id: 'dev-1',
+    name: 'MacBook',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  } as RawDevice,
 }
 
 /**
@@ -328,16 +335,19 @@ const PIN = {
  * invalidar e recomputar as `table_hashes` já gravadas quando a versão muda.
  */
 const PINNED_HASHES = {
-  version: 1,
+  version: 2,
   account: 1036428690,
   category: 2381249970,
   tag: 2039225961,
   budget: 3290489023,
   valuation: 2714327257,
   savedPeriod: 1657429824,
-  auditEntry: 3945033005,
+  // M-96: auditEntryRowKey gained the deviceId field (bumps HASH_VERSION 1→2) — PIN.auditEntry has
+  // no deviceId (mirrors a legacy entry from before the field existed), so its hash changed too.
+  auditEntry: 1448598596,
   deletedId: 2643702044,
   transaction: 2832041127,
+  device: 3849676930,
 } as const
 
 describe('CS-39 — esquema de hash pinado', () => {
@@ -357,6 +367,7 @@ describe('CS-39 — esquema de hash pinado', () => {
     ['auditEntry', () => hashRow(auditEntryRowKey(PIN.auditEntry)), PINNED_HASHES.auditEntry],
     ['deletedId', () => hashRow(deletedIdRowKey(PIN.deletedId)), PINNED_HASHES.deletedId],
     ['transaction', () => hashRow(transactionRowKey(PIN.transaction)), PINNED_HASHES.transaction],
+    ['device', () => hashRow(deviceRowKey(PIN.device)), PINNED_HASHES.device],
   ])('%s mantém o hash congelado', (_name, compute, expected) => {
     expect(compute(), BUMP).toBe(expected)
   })
@@ -378,6 +389,7 @@ describe('CS-39 — updatedAt participa de toda row key que o carrega', () => {
     ['tag', (v: string) => tagRowKey({ ...PIN.tag, updatedAt: v })],
     ['budget', (v: string) => budgetRowKey({ ...PIN.budget, updatedAt: v })],
     ['transaction', (v: string) => transactionRowKey({ ...PIN.transaction, updatedAt: v })],
+    ['device', (v: string) => deviceRowKey({ ...PIN.device, updatedAt: v })],
   ])('%s: mudar só updatedAt muda a chave', (_name, keyOf) => {
     expect(keyOf('2026-01-01T00:00:00.000Z')).not.toBe(keyOf('2026-06-01T00:00:00.000Z'))
   })

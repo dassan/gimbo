@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import BugReportDialog from '@/components/BugReportDialog'
@@ -321,6 +321,7 @@ export default function Settings() {
     updateTag,
     deleteTag,
     updateUser,
+    setDeviceName,
     setRetentionLimit,
     setQuadrantesEnabled,
     syncStatus,
@@ -367,6 +368,11 @@ export default function Settings() {
   const [googleEmail, setGoogleEmail] = useState(() => getGoogleAccountEmail())
   const [googleOAuthError, setGoogleOAuthError] = useState<string | null>(null)
   const [vaultName, setVaultName] = useState(data?.user.name ?? '')
+  // M-97: unlike vaultName, this can't seed from a useState initializer — selfDeviceId only
+  // resolves async (refreshDeviceList's OPFS read), so it's still null on the first render.
+  const [deviceName, setDeviceNameInput] = useState('')
+  const [deviceNameSaved, setDeviceNameSaved] = useState(false)
+  const deviceNameSeededRef = useRef(false)
   const [modal, setModal] = useState<ModalState>({ open: false })
   const [categoryModal, setCategoryModal] = useState<CategoryModalState>({ open: false })
   const [tagModal, setTagModal] = useState<TagModalState>({ open: false })
@@ -458,6 +464,17 @@ export default function Settings() {
   useEffect(() => {
     void refreshDeviceList()
   }, [])
+
+  // M-97: seeds the input once we know both who "this device" is and what devices already know
+  // about it — either can resolve after the other, so this can't run just once at mount like
+  // vaultName's useState initializer does. The ref guard makes it fire exactly once even though
+  // the effect itself re-runs on every `data` change (every mutation clones a new object) —
+  // without it, typing into the field mid-edit would keep getting clobbered by the last-saved value.
+  useEffect(() => {
+    if (!selfDeviceId || !data || deviceNameSeededRef.current) return
+    deviceNameSeededRef.current = true
+    setDeviceNameInput(data.devices.find((d) => d.id === selfDeviceId)?.name ?? '')
+  }, [selfDeviceId, data])
 
   // CS-08: no dedicated callback route — redirect_uri points straight back at /settings, so this
   // detects the ?code=&state= Google appends and finishes the PKCE exchange right here on mount.
@@ -598,6 +615,13 @@ export default function Settings() {
   function handleSaveVaultName() {
     if (!data) return
     updateUser({ name: vaultName })
+  }
+
+  async function handleSaveDeviceName() {
+    if (!data) return
+    await setDeviceName(deviceName.trim())
+    setDeviceNameSaved(true)
+    setTimeout(() => setDeviceNameSaved(false), 2000)
   }
 
   function handleLocaleChange(locale: Locale) {
@@ -762,6 +786,14 @@ export default function Settings() {
     map.get(key)!.push(entry)
     return map
   }, new Map())
+
+  // M-97: friendly name when the device has named itself (synced — works for any device, not
+  // just this one), falling back to the short id (CS-16) it always had.
+  function deviceLabel(deviceId: string): string {
+    // A cleared name saves as '', which must fall back to the short id too — ?? wouldn't catch it.
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+    return data?.devices.find((d) => d.id === deviceId)?.name || deviceId.slice(0, 6)
+  }
 
   function dateGroupLabel(dateKey: string) {
     const d = new Date(dateKey + 'T12:00:00')
@@ -1168,6 +1200,32 @@ export default function Settings() {
                   >
                     {t('settings.saveVaultName')}
                   </button>
+
+                  {/* M-97: optional — only meaningful once more than one device is in play, but
+                      shown unconditionally (same as vault name) rather than gated behind
+                      multi-device mode, since naming a device before enabling sync is fine too. */}
+                  <div className="pt-2">
+                    <label className="label text-on-surface/40 block mb-1.5">
+                      {t('settings.deviceName')}
+                    </label>
+                    <p className="text-xs text-on-surface/40 mb-2">
+                      {t('settings.deviceNameHint')}
+                    </p>
+                    <input
+                      type="text"
+                      value={deviceName}
+                      onChange={(e) => setDeviceNameInput(e.target.value)}
+                      placeholder={t('settings.deviceNamePlaceholder')}
+                      maxLength={40}
+                      className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </div>
+                  <button
+                    onClick={() => void handleSaveDeviceName()}
+                    className="rounded-2xl bg-primary px-6 py-3 text-sm font-semibold text-white hover:brightness-110 transition-all active:scale-[0.97]"
+                  >
+                    {deviceNameSaved ? t('settings.deviceNameSaved') : t('settings.saveDeviceName')}
+                  </button>
                 </div>
               </Section>
             )}
@@ -1560,7 +1618,8 @@ export default function Settings() {
                                   className="text-primary shrink-0"
                                 />
                                 <span className="flex-1 truncate text-sm font-medium text-on-surface">
-                                  {selfDeviceId.slice(0, 6)} — {t('settings.multiDeviceThisDevice')}
+                                  {deviceLabel(selfDeviceId)} —{' '}
+                                  {t('settings.multiDeviceThisDevice')}
                                 </span>
                               </div>
                             )}
@@ -1583,7 +1642,7 @@ export default function Settings() {
                                   />
                                   <div className="min-w-0 flex-1">
                                     <p className="truncate text-sm font-medium text-on-surface">
-                                      {peer.deviceId.slice(0, 6)}
+                                      {deviceLabel(peer.deviceId)}
                                       {stale && (
                                         <span className="ml-2 text-xs text-tertiary">
                                           {t('settings.multiDeviceStale')}
@@ -1734,10 +1793,25 @@ export default function Settings() {
                               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-container-low">
                                 {ACTION_ICON[entry.action]}
                               </div>
-                              <p className="flex-1 text-sm text-on-surface truncate">
-                                {entry.summary}
-                              </p>
-                              <span className="text-xs text-on-surface/30 shrink-0">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-on-surface truncate">{entry.summary}</p>
+                                {/* M-96: absent on entries from before this field existed — no
+                                    subtitle line for those, not "dispositivo desconhecido". */}
+                                {entry.deviceId && (
+                                  <p className="text-xs text-on-surface/30 truncate">
+                                    {entry.deviceId === selfDeviceId
+                                      ? t('settings.multiDeviceThisDevice')
+                                      : deviceLabel(entry.deviceId)}
+                                  </p>
+                                )}
+                              </div>
+                              <span
+                                className="text-xs text-on-surface/30 shrink-0"
+                                title={new Date(entry.timestamp).toLocaleString(i18n.language, {
+                                  dateStyle: 'long',
+                                  timeStyle: 'short',
+                                })}
+                              >
                                 {relativeTime(entry.timestamp)}
                               </span>
                             </div>

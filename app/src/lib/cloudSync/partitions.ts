@@ -32,6 +32,7 @@ import {
   categoryRowKey,
   combineHashes,
   deletedIdRowKey,
+  deviceRowKey,
   hashRow,
   savedPeriodRowKey,
   tagRowKey,
@@ -56,6 +57,7 @@ export const SMALL_TABLES = [
   'budgets',
   'audit_log',
   'deleted_ids',
+  'devices',
 ] as const
 
 export type SmallTable = (typeof SMALL_TABLES)[number]
@@ -296,6 +298,7 @@ const ROW_KEY_BY_TABLE: Record<PartitionTable, RowKeyFn> = {
   budgets: budgetRowKey as RowKeyFn,
   audit_log: auditEntryRowKey as RowKeyFn,
   deleted_ids: deletedIdRowKey as RowKeyFn,
+  devices: deviceRowKey as RowKeyFn,
   transactions: transactionRowKey as RowKeyFn,
 }
 
@@ -327,6 +330,7 @@ const DATA_FILE_FIELD: Record<PartitionTable, keyof DataFile> = {
   budgets: 'budgets',
   audit_log: 'auditLog',
   deleted_ids: 'deletedIds',
+  devices: 'devices',
   transactions: 'transactions',
 }
 
@@ -359,6 +363,7 @@ export function assemblePeerDataFile(
     budgets: [],
     auditLog: [],
     deletedIds: [],
+    devices: [],
   }
 
   for (const [key, rows] of fetched) {
@@ -409,6 +414,7 @@ const TABLE_CODE: Record<SmallTable, string> = {
   budgets: 'b',
   audit_log: 'l',
   deleted_ids: 'd',
+  devices: 'e',
 }
 const CODE_TABLE: Record<string, SmallTable> = Object.fromEntries(
   Object.entries(TABLE_CODE).map(([table, code]) => [code, table as SmallTable])

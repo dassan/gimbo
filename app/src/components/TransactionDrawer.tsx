@@ -18,6 +18,7 @@ import {
   getCurrentInvoiceBalance,
   getTxInvoicePeriod,
   invoicePeriodKey,
+  parseDateLocal,
   todayStr,
   sortCategoriesHierarchical,
   filterArchivedAccounts,
@@ -80,7 +81,7 @@ const TYPE_CONFIG: Record<TxType, { label: string; color: string; bg: string; bt
   }
 
 export default function TransactionDrawer({ open, onClose, transaction }: TransactionDrawerProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const isMobile = useIsMobile()
   const data = useDataStore((s) => s.data)
   const addTransaction = useDataStore((s) => s.addTransaction)
@@ -294,10 +295,17 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   // M-80: fill category/account/tags from a past occurrence of the same description. Amount
   // is deliberately left untouched — it's rarely the same twice, and the amount field is the
   // first thing the user fills in anyway (auto-focused on open).
+  // B-34: if the suggestion's account was archived since that past transaction, don't apply it —
+  // it would silently defeat the M-42 guarantee that a new transaction always defaults to an
+  // active account. Category/tags still come from the suggestion; the account keeps whatever
+  // active default was already selected.
   function selectDescriptionSuggestion(s: DescriptionSuggestion) {
     setDescription(s.description)
     setCategoryId(s.categoryId)
-    if (s.accountId !== accountId) handleAccountChange(s.accountId)
+    const suggestedAccount = (data?.accounts ?? []).find((a) => a.id === s.accountId)
+    if (suggestedAccount && !suggestedAccount.archived && s.accountId !== accountId) {
+      handleAccountChange(s.accountId)
+    }
     setSelectedTags(s.tags)
     setShowDescSuggestions(false)
     setActiveSuggestionIndex(-1)
@@ -663,6 +671,22 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                 </button>
               )}
             </div>
+            {/* M-95: original purchase date for installments past the 1st — moved here from the
+                credit-card invoice list (M-64), which showed it inline on every row regardless of
+                whether the user cared; only relevant when reviewing a specific installment. */}
+            {isEditMode &&
+              transaction?.installment &&
+              transaction.installment.purchaseDate &&
+              transaction.installment.currentIndex > 1 && (
+                <p className="mt-2 text-xs text-on-surface/40">
+                  {t('transactions.originalPurchaseDate', {
+                    date: parseDateLocal(transaction.installment.purchaseDate).toLocaleDateString(
+                      i18n.language,
+                      { day: '2-digit', month: '2-digit', year: 'numeric' }
+                    ),
+                  })}
+                </p>
+              )}
           </div>
 
           {/* ── CREDIT_PAYMENT: two-account layout ─────────────────────────── */}

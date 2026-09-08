@@ -210,6 +210,67 @@ describe('updateUser', () => {
   })
 })
 
+// M-97: setDeviceName is the one action in this store backed by OPFS (via getDeviceId) instead
+// of purely in-memory state — a minimal fake stands in for navigator.storage, same shape as
+// deviceId.test.ts's own fake, scoped to just this describe block.
+describe('setDeviceName', () => {
+  beforeEach(() => {
+    const files = new Map<string, string>()
+    const fileHandle = {
+      getFile: () => Promise.resolve({ text: () => Promise.resolve(files.get('device-id') ?? '') }),
+      createWritable: () => {
+        let buffer = ''
+        return Promise.resolve({
+          write: (s: string) => {
+            buffer += s
+            return Promise.resolve()
+          },
+          close: () => {
+            files.set('device-id', buffer)
+            return Promise.resolve()
+          },
+        })
+      },
+    }
+    Object.defineProperty(navigator, 'storage', {
+      configurable: true,
+      value: {
+        getDirectory: () =>
+          Promise.resolve({
+            getFileHandle: (name: string, options?: { create?: boolean }) => {
+              if (!files.has(name) && !options?.create) {
+                return Promise.reject(new DOMException('NotFoundError', 'NotFoundError'))
+              }
+              return Promise.resolve(fileHandle)
+            },
+          }),
+      },
+    })
+  })
+
+  it("creates this device's own DeviceInfo entry and an audit entry", async () => {
+    useDataStore.setState({ data: makeDataFile() })
+    await useDataStore.getState().setDeviceName('MacBook do Trabalho')
+
+    const data = useDataStore.getState().data!
+    expect(data.devices).toHaveLength(1)
+    expect(data.devices[0].name).toBe('MacBook do Trabalho')
+    expect(data.devices[0].id).toBeTruthy()
+    expect(data.auditLog.some((e) => e.action === 'CREATE' && e.entity === 'device')).toBe(true)
+  })
+
+  it('renaming again updates the same entry (by id) instead of adding a second one', async () => {
+    useDataStore.setState({ data: makeDataFile() })
+    await useDataStore.getState().setDeviceName('Primeiro Nome')
+    await useDataStore.getState().setDeviceName('Segundo Nome')
+
+    const data = useDataStore.getState().data!
+    expect(data.devices).toHaveLength(1)
+    expect(data.devices[0].name).toBe('Segundo Nome')
+    expect(data.auditLog.some((e) => e.action === 'UPDATE' && e.entity === 'device')).toBe(true)
+  })
+})
+
 describe('loadData / clearData', () => {
   it('loadData sets data', () => {
     useDataStore.getState().loadData(makeDataFile())

@@ -39,8 +39,23 @@ Decisoes de projeto (acordadas):
     quando o Organizze os retorna como `archived` -> espelha o status de arquivamento do
     Organizze na primeira migracao; em re-syncs incrementais, o `archived` de contas ja
     existentes vem do --base (o toggle do Gimbo e que vale).
-  - Recorrencia: cada ocorrencia do Organizze entra como transacao avulsa (fiel ao extrato);
-    as colunas recurrence_* ficam NULL (transacoes vindas da base conservam seus valores).
+  - Recorrencia (M-93, reabre o M-92 revertido em 70d36e3): o Organizze nao expoe um id de
+    agrupamento estavel por ocorrencia de conta fixa -> as colunas recurrence_* sao inferidas
+    por heuristica (`assign_recurrence`, ver comentario na definicao): agrupa por (conta,
+    descricao normalizada, MESMO valor) dentro dos ultimos RECURRENCE_LOOKBACK_MONTHS meses,
+    exige RECURRENCE_MIN_OCCURRENCES+ ocorrencias e cadencia real (semanal/quinzenal/mensal).
+    O criterio de valor (nao so descricao+conta, como na v1) e o que separa uma conta fixa de
+    uma coincidencia de compras do dia a dia — validado contra o cofre real do usuario antes de
+    reimplementar (ver M-93 em plan/BACKLOG.md para os dados). Serie que nao bate os criterios
+    fica sem vinculo, igual ao comportamento antigo.
+  - Categorias duplicadas (M-102): uma categoria do Organizze com o mesmo nome (normalizado,
+    sem acento/case) e o mesmo type de uma categoria de nivel superior ja existente na --base
+    reusa o id da --base em vez de ganhar um id novo — sem isto, categoria padrao do onboarding
+    do Gimbo (CS-23) + categoria do Organizze com o mesmo nome (ex.: "Alimentacao") duplicavam
+    a cada sync incremental, porque os dois lados geram ids independentes. So funciona quando a
+    --base tem exatamente uma categoria para aquele nome — duplicata ja existente (de antes
+    desta correcao) precisa ser resolvida a mao (apagar a categoria redundante) antes que a
+    reconciliacao automatica entre em vigor para aquele nome; ver `build_categories`.
   - Timestamps das transacoes (B-32): `created_at` vem do Organizze (quando o lancamento foi
     criado la) e `updated_at` e o timestamp do run. Sao coisas diferentes de proposito — o
     primeiro alimenta o "Ultimos Lancamentos" do Dashboard (ordenado por createdAt, B-24), o
@@ -70,6 +85,7 @@ import os
 import sqlite3
 import sys
 import time
+import unicodedata
 import uuid as uuidlib
 from datetime import date, datetime
 
@@ -532,12 +548,56 @@ def build_accounts(contas, cartoes, base_accounts, ts):
     return rows, account_id_map, card_id_map
 
 
-def build_categories(categorias, ts):
-    """Retorna (categories_rows, category_id_map, fb_exp, fb_inc). parent_id ja resolvido p/ uuid."""
+def normalize_category_name(name: str) -> str:
+    """Nome normalizado (sem acento, minusculo, sem espaco nas pontas) para comparar
+    categorias de fontes diferentes (M-102) — 'Alimentação' e 'alimentacao ' batem."""
+    sem_acento = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode("ascii")
+    return sem_acento.strip().lower()
+
+
+def build_categories(categorias, ts, base_categories=None):
+    """Retorna (categories_rows, category_id_map, fb_exp, fb_inc, reused). parent_id ja
+    resolvido p/ uuid.
+
+    M-102: uma categoria de nivel superior do Organizze com o MESMO nome (normalizado) e
+    MESMO type de uma categoria ja existente na --base reusa o id da --base em vez de ganhar
+    um id novo deterministico — sem isto, toda categoria padrao criada no onboarding do Gimbo
+    (CS-23, sempre de nivel superior) que tambem existir no Organizze (ex.: "Alimentacao")
+    duplica a cada sync incremental, porque os dois lados geram ids independentes que nunca
+    colidem na uniao "base ∪ fresco" de merge_records(). So compara nivel superior:
+    subcategorias reais do Organizze nao tem equivalente nas categorias padrao (todas de
+    nivel superior), entao a colisao relevante e so nesse nivel.
+
+    Deliberadamente NAO reconcilia quando ja existem 2+ categorias na --base com a mesma
+    chave (nome+type) — duplicata ja existente e resolvida a mao pelo usuario (fluxo atual);
+    adivinhar qual das duas e "a certa" arriscaria orfanar transacoes num snapshot completo
+    (que substitui a --base inteira pelo resultado deste merge).
+    """
+    base_categories = base_categories or {}
+    base_by_key: dict = {}
+    ambiguous = set()
+    for row in base_categories.values():
+        if row.get("parent_id"):
+            continue
+        key = (normalize_category_name(row["name"]), row["type"])
+        if key in base_by_key and base_by_key[key] != row["id"]:
+            ambiguous.add(key)
+        else:
+            base_by_key[key] = row["id"]
+    for key in ambiguous:
+        del base_by_key[key]
+
     category_id_map = {}
     intermediarias = []
+    reused = 0
     for cat in categorias:
+        cat_type = KIND_TYPE_MAP.get(cat.get("kind", "expenses"), "EXPENSE")
         uid = gid("category", cat["id"])
+        if not cat["parent_id"]:
+            existing_id = base_by_key.get((normalize_category_name(cat["name"]), cat_type))
+            if existing_id:
+                uid = existing_id
+                reused += 1
         category_id_map[cat["id"]] = uid
         intermediarias.append(
             {
@@ -546,7 +606,7 @@ def build_categories(categorias, ts):
                 "name": cat["name"],
                 "icon": get_icon(cat["name"]),
                 "color": normalize_color(cat.get("color")),
-                "type": KIND_TYPE_MAP.get(cat.get("kind", "expenses"), "EXPENSE"),
+                "type": cat_type,
             }
         )
 
@@ -564,7 +624,7 @@ def build_categories(categorias, ts):
     fb_inc = gid("category", "fallback-income")
     rows.append({"id": fb_exp, "parent_id": None, "name": "Outros (Despesas)", "icon": "circle", "color": "#808080", "type": "EXPENSE", "created_at": ts, "updated_at": ts})
     rows.append({"id": fb_inc, "parent_id": None, "name": "Outras Receitas", "icon": "circle", "color": "#2BCA9A", "type": "INCOME", "created_at": ts, "updated_at": ts})
-    return rows, category_id_map, fb_exp, fb_inc
+    return rows, category_id_map, fb_exp, fb_inc, reused
 
 
 def build_transactions(lancamentos, account_id_map, card_id_map, category_id_map, fb_exp, fb_inc, ts,
@@ -759,6 +819,120 @@ def merge_records(base, fresh, window_start: date, window_end: date):
             "transactions": transactions, "txtags": txtags}, carried
 
 
+# ─── Recorrencia heuristica (M-93 — reabre o M-92, revertido em 70d36e3) ───────
+#
+# O M-92 original agrupava so por (conta, categoria, descricao normalizada) + cadencia por
+# banda, sem exigir valor igual. Validado contra o cofre real do usuario (26,5 mil transacoes,
+# 11 anos de historico): isso produziu ~358 "series", das quais a esmagadora maioria eram
+# compras do dia a dia (farmacia, posto de gasolina, restaurante) coincidindo por acaso numa
+# banda de cadencia ao longo de anos de dados — nao contas fixas de verdade. Cada uma virava
+# uma serie sem recurrence_end_date, e refreshRecurrenceHorizons() (roda em todo boot do app)
+# materializava ate 600 ocorrencias fantasmas por serie ate o horizonte — a causa raiz dos
+# "lancamentos com datas muito erradas" relatados apos importar. Corrigido em tres frentes:
+#
+#   1. Exige o MESMO valor (arredondado a centavos), nao so conta+descricao. Reajuste de valor
+#      (salario, diarista, aluguel) quebra a serie em duas — comportamento correto, confirmado
+#      pelo usuario: cada faixa de valor e uma serie propria, capturando o reajuste ao longo do
+#      tempo, em vez de uma unica serie com cadencia mal-definida.
+#   2. Exige RECURRENCE_MIN_OCCURRENCES (3) ocorrencias, nao 2 — corta o ruido residual de
+#      coincidencias (duas compras nao relacionadas batendo valor e intervalo por acaso; ~40%
+#      das series com "mesmo valor" e so 2 pontos eram falsos positivos nos dados reais).
+#   3. So considera transacoes dos ultimos RECURRENCE_LOOKBACK_MONTHS (6) meses — filtra ANTES
+#      de agrupar, nunca usa o passado distante nem para formar o grupo nem para confirmar
+#      cadencia. Decisao do usuario (2026-09-08): no caso dele o passado ja esta consolidado e
+#      nunca muda, entao nao ha ganho em olhar mais para tras — e o script e feito sob medida
+#      para o proprio cofre dele, nao pensado para suportar outros usuarios.
+#
+# Nao materializa o futuro aqui: o script pode continuar trazendo o quanto o Organizze ja
+# materializou nativamente (o Gimbo tolera, HY-16/B-22 ja documentam o teto de ~2034 do
+# Organizze), mas quem decide ate onde preencher ocorrencias futuras SEM endDate e sempre o
+# proprio Gimbo (refreshRecurrenceHorizons, useDataStore.ts) — idempotente, nao duplica se a
+# ultima data importada ja estiver alem do horizonte rolante.
+RECURRENCE_LOOKBACK_MONTHS = 6
+RECURRENCE_MIN_OCCURRENCES = 3
+
+RECURRENCE_BANDS = [
+    ("weekly", 5, 10),
+    ("biweekly", 11, 20),
+    ("monthly", 25, 35),
+]
+
+
+def classify_cadence(gaps_days):
+    """Frequencia reconhecida pelo Gimbo (weekly/biweekly/monthly) cuja banda cobre a MAIORIA
+    dos intervalos (dias) entre ocorrencias consecutivas, ou None se nenhuma banda tiver
+    maioria (cadencia irregular, ou coincidencia de descricao/conta/valor que nao e de fato
+    uma serie).
+
+    Vota por banda em vez de olhar so a mediana agregada: com poucos intervalos (2, o minimo
+    com RECURRENCE_MIN_OCCURRENCES=3), a mediana de dois gaps bem distintos pode cair "por
+    acidente" dentro de uma banda sem que nenhum dos dois gaps individuais se pareca com
+    aquela cadencia (ex.: [9, 50] dias -> mediana 29.5, dentro da banda mensal, mas nenhum dos
+    dois intervalos e realmente mensal) — maioria por-gap evita esse falso positivo.
+    """
+    if not gaps_days:
+        return None
+    best_freq, best_count = None, 0
+    for freq, lo, hi in RECURRENCE_BANDS:
+        count = sum(1 for g in gaps_days if lo <= g <= hi)
+        if count > best_count:
+            best_freq, best_count = freq, count
+    if best_count == 0 or best_count / len(gaps_days) <= 0.5:
+        return None
+    return best_freq
+
+
+def assign_recurrence(transactions: dict, today: date) -> dict:
+    """Marca `recurrence_parent_id`/`recurrence_frequency` em serie, em memoria (mutando os
+    rows do dict `transactions`). So considera INCOME/EXPENSE avulsos (parcelamento tem seu
+    proprio agrupamento e e mutuamente exclusivo com recorrencia no TransactionDrawer) dentro
+    dos ultimos RECURRENCE_LOOKBACK_MONTHS meses — o filtro de data corta a transacao fora da
+    deteccao inteira, nunca so do vinculo final. Agrupa por (conta, descricao normalizada,
+    valor); reajuste de valor comeca uma serie nova, de proposito (ver comentario acima). Falha
+    sempre para o lado seguro: menos de RECURRENCE_MIN_OCCURRENCES ocorrencias, ou cadencia fora
+    das bandas conhecidas -> fica sem recurrence (identico a nunca ter rodado esta heuristica).
+    """
+    cutoff = months_back(today, RECURRENCE_LOOKBACK_MONTHS)
+
+    groups: dict = {}
+    for row in transactions.values():
+        if row["type"] not in ("INCOME", "EXPENSE"):
+            continue
+        if row.get("installment_parent_id"):
+            continue
+        row_date = parse_date_str(row["date"])
+        if not row_date or row_date < cutoff:
+            continue
+        desc_norm = (row.get("description") or "").strip().lower()
+        if not desc_norm:
+            continue
+        key = (row["account_id"], desc_norm, round(row["amount"], 2))
+        groups.setdefault(key, []).append(row)
+
+    tagged_series = tagged_txs = 0
+    for key, rows in groups.items():
+        dates = sorted({r["date"] for r in rows})
+        if len(dates) < RECURRENCE_MIN_OCCURRENCES:
+            continue
+        gaps = []
+        for prev, cur in zip(dates, dates[1:]):
+            d1, d2 = parse_date_str(prev), parse_date_str(cur)
+            if d1 and d2:
+                gaps.append((d2 - d1).days)
+        freq = classify_cadence(gaps)
+        if freq is None:
+            continue
+        parent_id = gid("recurrence", f"{key[0]}|{key[1]}|{key[2]}")
+        for row in rows:
+            row["recurrence_parent_id"] = parent_id
+            row["recurrence_frequency"] = freq
+            row["recurrence_end_date"] = None
+        tagged_series += 1
+        tagged_txs += len(rows)
+
+    return {"series": tagged_series, "transactions": tagged_txs}
+
+
 # ─── Escrita do SQLite ────────────────────────────────────────────────────────
 
 SCHEMA_DDL = """
@@ -819,7 +993,10 @@ CREATE TABLE IF NOT EXISTS transaction_tags (
 );
 CREATE TABLE IF NOT EXISTS audit_log (
   id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, action TEXT NOT NULL,
-  entity TEXT NOT NULL, entity_id TEXT NOT NULL, summary TEXT NOT NULL
+  entity TEXT NOT NULL, entity_id TEXT NOT NULL, summary TEXT NOT NULL,
+  -- M-96/app schema v17: dispositivo de origem, nunca populado pelo Organizze (o script roda
+  -- num único processo, sem conceito de "dispositivo" na origem) — sempre NULL.
+  device_id TEXT
 );
 CREATE TABLE IF NOT EXISTS deleted_ids (id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS valuations (
@@ -869,7 +1046,13 @@ CREATE TABLE IF NOT EXISTS table_hashes (
   hash_value INTEGER NOT NULL, row_count INTEGER NOT NULL,
   PRIMARY KEY (table_name, partition_key)
 );
-PRAGMA user_version = 16;
+-- M-96/M-97/app schema v17: dispositivo que já se nomeou (deviceId -> nome amigável). Nunca
+-- populada pelo Organizze (sem conceito de "dispositivo" na origem) — fica sempre vazia, mesmo
+-- tratamento de budgets/saved_periods acima.
+CREATE TABLE IF NOT EXISTS devices (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+PRAGMA user_version = 17;
 """
 
 
@@ -1026,9 +1209,12 @@ def main():
     if incremental and base_data is None:
         print("[aviso] modo incremental sem base existente — historico fora da janela NAO sera preservado neste run.")
     base_accounts = base_data["accounts"] if base_data else {}
+    base_categories = base_data["categories"] if base_data else {}
 
     accounts_rows, account_id_map, card_id_map = build_accounts(contas, cartoes, base_accounts, ts)
-    categories_rows, category_id_map, fb_exp, fb_inc = build_categories(categorias, ts)
+    categories_rows, category_id_map, fb_exp, fb_inc, categories_reused = build_categories(
+        categorias, ts, base_categories
+    )
     tx_rows, tag_rows, txtag_rows, stats = build_transactions(
         lancamentos, account_id_map, card_id_map, category_id_map, fb_exp, fb_inc, ts,
         invoice_month_map, invoice_due_map
@@ -1049,14 +1235,17 @@ def main():
         fresh["txtags"] = {tt for tt in fresh["txtags"] if tt[0] in fresh["transactions"]}
         records = fresh
 
+    recurrence_stats = assign_recurrence(records["transactions"], date.today())
+
     write_db(args.out, user_name, args.email, records)
 
     size_kb = os.path.getsize(args.out) // 1024
     print("\n=== Resumo ===")
     print(f"  Modo:        {modo}")
     print(f"  Contas:      {len(records['accounts'])} (frescas: {len(contas)} banco + {len(cartoes)} cartao)")
-    print(f"  Categorias:  {len(records['categories'])} (inclui 2 fallback)")
+    print(f"  Categorias:  {len(records['categories'])} (inclui 2 fallback, {categories_reused} reconciliadas por nome com a base — M-102)")
     print(f"  Tags:        {len(records['tags'])}")
+    print(f"  Recorrencia: {recurrence_stats['series']} series detectadas ({recurrence_stats['transactions']} transacoes)")
     print(f"  Transacoes:  {len(records['transactions'])} (frescas na janela: {stats['transactions']}, {stats['unpaid']} nao pagas)")
     if incremental:
         print(f"  Preservadas: {carried} transacoes fora da janela (vindas da base)")
