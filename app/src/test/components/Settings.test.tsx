@@ -176,6 +176,13 @@ describe('Settings — restoring from the backup folder tops up stale recurring 
 
     const transactions = useDataStore.getState().data?.transactions ?? []
     expect(transactions.length).toBeGreaterThan(1)
+
+    // refreshRecurrenceHorizons() schedules a real 300ms debounced write
+    // (debouncedApplyMutation — a module-level timer, not mocked/faked in this file). Let it
+    // settle before the test ends, or it fires later during/after an unrelated test once this
+    // one's local `stale`/mock setup is out of scope — an unhandled exception in CI (not a real
+    // assertion failure, but it still fails the run).
+    await new Promise((resolve) => setTimeout(resolve, 500))
   })
 })
 
