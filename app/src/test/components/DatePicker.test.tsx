@@ -72,6 +72,62 @@ describe('DatePicker — M-47', () => {
     expect(screen.queryByText('Junho de 2026')).not.toBeInTheDocument()
   })
 
+  // dassan/ui-adjustments: the popup is `position: absolute` inside whatever ancestor hosts
+  // this field, and an `overflow: auto/hidden` ancestor with `height: auto` doesn't reliably
+  // clip it (a real CSS quirk — see the comment on openUpward/alignRight in DatePicker.tsx).
+  // Flipping to whichever side has more room sidesteps needing that clip to actually happen.
+  it('flips the popup to open upward and right-aligned when there is no room below/right', () => {
+    const onChange = vi.fn()
+    const { container } = render(
+      <div data-testid="bounds" style={{ overflow: 'auto' }}>
+        <DatePicker value="2026-06-10" onChange={onChange} className={CLASS_NAME} />
+      </div>
+    )
+
+    // The clipping ancestor (a 400x400 box) and the field pinned near its bottom-right corner —
+    // no room below or to the right, plenty above and to the left.
+    vi.spyOn(screen.getByTestId('bounds'), 'getBoundingClientRect').mockReturnValue({
+      top: 0,
+      left: 0,
+      right: 400,
+      bottom: 400,
+      width: 400,
+      height: 400,
+    } as DOMRect)
+    const input = screen.getByDisplayValue('10/06/2026')
+    vi.spyOn(input.parentElement as HTMLElement, 'getBoundingClientRect').mockReturnValue({
+      top: 350,
+      left: 350,
+      right: 400,
+      bottom: 390,
+      width: 50,
+      height: 40,
+    } as DOMRect)
+
+    fireEvent.focus(input)
+
+    const popup = container.querySelector('.w-72')
+    expect(popup).toHaveClass('bottom-full')
+    expect(popup).toHaveClass('right-0')
+    expect(popup).not.toHaveClass('top-full')
+    expect(popup).not.toHaveClass('left-0')
+  })
+
+  it('keeps the default (below, left-aligned) position when there is enough room', () => {
+    const onChange = vi.fn()
+    const { container } = render(
+      <DatePicker value="2026-06-10" onChange={onChange} className={CLASS_NAME} />
+    )
+
+    // jsdom's default getBoundingClientRect (all zeros) plus a real window size — plenty of
+    // room below/right in every existing usage, so behavior stays exactly as before.
+    fireEvent.focus(screen.getByDisplayValue('10/06/2026'))
+
+    const popup = container.querySelector('.w-72')
+    expect(popup).toHaveClass('top-full')
+    expect(popup).toHaveClass('left-0')
+  })
+
   it('navigates between months', () => {
     const onChange = vi.fn()
     render(<DatePicker value="2026-06-10" onChange={onChange} className={CLASS_NAME} />)

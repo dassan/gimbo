@@ -22,6 +22,28 @@ export interface DatePickerProps {
 
 const WEEKDAY_LABELS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
 
+// Walks up from `el` looking for the nearest ancestor that would actually clip an overflowing
+// absolutely-positioned child (any overflow other than the default 'visible' on either axis) —
+// that ancestor's box is the real boundary the popup shouldn't cross, whether or not the browser
+// actually clips to it in practice (see the comment on openUpward/alignRight above). Falls back
+// to the viewport when nothing constrains it, which is the correct boundary in that case.
+function getClippingBounds(el: HTMLElement): {
+  top: number
+  bottom: number
+  left: number
+  right: number
+} {
+  let node = el.parentElement
+  while (node) {
+    const style = getComputedStyle(node)
+    if (style.overflowX !== 'visible' || style.overflowY !== 'visible') {
+      return node.getBoundingClientRect()
+    }
+    node = node.parentElement
+  }
+  return { top: 0, left: 0, right: window.innerWidth, bottom: window.innerHeight }
+}
+
 function formatDateStr(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
@@ -67,11 +89,13 @@ export default function DatePicker({
   // hosts this field — `overflow: hidden/auto` on that ancestor only clips it when the
   // ancestor's height is a definite value, not when it's `auto` (a real CSS quirk: an
   // auto-height box's clip region isn't reliably applied to out-of-flow descendants that extend
-  // past it). A field near the bottom of a short modal has no room below, so the calendar spills
-  // out past the modal's rounded edge onto the backdrop instead of being clipped. Flipping to
-  // open upward when there isn't enough room below sidesteps the problem instead of depending on
-  // a container that may or may not actually clip.
+  // past it). A field near an edge of a short/narrow modal has no room on one side, so the
+  // calendar spills out past the modal's rounded edge onto the backdrop instead of being
+  // clipped. Flipping to the side that has room sidesteps the problem instead of depending on a
+  // container that may or may not actually clip — on both axes: a field in the right column of a
+  // 2-col grid has the same problem horizontally as a field near the bottom has vertically.
   const [openUpward, setOpenUpward] = useState(false)
+  const [alignRight, setAlignRight] = useState(false)
   const reference = value ? parseDateLocal(value) : new Date()
   const [viewYear, setViewYear] = useState(reference.getFullYear())
   const [viewMonth, setViewMonth] = useState(reference.getMonth())
@@ -95,10 +119,11 @@ export default function DatePicker({
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  // Generous estimate of the calendar's own rendered height (measured ~340-360px across month
-  // lengths) plus margin — only used to decide a direction, never for layout, so an approximate
-  // constant is fine.
+  // Generous estimate of the calendar's own rendered box (height varies ~340-360px across month
+  // lengths; width is the fixed w-72 below) plus margin — only used to decide a direction, never
+  // for layout, so an approximate constant is fine.
   const CALENDAR_HEIGHT_ESTIMATE = 380
+  const CALENDAR_WIDTH_ESTIMATE = 300
 
   function handleFocus() {
     const ref = value ? parseDateLocal(value) : new Date()
@@ -107,10 +132,18 @@ export default function DatePicker({
     setText(displayValue)
     setIsFocused(true)
     setOpen(true)
-    const rect = containerRef.current?.getBoundingClientRect()
-    if (rect) {
-      const spaceBelow = window.innerHeight - rect.bottom
-      setOpenUpward(spaceBelow < CALENDAR_HEIGHT_ESTIMATE && rect.top > spaceBelow)
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect()
+      // The real constraint is whatever ancestor would visually bound this popup (typically a
+      // modal card), not the viewport — a field can have plenty of room to the viewport's edge
+      // while still overflowing a narrower/shorter card centered on the page.
+      const bounds = getClippingBounds(containerRef.current)
+      const spaceBelow = bounds.bottom - rect.bottom
+      const spaceAbove = rect.top - bounds.top
+      setOpenUpward(spaceBelow < CALENDAR_HEIGHT_ESTIMATE && spaceAbove > spaceBelow)
+      const spaceRight = bounds.right - rect.left
+      const spaceLeft = rect.right - bounds.left
+      setAlignRight(spaceRight < CALENDAR_WIDTH_ESTIMATE && spaceLeft > spaceRight)
     }
   }
 
@@ -301,8 +334,9 @@ export default function DatePicker({
       {open && (
         <div
           className={cn(
-            'absolute left-0 z-30 w-72 rounded-2xl bg-surface-container-high border border-outline-variant p-4',
-            openUpward ? 'bottom-full mb-2' : 'top-full mt-2'
+            'absolute z-30 w-72 rounded-2xl bg-surface-container-high border border-outline-variant p-4',
+            openUpward ? 'bottom-full mb-2' : 'top-full mt-2',
+            alignRight ? 'right-0' : 'left-0'
           )}
           style={{ boxShadow: '0px 8px 24px rgba(0,0,0,0.3)' }}
         >
