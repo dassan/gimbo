@@ -119,9 +119,6 @@ describe('Simulacoes page', () => {
     fireEvent.change(screen.getByLabelText('simulacoes.name'), {
       target: { value: 'Troca de carro' },
     })
-    fireEvent.change(screen.getByPlaceholderText('simulacoes.itemDescriptionPlaceholder'), {
-      target: { value: 'Entrada' },
-    })
     // Amount input: cents-based, mirrors BudgetFormModal's convention (raw digits / 100).
     fireEvent.change(screen.getByDisplayValue('0,00'), { target: { value: '150000' } })
 
@@ -131,11 +128,11 @@ describe('Simulacoes page', () => {
     expect(hypotheses).toHaveLength(1)
     expect(hypotheses[0].name).toBe('Troca de carro')
     expect(hypotheses[0].items).toEqual([
-      expect.objectContaining({ description: 'Entrada', amount: 1500, type: 'EXPENSE' }),
+      expect.objectContaining({ amount: 1500, type: 'EXPENSE' }),
     ])
   })
 
-  it('does not save an item with a blank description or zero amount', () => {
+  it('does not save an item with a zero amount', () => {
     useDataStore.setState({ data: makeDataFile() })
     render(<Simulacoes />)
 

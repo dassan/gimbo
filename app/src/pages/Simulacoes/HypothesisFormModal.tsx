@@ -3,7 +3,7 @@
 // campos — uma hipótese nunca é uma Transaction/Account real (M-101, ver types/index.ts).
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Trash2, X } from 'lucide-react'
+import { Info, Plus, Trash2, X } from 'lucide-react'
 import { cn, now, todayStr, uuid } from '@/lib/utils'
 import { useDataStore } from '@/store/useDataStore'
 import DatePicker from '@/components/DatePicker'
@@ -57,7 +57,7 @@ export default function HypothesisFormModal({ onClose, hypothesis }: HypothesisF
   }
 
   function handleSave() {
-    const cleanItems = items.filter((it) => it.description.trim() && it.amount > 0)
+    const cleanItems = items.filter((it) => it.amount > 0)
     if (isEdit) {
       updateHypothesis({ ...hypothesis, name: name.trim(), items: cleanItems })
     } else {
@@ -122,7 +122,37 @@ export default function HypothesisFormModal({ onClose, hypothesis }: HypothesisF
 
           {/* Itens */}
           <div className="space-y-3">
-            <span className={labelClass}>{t('simulacoes.itemsTitle')}</span>
+            <span className={cn(labelClass, 'flex items-center gap-1.5')}>
+              {t('simulacoes.itemsTitle')}
+              <span className="group relative inline-flex">
+                <Info
+                  size={13}
+                  strokeWidth={1.5}
+                  className="cursor-help text-on-surface/40"
+                  aria-hidden="true"
+                />
+                <div
+                  role="tooltip"
+                  className="pointer-events-none absolute left-0 top-full z-20 mt-2 hidden w-64 flex-col gap-2 rounded-xl bg-surface-container-high p-4 text-left normal-case tracking-normal font-normal shadow-lg group-hover:flex"
+                >
+                  {(
+                    [
+                      ['kindOneTime', 'kindOneTimeHint'],
+                      ['kindInstallment', 'kindInstallmentHint'],
+                      ['kindRecurring', 'kindRecurringHint'],
+                      ['kindCategoryTarget', 'kindCategoryTargetHint'],
+                    ] as const
+                  ).map(([labelKey, hintKey]) => (
+                    <p key={labelKey} className="text-[11px] leading-relaxed text-on-surface/70">
+                      <span className="font-semibold text-on-surface">
+                        {t(`simulacoes.${labelKey}`)}
+                      </span>{' '}
+                      — {t(`simulacoes.${hintKey}`)}
+                    </p>
+                  ))}
+                </div>
+              </span>
+            </span>
             {items.map((item) => (
               <ItemEditor
                 key={item.id}
@@ -272,14 +302,6 @@ function ItemEditor({ item, categories, onChange, onRemove, canRemove }: ItemEdi
           </button>
         )}
       </div>
-
-      <input
-        type="text"
-        value={item.description}
-        onChange={(e) => onChange({ description: e.target.value })}
-        placeholder={t('simulacoes.itemDescriptionPlaceholder')}
-        className={fieldClass}
-      />
 
       <div className="grid grid-cols-2 gap-2">
         {(['EXPENSE', 'INCOME'] as const).map((ty) => (
