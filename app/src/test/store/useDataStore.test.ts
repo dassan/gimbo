@@ -933,6 +933,26 @@ describe('M-35: addTransaction with recurrence', () => {
     expect(log).toHaveLength(1)
     expect(log[0].entityId).toBe('rec-parent')
   })
+
+  // ── B-38: a referenceMonth/invoiceDueDate bound to the first occurrence must not
+  // leak onto occurrences dated for other invoices ─────────────────────────────
+  it("does not carry the first occurrence's referenceMonth/invoiceDueDate onto later occurrences", () => {
+    useDataStore
+      .getState()
+      .addTransaction(
+        makeRecurring(
+          { frequency: 'monthly', parentId: 'rec-parent' },
+          { referenceMonth: '2026-01', invoiceDueDate: '2026-02-07' }
+        )
+      )
+    const txs = [...(useDataStore.getState().data?.transactions ?? [])].sort((a, b) =>
+      a.date.localeCompare(b.date)
+    )
+    expect(txs[0].referenceMonth).toBe('2026-01')
+    expect(txs[0].invoiceDueDate).toBe('2026-02-07')
+    expect(txs.slice(1).every((t) => t.referenceMonth === undefined)).toBe(true)
+    expect(txs.slice(1).every((t) => t.invoiceDueDate === undefined)).toBe(true)
+  })
 })
 
 // ─── M-35: deleteRecurrenceFrom ───────────────────────────────────────────────
@@ -1065,6 +1085,47 @@ describe('B-22: refreshRecurrenceHorizons', () => {
     vi.setSystemTime(new Date('2027-12-31')) // far in the future — would top up an open series
     useDataStore.getState().refreshRecurrenceHorizons()
     expect(useDataStore.getState().data?.transactions).toHaveLength(5)
+  })
+
+  // ── B-38: real-world scenario — a synced CREDIT-account charge (last known
+  // occurrence) has a referenceMonth binding it to its own invoice; occurrences
+  // topped up past it must NOT inherit that binding, or they all pile into the
+  // same invoice as the last real charge instead of spreading across future ones.
+  it("does not carry the template occurrence's referenceMonth/invoiceDueDate onto newly generated ones", () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [account],
+        categories: [category],
+        transactions: [
+          makeTransaction({
+            id: 'rec-parent',
+            accountId: 'acc-r',
+            categoryId: 'cat-r',
+            type: 'EXPENSE',
+            amount: 44.9,
+            date: '2026-08-30',
+            description: 'Claro Flex',
+            isPaid: false,
+            referenceMonth: '2026-09',
+            invoiceDueDate: '2026-10-07',
+            recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
+          }),
+        ],
+      }),
+    })
+
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-08'))
+    useDataStore.getState().refreshRecurrenceHorizons()
+
+    const txs = useDataStore.getState().data?.transactions ?? []
+    const generated = txs.filter((t) => t.id !== 'rec-parent')
+    expect(generated.length).toBeGreaterThan(0)
+    expect(generated.every((t) => t.referenceMonth === undefined)).toBe(true)
+    expect(generated.every((t) => t.invoiceDueDate === undefined)).toBe(true)
+    // Each generated occurrence lands on a distinct future date, not all bunched
+    // onto the template's own date/period.
+    expect(new Set(generated.map((t) => t.date)).size).toBe(generated.length)
   })
 })
 
