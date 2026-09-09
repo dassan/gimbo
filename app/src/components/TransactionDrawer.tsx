@@ -9,6 +9,7 @@ import {
   Tag,
   Trash2,
   CreditCard,
+  StickyNote,
 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import {
@@ -111,6 +112,8 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   const [transferAccountId, setTransferAccountId] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [description, setDescription] = useState('')
+  const [notes, setNotes] = useState('')
+  const [notesExpanded, setNotesExpanded] = useState(false)
   const [selectedTags, setSelectedTags] = useState<string[]>([])
 
   // ── B-10: isPaid toggle ───────────────────────────────────────────────────────
@@ -170,7 +173,11 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   // financing booked parcela by parcela on a regular account is just as valid as a card
   // purchase; the debt engine (getTotalCommittedDebt/getDebtBreakdown, HE-08/HE-10) already
   // treats any non-LOAN account's open installments the same way.
-  const canToggleInstallments = !isEditMode && type === 'EXPENSE'
+  // dassan/ui-adjustments: extended to INCOME on user request (e.g. a receivable paid out in
+  // installments) — the debt engine filters strictly on `type === 'EXPENSE'`
+  // (_getOpenInstallmentGroups, lib/utils.ts), so an INCOME installment series is simply
+  // invisible to it, by design: a scheduled receivable is never a liability.
+  const canToggleInstallments = !isEditMode && (type === 'EXPENSE' || type === 'INCOME')
 
   // M-35: recurrence applies to INCOME/EXPENSE on create.
   const canToggleRecurrence = !isEditMode && (type === 'INCOME' || type === 'EXPENSE')
@@ -179,11 +186,18 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   // exclusive via auto-off-on-click instead of hiding the other's whole section.
   const showToggleRow = canToggleInstallments || canToggleRecurrence
 
-  // CC-35: isPaid doesn't apply per-installment at creation time (same as it never applied to
-  // CREDIT charges) — each generated occurrence is managed individually afterward.
-  const showIsPaidToggle =
-    (type === 'INCOME' || (type === 'EXPENSE' && selectedAccount?.type !== 'CREDIT')) &&
-    !installmentsEnabled
+  // CC-35: isPaid doesn't apply per-installment at creation time — each generated occurrence
+  // is managed individually afterward.
+  const isPaidApplicable = (type === 'INCOME' || type === 'EXPENSE') && !installmentsEnabled
+
+  // dassan/ui-adjustments: a CREDIT charge is never "individually paid" — it's settled by a
+  // separate CREDIT_PAYMENT against the invoice (getOpenCreditBalance/getInvoiceStatus, the
+  // virtual-invoice engine), so `isPaid` is meaningless for it and forced to `false`
+  // (handleAccountChange below). Shown disabled (greyed, always off) instead of hidden — CC-35
+  // originally hid the whole field here, which made the row silently reflow from 3 columns to
+  // 2 depending on which account was picked; showing it disabled keeps the layout stable and
+  // makes the "not applicable" reason visible instead of just absent.
+  const isPaidDisabled = type === 'EXPENSE' && selectedAccount?.type === 'CREDIT'
 
   // Reset or pre-fill on open — intentional setState-in-effect to initialise form fields
   useEffect(() => {
@@ -198,6 +212,8 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
         setTransferAccountId(transaction.transferAccountId ?? '')
         setCategoryId(transaction.categoryId)
         setDescription(transaction.description)
+        setNotes(transaction.notes ?? '')
+        setNotesExpanded(Boolean(transaction.notes))
         setSelectedTags(transaction.tags)
         setIsPaid(transaction.isPaid)
       } else {
@@ -209,6 +225,8 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
         setTransferAccountId(activeNonCreditAccounts[0]?.id ?? '')
         setCategoryId('')
         setDescription('')
+        setNotes('')
+        setNotesExpanded(false)
         setSelectedTags([])
         setIsPaid(true)
       }
@@ -275,11 +293,11 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
 
   // M-81: picking a future date defaults isPaid off (nothing to pay yet); past/today dates
   // default it back on. The user can still flip the switch manually either way afterward.
-  // Only applies where the isPaid toggle is actually shown — CREDIT purchases force it off
-  // regardless of date (handleAccountChange), so leave those alone here.
+  // Only applies where the isPaid toggle is actually interactive — CREDIT purchases force it
+  // off regardless of date (handleAccountChange), so leave those alone here.
   function handleDateChange(newDate: string) {
     setDate(newDate)
-    if (showIsPaidToggle) setIsPaid(newDate <= todayStr())
+    if (isPaidApplicable && !isPaidDisabled) setIsPaid(newDate <= todayStr())
   }
 
   // Shared by the manual account Select and the description-suggestion autofill (M-80): reset
@@ -325,10 +343,14 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   function handleSave() {
     if (!data || amount === 0) return
 
-    // CC-23/CC-35: Build installment metadata if applicable (create mode, EXPENSE, any account)
+    // CC-23/CC-35: Build installment metadata if applicable (create mode, EXPENSE/INCOME, any
+    // account) — kept in sync with canToggleInstallments above.
     const parentId = uuid()
     const hasInstallments =
-      !isEditMode && installmentsEnabled && installmentCount >= 2 && type === 'EXPENSE'
+      !isEditMode &&
+      installmentsEnabled &&
+      installmentCount >= 2 &&
+      (type === 'EXPENSE' || type === 'INCOME')
 
     // M-35: build recurrence metadata when enabled (create mode, INCOME/EXPENSE)
     const hasRecurrence =
@@ -344,6 +366,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
       type,
       date,
       description,
+      notes: notes.trim() || undefined,
       isPaid,
       tags: selectedTags,
       ...((type === 'CREDIT_PAYMENT' || type === 'TRANSFER') && transferAccountId
@@ -492,6 +515,83 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
     }
   }
 
+  // dassan/ui-adjustments: shared between the standard case (paired with the account selector,
+  // and with isPaidField when it applies, in a grid row) and CREDIT_PAYMENT/TRANSFER (which
+  // already spend that row on two account selects, so this stays full-width below them) — same
+  // JSX either way, only one instance ever mounts per render since the branches below are
+  // mutually exclusive. Split out from the isPaid toggle (own variable below): together they
+  // needed more width than half the drawer has once paired with the account selector — this
+  // way the caller can give isPaidField just the narrow column it actually needs instead of
+  // splitting the row evenly in two.
+  const dateField = (
+    <div>
+      <label className="label text-on-surface/40 block mb-2">{t('transactions.date')}</label>
+      <div className="relative">
+        <Calendar
+          size={16}
+          className="absolute left-3 top-1/2 -translate-y-1/2 z-10 text-on-surface/40"
+        />
+        <DatePicker
+          value={date}
+          onChange={handleDateChange}
+          className="w-full rounded-xl bg-surface-container-low py-3 pl-9 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+      {/* M-95: original purchase date for installments past the 1st — moved here from the
+          credit-card invoice list (M-64), which showed it inline on every row regardless of
+          whether the user cared; only relevant when reviewing a specific installment. */}
+      {isEditMode &&
+        transaction?.installment &&
+        transaction.installment.purchaseDate &&
+        transaction.installment.currentIndex > 1 && (
+          <p className="mt-2 text-xs text-on-surface/40">
+            {t('transactions.originalPurchaseDate', {
+              date: parseDateLocal(transaction.installment.purchaseDate).toLocaleDateString(
+                i18n.language,
+                { day: '2-digit', month: '2-digit', year: 'numeric' }
+              ),
+            })}
+          </p>
+        )}
+    </div>
+  )
+
+  // dassan/ui-adjustments: label stacked directly above its own toggle, both centered in a
+  // narrow (content-width) column — same "label above control" rhythm as every other field in
+  // this row, instead of a shared header spanning the whole row (whose "PAGO" text never lined
+  // up with the pill below it, different widths) or a label glued inline beside the toggle
+  // (didn't leave enough room for the date input once this row is squeezed to half the drawer's
+  // width). Only ever rendered in the standard-case grid — CREDIT_PAYMENT/TRANSFER never have
+  // isPaidApplicable true (neither type is EXPENSE nor INCOME). Disabled (not hidden) for a
+  // CREDIT charge — see isPaidDisabled above for why.
+  const isPaidField = isPaidApplicable && (
+    <div className={cn('flex flex-col items-center shrink-0', isPaidDisabled && 'opacity-40')}>
+      <label className="label text-on-surface/40 block mb-2 whitespace-nowrap">
+        {t('transactions.isPaid')}
+      </label>
+      <button
+        role="switch"
+        aria-checked={isPaid && !isPaidDisabled}
+        aria-label={t('transactions.isPaid')}
+        disabled={isPaidDisabled}
+        title={isPaidDisabled ? t('transactions.isPaidDisabledCredit') : undefined}
+        onClick={() => setIsPaid((v) => !v)}
+        className={cn(
+          'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
+          isPaidDisabled && 'cursor-not-allowed',
+          isPaid && !isPaidDisabled ? 'bg-primary' : 'bg-on-surface/20'
+        )}
+      >
+        <span
+          className={cn(
+            'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+            isPaid && !isPaidDisabled ? 'translate-x-6' : 'translate-x-1'
+          )}
+        />
+      </button>
+    </div>
+  )
+
   return (
     <>
       {/* Backdrop */}
@@ -526,17 +626,17 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
           <div className="h-1 w-10 rounded-full bg-on-surface/20" />
         </div>
 
-        {/* Header — close only; title removed (M-78), amount is the hero */}
-        <div className="flex justify-end px-5 sm:px-6 pt-3 sm:pt-4">
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface/40 hover:bg-surface-container-low transition-colors"
-          >
-            <X size={18} />
-          </button>
-        </div>
+        {/* Close — floats over the scroll area instead of reserving its own header row
+            (`fixed` on <aside> already establishes the positioning context, so this needs no
+            `relative` wrapper); the amount block's centered "R$" label leaves the corner clear. */}
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-3 sm:right-5 sm:top-4 z-10 flex h-8 w-8 items-center justify-center rounded-full text-on-surface/40 hover:bg-surface-container-low transition-colors"
+        >
+          <X size={18} />
+        </button>
 
-        <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pb-6 space-y-6">
+        <div className="flex-1 overflow-y-auto scrollbar-hide px-6 pb-6 pt-3 sm:pt-4 space-y-6">
           {/* Amount */}
           <div className="text-center">
             <p className="label text-on-surface/40 mb-1">R$</p>
@@ -626,164 +726,137 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
             )}
           </div>
 
-          {/* Date + isPaid (isPaid shown inline for INCOME/EXPENSE only, hidden while
-              installments are on — CC-35: same reason it never showed for CREDIT charges) */}
-          <div>
-            {showIsPaidToggle ? (
-              <div className="flex items-center justify-between mb-2">
-                <span className="label text-on-surface/40">{t('transactions.date')}</span>
-                <span className="label text-on-surface/40">{t('transactions.isPaid')}</span>
-              </div>
-            ) : (
-              <label className="label text-on-surface/40 block mb-2">
-                {t('transactions.date')}
-              </label>
-            )}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 relative">
-                <Calendar
-                  size={16}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 z-10 text-on-surface/40"
-                />
-                <DatePicker
-                  value={date}
-                  onChange={handleDateChange}
-                  className="w-full rounded-xl bg-surface-container-low py-3 pl-9 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-                />
-              </div>
-              {showIsPaidToggle && (
-                <button
-                  role="switch"
-                  aria-checked={isPaid}
-                  aria-label={t('transactions.isPaid')}
-                  onClick={() => setIsPaid((v) => !v)}
-                  className={cn(
-                    'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
-                    isPaid ? 'bg-primary' : 'bg-on-surface/20'
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                      isPaid ? 'translate-x-6' : 'translate-x-1'
-                    )}
-                  />
-                </button>
-              )}
-            </div>
-            {/* M-95: original purchase date for installments past the 1st — moved here from the
-                credit-card invoice list (M-64), which showed it inline on every row regardless of
-                whether the user cared; only relevant when reviewing a specific installment. */}
-            {isEditMode &&
-              transaction?.installment &&
-              transaction.installment.purchaseDate &&
-              transaction.installment.currentIndex > 1 && (
-                <p className="mt-2 text-xs text-on-surface/40">
-                  {t('transactions.originalPurchaseDate', {
-                    date: parseDateLocal(transaction.installment.purchaseDate).toLocaleDateString(
-                      i18n.language,
-                      { day: '2-digit', month: '2-digit', year: 'numeric' }
-                    ),
-                  })}
-                </p>
-              )}
-          </div>
-
-          {/* ── CREDIT_PAYMENT: two-account layout ─────────────────────────── */}
+          {/* Account + Date — dassan/ui-adjustments: every account selector is paired with
+              whatever else fits its row instead of sitting alone with a dead gap to the right:
+              the standard case pairs account+date; CREDIT_PAYMENT/TRANSFER pair their own two
+              account selects, with the date field full-width below. */}
           {type === 'CREDIT_PAYMENT' ? (
+            /* ── CREDIT_PAYMENT: two-account layout ─────────────────────────── */
             <>
-              {/* Card to pay */}
-              <div>
-                <label className="label text-on-surface/40 flex items-center gap-1.5 mb-2">
-                  <CreditCard size={12} />
-                  {t('transactions.cardToPay')}
-                </label>
-                <Select
-                  value={accountId}
-                  onChange={setAccountId}
-                  ariaLabel={t('transactions.cardToPay')}
-                  placeholder={t('common.noData')}
-                  options={filterArchivedAccounts(creditAccounts, accountId).map((a) => ({
-                    value: a.id,
-                    label: a.name,
-                  }))}
-                  className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-                />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {/* Card to pay */}
+                <div>
+                  <label className="label text-on-surface/40 flex items-center gap-1.5 mb-2">
+                    <CreditCard size={12} />
+                    {t('transactions.cardToPay')}
+                  </label>
+                  <Select
+                    value={accountId}
+                    onChange={setAccountId}
+                    ariaLabel={t('transactions.cardToPay')}
+                    placeholder={t('common.noData')}
+                    options={filterArchivedAccounts(creditAccounts, accountId).map((a) => ({
+                      value: a.id,
+                      label: a.name,
+                    }))}
+                    className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+
+                {/* Pay from */}
+                <div>
+                  <label className="label text-on-surface/40 block mb-2">
+                    {t('transactions.payFrom')}
+                  </label>
+                  <Select
+                    value={transferAccountId}
+                    onChange={setTransferAccountId}
+                    ariaLabel={t('transactions.payFrom')}
+                    placeholder={t('common.noData')}
+                    options={filterArchivedAccounts(nonCreditAccounts, transferAccountId).map(
+                      (a) => ({ value: a.id, label: a.name })
+                    )}
+                    className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
               </div>
 
-              {/* Pay from */}
-              <div>
-                <label className="label text-on-surface/40 block mb-2">
-                  {t('transactions.payFrom')}
-                </label>
-                <Select
-                  value={transferAccountId}
-                  onChange={setTransferAccountId}
-                  ariaLabel={t('transactions.payFrom')}
-                  placeholder={t('common.noData')}
-                  options={filterArchivedAccounts(nonCreditAccounts, transferAccountId).map(
-                    (a) => ({ value: a.id, label: a.name })
-                  )}
-                  className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-                />
-              </div>
+              {dateField}
             </>
           ) : type === 'TRANSFER' ? (
             /* ── TRANSFER: origin + destination accounts ────────────────── */
             <>
-              {/* From account */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {/* From account */}
+                <div>
+                  <label className="label text-on-surface/40 block mb-2">
+                    {t('transactions.transferFrom')}
+                  </label>
+                  <Select
+                    value={accountId}
+                    onChange={setAccountId}
+                    ariaLabel={t('transactions.transferFrom')}
+                    placeholder={t('common.noData')}
+                    options={filterArchivedAccounts(nonCreditAccounts, accountId).map((a) => ({
+                      value: a.id,
+                      label: a.name,
+                    }))}
+                    className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+
+                {/* To account */}
+                <div>
+                  <label className="label text-on-surface/40 block mb-2">
+                    {t('transactions.transferTo')}
+                  </label>
+                  <Select
+                    value={transferAccountId}
+                    onChange={setTransferAccountId}
+                    ariaLabel={t('transactions.transferTo')}
+                    placeholder={t('common.noData')}
+                    options={filterArchivedAccounts(
+                      nonCreditAccounts.filter((a) => a.id !== accountId),
+                      transferAccountId
+                    ).map((a) => ({ value: a.id, label: a.name }))}
+                    className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+              </div>
+
+              {dateField}
+            </>
+          ) : (
+            /* ── Standard case: account selector + date (+ Pago when it applies), side
+                by side on desktop — Pago gets only the narrow column its toggle actually
+                needs (grid-cols-[1fr_1fr_auto]) instead of splitting the row evenly in two,
+                which left no room for the date input once Pago was in the mix. Stacks back
+                to account-then-(date+pago) below sm: three fields plus a toggle just don't
+                fit one row on a phone-width sheet — the `sm:contents` wrapper below makes
+                that div transparent to the desktop grid (its children become direct grid
+                items, landing in columns 2/3) while it's still a normal 2-col row on mobile. ── */
+            <div
+              className={cn(
+                'grid gap-3',
+                isPaidApplicable
+                  ? 'grid-cols-1 sm:grid-cols-[1fr_1fr_auto]'
+                  : 'grid-cols-1 sm:grid-cols-2'
+              )}
+            >
               <div>
                 <label className="label text-on-surface/40 block mb-2">
-                  {t('transactions.transferFrom')}
+                  {t('transactions.account')}
                 </label>
                 <Select
                   value={accountId}
-                  onChange={setAccountId}
-                  ariaLabel={t('transactions.transferFrom')}
+                  onChange={handleAccountChange}
+                  ariaLabel={t('transactions.account')}
                   placeholder={t('common.noData')}
-                  options={filterArchivedAccounts(nonCreditAccounts, accountId).map((a) => ({
+                  options={filterArchivedAccounts(data?.accounts ?? [], accountId).map((a) => ({
                     value: a.id,
                     label: a.name,
                   }))}
                   className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>
-
-              {/* To account */}
-              <div>
-                <label className="label text-on-surface/40 block mb-2">
-                  {t('transactions.transferTo')}
-                </label>
-                <Select
-                  value={transferAccountId}
-                  onChange={setTransferAccountId}
-                  ariaLabel={t('transactions.transferTo')}
-                  placeholder={t('common.noData')}
-                  options={filterArchivedAccounts(
-                    nonCreditAccounts.filter((a) => a.id !== accountId),
-                    transferAccountId
-                  ).map((a) => ({ value: a.id, label: a.name }))}
-                  className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-                />
-              </div>
-            </>
-          ) : (
-            /* ── Standard account selector ──────────────────────────────── */
-            <div>
-              <label className="label text-on-surface/40 block mb-2">
-                {t('transactions.account')}
-              </label>
-              <Select
-                value={accountId}
-                onChange={handleAccountChange}
-                ariaLabel={t('transactions.account')}
-                placeholder={t('common.noData')}
-                options={filterArchivedAccounts(data?.accounts ?? [], accountId).map((a) => ({
-                  value: a.id,
-                  label: a.name,
-                }))}
-                className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
-              />
+              {isPaidApplicable ? (
+                <div className="grid grid-cols-[1fr_auto] gap-3 sm:contents">
+                  {dateField}
+                  {isPaidField}
+                </div>
+              ) : (
+                dateField
+              )}
             </div>
           )}
 
@@ -800,7 +873,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                 )}
               >
                 {canToggleInstallments && (
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
                     <label className="text-sm font-medium text-on-surface">
                       {t('transactions.installments')}
                     </label>
@@ -830,7 +903,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                   </div>
                 )}
                 {canToggleRecurrence && (
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
                     <label className="text-sm font-medium text-on-surface">
                       {t('transactions.recurrence')}
                     </label>
@@ -958,13 +1031,82 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
             </div>
           )}
 
-          {/* Tags */}
+          {/* ── M-58: move charge/credit to previous/next invoice (CC-32/B-18) ── */}
+          {showMoveInvoiceSection && (
+            <div className="rounded-xl bg-surface-container-low px-4 py-3 flex items-center justify-between">
+              <p className="text-xs text-on-surface/50">{t('creditCard.moveInvoice')}</p>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  aria-label={t('creditCard.moveToPrevInvoice')}
+                  title={t('creditCard.moveToPrevInvoice')}
+                  onClick={() => handleMoveInvoice(-1)}
+                  className="rounded-lg p-1.5 text-on-surface/40 hover:bg-surface-container-high hover:text-on-surface/70 transition-colors"
+                >
+                  <ChevronsLeft size={16} strokeWidth={1.5} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={t('creditCard.moveToNextInvoice')}
+                  title={t('creditCard.moveToNextInvoice')}
+                  onClick={() => handleMoveInvoice(1)}
+                  className="rounded-lg p-1.5 text-on-surface/40 hover:bg-surface-container-high hover:text-on-surface/70 transition-colors"
+                >
+                  <ChevronsRight size={16} strokeWidth={1.5} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── CC-20: current invoice balance hint for CREDIT_PAYMENT ────── */}
+          {type === 'CREDIT_PAYMENT' && selectedCreditAccount?.creditMetadata && (
+            <div className="rounded-xl bg-surface-container-low px-4 py-3 flex items-center justify-between">
+              <p className="text-xs text-on-surface/50">{t('transactions.currentInvoice')}</p>
+              <p className="text-sm font-semibold text-tertiary">
+                {formatCurrency(
+                  getCurrentInvoiceBalance(data?.transactions ?? [], selectedCreditAccount)
+                )}
+              </p>
+            </div>
+          )}
+
+          {/* Tags + Notes — dassan/ui-adjustments: pushed to the bottom, below every field that
+              drives the transaction's core numbers/accounting; these are secondary/optional. */}
           {(data?.tags ?? []).length > 0 && (
             <div>
               <label className="label text-on-surface/40 flex items-center gap-1 mb-2">
                 <Tag size={12} />
                 {t('transactions.tags')}
               </label>
+
+              {/* Selected tags chips — dassan/ui-adjustments: shown above the trigger, since
+                  the dropdown panel below it already opens downward; chips below the trigger
+                  would sit between it and its own panel. */}
+              {selectedTags.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {selectedTags.map((tagId) => {
+                    const tag = (data?.tags ?? []).find((tg) => tg.id === tagId)
+                    if (!tag) return null
+                    return (
+                      <span
+                        key={tag.id}
+                        className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium text-white"
+                        style={{ backgroundColor: tag.color }}
+                      >
+                        #{tag.name}
+                        <button
+                          type="button"
+                          onClick={() => toggleTag(tag.id)}
+                          aria-label={`Remover ${tag.name}`}
+                          className="flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
+                        >
+                          <X size={11} />
+                        </button>
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
 
               {/* Dropdown trigger + panel */}
               <div className="relative" ref={tagMenuRef}>
@@ -1028,74 +1170,37 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                   )
                 })()}
               </div>
+            </div>
+          )}
 
-              {/* Selected tags chips */}
-              {selectedTags.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {selectedTags.map((tagId) => {
-                    const tag = (data?.tags ?? []).find((tg) => tg.id === tagId)
-                    if (!tag) return null
-                    return (
-                      <span
-                        key={tag.id}
-                        className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium text-white"
-                        style={{ backgroundColor: tag.color }}
-                      >
-                        #{tag.name}
-                        <button
-                          type="button"
-                          onClick={() => toggleTag(tag.id)}
-                          aria-label={`Remover ${tag.name}`}
-                          className="flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
-                        >
-                          <X size={11} />
-                        </button>
-                      </span>
-                    )
-                  })}
+          {/* Notes — collapsed by default; expands into a short free-text field on click */}
+          <div>
+            {notesExpanded ? (
+              <>
+                <div className="mb-2 flex items-center justify-between">
+                  <label className="label text-on-surface/40">{t('transactions.notes')}</label>
+                  <span className="text-xs text-on-surface/40">{notes.length}/140</span>
                 </div>
-              )}
-            </div>
-          )}
-
-          {/* ── M-58: move charge/credit to previous/next invoice (CC-32/B-18) ── */}
-          {showMoveInvoiceSection && (
-            <div className="rounded-xl bg-surface-container-low px-4 py-3 flex items-center justify-between">
-              <p className="text-xs text-on-surface/50">{t('creditCard.moveInvoice')}</p>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  aria-label={t('creditCard.moveToPrevInvoice')}
-                  title={t('creditCard.moveToPrevInvoice')}
-                  onClick={() => handleMoveInvoice(-1)}
-                  className="rounded-lg p-1.5 text-on-surface/40 hover:bg-surface-container-high hover:text-on-surface/70 transition-colors"
-                >
-                  <ChevronsLeft size={16} strokeWidth={1.5} />
-                </button>
-                <button
-                  type="button"
-                  aria-label={t('creditCard.moveToNextInvoice')}
-                  title={t('creditCard.moveToNextInvoice')}
-                  onClick={() => handleMoveInvoice(1)}
-                  className="rounded-lg p-1.5 text-on-surface/40 hover:bg-surface-container-high hover:text-on-surface/70 transition-colors"
-                >
-                  <ChevronsRight size={16} strokeWidth={1.5} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ── CC-20: current invoice balance hint for CREDIT_PAYMENT ────── */}
-          {type === 'CREDIT_PAYMENT' && selectedCreditAccount?.creditMetadata && (
-            <div className="rounded-xl bg-surface-container-low px-4 py-3 flex items-center justify-between">
-              <p className="text-xs text-on-surface/50">{t('transactions.currentInvoice')}</p>
-              <p className="text-sm font-semibold text-tertiary">
-                {formatCurrency(
-                  getCurrentInvoiceBalance(data?.transactions ?? [], selectedCreditAccount)
-                )}
-              </p>
-            </div>
-          )}
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value.slice(0, 140))}
+                  maxLength={140}
+                  rows={2}
+                  placeholder={t('transactions.notesPlaceholder')}
+                  className="w-full resize-none rounded-xl bg-surface-container-low px-4 py-3 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setNotesExpanded(true)}
+                className="flex items-center gap-1.5 text-sm text-on-surface/40 transition-colors hover:text-on-surface/70"
+              >
+                <StickyNote size={14} />
+                {t('transactions.addNote')}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Footer CTA — the sheet is a full-height overlay that paints above the bottom nav
