@@ -982,7 +982,7 @@ export default function Settings() {
                       />
 
                       {/* ── Credit cards (CREDIT) ────────────────────────────── */}
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center justify-between mb-3">
                           <p className="text-[11px] font-semibold uppercase tracking-widest text-on-surface/40">
                             {t('settings.creditCards')}
@@ -2504,7 +2504,7 @@ function CategoryColumn({
 }) {
   const { t } = useTranslation()
   return (
-    <div>
+    <div className="min-w-0">
       <div className="flex items-center justify-between mb-3">
         <p className="text-[11px] font-semibold uppercase tracking-widest text-on-surface/40">
           {label}
@@ -2815,7 +2815,7 @@ function AccountColumn({
 }) {
   const { t } = useTranslation()
   return (
-    <div>
+    <div className="min-w-0">
       <div className="flex items-center justify-between mb-3">
         <p className="text-[11px] font-semibold uppercase tracking-widest text-on-surface/40">
           {label}
