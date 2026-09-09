@@ -564,6 +564,11 @@ export const useDataStore = create<DataStore>((set, get) => ({
                 date: occDate,
                 // Only the first occurrence keeps the form's paid status; future ones are unpaid.
                 isPaid: i === 0 ? tx.isPaid : false,
+                // referenceMonth/invoiceDueDate bind a charge to a specific invoice (B-18/CC-33);
+                // copying them onto occurrences at other dates piles every future occurrence into
+                // the same invoice as the submitted one. Only i===0 keeps the form's values.
+                referenceMonth: i === 0 ? tx.referenceMonth : undefined,
+                invoiceDueDate: i === 0 ? tx.invoiceDueDate : undefined,
                 recurrence: { frequency, parentId, ...(endDate ? { endDate } : {}) },
                 updatedAt: now(),
                 createdAt: now(),
@@ -741,6 +746,10 @@ export const useDataStore = create<DataStore>((set, get) => ({
             id: uuid(),
             date: occDate,
             isPaid: false,
+            // Same fix as addTransaction's eager generation above: don't carry the template's
+            // invoice binding onto occurrences dated for other invoices.
+            referenceMonth: undefined,
+            invoiceDueDate: undefined,
             recurrence: { frequency, parentId },
           })
         }
