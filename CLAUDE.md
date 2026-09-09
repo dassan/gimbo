@@ -149,6 +149,13 @@ branch, não o do commit.
 > é mais barato do que abrir uma PR por item. Reavaliar quando o app estabilizar e as mudanças
 > passarem a ser majoritariamente incrementais.
 
+### Notas de release (definido em 2026-09-09)
+
+**Notas de release (commit `chore: prepara release vX.Y.Z` e o corpo publicado via
+`gh release create`) são sempre em português do Brasil.** `v0.6.0` e `v0.5.1` saíram em inglês por
+descuido — não é o padrão a seguir. Mesmo formato de sempre (título `# vX.Y.Z`, seções com emoji,
+bullets), só o idioma muda.
+
 ---
 
 ## Scripts de Qualidade
