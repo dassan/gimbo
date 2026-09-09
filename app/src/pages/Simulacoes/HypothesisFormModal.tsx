@@ -115,7 +115,7 @@ export default function HypothesisFormModal({ onClose, hypothesis }: HypothesisF
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t('simulacoes.namePlaceholder')}
-              className={fieldClass}
+              className={cn(fieldClass, 'ring-2 ring-primary/30')}
             />
           </div>
 
