@@ -3,7 +3,8 @@
 // é justamente eliminar o hack de lançar transações fictícias numa conta real só para simular.
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FlaskConical, Plus } from 'lucide-react'
+import type { TFunction } from 'i18next'
+import { FlaskConical, Pencil, Plus } from 'lucide-react'
 import {
   Bar,
   CartesianGrid,
@@ -17,13 +18,20 @@ import {
 } from 'recharts'
 import { cn, formatCurrency, getSimulationProjection } from '@/lib/utils'
 import { useDataStore } from '@/store/useDataStore'
+import { useIsDarkMode } from '@/hooks/useIsDarkMode'
 import HypothesisFormModal from './HypothesisFormModal'
-import type { Hypothesis } from '@/types'
+import type { Category, Hypothesis, HypothesisItem } from '@/types'
 
 export default function Simulacoes() {
   const { t } = useTranslation()
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Hypothesis | undefined>(undefined)
+  // Os tons escuros escolhidos para o tema claro (contraste contra fundo claro) ficam quase
+  // invisíveis sobre o fundo escuro do dark mode — recharts define stroke via atributo SVG, onde
+  // var(--...) não resolve, então a troca por tema precisa acontecer aqui em JS.
+  const isDark = useIsDarkMode()
+  const baselineStroke = isDark ? '#A8AA9F' : '#1F4D38'
+  const adjustedStroke = isDark ? '#85B7EB' : '#1F3A5F'
 
   const data = useDataStore((s) => s.data)
   const toggleHypothesis = useDataStore((s) => s.toggleHypothesis)
@@ -96,7 +104,10 @@ export default function Simulacoes() {
                   border: 'none',
                   boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
                   fontSize: 12,
+                  backgroundColor: 'var(--color-surface-container-high)',
+                  color: 'var(--color-on-surface)',
                 }}
+                labelStyle={{ color: 'var(--color-on-surface-variant)' }}
                 formatter={(value, name) => [
                   formatCurrency(Number(value)),
                   seriesLabel[name as string] ?? String(name),
@@ -128,7 +139,7 @@ export default function Simulacoes() {
                 type="monotone"
                 dataKey="baselineBalance"
                 name="baselineBalance"
-                stroke="#1F4D38"
+                stroke={baselineStroke}
                 strokeWidth={2}
                 dot={false}
                 activeDot={{ r: 4 }}
@@ -140,7 +151,7 @@ export default function Simulacoes() {
                   type="monotone"
                   dataKey="adjustedBalance"
                   name="adjustedBalance"
-                  stroke="#1F3A5F"
+                  stroke={adjustedStroke}
                   strokeWidth={2}
                   strokeDasharray="5 5"
                   dot={false}
@@ -161,6 +172,7 @@ export default function Simulacoes() {
             <HypothesisCard
               key={hypothesis.id}
               hypothesis={hypothesis}
+              categories={data?.categories ?? []}
               onEdit={() => openEdit(hypothesis)}
               onToggle={() => toggleHypothesis(hypothesis.id)}
             />
@@ -177,12 +189,39 @@ export default function Simulacoes() {
 
 // ─── Card de hipótese ───────────────────────────────────────────────────────────
 
+// Uma linha por item, no formato que o kind pede (ex.: "R$ 300,00 (valor de cada parcela — 12x)")
+// — CATEGORY_TARGET é o único que precisa resolver o nome da categoria.
+function formatHypothesisItemSummary(
+  item: HypothesisItem,
+  categories: Category[],
+  t: TFunction
+): string {
+  const amount = formatCurrency(item.amount)
+  switch (item.kind) {
+    case 'ONE_TIME':
+      return t('simulacoes.itemSummaryOneTime', { amount })
+    case 'INSTALLMENT':
+      return t('simulacoes.itemSummaryInstallment', { amount, count: item.installmentCount ?? 0 })
+    case 'RECURRING':
+      return t('simulacoes.itemSummaryRecurring', { amount })
+    case 'CATEGORY_TARGET': {
+      const category = categories.find((c) => c.id === item.categoryId)
+      return t('simulacoes.itemSummaryCategoryTarget', {
+        amount,
+        category: category?.name ?? t('simulacoes.categoryPlaceholder'),
+      })
+    }
+  }
+}
+
 function HypothesisCard({
   hypothesis,
+  categories,
   onEdit,
   onToggle,
 }: {
   hypothesis: Hypothesis
+  categories: Category[]
   onEdit: () => void
   onToggle: () => void
 }) {
@@ -197,40 +236,43 @@ function HypothesisCard({
         >
           {hypothesis.name}
         </button>
-        <label className="flex shrink-0 items-center gap-2 cursor-pointer select-none">
+        <div className="flex shrink-0 items-center gap-3">
           <button
-            role="switch"
-            aria-checked={hypothesis.enabled}
-            aria-label={t('simulacoes.enabled')}
-            onClick={onToggle}
-            className={cn(
-              'relative h-5 w-9 rounded-full transition-colors duration-200',
-              hypothesis.enabled ? 'bg-primary' : 'bg-outline-variant'
-            )}
+            onClick={onEdit}
+            aria-label={t('simulacoes.edit')}
+            className="text-on-surface/40 transition-colors hover:text-primary"
           >
-            <span
-              className={cn(
-                'absolute left-0 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200',
-                hypothesis.enabled ? 'translate-x-4' : 'translate-x-0.5'
-              )}
-            />
+            <Pencil size={14} strokeWidth={1.5} />
           </button>
-        </label>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <button
+              role="switch"
+              aria-checked={hypothesis.enabled}
+              aria-label={t('simulacoes.enabled')}
+              onClick={onToggle}
+              className={cn(
+                'relative h-5 w-9 rounded-full transition-colors duration-200',
+                hypothesis.enabled ? 'bg-primary' : 'bg-outline-variant'
+              )}
+            >
+              <span
+                className={cn(
+                  'absolute left-0 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200',
+                  hypothesis.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                )}
+              />
+            </button>
+          </label>
+        </div>
       </div>
 
-      <p className="mt-1 text-[11px] text-on-surface/40">
-        {t('simulacoes.itemCount', {
-          count: hypothesis.items.length,
-          context: hypothesis.items.length === 0 ? 'zero' : undefined,
-        })}
+      <p className="mt-1 text-xs text-on-surface/40">
+        {hypothesis.items.length === 0
+          ? t('simulacoes.itemCount', { count: 0, context: 'zero' })
+          : hypothesis.items
+              .map((item) => formatHypothesisItemSummary(item, categories, t))
+              .join('; ')}
       </p>
-
-      <button
-        onClick={onEdit}
-        className="mt-auto pt-4 text-left text-xs font-medium text-primary transition-opacity hover:opacity-80"
-      >
-        {t('simulacoes.edit')}
-      </button>
     </div>
   )
 }
