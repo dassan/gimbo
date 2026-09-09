@@ -468,6 +468,9 @@ def read_base_data(base_path: str):
         tx_cols = {row[1] for row in conn.execute("PRAGMA table_info(transactions)")}
         due_col = "invoice_due_date, " if "invoice_due_date" in tx_cols else ""
         purchase_col = "installment_purchase_date, " if "installment_purchase_date" in tx_cols else ""
+        # notes (app schema v22) pode nao existir numa --base gerada por versao anterior do
+        # script — mesmo tratamento defensivo de due_col/purchase_col acima.
+        notes_col = "notes, " if "notes" in tx_cols else ""
         transactions = {
             r["id"]: dict(r)
             for r in conn.execute(
@@ -475,7 +478,7 @@ def read_base_data(base_path: str):
                 "transfer_account_id, installment_parent_id, installment_index, installment_total, "
                 f"{purchase_col}"
                 "recurrence_parent_id, recurrence_frequency, recurrence_end_date, reference_month, "
-                f"{due_col}created_at, updated_at "
+                f"{due_col}{notes_col}created_at, updated_at "
                 "FROM transactions"
             )
         }
@@ -748,6 +751,11 @@ def build_transactions(lancamentos, account_id_map, card_id_map, category_id_map
             # melhor proxy disponivel na API.
             inst_purchase_date = str(t.get("created_at") or "")[:10] or None
 
+        # notes: campo livre do Organizze, distinto de description. O app limita a 140 chars
+        # (Zod, TransactionSchema); corta aqui tambem por seguranca, ja que o Organizze nao
+        # compartilha esse limite.
+        notes = (t.get("notes") or "").strip()[:140] or None
+
         tx_uuid = gid("tx", t["id"])
         tx_rows.append(
             {
@@ -757,7 +765,7 @@ def build_transactions(lancamentos, account_id_map, card_id_map, category_id_map
                 "installment_parent_id": inst_parent, "installment_index": inst_index, "installment_total": inst_total,
                 "installment_purchase_date": inst_purchase_date,
                 "recurrence_parent_id": None, "recurrence_frequency": None, "recurrence_end_date": None,
-                "reference_month": reference_month, "invoice_due_date": invoice_due_date,
+                "reference_month": reference_month, "invoice_due_date": invoice_due_date, "notes": notes,
                 # B-32: `created_at` = quando o lancamento nasceu no Organizze (alimenta o
                 # "Ultimos Lancamentos" do Dashboard, ordenado por createdAt — B-24). Ja
                 # `updated_at` continua sendo o timestamp do run de proposito: e a chave LWW
@@ -984,6 +992,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   installment_purchase_date TEXT,
   recurrence_parent_id TEXT, recurrence_frequency TEXT, recurrence_end_date TEXT, reference_month TEXT,
   invoice_due_date TEXT,
+  -- app schema v22: anotação livre por lançamento, max 140 chars. O Organizze tem um campo
+  -- equivalente ("notes", distinto de "description") — populado de verdade, não hardcoded.
+  notes TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS transaction_tags (
@@ -1065,7 +1076,7 @@ CREATE TABLE IF NOT EXISTS hypothesis_items (
   category_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_hypothesis_items_hypothesis ON hypothesis_items(hypothesis_id);
-PRAGMA user_version = 18;
+PRAGMA user_version = 19;
 """
 
 
@@ -1135,13 +1146,14 @@ def write_db(out_path, user_name, user_email, records):
                   transfer_account_id, installment_parent_id, installment_index, installment_total,
                   installment_purchase_date,
                   recurrence_parent_id, recurrence_frequency, recurrence_end_date, reference_month,
-                  invoice_due_date, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                  invoice_due_date, notes, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             [t["id"], t["account_id"], t["category_id"], t["amount"], t["type"], t["description"],
              t["date"], t["is_paid"], t["transfer_account_id"], t["installment_parent_id"],
              t["installment_index"], t["installment_total"], t.get("installment_purchase_date"),
              t.get("recurrence_parent_id"), t.get("recurrence_frequency"), t.get("recurrence_end_date"),
-             t.get("reference_month"), t.get("invoice_due_date"), t.get("created_at", ts), t.get("updated_at", ts)],
+             t.get("reference_month"), t.get("invoice_due_date"), t.get("notes"),
+             t.get("created_at", ts), t.get("updated_at", ts)],
         )
 
     for tx_id, tag_id in txtags:

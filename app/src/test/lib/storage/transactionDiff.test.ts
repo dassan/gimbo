@@ -23,6 +23,7 @@ function makeFullTransaction(overrides: Partial<Transaction> = {}): Transaction 
     transferAccountId: 'acc-2',
     referenceMonth: '2026-01',
     invoiceDueDate: '2026-02-10',
+    notes: 'Original note',
     updatedAt: '2026-01-15T10:00:00.000Z',
     createdAt: '2026-01-15T09:00:00.000Z',
     ...overrides,
@@ -118,6 +119,7 @@ describe('diffTransactions', () => {
       { transferAccountId: 'acc-changed' },
       { referenceMonth: '2026-02' },
       { invoiceDueDate: '2026-03-10' },
+      { notes: 'Changed note' },
       { updatedAt: '2026-01-16T10:00:00.000Z' },
       { createdAt: '2026-01-16T09:00:00.000Z' },
     ]

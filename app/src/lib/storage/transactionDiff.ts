@@ -44,6 +44,7 @@ function transactionsEqual(a: Transaction, b: Transaction): boolean {
     a.transferAccountId === b.transferAccountId &&
     a.referenceMonth === b.referenceMonth &&
     a.invoiceDueDate === b.invoiceDueDate &&
+    a.notes === b.notes &&
     a.updatedAt === b.updatedAt &&
     a.createdAt === b.createdAt &&
     sameStringSet(a.tags, b.tags) &&

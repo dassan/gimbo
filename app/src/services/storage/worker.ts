@@ -25,6 +25,7 @@ import v15Schema from './migrations/v15.sql?raw'
 import v16Schema from './migrations/v16.sql?raw'
 import v17Schema from './migrations/v17.sql?raw'
 import v18Schema from './migrations/v18.sql?raw'
+import v19Schema from './migrations/v19.sql?raw'
 import { ERR_DB_UNREADABLE, ERR_SCHEMA_TOO_NEW } from './errors'
 import {
   benchVariants,
@@ -134,6 +135,7 @@ export type RawTransaction = {
   updatedAt?: string
   createdAt?: string
   budgetIds?: string[]
+  notes?: string
 }
 export type RawAuditEntry = {
   id: string
@@ -241,7 +243,7 @@ const DB_FILENAME = 'gimbo.db'
 // this number was written by a newer app build and must be skipped, not partially migrated.
 // Bump this alongside every new migrations/vN.sql (same trap as data/sync_gimbo.py — see
 // CLAUDE.md "Armadilha recorrente").
-const MAX_KNOWN_DB_VERSION = 18
+const MAX_KNOWN_DB_VERSION = 19
 
 // ─── Initialization ───────────────────────────────────────────────────────────
 
@@ -318,6 +320,7 @@ const MIGRATIONS: ReadonlyArray<readonly [version: number, sql: string]> = [
   [16, v16Schema],
   [17, v17Schema],
   [18, v18Schema],
+  [19, v19Schema],
 ]
 
 // Applies pending migrations to an arbitrary db pointer — the main `db` on every open, or a
@@ -1052,8 +1055,8 @@ async function replaceAll(raw: unknown): Promise<void> {
             transfer_account_id, installment_parent_id, installment_index, installment_total,
             installment_purchase_date,
             recurrence_parent_id, recurrence_frequency, recurrence_end_date, reference_month,
-            invoice_due_date, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            invoice_due_date, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           tx.id,
           tx.accountId,
@@ -1073,6 +1076,7 @@ async function replaceAll(raw: unknown): Promise<void> {
           tx.recurrence?.endDate ?? null,
           tx.referenceMonth ?? null,
           tx.invoiceDueDate ?? null,
+          tx.notes ?? null,
           tx.createdAt ?? ts,
           tx.updatedAt ?? ts,
         ]
@@ -1116,7 +1120,7 @@ async function replaceAll(raw: unknown): Promise<void> {
 
 type RawTransactionDelta = { upserts: RawTransaction[]; deletedIds: string[] }
 
-const TRANSACTION_COLUMNS = 20
+const TRANSACTION_COLUMNS = 21
 
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = []
@@ -1170,7 +1174,7 @@ async function applyTransactionDelta(delta: RawTransactionDelta, ts: string): Pr
   const junctionBatchSize = Math.max(1, Math.floor(maxBoundParams / 2))
 
   for (const rows of chunk(delta.upserts, transactionBatchSize)) {
-    const rowPlaceholders = rows.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',')
+    const rowPlaceholders = rows.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',')
     const params: SQLiteCompatibleType[] = []
     for (const tx of rows) {
       params.push(
@@ -1192,6 +1196,7 @@ async function applyTransactionDelta(delta: RawTransactionDelta, ts: string): Pr
         tx.recurrence?.endDate ?? null,
         tx.referenceMonth ?? null,
         tx.invoiceDueDate ?? null,
+        tx.notes ?? null,
         tx.createdAt ?? ts,
         tx.updatedAt ?? ts
       )
@@ -1203,7 +1208,7 @@ async function applyTransactionDelta(delta: RawTransactionDelta, ts: string): Pr
           transfer_account_id, installment_parent_id, installment_index, installment_total,
           installment_purchase_date,
           recurrence_parent_id, recurrence_frequency, recurrence_end_date, reference_month,
-          invoice_due_date, created_at, updated_at)
+          invoice_due_date, notes, created_at, updated_at)
        VALUES ${rowPlaceholders}
        ON CONFLICT(id) DO UPDATE SET
          account_id=excluded.account_id, category_id=excluded.category_id,
@@ -1218,6 +1223,7 @@ async function applyTransactionDelta(delta: RawTransactionDelta, ts: string): Pr
          recurrence_frequency=excluded.recurrence_frequency,
          recurrence_end_date=excluded.recurrence_end_date,
          reference_month=excluded.reference_month, invoice_due_date=excluded.invoice_due_date,
+         notes=excluded.notes,
          updated_at=excluded.updated_at`,
       params
     )
@@ -1360,6 +1366,9 @@ function sqlRowToRawTransaction(
   }
   if (r.invoice_due_date !== null && r.invoice_due_date !== undefined) {
     tx.invoiceDueDate = r.invoice_due_date as string
+  }
+  if (r.notes !== null && r.notes !== undefined) {
+    tx.notes = r.notes as string
   }
   if (r.installment_parent_id !== null && r.installment_parent_id !== undefined) {
     tx.installment = {

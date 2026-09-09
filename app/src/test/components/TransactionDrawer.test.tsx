@@ -116,6 +116,49 @@ describe('TransactionDrawer — create mode', () => {
     expect(saveBtn).toBeDisabled()
     expect(addTransaction).not.toHaveBeenCalled()
   })
+
+  it('notes field is collapsed by default and expands on click, saving the typed text', async () => {
+    const addTransaction = vi.fn()
+    vi.spyOn(useDataStore.getState(), 'addTransaction').mockImplementation(addTransaction)
+
+    renderDrawer()
+
+    expect(screen.queryByPlaceholderText('transactions.notesPlaceholder')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'transactions.addNote' }))
+
+    const notesField = screen.getByPlaceholderText('transactions.notesPlaceholder')
+    await userEvent.type(notesField, 'Pago em dinheiro')
+
+    const amountInput = screen.getByPlaceholderText('0,00')
+    await userEvent.clear(amountInput)
+    await userEvent.type(amountInput, '10000')
+    await userEvent.click(screen.getByRole('button', { name: /transactions\.save\.expense/i }))
+
+    expect(addTransaction).toHaveBeenCalledOnce()
+    expect(addTransaction.mock.calls[0][0]).toMatchObject({ notes: 'Pago em dinheiro' })
+  })
+
+  it('does not include notes in the payload when left empty', async () => {
+    const addTransaction = vi.fn()
+    vi.spyOn(useDataStore.getState(), 'addTransaction').mockImplementation(addTransaction)
+
+    renderDrawer()
+
+    const amountInput = screen.getByPlaceholderText('0,00')
+    await userEvent.clear(amountInput)
+    await userEvent.type(amountInput, '10000')
+    await userEvent.click(screen.getByRole('button', { name: /transactions\.save\.expense/i }))
+
+    expect(addTransaction.mock.calls[0][0].notes).toBeUndefined()
+  })
+
+  it('caps the notes field at 140 characters', async () => {
+    renderDrawer()
+
+    await userEvent.click(screen.getByRole('button', { name: 'transactions.addNote' }))
+    const notesField = screen.getByPlaceholderText('transactions.notesPlaceholder')
+    expect(notesField).toHaveAttribute('maxlength', '140')
+  })
 })
 
 // ─── Edit mode ────────────────────────────────────────────────────────────────
@@ -135,6 +178,16 @@ describe('TransactionDrawer — edit mode', () => {
   it('pre-fills the description field', () => {
     renderDrawer({ transaction: testTransaction })
     expect(screen.getByDisplayValue('Almoço')).toBeInTheDocument()
+  })
+
+  it('pre-expands and pre-fills notes when the transaction already has one', () => {
+    renderDrawer({ transaction: { ...testTransaction, notes: 'Dividido com a Ana' } })
+    expect(screen.getByDisplayValue('Dividido com a Ana')).toBeInTheDocument()
+  })
+
+  it('keeps notes collapsed when the transaction has none', () => {
+    renderDrawer({ transaction: testTransaction })
+    expect(screen.getByRole('button', { name: 'transactions.addNote' })).toBeInTheDocument()
   })
 
   it('renders the save-update button', () => {
@@ -444,7 +497,7 @@ describe('TransactionDrawer — CC-23: installment section', () => {
     expect(screen.getByText('transactions.installments')).toBeInTheDocument()
   })
 
-  it('does not show installment toggle when type is INCOME even with CREDIT account', async () => {
+  it('shows installment toggle for INCOME too (dassan/ui-adjustments)', async () => {
     // Set up store with only a credit account so it auto-selects
     useDataStore.setState({
       data: makeDataFile({ accounts: [testCreditAccount], categories: [testCategory] }),
@@ -452,7 +505,7 @@ describe('TransactionDrawer — CC-23: installment section', () => {
     renderDrawer()
     // Switch to INCOME type
     await userEvent.click(screen.getByRole('button', { name: 'transactions.income' }))
-    expect(screen.queryByText('transactions.installments')).not.toBeInTheDocument()
+    expect(screen.getByText('transactions.installments')).toBeInTheDocument()
   })
 
   it('shows installment toggle when EXPENSE and only a CREDIT account is in store', () => {
@@ -589,6 +642,49 @@ describe('TransactionDrawer — CC-23: installment section', () => {
     await userEvent.click(toggle)
 
     expect(screen.queryByText('transactions.isPaid')).not.toBeInTheDocument()
+  })
+
+  // dassan/ui-adjustments: isPaid doesn't apply to a CREDIT charge (settled via the invoice,
+  // not per-transaction), but the field now stays visible-and-disabled instead of disappearing
+  // — CC-35 originally hid it outright, which silently reflowed the row from 3 columns to 2
+  // depending on which account was picked.
+  it('shows the isPaid toggle disabled (not hidden) for a CREDIT account', async () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [testAccount, testCreditAccount],
+        categories: [testCategory],
+      }),
+    })
+    renderDrawer()
+    const toggle = screen.getByRole('switch', { name: 'transactions.isPaid' })
+    expect(toggle).not.toBeDisabled()
+
+    const selects = screen.getAllByRole('combobox')
+    await userEvent.selectOptions(selects[0], testCreditAccount.id)
+
+    expect(screen.getByRole('switch', { name: 'transactions.isPaid' })).toBeDisabled()
+  })
+
+  it('does not save isPaid as true for a CREDIT account even if toggled before switching', async () => {
+    const addTransaction = vi.fn()
+    vi.spyOn(useDataStore.getState(), 'addTransaction').mockImplementation(addTransaction)
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [testAccount, testCreditAccount],
+        categories: [testCategory],
+      }),
+    })
+    renderDrawer()
+
+    const selects = screen.getAllByRole('combobox')
+    await userEvent.selectOptions(selects[0], testCreditAccount.id)
+
+    const amountInput = screen.getByPlaceholderText('0,00')
+    await userEvent.clear(amountInput)
+    await userEvent.type(amountInput, '5000')
+    await userEvent.click(screen.getByRole('button', { name: /transactions\.save\.expense/i }))
+
+    expect(addTransaction.mock.calls[0][0]).toMatchObject({ isPaid: false })
   })
 })
 
