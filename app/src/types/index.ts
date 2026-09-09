@@ -127,6 +127,7 @@ export interface Transaction {
   createdAt?: string // ISO 8601 — when the entry was added, distinct from `date` (which the user can back/postdate). Drives "recently added" ordering (B-24)
   budgetIds?: string[] // UUID[] — Budget N:N link, mirrors `tags`. Optional (unlike `tags`) so the
   // many existing call sites that build a Transaction by hand don't all need updating (F-30, BX-03)
+  notes?: string // free-text annotation, max 140 chars, collapsed by default in TransactionDrawer
 }
 
 export interface Valuation {

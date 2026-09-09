@@ -40,7 +40,7 @@ import type {
  * `rowHash.test.ts`: ele fixa este número junto de um hash literal por `*RowKey`, então mudar
  * qualquer função sem bumpar falha no CI com instruções.
  */
-export const HASH_VERSION = 3
+export const HASH_VERSION = 4
 
 const FNV_OFFSET_BASIS = 0x811c9dc5
 const FNV_PRIME = 0x01000193
@@ -202,6 +202,7 @@ export function transactionRowKey(t: RawTransaction): string {
     t.transferAccountId ?? '',
     t.referenceMonth ?? '',
     t.invoiceDueDate ?? '',
+    t.notes ?? '',
     t.updatedAt ?? '',
     t.createdAt ?? '',
   ].join(SEP)

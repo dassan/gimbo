@@ -45,6 +45,7 @@ function makeFullTransaction(overrides: Partial<RawTransaction> = {}): RawTransa
     transferAccountId: 'acc-2',
     referenceMonth: '2026-01',
     invoiceDueDate: '2026-02-10',
+    notes: 'Original note',
     updatedAt: '2026-01-15T10:00:00.000Z',
     createdAt: '2026-01-15T09:00:00.000Z',
     ...overrides,
@@ -155,6 +156,7 @@ describe('row key functions detect a change in every field', () => {
       { transferAccountId: 'acc-changed' },
       { referenceMonth: '2026-02' },
       { invoiceDueDate: '2026-03-10' },
+      { notes: 'Changed note' },
       { updatedAt: '2026-01-16T10:00:00.000Z' },
       { createdAt: '2026-01-16T09:00:00.000Z' },
     ]
@@ -447,7 +449,7 @@ const PIN = {
  * invalidar e recomputar as `table_hashes` já gravadas quando a versão muda.
  */
 const PINNED_HASHES = {
-  version: 3,
+  version: 4,
   account: 1036428690,
   category: 2381249970,
   tag: 2039225961,
@@ -458,7 +460,8 @@ const PINNED_HASHES = {
   // no deviceId (mirrors a legacy entry from before the field existed), so its hash changed too.
   auditEntry: 1448598596,
   deletedId: 2643702044,
-  transaction: 2832041127,
+  // notes field added to transactionRowKey (bumps HASH_VERSION 3→4).
+  transaction: 1080612523,
   device: 3849676930,
   // M-101: hypothesisRowKey is new (bumps HASH_VERSION 2→3).
   hypothesis: 3175325234,

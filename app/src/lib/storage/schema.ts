@@ -5,7 +5,7 @@ import { detectBrowserLocale, defaultCurrencyForLocale } from '@/lib/storage/wor
 
 export const AUDIT_RETENTION_DEFAULT = 200
 export const AUDIT_RETENTION_DAYS = 90
-export const CURRENT_SCHEMA_VERSION = 21
+export const CURRENT_SCHEMA_VERSION = 22
 
 /**
  * Thrown by validateDataFile() when the parsed file declares a schemaVersion
@@ -129,6 +129,7 @@ const TransactionSchema = z.object({
   updatedAt: z.string().optional(), // CS-04: last-write-wins timestamp for the cloud-sync merge engine
   createdAt: z.string().optional(), // B-24: when the entry was added, distinct from `date`
   budgetIds: z.array(z.string()).optional(), // F-30/BX-03: Budget N:N link, mirrors `tags`
+  notes: z.string().max(140).optional(), // free-text annotation, collapsed by default in the UI
 })
 
 const ValuationSchema = z.object({
@@ -448,6 +449,12 @@ export function migrateDataFile(data: DataFile): DataFile {
   // Zod-defaulted to [] via DataFileSchema.parse, so existing records only need the version bump.
   if (migrated.schemaVersion === 20) {
     migrated = { ...migrated, schemaVersion: 21 }
+  }
+
+  // v21 → v22: adds optional Transaction.notes (free-text annotation, max 140 chars). No shape
+  // change beyond the bump — absent notes is treated as no annotation at every call site.
+  if (migrated.schemaVersion === 21) {
+    migrated = { ...migrated, schemaVersion: 22 }
   }
 
   return migrated
