@@ -96,7 +96,10 @@ export default function Simulacoes() {
                   border: 'none',
                   boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
                   fontSize: 12,
+                  backgroundColor: 'var(--color-surface-container-high)',
+                  color: 'var(--color-on-surface)',
                 }}
+                labelStyle={{ color: 'var(--color-on-surface-variant)' }}
                 formatter={(value, name) => [
                   formatCurrency(Number(value)),
                   seriesLabel[name as string] ?? String(name),
