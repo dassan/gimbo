@@ -236,42 +236,43 @@ function HypothesisCard({
         >
           {hypothesis.name}
         </button>
-        <label className="flex shrink-0 items-center gap-2 cursor-pointer select-none">
+        <div className="flex shrink-0 items-center gap-3">
           <button
-            role="switch"
-            aria-checked={hypothesis.enabled}
-            aria-label={t('simulacoes.enabled')}
-            onClick={onToggle}
-            className={cn(
-              'relative h-5 w-9 rounded-full transition-colors duration-200',
-              hypothesis.enabled ? 'bg-primary' : 'bg-outline-variant'
-            )}
+            onClick={onEdit}
+            aria-label={t('simulacoes.edit')}
+            className="text-on-surface/40 transition-colors hover:text-primary"
           >
-            <span
-              className={cn(
-                'absolute left-0 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200',
-                hypothesis.enabled ? 'translate-x-4' : 'translate-x-0.5'
-              )}
-            />
+            <Pencil size={14} strokeWidth={1.5} />
           </button>
-        </label>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <button
+              role="switch"
+              aria-checked={hypothesis.enabled}
+              aria-label={t('simulacoes.enabled')}
+              onClick={onToggle}
+              className={cn(
+                'relative h-5 w-9 rounded-full transition-colors duration-200',
+                hypothesis.enabled ? 'bg-primary' : 'bg-outline-variant'
+              )}
+            >
+              <span
+                className={cn(
+                  'absolute left-0 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200',
+                  hypothesis.enabled ? 'translate-x-4' : 'translate-x-0.5'
+                )}
+              />
+            </button>
+          </label>
+        </div>
       </div>
 
-      <p className="mt-1 text-[11px] text-on-surface/40">
+      <p className="mt-1 text-xs text-on-surface/40">
         {hypothesis.items.length === 0
           ? t('simulacoes.itemCount', { count: 0, context: 'zero' })
           : hypothesis.items
               .map((item) => formatHypothesisItemSummary(item, categories, t))
               .join('; ')}
       </p>
-
-      <button
-        onClick={onEdit}
-        aria-label={t('simulacoes.edit')}
-        className="mt-auto self-start pt-4 text-on-surface/40 transition-colors hover:text-primary"
-      >
-        <Pencil size={14} strokeWidth={1.5} />
-      </button>
     </div>
   )
 }
