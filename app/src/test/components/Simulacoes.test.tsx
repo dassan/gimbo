@@ -105,11 +105,54 @@ describe('Simulacoes page', () => {
     expect(capturedSeries.names).toEqual([...BARS, 'baselineBalance'])
   })
 
-  it('renders a card per hypothesis with its item count', () => {
+  it('renders a card per hypothesis with a summary of its items', () => {
     useDataStore.setState({ data: makeDataFile({ hypotheses: [makeHypothesis()] }) })
     render(<Simulacoes />)
     expect(screen.getByText('Pós-graduação')).toBeInTheDocument()
+    expect(screen.getByText('simulacoes.itemSummaryOneTime')).toBeInTheDocument()
+  })
+
+  it('falls back to the zero-item count when a hypothesis has no items', () => {
+    useDataStore.setState({
+      data: makeDataFile({ hypotheses: [makeHypothesis({ items: [] })] }),
+    })
+    render(<Simulacoes />)
     expect(screen.getByText('simulacoes.itemCount')).toBeInTheDocument()
+  })
+
+  it('joins a summary per item, picking the key that matches each kind', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        hypotheses: [
+          makeHypothesis({
+            items: [
+              {
+                id: 'item-installment',
+                kind: 'INSTALLMENT',
+                description: 'Notebook',
+                type: 'EXPENSE',
+                amount: 300,
+                startDate: '2028-01-10',
+                installmentCount: 12,
+              },
+              {
+                id: 'item-target',
+                kind: 'CATEGORY_TARGET',
+                description: '',
+                type: 'EXPENSE',
+                amount: 400,
+                startDate: '2028-01-10',
+                categoryId: 'cat-food',
+              },
+            ],
+          }),
+        ],
+      }),
+    })
+    render(<Simulacoes />)
+    expect(
+      screen.getByText('simulacoes.itemSummaryInstallment; simulacoes.itemSummaryCategoryTarget')
+    ).toBeInTheDocument()
   })
 
   it('toggling a hypothesis flips its enabled flag in the store', () => {

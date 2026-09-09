@@ -3,7 +3,8 @@
 // é justamente eliminar o hack de lançar transações fictícias numa conta real só para simular.
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FlaskConical, Plus } from 'lucide-react'
+import type { TFunction } from 'i18next'
+import { FlaskConical, Pencil, Plus } from 'lucide-react'
 import {
   Bar,
   CartesianGrid,
@@ -19,7 +20,7 @@ import { cn, formatCurrency, getSimulationProjection } from '@/lib/utils'
 import { useDataStore } from '@/store/useDataStore'
 import { useIsDarkMode } from '@/hooks/useIsDarkMode'
 import HypothesisFormModal from './HypothesisFormModal'
-import type { Hypothesis } from '@/types'
+import type { Category, Hypothesis, HypothesisItem } from '@/types'
 
 export default function Simulacoes() {
   const { t } = useTranslation()
@@ -171,6 +172,7 @@ export default function Simulacoes() {
             <HypothesisCard
               key={hypothesis.id}
               hypothesis={hypothesis}
+              categories={data?.categories ?? []}
               onEdit={() => openEdit(hypothesis)}
               onToggle={() => toggleHypothesis(hypothesis.id)}
             />
@@ -187,12 +189,39 @@ export default function Simulacoes() {
 
 // ─── Card de hipótese ───────────────────────────────────────────────────────────
 
+// Uma linha por item, no formato que o kind pede (ex.: "R$ 300,00 (valor de cada parcela — 12x)")
+// — CATEGORY_TARGET é o único que precisa resolver o nome da categoria.
+function formatHypothesisItemSummary(
+  item: HypothesisItem,
+  categories: Category[],
+  t: TFunction
+): string {
+  const amount = formatCurrency(item.amount)
+  switch (item.kind) {
+    case 'ONE_TIME':
+      return t('simulacoes.itemSummaryOneTime', { amount })
+    case 'INSTALLMENT':
+      return t('simulacoes.itemSummaryInstallment', { amount, count: item.installmentCount ?? 0 })
+    case 'RECURRING':
+      return t('simulacoes.itemSummaryRecurring', { amount })
+    case 'CATEGORY_TARGET': {
+      const category = categories.find((c) => c.id === item.categoryId)
+      return t('simulacoes.itemSummaryCategoryTarget', {
+        amount,
+        category: category?.name ?? t('simulacoes.categoryPlaceholder'),
+      })
+    }
+  }
+}
+
 function HypothesisCard({
   hypothesis,
+  categories,
   onEdit,
   onToggle,
 }: {
   hypothesis: Hypothesis
+  categories: Category[]
   onEdit: () => void
   onToggle: () => void
 }) {
@@ -229,17 +258,19 @@ function HypothesisCard({
       </div>
 
       <p className="mt-1 text-[11px] text-on-surface/40">
-        {t('simulacoes.itemCount', {
-          count: hypothesis.items.length,
-          context: hypothesis.items.length === 0 ? 'zero' : undefined,
-        })}
+        {hypothesis.items.length === 0
+          ? t('simulacoes.itemCount', { count: 0, context: 'zero' })
+          : hypothesis.items
+              .map((item) => formatHypothesisItemSummary(item, categories, t))
+              .join('; ')}
       </p>
 
       <button
         onClick={onEdit}
-        className="mt-auto pt-4 text-left text-xs font-medium text-primary transition-opacity hover:opacity-80"
+        aria-label={t('simulacoes.edit')}
+        className="mt-auto self-start pt-4 text-on-surface/40 transition-colors hover:text-primary"
       >
-        {t('simulacoes.edit')}
+        <Pencil size={14} strokeWidth={1.5} />
       </button>
     </div>
   )
