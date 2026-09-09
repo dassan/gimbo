@@ -17,6 +17,7 @@ import {
 } from 'recharts'
 import { cn, formatCurrency, getSimulationProjection } from '@/lib/utils'
 import { useDataStore } from '@/store/useDataStore'
+import { useIsDarkMode } from '@/hooks/useIsDarkMode'
 import HypothesisFormModal from './HypothesisFormModal'
 import type { Hypothesis } from '@/types'
 
@@ -24,6 +25,12 @@ export default function Simulacoes() {
   const { t } = useTranslation()
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Hypothesis | undefined>(undefined)
+  // Os tons escuros escolhidos para o tema claro (contraste contra fundo claro) ficam quase
+  // invisíveis sobre o fundo escuro do dark mode — recharts define stroke via atributo SVG, onde
+  // var(--...) não resolve, então a troca por tema precisa acontecer aqui em JS.
+  const isDark = useIsDarkMode()
+  const baselineStroke = isDark ? '#A8AA9F' : '#1F4D38'
+  const adjustedStroke = isDark ? '#85B7EB' : '#1F3A5F'
 
   const data = useDataStore((s) => s.data)
   const toggleHypothesis = useDataStore((s) => s.toggleHypothesis)
@@ -131,7 +138,7 @@ export default function Simulacoes() {
                 type="monotone"
                 dataKey="baselineBalance"
                 name="baselineBalance"
-                stroke="#1F4D38"
+                stroke={baselineStroke}
                 strokeWidth={2}
                 dot={false}
                 activeDot={{ r: 4 }}
@@ -143,7 +150,7 @@ export default function Simulacoes() {
                   type="monotone"
                   dataKey="adjustedBalance"
                   name="adjustedBalance"
-                  stroke="#1F3A5F"
+                  stroke={adjustedStroke}
                   strokeWidth={2}
                   strokeDasharray="5 5"
                   dot={false}
