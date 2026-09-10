@@ -418,6 +418,39 @@ Features concluídas desde 2026-05-27:
 > sem esperar um patch novo do Vite; não é um item de ação.
 
 Itens em aberto:
+- **B-39/B-40** (2026-09-09, abertos) — divergência de saldo projetado entre Relatórios → Entradas x
+  Saídas e Simulações (M-101) para o mesmo período: `getMonthlyNetFlow` (Simulações) bucketiza por
+  `tx.date` bruto em vez de `getEffectiveCashFlowDate` (regra CC-16), então uma compra de cartão
+  feita antes do início da janela simulada mas com fatura vencendo dentro dela some do cálculo
+  (`B-39`, causa dominante, ~R$ 20 mil no cofre real do usuário); `startingBalance` também conta os
+  dias já realizados do mês corrente duas vezes (`B-40`, menor, sinal contrário). Nenhum dos dois
+  corrigido ainda — retomar depois da revalidação do `B-41` abaixo, já que uma série fantasma também
+  inflava os totais que os dois medem. Ver `plan/BACKLOG.md` B-39/B-40 para a investigação completa
+  (réplica em Python contra o `.db` real, números exatos).
+- **B-41** (2026-09-09/10, heurística corrigida em 2 rodadas) — a heurística de inferência de
+  recorrência do `sync_gimbo.py` (M-93, `assign_recurrence`) estava mesmo fabricando série fantasma.
+  **Rodada 1:** conta "NuConta Fábio" / "Consumo de Água ESM" (valor varia todo mês na realidade)
+  bateu por coincidência em 3 meses **passados** seguidos, virou série aberta, e
+  `refreshRecurrenceHorizons()` seguiu gerando um fantasma mensal mesmo depois do valor real mudar.
+  Causa raiz de fundo, revelada pelo usuário: ele edita a ocorrência já agendada no Organizze (data e
+  valor) em vez de criar uma transação nova a cada mês — o passado tem ruído de edição manual, o
+  futuro (valor-molde ainda não editado) não. Fix: `assign_recurrence` invertida de "últimos N meses
+  passados" para "a partir do 1º dia do mês seguinte a hoje" — "o passado não importa", decisão do
+  usuário. **Rodada 2:** só olhar pro futuro não bastou — "Anglo Paulínia - Material - Sara/Olívia"
+  (mensalidade escolar) tinha um reajuste de preço **já agendado pelo Organizze dentro da própria
+  janela futura** (valor antigo out-dez/2026, valor novo jan/2027 em diante, já real); o grupo do
+  valor antigo batia `RECURRENCE_MIN_OCCURRENCES` e era estendido por cima do valor novo, duplicando
+  R$469,37/mês (234,15+235,22) a partir de jan/2027 — achado pelo usuário comparando contra a
+  referência de novo. Fix: nova checagem de "superação" — um grupo só é marcado aberto se nenhuma
+  outra transação real (qualquer valor) da mesma `(conta, descrição)` for mais recente que sua última
+  ocorrência. Validado offline (sem re-tocar a API) as duas vezes: rodada 1 zerou o fantasma da água
+  (30→24 séries, "Salário Raquel" também parou de ser marcada — correto, ela sai do emprego em
+  out/2026); rodada 2 zerou o fantasma da mensalidade (24→22 séries) e a réplica completa em Python
+  do relatório bateu **ao centavo** com a tabela de referência do usuário (Set/2026-Dez/2027).
+  Pendente: usuário rodar snapshot novo de verdade e confirmar contra o relatório do Organizze;
+  limpar os fantasmas já materializados no cofre atual (mesma classe do `B-38`). Ver
+  `plan/BACKLOG.md` B-39/B-40/B-41 para a investigação completa (réplica em Python contra o `.db`
+  real, números exatos).
 - **Relatório de uso real (2026-09-07)** — 11 itens mapeados pelo usuário usando o Gimbo no dia a dia,
   registrados em `plan/BACKLOG.md` (detalhes técnicos e decisões pendentes em cada entrada), branch
   `dassan/quick-fixes-uso-real`. **Resolvidos (lotes 1 a 5, escolhidos com o usuário): `B-34`**

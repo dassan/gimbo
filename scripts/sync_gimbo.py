@@ -39,15 +39,23 @@ Decisoes de projeto (acordadas):
     quando o Organizze os retorna como `archived` -> espelha o status de arquivamento do
     Organizze na primeira migracao; em re-syncs incrementais, o `archived` de contas ja
     existentes vem do --base (o toggle do Gimbo e que vale).
-  - Recorrencia (M-93, reabre o M-92 revertido em 70d36e3): o Organizze nao expoe um id de
-    agrupamento estavel por ocorrencia de conta fixa -> as colunas recurrence_* sao inferidas
-    por heuristica (`assign_recurrence`, ver comentario na definicao): agrupa por (conta,
-    descricao normalizada, MESMO valor) dentro dos ultimos RECURRENCE_LOOKBACK_MONTHS meses,
-    exige RECURRENCE_MIN_OCCURRENCES+ ocorrencias e cadencia real (semanal/quinzenal/mensal).
-    O criterio de valor (nao so descricao+conta, como na v1) e o que separa uma conta fixa de
-    uma coincidencia de compras do dia a dia — validado contra o cofre real do usuario antes de
-    reimplementar (ver M-93 em plan/BACKLOG.md para os dados). Serie que nao bate os criterios
-    fica sem vinculo, igual ao comportamento antigo.
+  - Recorrencia (M-93, reabre o M-92 revertido em 70d36e3; B-41 inverteu a janela de data em
+    2026-09-09): o Organizze nao expoe um id de agrupamento estavel por ocorrencia de conta
+    fixa -> as colunas recurrence_* sao inferidas por heuristica (`assign_recurrence`, ver
+    comentario na definicao): agrupa por (conta, descricao normalizada, MESMO valor), exige
+    RECURRENCE_MIN_OCCURRENCES+ ocorrencias e cadencia real (semanal/quinzenal/mensal) —
+    olhando SO para datas a partir do 1o dia do mes seguinte a hoje, nunca o passado (B-41: o
+    usuario edita a ocorrencia ja agendada do Organizze em vez de criar uma nova a cada mes, e
+    o valor/data mudam na edicao — o passado tem o mesmo (conta, descricao) com valores
+    diferentes por edicao manual, nao por natureza da despesa, e uma coincidencia de 3 valores
+    editados iguais no passado e falso-positivo quase garantido; o futuro e o valor-molde ainda
+    NAO editado pelo usuario, entao repeticao ali e evidencia real). O criterio de valor (nao
+    so descricao+conta, como na v1) e o que separa uma conta fixa de uma coincidencia de
+    compras do dia a dia — validado contra o cofre real do usuario antes de reimplementar (ver
+    M-93/B-41 em plan/BACKLOG.md para os dados). Serie que nao bate os criterios fica sem
+    vinculo, igual ao comportamento antigo — inclusive quando o Organizze simplesmente nao
+    agenda aquela descricao futuro o bastante para formar um padrao (ex.: ultimo salario antes
+    de sair do emprego).
   - Categorias duplicadas (M-102): uma categoria do Organizze com o mesmo nome (normalizado,
     sem acento/case) e o mesmo type de uma categoria de nivel superior ja existente na --base
     reusa o id da --base em vez de ganhar um id novo — sem isto, categoria padrao do onboarding
@@ -851,12 +859,33 @@ def merge_records(base, fresh, window_start: date, window_end: date):
 #      nunca muda, entao nao ha ganho em olhar mais para tras — e o script e feito sob medida
 #      para o proprio cofre dele, nao pensado para suportar outros usuarios.
 #
+# B-41 (2026-09-09) — a premissa do item 3 acima ("o passado ja esta consolidado e nunca
+# muda") se revelou FALSA e a janela de data foi INVERTIDA, de olhar pra tras para olhar pra
+# frente. Achado real: conta "NuConta Fabio" / "Consumo de Agua ESM" bateu por coincidencia em
+# R$68,40 em 3 meses passados seguidos (mar-mai/2026) — o minimo de RECURRENCE_MIN_OCCURRENCES
+# — virou serie aberta, e como o valor real mudou dali em diante (a conta de agua varia todo
+# mes: R$73,20 em jun, R$96,73 em ago), refreshRecurrenceHorizons() (B-22, roda a cada boot)
+# seguiu gerando uma ocorrencia fantasma de R$68,40 todo mes, inclusive 08/set/2026 — ao lado
+# do lancamento real e correto de 10/set, R$73,20. Causa raiz, explicada pelo usuario: ele NAO
+# cria uma transacao nova no Organizze a cada mes — edita a ocorrencia ja agendada (mudando
+# data E valor) quando a conta real chega, porque e mais rapido que criar do zero. Ou seja: o
+# PASSADO tem o mesmo (conta, descricao) com valores diferentes por EDICAO MANUAL, nao porque a
+# despesa mudou de natureza — uma coincidencia de 3 valores editados batendo e quase garantida
+# de ser falso-positivo, nao evidencia de recorrencia real. O FUTURO nao tem esse ruido: e o
+# valor-molde que o proprio Organizze pre-agenda e que o usuario ainda NAO teve chance de
+# editar (o evento nao aconteceu), entao o mesmo valor repetido no futuro e sinal confiavel.
+# "O passado nao importa" (decisao do usuario) — a janela deixou de ser "ultimos N meses" e
+# virou "a partir do 1o dia do mes seguinte a hoje", sem teto (usa quanto o Organizze ja
+# materializou pra frente, seja 1 mes so ou anos). Efeito colateral aceito e correto: uma
+# serie cujo Organizze so agenda 1-2 meses a frente (ex.: salario de quem esta de saida do
+# emprego) nao bate RECURRENCE_MIN_OCCURRENCES e fica sem tag — falha pro lado seguro, mesmo
+# principio de sempre; nao ha extensao as cegas.
+#
 # Nao materializa o futuro aqui: o script pode continuar trazendo o quanto o Organizze ja
 # materializou nativamente (o Gimbo tolera, HY-16/B-22 ja documentam o teto de ~2034 do
 # Organizze), mas quem decide ate onde preencher ocorrencias futuras SEM endDate e sempre o
 # proprio Gimbo (refreshRecurrenceHorizons, useDataStore.ts) — idempotente, nao duplica se a
 # ultima data importada ja estiver alem do horizonte rolante.
-RECURRENCE_LOOKBACK_MONTHS = 6
 RECURRENCE_MIN_OCCURRENCES = 3
 
 RECURRENCE_BANDS = [
@@ -893,16 +922,24 @@ def classify_cadence(gaps_days):
 def assign_recurrence(transactions: dict, today: date) -> dict:
     """Marca `recurrence_parent_id`/`recurrence_frequency` em serie, em memoria (mutando os
     rows do dict `transactions`). So considera INCOME/EXPENSE avulsos (parcelamento tem seu
-    proprio agrupamento e e mutuamente exclusivo com recorrencia no TransactionDrawer) dentro
-    dos ultimos RECURRENCE_LOOKBACK_MONTHS meses — o filtro de data corta a transacao fora da
+    proprio agrupamento e e mutuamente exclusivo com recorrencia no TransactionDrawer) datados
+    a partir do 1o dia do mes SEGUINTE a `today` — nunca o mes corrente, nunca o passado (B-41:
+    ver comentario acima sobre por que o passado e ruidoso demais, o usuario edita a ocorrencia
+    ja agendada em vez de criar uma nova a cada mes). O filtro de data corta a transacao fora da
     deteccao inteira, nunca so do vinculo final. Agrupa por (conta, descricao normalizada,
     valor); reajuste de valor comeca uma serie nova, de proposito (ver comentario acima). Falha
     sempre para o lado seguro: menos de RECURRENCE_MIN_OCCURRENCES ocorrencias, ou cadencia fora
-    das bandas conhecidas -> fica sem recurrence (identico a nunca ter rodado esta heuristica).
+    das bandas conhecidas, ou o Organizze simplesmente nao agenda aquela descricao futuro o
+    bastante -> fica sem recurrence (identico a nunca ter rodado esta heuristica). Tambem fica
+    sem recurrence quando um grupo foi SUPERADO: existe outra transacao real, de qualquer valor,
+    na mesma (conta, descricao) com data mais recente que a ultima ocorrencia deste grupo — sinal
+    de que o Organizze ja agendou um reajuste de valor e o grupo antigo nao deve ser estendido
+    por cima do que ja e real (B-41, rodada 2).
     """
-    cutoff = months_back(today, RECURRENCE_LOOKBACK_MONTHS)
+    cutoff = months_back(today, -1)  # 1o dia do mes seguinte a hoje
 
     groups: dict = {}
+    desc_max_date: dict = {}  # (conta, descricao) -> data maxima entre TODOS os valores
     for row in transactions.values():
         if row["type"] not in ("INCOME", "EXPENSE"):
             continue
@@ -916,11 +953,29 @@ def assign_recurrence(transactions: dict, today: date) -> dict:
             continue
         key = (row["account_id"], desc_norm, round(row["amount"], 2))
         groups.setdefault(key, []).append(row)
+        desc_key = (row["account_id"], desc_norm)
+        if row_date and (desc_key not in desc_max_date or row_date > desc_max_date[desc_key]):
+            desc_max_date[desc_key] = row_date
 
     tagged_series = tagged_txs = 0
     for key, rows in groups.items():
         dates = sorted({r["date"] for r in rows})
         if len(dates) < RECURRENCE_MIN_OCCURRENCES:
+            continue
+        # B-41 (rodada 2, 2026-09-10): mesmo com a janela virada pro futuro, um reajuste de
+        # preco JA AGENDADO pelo proprio Organizze (ex.: 3 meses no valor antigo, dai o valor
+        # muda porque o usuario ja atualizou o molde) cria dois grupos por valor exato — o
+        # antigo bate RECURRENCE_MIN_OCCURRENCES e vira serie aberta, e refreshRecurrenceHorizons
+        # o estende por cima do grupo novo, que ja e a fonte real e correta dali em diante:
+        # duas cobrancas fantasmas por mes (achado real do usuario, "Anglo Paulinia - Material",
+        # R$234,15+R$235,22 duplicando por cima do reajuste real de R$257,10+R$339,50 a partir
+        # de jan/2027). Se OUTRA transacao real (qualquer valor) da mesma (conta, descricao) e
+        # mais recente que a ultima data deste grupo, este grupo foi superado — nao e o dono do
+        # futuro, o grupo mais novo e; nunca estender o antigo por cima do que ja existe de
+        # verdade.
+        desc_key = (key[0], key[1])
+        last_date = parse_date_str(dates[-1])
+        if last_date and last_date < desc_max_date.get(desc_key, last_date):
             continue
         gaps = []
         for prev, cur in zip(dates, dates[1:]):
@@ -1187,6 +1242,18 @@ def main():
     p.add_argument("--base", default=None, help="gimbo.db anterior (snapshot: preserva saldos; incremental: funde transacoes). Default no incremental = --out se existir")
     p.add_argument("--email", default=os.environ.get("ORGANIZZE_EMAIL", ""), help="E-mail (ou ORGANIZZE_EMAIL)")
     p.add_argument("--interval", type=float, default=2.0, help="Intervalo (s) entre chamadas de API")
+    # B-41: flag de bypass pra isolar rapido se a heuristica de recorrencia (assign_recurrence)
+    # e a causa de uma divergencia Organizze-vs-Gimbo — sem ela, nenhuma transacao fresca deste
+    # run ganha recurrence_parent_id/frequency, o que e identico a "nunca ter rodado esta
+    # heuristica" (mesma garantia que o proprio assign_recurrence ja da por linha, ver docstring).
+    # Default True preserva o comportamento atual; nao mexe em series ja marcadas herdadas de
+    # --base (ver aviso impresso abaixo quando desligado em modo incremental).
+    p.add_argument(
+        "--infer-recurrence", action=argparse.BooleanOptionalAction, default=True,
+        help="Roda a heuristica de deteccao de recorrencia (assign_recurrence) nas transacoes frescas deste run. "
+             "Default: ligado. Use --no-infer-recurrence para gerar um .db sem nenhuma serie inferida nesta rodada "
+             "(diagnostico B-41) — series ja marcadas numa --base anterior nao sao desmarcadas."
+    )
     args = p.parse_args()
 
     token = os.environ.get("ORGANIZZE_TOKEN", "")
@@ -1260,7 +1327,12 @@ def main():
         fresh["txtags"] = {tt for tt in fresh["txtags"] if tt[0] in fresh["transactions"]}
         records = fresh
 
-    recurrence_stats = assign_recurrence(records["transactions"], date.today())
+    if args.infer_recurrence:
+        recurrence_stats = assign_recurrence(records["transactions"], date.today())
+    else:
+        recurrence_stats = {"series": 0, "transactions": 0}
+        print("[aviso] --no-infer-recurrence: nenhuma transacao fresca deste run sera marcada como recorrente "
+              "(series herdadas de --base permanecem como estavam).")
 
     write_db(args.out, user_name, args.email, records)
 
@@ -1270,7 +1342,10 @@ def main():
     print(f"  Contas:      {len(records['accounts'])} (frescas: {len(contas)} banco + {len(cartoes)} cartao)")
     print(f"  Categorias:  {len(records['categories'])} (inclui 2 fallback, {categories_reused} reconciliadas por nome com a base — M-102)")
     print(f"  Tags:        {len(records['tags'])}")
-    print(f"  Recorrencia: {recurrence_stats['series']} series detectadas ({recurrence_stats['transactions']} transacoes)")
+    if args.infer_recurrence:
+        print(f"  Recorrencia: {recurrence_stats['series']} series detectadas ({recurrence_stats['transactions']} transacoes)")
+    else:
+        print("  Recorrencia: DESLIGADA nesta rodada (--no-infer-recurrence)")
     print(f"  Transacoes:  {len(records['transactions'])} (frescas na janela: {stats['transactions']}, {stats['unpaid']} nao pagas)")
     if incremental:
         print(f"  Preservadas: {carried} transacoes fora da janela (vindas da base)")
