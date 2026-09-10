@@ -418,6 +418,15 @@ Features concluídas desde 2026-05-27:
 > sem esperar um patch novo do Vite; não é um item de ação.
 
 Itens em aberto:
+- **B-39/B-40** (2026-09-09, abertos) — divergência de saldo projetado entre Relatórios → Entradas x
+  Saídas e Simulações (M-101) para o mesmo período: `getMonthlyNetFlow` (Simulações) bucketiza por
+  `tx.date` bruto em vez de `getEffectiveCashFlowDate` (regra CC-16), então uma compra de cartão
+  feita antes do início da janela simulada mas com fatura vencendo dentro dela some do cálculo
+  (`B-39`, causa dominante, ~R$ 20 mil no cofre real do usuário); `startingBalance` também conta os
+  dias já realizados do mês corrente duas vezes (`B-40`, menor, sinal contrário). Nenhum dos dois
+  corrigido ainda — retomar depois da revalidação do `B-41` abaixo, já que uma série fantasma também
+  inflava os totais que os dois medem. Ver `plan/BACKLOG.md` B-39/B-40 para a investigação completa
+  (réplica em Python contra o `.db` real, números exatos).
 - **Relatório de uso real (2026-09-07)** — 11 itens mapeados pelo usuário usando o Gimbo no dia a dia,
   registrados em `plan/BACKLOG.md` (detalhes técnicos e decisões pendentes em cada entrada), branch
   `dassan/quick-fixes-uso-real`. **Resolvidos (lotes 1 a 5, escolhidos com o usuário): `B-34`**
