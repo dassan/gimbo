@@ -1187,6 +1187,18 @@ def main():
     p.add_argument("--base", default=None, help="gimbo.db anterior (snapshot: preserva saldos; incremental: funde transacoes). Default no incremental = --out se existir")
     p.add_argument("--email", default=os.environ.get("ORGANIZZE_EMAIL", ""), help="E-mail (ou ORGANIZZE_EMAIL)")
     p.add_argument("--interval", type=float, default=2.0, help="Intervalo (s) entre chamadas de API")
+    # B-41: flag de bypass pra isolar rapido se a heuristica de recorrencia (assign_recurrence)
+    # e a causa de uma divergencia Organizze-vs-Gimbo — sem ela, nenhuma transacao fresca deste
+    # run ganha recurrence_parent_id/frequency, o que e identico a "nunca ter rodado esta
+    # heuristica" (mesma garantia que o proprio assign_recurrence ja da por linha, ver docstring).
+    # Default True preserva o comportamento atual; nao mexe em series ja marcadas herdadas de
+    # --base (ver aviso impresso abaixo quando desligado em modo incremental).
+    p.add_argument(
+        "--infer-recurrence", action=argparse.BooleanOptionalAction, default=True,
+        help="Roda a heuristica de deteccao de recorrencia (assign_recurrence) nas transacoes frescas deste run. "
+             "Default: ligado. Use --no-infer-recurrence para gerar um .db sem nenhuma serie inferida nesta rodada "
+             "(diagnostico B-41) — series ja marcadas numa --base anterior nao sao desmarcadas."
+    )
     args = p.parse_args()
 
     token = os.environ.get("ORGANIZZE_TOKEN", "")
@@ -1260,7 +1272,12 @@ def main():
         fresh["txtags"] = {tt for tt in fresh["txtags"] if tt[0] in fresh["transactions"]}
         records = fresh
 
-    recurrence_stats = assign_recurrence(records["transactions"], date.today())
+    if args.infer_recurrence:
+        recurrence_stats = assign_recurrence(records["transactions"], date.today())
+    else:
+        recurrence_stats = {"series": 0, "transactions": 0}
+        print("[aviso] --no-infer-recurrence: nenhuma transacao fresca deste run sera marcada como recorrente "
+              "(series herdadas de --base permanecem como estavam).")
 
     write_db(args.out, user_name, args.email, records)
 
@@ -1270,7 +1287,10 @@ def main():
     print(f"  Contas:      {len(records['accounts'])} (frescas: {len(contas)} banco + {len(cartoes)} cartao)")
     print(f"  Categorias:  {len(records['categories'])} (inclui 2 fallback, {categories_reused} reconciliadas por nome com a base — M-102)")
     print(f"  Tags:        {len(records['tags'])}")
-    print(f"  Recorrencia: {recurrence_stats['series']} series detectadas ({recurrence_stats['transactions']} transacoes)")
+    if args.infer_recurrence:
+        print(f"  Recorrencia: {recurrence_stats['series']} series detectadas ({recurrence_stats['transactions']} transacoes)")
+    else:
+        print("  Recorrencia: DESLIGADA nesta rodada (--no-infer-recurrence)")
     print(f"  Transacoes:  {len(records['transactions'])} (frescas na janela: {stats['transactions']}, {stats['unpaid']} nao pagas)")
     if incremental:
         print(f"  Preservadas: {carried} transacoes fora da janela (vindas da base)")
