@@ -417,16 +417,26 @@ Features concluídas desde 2026-05-27:
 > (Windows-only, dev server apenas, abaixo do gate `--audit-level=high` do CI) — sem como corrigir
 > sem esperar um patch novo do Vite; não é um item de ação.
 
+- **B-39/B-40 resolvidos** (2026-09-10) — divergência de saldo projetado entre Relatórios → Entradas
+  x Saídas e Simulações (M-101) para o mesmo período, investigada em 2026-09-09 (réplica em Python
+  contra o `.db` real, ver `plan/BACKLOG.md` B-39/B-40 para os números exatos) e corrigida depois de
+  revalidar o `B-41` abaixo. **B-39** (causa dominante, ~R$ 20 mil no cofre real do usuário):
+  `getMonthlyNetFlow` bucketizava por `tx.date` bruto em vez de `getEffectiveCashFlowDate` (regra
+  CC-16) — uma compra de cartão feita antes do início da janela simulada mas com fatura vencendo
+  dentro dela sumia do cálculo por completo (nem no mês antigo, fora de `months`, nem no novo).
+  Corrigido dando a `getMonthlyNetFlow` um parâmetro `accounts` e bucketizando por
+  `getEffectiveCashFlowDate(tx, accounts)`, igual ao Fluxo de Caixa — `getCategoryMonthlyTotals`
+  **não mudou** (categorias continuam em `tx.date` bruto, regra do `CLAUDE.md` que não se aplica a
+  agregação de fluxo de caixa). **B-40** (menor, sinal oposto): `startingBalance` de
+  `getSimulationProjection` fazia replay de todo o histórico sem corte de data, então os dias já
+  realizados do 1º mês da janela entravam duas vezes — uma em `startingBalance`, outra em
+  `flow[0].net`. Corrigido passando `{ asOf: <último dia do mês anterior ao 1º mês da janela> }`
+  para `computeAccountBalances` (não `after` — a correção originalmente proposta usava esse nome
+  por engano; a semântica certa, "parar de contar depois desta data", é `asOf`). Dois testes de
+  regressão novos em `utils.test.ts` (`getMonthlyNetFlow`/`getSimulationProjection`, M-101); 1245
+  testes unitários verdes.
+
 Itens em aberto:
-- **B-39/B-40** (2026-09-09, abertos) — divergência de saldo projetado entre Relatórios → Entradas x
-  Saídas e Simulações (M-101) para o mesmo período: `getMonthlyNetFlow` (Simulações) bucketiza por
-  `tx.date` bruto em vez de `getEffectiveCashFlowDate` (regra CC-16), então uma compra de cartão
-  feita antes do início da janela simulada mas com fatura vencendo dentro dela some do cálculo
-  (`B-39`, causa dominante, ~R$ 20 mil no cofre real do usuário); `startingBalance` também conta os
-  dias já realizados do mês corrente duas vezes (`B-40`, menor, sinal contrário). Nenhum dos dois
-  corrigido ainda — retomar depois da revalidação do `B-41` abaixo, já que uma série fantasma também
-  inflava os totais que os dois medem. Ver `plan/BACKLOG.md` B-39/B-40 para a investigação completa
-  (réplica em Python contra o `.db` real, números exatos).
 - **B-41** (2026-09-09/10, heurística corrigida em 2 rodadas) — a heurística de inferência de
   recorrência do `sync_gimbo.py` (M-93, `assign_recurrence`) estava mesmo fabricando série fantasma.
   **Rodada 1:** conta "NuConta Fábio" / "Consumo de Água ESM" (valor varia todo mês na realidade)

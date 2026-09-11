@@ -1392,7 +1392,7 @@ describe('getMonthlyNetFlow (M-101)', () => {
       makeTx({ id: 't3', type: 'TRANSFER', amount: 999, date: '2028-01-10' }),
       makeTx({ id: 't4', type: 'CREDIT_PAYMENT', amount: 999, date: '2028-01-10' }),
     ]
-    const result = getMonthlyNetFlow(txs, months)
+    const result = getMonthlyNetFlow(txs, months, [])
     expect(result[0]).toEqual({ month: '2028-01', income: 1000, expense: 300, net: 700 })
     expect(result[1]).toEqual({ month: '2028-02', income: 0, expense: 0, net: 0 })
   })
@@ -1406,8 +1406,28 @@ describe('getMonthlyNetFlow (M-101)', () => {
       isPaid: true,
       recurrence: { frequency: 'monthly', parentId: 'rec-parent' },
     })
-    const result = getMonthlyNetFlow([recurring], months)
+    const result = getMonthlyNetFlow([recurring], months, [])
     expect(result.every((m) => m.expense === 50)).toBe(true)
+  })
+
+  it('bucketiza uma compra de cartão pelo vencimento da fatura, não pela data da compra (B-39)', () => {
+    const card = makeAccount({
+      id: 'card-1',
+      type: 'CREDIT',
+      creditMetadata: { limit: 5000, closingDay: 20, dueDay: 10 },
+    })
+    const purchase = makeTx({
+      id: 'p1',
+      accountId: 'card-1',
+      type: 'EXPENSE',
+      amount: 400,
+      date: '2027-06-01', // fora da janela (antes de 2028-01, o 1º mês de `months`)
+      invoiceDueDate: '2028-01-10', // mas a fatura vence dentro da janela
+    })
+    const result = getMonthlyNetFlow([purchase], months, [card])
+    // Sem a regra CC-16 (getEffectiveCashFlowDate), essa compra some por completo: a data bruta
+    // cai fora de `months`, então nunca é contada em nenhum mês da simulação.
+    expect(result[0]).toMatchObject({ month: '2028-01', expense: 400 })
   })
 })
 
@@ -1946,6 +1966,22 @@ describe('getSimulationProjection (M-101)', () => {
     })
     const points = getSimulationProjection([recurring], [account], [hypothesis], '2028-01-15')
     expect(points[0].adjustedExpense).toBeGreaterThanOrEqual(0)
+  })
+
+  it('startingBalance não conta os dias já realizados do 1º mês da janela duas vezes (B-40)', () => {
+    const account = makeAccount({ id: 'acc-1', type: 'RETAIL', balance: 1000 })
+    const income = makeTx({
+      id: 't1',
+      accountId: 'acc-1',
+      type: 'INCOME',
+      amount: 500,
+      date: '2028-01-05', // dentro do 1º mês da janela ('2028-01')
+      isPaid: true,
+    })
+    const points = getSimulationProjection([income], [account], [], '2028-01-15')
+    // Sem o corte em `asOf`, essa transação entraria tanto em startingBalance quanto em
+    // flow[0].net, inflando o saldo para 2000 em vez de 1500.
+    expect(points[0].baselineBalance).toBe(1500)
   })
 })
 

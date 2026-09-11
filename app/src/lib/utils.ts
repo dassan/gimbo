@@ -299,11 +299,19 @@ export interface MonthlyFlow {
  * Baseline mensal (receita/despesa/saldo do mês) para a janela de simulação — funde
  * `transactions` reais com `projectRecurringOccurrences` (M-62), do mesmo jeito que o Fluxo de
  * Caixa de Relatórios já faz. Deliberadamente **não reaproveita** a lógica de `CashFlowView` —
- * aquela carrega bucket semanal, replay de saldo de abertura por conta e vencimento de fatura de
- * cartão, tudo irrelevante aqui; duplicar a fração pequena que interessa (soma mensal) é mais
- * seguro do que abrir a lógica estável do Fluxo de Caixa para um novo consumidor.
+ * aquela carrega bucket semanal e replay de saldo de abertura por conta, tudo irrelevante aqui;
+ * duplicar a fração pequena que interessa (soma mensal) é mais seguro do que abrir a lógica
+ * estável do Fluxo de Caixa para um novo consumidor. **Bucketiza por
+ * `getEffectiveCashFlowDate(tx, accounts)`, não por `tx.date` bruto (B-39)** — mesma regra CC-16
+ * do Fluxo de Caixa: uma compra de cartão conta no mês de vencimento da fatura, não no mês da
+ * compra. Sem isso, uma compra feita antes do início da janela mas com fatura vencendo dentro
+ * dela desaparecia por completo (nem contava no mês antigo — fora de `months` — nem no novo).
  */
-export function getMonthlyNetFlow(transactions: Transaction[], months: string[]): MonthlyFlow[] {
+export function getMonthlyNetFlow(
+  transactions: Transaction[],
+  months: string[],
+  accounts: Account[]
+): MonthlyFlow[] {
   if (months.length === 0) return []
   const horizonEnd = addDays(advanceMonths(`${months[months.length - 1]}-01`, 1), -1)
   const merged = [...transactions, ...projectRecurringOccurrences(transactions, horizonEnd)]
@@ -311,7 +319,7 @@ export function getMonthlyNetFlow(transactions: Transaction[], months: string[])
   const byMonth = new Map(months.map((m) => [m, { income: 0, expense: 0 }]))
   for (const tx of merged) {
     if (tx.type !== 'INCOME' && tx.type !== 'EXPENSE') continue
-    const bucket = byMonth.get(tx.date.slice(0, 7))
+    const bucket = byMonth.get(getEffectiveCashFlowDate(tx, accounts).slice(0, 7))
     if (!bucket) continue
     if (tx.type === 'INCOME') bucket.income += tx.amount
     else bucket.expense += tx.amount
@@ -463,14 +471,20 @@ export function getSimulationProjection(
   referenceDate: string = todayStr()
 ): SimulationMonthPoint[] {
   const months = getSimulationMonths(referenceDate)
-  const flow = getMonthlyNetFlow(transactions, months)
+  const flow = getMonthlyNetFlow(transactions, months, accounts)
 
   // Mesmo cálculo do saldo total do Dashboard: exclui CREDIT (cujo número é limite disponível,
   // nunca saldo).
   const seeds = new Map(
     accounts.filter((a) => a.type !== 'CREDIT').map((a) => [a.id, a.balance] as const)
   )
-  const startingBalance = sumBalances(computeAccountBalances(transactions, seeds))
+  // B-40: para no fim do mês anterior ao primeiro mês da janela — senão os dias já realizados do
+  // mês corrente (dia 1 até hoje) entram duas vezes: uma aqui, outra dentro de `flow[0].net`
+  // (que soma o mês inteiro, sem filtro de data).
+  const startingBalanceCutoff = parseDateLocal(addDays(`${months[0]}-01`, -1))
+  const startingBalance = sumBalances(
+    computeAccountBalances(transactions, seeds, { asOf: startingBalanceCutoff })
+  )
 
   const flows = hypotheses
     .filter((h) => h.enabled)
@@ -1246,8 +1260,9 @@ export function suggestQuadranteTarget(
  * - All other cases (non-CREDIT, CREDIT without metadata, CREDIT_PAYMENT) →
  *   the raw transaction date.
  *
- * Apply this function ONLY in the cash-flow chart (Analytics). Category
- * breakdowns must continue using tx.date directly (budget perspective).
+ * Apply this function only to cash-flow-style aggregation (the Analytics chart and
+ * `getMonthlyNetFlow`/Simulações, B-39) — never to category breakdowns, which must continue
+ * using tx.date directly (budget perspective).
  */
 export function getEffectiveCashFlowDate(tx: Transaction, accounts: Account[]): string {
   if (tx.type === 'CREDIT_PAYMENT') return tx.date
