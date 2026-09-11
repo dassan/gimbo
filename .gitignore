@@ -8,6 +8,12 @@ app/dist/
 app/.vite/
 app/node_modules/.tmp/
 
+# Não existe package.json na raiz do repo — nada devia rodar `npm`/`vitest` fora de `app/`, mas
+# já aconteceu (node_modules/.vite/vitest/.../results.json foi commitado sem querer). As duas
+# regras acima só cobrem app/, então cobrimos a raiz aqui como cinto e suspensório.
+/node_modules/
+/.vite/
+
 # Environment & secrets
 .env
 .env.*
