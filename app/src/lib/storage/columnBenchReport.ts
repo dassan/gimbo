@@ -68,7 +68,7 @@ export function printColumnBench(result: ColumnBenchResult): ColumnBenchResult {
 
   const chunked = result.worker.filter((s) => s.scope === 'chunked')
   console.info(
-    `[gimbo] ganho — podar coluna (20→9): ${speedup(by('all20'), by('core9'))} · ` +
+    `[gimbo] ganho — podar coluna (21→9): ${speedup(by('all20'), by('core9'))} · ` +
       `podar ano (janela de 2 anos): ${speedup(by('all20'), by('all20win'))}`
   )
   if (chunked.length > 0) {

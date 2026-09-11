@@ -155,7 +155,7 @@ test('todas as variantes rodam contra o wa-sqlite real e leem o recorte que prom
     for (const sample of chunked) {
       expect(sample.rows).toBe(total)
       expect(sample.chunks).toBeGreaterThan(1)
-      expect(sample.columns).toBe(20)
+      expect(sample.columns).toBe(21)
     }
     // Mais lotes têm que significar mais consultas, senão a curva medida é uma só variante repetida.
     const chunkCounts = chunked.map((s) => s.chunks)
@@ -185,7 +185,7 @@ test('as colunas declaradas batem com as que o SQLite devolve', async ({ page })
   // `columns: 20` e `columns: 9` em benchVariants() alimentam o ajuste de custo por célula — se a
   // tabela ganhar uma coluna num schema futuro e este número não acompanhar, o µs/célula sai
   // errado sem nada quebrar.
-  expect(columnCounts.all).toBe(20)
+  expect(columnCounts.all).toBe(21)
   expect(columnCounts.core).toBe(9)
 })
 

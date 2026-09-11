@@ -107,7 +107,7 @@ export function benchVariants(
       columns: BENCH_CORE_COLUMNS.length,
       scope: 'full',
     },
-    { name: 'all20', steps: one('SELECT * FROM transactions'), columns: 20, scope: 'full' },
+    { name: 'all20', steps: one('SELECT * FROM transactions'), columns: 21, scope: 'full' },
     {
       name: 'core9win',
       steps: one(`SELECT ${core} FROM transactions ${inWindow}`, window),
@@ -117,7 +117,7 @@ export function benchVariants(
     {
       name: 'all20win',
       steps: one(`SELECT * FROM transactions ${inWindow}`, window),
-      columns: 20,
+      columns: 21,
       scope: 'window',
     },
   ]
@@ -140,7 +140,7 @@ export function benchVariants(
         sql: `SELECT * FROM transactions ${inWindow}`,
         params,
       })),
-      columns: 20,
+      columns: 21,
       scope: 'chunked',
     })
   }
