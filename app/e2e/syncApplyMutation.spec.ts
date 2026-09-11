@@ -37,6 +37,8 @@ const fixture = {
   ],
   tags: [],
   budgets: [],
+  devices: [],
+  hypotheses: [],
   valuations: [],
   transactions: [
     {
