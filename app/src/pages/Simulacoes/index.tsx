@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { FlaskConical, Pencil, Plus } from 'lucide-react'
+import { FlaskConical, Pencil, Plus, TrendingDown, TrendingUp } from 'lucide-react'
 import {
   Bar,
   CartesianGrid,
@@ -266,13 +266,34 @@ function HypothesisCard({
         </div>
       </div>
 
-      <p className="mt-1 text-xs text-on-surface/40">
-        {hypothesis.items.length === 0
-          ? t('simulacoes.itemCount', { count: 0, context: 'zero' })
-          : hypothesis.items
-              .map((item) => formatHypothesisItemSummary(item, categories, t))
-              .join('; ')}
-      </p>
+      {hypothesis.items.length === 0 ? (
+        <p className="mt-1 text-xs text-on-surface/40">
+          {t('simulacoes.itemCount', { count: 0, context: 'zero' })}
+        </p>
+      ) : (
+        <ul className="mt-1 space-y-0.5">
+          {hypothesis.items.map((item, index) => (
+            <li key={index} className="flex items-start gap-1.5 text-xs text-on-surface/40">
+              {item.type === 'INCOME' ? (
+                <TrendingUp
+                  size={12}
+                  strokeWidth={2}
+                  className="mt-0.5 shrink-0 text-primary"
+                  aria-hidden="true"
+                />
+              ) : (
+                <TrendingDown
+                  size={12}
+                  strokeWidth={2}
+                  className="mt-0.5 shrink-0 text-tertiary"
+                  aria-hidden="true"
+                />
+              )}
+              <span>{formatHypothesisItemSummary(item, categories, t)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

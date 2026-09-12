@@ -120,7 +120,7 @@ describe('Simulacoes page', () => {
     expect(screen.getByText('simulacoes.itemCount')).toBeInTheDocument()
   })
 
-  it('joins a summary per item, picking the key that matches each kind', () => {
+  it('renders a summary per item, picking the key that matches each kind', () => {
     useDataStore.setState({
       data: makeDataFile({
         hypotheses: [
@@ -150,9 +150,42 @@ describe('Simulacoes page', () => {
       }),
     })
     render(<Simulacoes />)
-    expect(
-      screen.getByText('simulacoes.itemSummaryInstallment; simulacoes.itemSummaryCategoryTarget')
-    ).toBeInTheDocument()
+    expect(screen.getByText('simulacoes.itemSummaryInstallment')).toBeInTheDocument()
+    expect(screen.getByText('simulacoes.itemSummaryCategoryTarget')).toBeInTheDocument()
+  })
+
+  it('marks each item with a trending icon matching its income/expense type', () => {
+    useDataStore.setState({
+      data: makeDataFile({
+        hypotheses: [
+          makeHypothesis({
+            items: [
+              {
+                id: 'item-income',
+                kind: 'ONE_TIME',
+                description: 'Bônus',
+                type: 'INCOME',
+                amount: 1000,
+                startDate: '2028-01-10',
+              },
+              {
+                id: 'item-expense',
+                kind: 'ONE_TIME',
+                description: 'Presente',
+                type: 'EXPENSE',
+                amount: 200,
+                startDate: '2028-01-10',
+              },
+            ],
+          }),
+        ],
+      }),
+    })
+    render(<Simulacoes />)
+    const items = screen.getAllByText('simulacoes.itemSummaryOneTime')
+    expect(items).toHaveLength(2)
+    expect(items[0].parentElement?.querySelector('.lucide-trending-up')).toBeInTheDocument()
+    expect(items[1].parentElement?.querySelector('.lucide-trending-down')).toBeInTheDocument()
   })
 
   it('toggling a hypothesis flips its enabled flag in the store', () => {
