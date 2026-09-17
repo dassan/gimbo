@@ -764,7 +764,7 @@ function TxRow({
           {/* M-36: category pill — neutral chip, only when the tx has a category */}
           {/* M-60: no "#" prefix — standardized with the credit card invoice view */}
           {cat && (
-            <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-[10px] font-medium text-on-surface/50">
+            <span className="rounded-full bg-surface-container-high px-2 py-0.5 text-center text-[10px] font-medium text-on-surface/50">
               {cat.name}
             </span>
           )}
