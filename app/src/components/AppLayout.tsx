@@ -18,6 +18,7 @@ import FAB from '@/components/FAB'
 import TransactionDrawer from '@/components/TransactionDrawer'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import WelcomeModal from '@/components/WelcomeModal'
+import GlobalSearchModal from '@/components/GlobalSearchModal'
 import PerfPanel from '@/components/PerfPanel'
 import Toast from '@/components/Toast'
 import type { Transaction } from '@/types'
@@ -33,6 +34,7 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | undefined>(undefined)
+  const [searchOpen, setSearchOpen] = useState(false)
   const [backupPermState, setBackupPermState] = useState<'prompt' | 'denied' | null>(null)
   const [backupHandle, setBackupHandle] = useState<FileSystemDirectoryHandle | null>(null)
   const [showWelcome, setShowWelcome] = useState(
@@ -128,7 +130,11 @@ export default function AppLayout() {
     <div className="flex min-h-screen flex-col bg-surface">
       {/* Navbar: desktop top bar + mobile bottom nav.
           onNewTransaction wires the bottom nav + button to the same drawer. */}
-      <Navbar vaultName={data?.user.name} onNewTransaction={() => openTransactionDrawer()} />
+      <Navbar
+        vaultName={data?.user.name}
+        onNewTransaction={() => openTransactionDrawer()}
+        onOpenSearch={() => setSearchOpen(true)}
+      />
 
       {isDemoMode() && (
         <div className="fixed top-14 left-0 right-0 z-40 flex items-center justify-center gap-2 bg-amber-400 px-6 py-2.5 text-xs font-medium text-amber-950">
@@ -245,6 +251,8 @@ export default function AppLayout() {
       )}
 
       <TransactionDrawer open={drawerOpen} onClose={handleDrawerClose} transaction={editingTx} />
+
+      <GlobalSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {showWelcome && <WelcomeModal onClose={() => setShowWelcome(false)} />}
 

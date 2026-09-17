@@ -15,7 +15,22 @@
     "netWorth": "Net Worth",
     "health": "Health",
     "simulacoes": "Simulations",
-    "settings": "Settings"
+    "settings": "Settings",
+    "search": "Search"
+  },
+  "search": {
+    "title": "Global Search",
+    "placeholder": "Search all transactions...",
+    "emptyPrompt": "Type to search every transaction, across all time.",
+    "noResults": "No results found.",
+    "total": "Total",
+    "truncatedHint": "Showing the {{shown}} most recent of {{total}} found.",
+    "period": {
+      "all": "All time",
+      "thisYear": "This year",
+      "lastYear": "Last year",
+      "custom": "Custom"
+    }
   },
   "budgets": {
     "title": "Budgets",

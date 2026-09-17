@@ -15,7 +15,22 @@
     "netWorth": "Patrimônio",
     "health": "Saúde",
     "simulacoes": "Simulações",
-    "settings": "Configurações"
+    "settings": "Configurações",
+    "search": "Buscar"
+  },
+  "search": {
+    "title": "Busca Global",
+    "placeholder": "Buscar em todos os lançamentos...",
+    "emptyPrompt": "Digite para buscar em todos os lançamentos, de todos os tempos.",
+    "noResults": "Nenhum resultado encontrado.",
+    "total": "Total",
+    "truncatedHint": "Mostrando os {{shown}} mais recentes de {{total}} encontrados.",
+    "period": {
+      "all": "Todos os períodos",
+      "thisYear": "Este ano",
+      "lastYear": "Ano passado",
+      "custom": "Personalizado"
+    }
   },
   "budgets": {
     "title": "Caixinhas",
