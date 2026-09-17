@@ -158,6 +158,7 @@
     "amount": "Amount",
     "date": "Date",
     "category": "Category",
+    "categorySearchPlaceholder": "Search category",
     "account": "Account",
     "tags": "Tags",
     "tagsPlaceholder": "Select tags...",

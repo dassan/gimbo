@@ -158,6 +158,7 @@
     "amount": "Valor",
     "date": "Data",
     "category": "Categoria",
+    "categorySearchPlaceholder": "Buscar categoria",
     "account": "Conta",
     "tags": "Tags",
     "tagsPlaceholder": "Selecionar tags...",

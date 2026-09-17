@@ -1,19 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Utensils,
-  ShoppingCart,
-  Car,
   Home,
-  Heart,
-  Plane,
-  GraduationCap,
-  Tv,
-  Wrench,
-  Briefcase,
-  Gift,
-  Tag as TagIcon,
-  Circle,
   ChevronRight,
   ChevronDown,
   X,
@@ -27,6 +15,7 @@ import {
 } from 'lucide-react'
 import { PieChart, Pie, Cell } from 'recharts'
 import { cn, formatCurrency, parseDateLocal } from '@/lib/utils'
+import { CategoryIcon } from '@/lib/categoryIcons'
 import type { Transaction, Account, Category } from '@/types'
 
 // M-37: fallback palette to keep donut slices distinct when categories share a stored
@@ -50,27 +39,6 @@ export interface CategoriasViewProps {
   endDate: Date
   includeUnpaid: boolean
   shadowClass: string
-}
-
-// ─── Category icon map (mirrors Settings/index.tsx) ───────────────────────────
-
-const CATEGORY_ICON_MAP: Record<string, React.ReactNode> = {
-  utensils: <Utensils size={14} strokeWidth={1.5} />,
-  'shopping-cart': <ShoppingCart size={14} strokeWidth={1.5} />,
-  car: <Car size={14} strokeWidth={1.5} />,
-  home: <Home size={14} strokeWidth={1.5} />,
-  heart: <Heart size={14} strokeWidth={1.5} />,
-  plane: <Plane size={14} strokeWidth={1.5} />,
-  'graduation-cap': <GraduationCap size={14} strokeWidth={1.5} />,
-  tv: <Tv size={14} strokeWidth={1.5} />,
-  wrench: <Wrench size={14} strokeWidth={1.5} />,
-  briefcase: <Briefcase size={14} strokeWidth={1.5} />,
-  gift: <Gift size={14} strokeWidth={1.5} />,
-  tag: <TagIcon size={14} strokeWidth={1.5} />,
-}
-
-function categoryIcon(iconName: string): React.ReactNode {
-  return CATEGORY_ICON_MAP[iconName] ?? <Circle size={14} strokeWidth={1.5} />
 }
 
 // ─── Account type icon map (for drill-down modal rows) ────────────────────────
@@ -386,7 +354,7 @@ function CategoryDonut({ title, entries, shadowClass, onBucketClick }: CategoryD
                       className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-white"
                       style={{ backgroundColor: root.color }}
                     >
-                      {categoryIcon(root.icon)}
+                      <CategoryIcon name={root.icon} size={14} />
                     </span>
 
                     <span className="flex-1 min-w-0 text-xs text-on-surface/70 truncate">

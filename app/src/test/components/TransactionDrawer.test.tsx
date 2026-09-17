@@ -1111,9 +1111,11 @@ describe('TransactionDrawer — description autocomplete (M-80)', () => {
     expect(amountInput).toHaveValue('50,00')
     expect(screen.getByText('#urgente')).toBeInTheDocument() // tag chip from the suggestion
 
-    const [accountSelect, categorySelect] = screen.getAllByRole('combobox')
+    const [accountSelect] = screen.getAllByRole('combobox')
     expect(accountSelect).toHaveDisplayValue('Carteira')
-    expect(categorySelect).toHaveDisplayValue('Transporte')
+    expect(screen.getByRole('button', { name: 'transactions.category' })).toHaveTextContent(
+      'Transporte'
+    )
   })
 
   it('B-34: selecting a suggestion whose account was archived fills category/tags but keeps the default active account', async () => {
@@ -1123,9 +1125,11 @@ describe('TransactionDrawer — description autocomplete (M-80)', () => {
     await userEvent.click(screen.getByText('Farmácia Velha'))
 
     expect(descInput).toHaveValue('Farmácia Velha')
-    const [accountSelect, categorySelect] = screen.getAllByRole('combobox')
+    const [accountSelect] = screen.getAllByRole('combobox')
     // Category still comes from the suggestion...
-    expect(categorySelect).toHaveDisplayValue('Transporte')
+    expect(screen.getByRole('button', { name: 'transactions.category' })).toHaveTextContent(
+      'Transporte'
+    )
     // ...but the account was NOT switched to the archived one — stays on the M-42 default.
     expect(accountSelect).toHaveDisplayValue('Conta Teste')
     expect(accountSelect).not.toHaveDisplayValue('Conta Antiga')

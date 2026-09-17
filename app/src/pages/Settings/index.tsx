@@ -24,16 +24,6 @@ import {
   Briefcase,
   TrendingUp,
   MoreHorizontal,
-  Utensils,
-  ShoppingCart,
-  Car,
-  Home,
-  Heart,
-  Plane,
-  GraduationCap,
-  Tv,
-  Wrench,
-  Gift,
   HardDrive,
   FolderOpen,
   Cloud,
@@ -89,6 +79,8 @@ import {
   RESERVE_ELIGIBLE_TYPES,
 } from '@/lib/utils'
 import { AUDIT_RETENTION_DEFAULT } from '@/lib/storage/schema'
+import { CategoryIcon } from '@/lib/categoryIcons'
+import { CATEGORY_ICON_NAMES } from '@/lib/categoryIconNames'
 import { storage } from '@/services/storage'
 import { ERR_SCHEMA_TOO_NEW, hasErrorMarker } from '@/services/storage/errors'
 import Toast from '@/components/Toast'
@@ -154,23 +146,6 @@ const ACCOUNT_TYPES: { type: AccountType; icon: React.ReactNode }[] = [
 const DAY_TO_DAY_ACCOUNT_TYPES: AccountType[] = ['RETAIL', 'SAVINGS']
 const WEALTH_ASSET_TYPES: AccountType[] = ['ASSET', 'STOCKS', 'CRYPTO', 'FOREX', 'OTHER']
 
-// ─── Category icon config ─────────────────────────────────────────────────────
-
-const CATEGORY_ICONS: { name: string; icon: React.ReactNode }[] = [
-  { name: 'utensils', icon: <Utensils size={18} strokeWidth={1.5} /> },
-  { name: 'shopping-cart', icon: <ShoppingCart size={18} strokeWidth={1.5} /> },
-  { name: 'car', icon: <Car size={18} strokeWidth={1.5} /> },
-  { name: 'home', icon: <Home size={18} strokeWidth={1.5} /> },
-  { name: 'heart', icon: <Heart size={18} strokeWidth={1.5} /> },
-  { name: 'plane', icon: <Plane size={18} strokeWidth={1.5} /> },
-  { name: 'graduation-cap', icon: <GraduationCap size={18} strokeWidth={1.5} /> },
-  { name: 'tv', icon: <Tv size={18} strokeWidth={1.5} /> },
-  { name: 'wrench', icon: <Wrench size={18} strokeWidth={1.5} /> },
-  { name: 'briefcase', icon: <Briefcase size={18} strokeWidth={1.5} /> },
-  { name: 'gift', icon: <Gift size={18} strokeWidth={1.5} /> },
-  { name: 'tag', icon: <TagIcon size={18} strokeWidth={1.5} /> },
-]
-
 // ─── Tag color palette ────────────────────────────────────────────────────────
 
 const TAG_COLORS = [
@@ -183,12 +158,6 @@ const TAG_COLORS = [
   '#6b7280',
   '#1f2937',
 ]
-
-function categoryIcon(name: string): React.ReactNode {
-  return (
-    CATEGORY_ICONS.find((i) => i.name === name)?.icon ?? <TagIcon size={18} strokeWidth={1.5} />
-  )
-}
 
 function accountTypeIcon(type: AccountType): React.ReactNode {
   return (
@@ -2528,7 +2497,9 @@ function CategoryColumn({
               className="flex w-full items-center gap-3 rounded-2xl bg-surface-container px-5 py-4 text-left hover:bg-surface-container-high transition-colors"
             >
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
-                <span className="text-primary">{categoryIcon(parent.icon)}</span>
+                <span className="text-primary">
+                  <CategoryIcon name={parent.icon} />
+                </span>
               </div>
               <div className="flex-1">
                 <p className="text-sm font-semibold text-on-surface">{parent.name}</p>
@@ -2660,7 +2631,7 @@ function AddCategoryModal({
             {t('settings.iconPicker')}
           </label>
           <div className="grid grid-cols-6 gap-2">
-            {CATEGORY_ICONS.map(({ name: iconName, icon: iconEl }) => (
+            {CATEGORY_ICON_NAMES.map((iconName) => (
               <button
                 key={iconName}
                 onClick={() => setIcon(iconName)}
@@ -2671,7 +2642,7 @@ function AddCategoryModal({
                     : 'bg-surface-container-low text-on-surface/50 hover:bg-surface-container-high'
                 )}
               >
-                {iconEl}
+                <CategoryIcon name={iconName} />
               </button>
             ))}
           </div>
