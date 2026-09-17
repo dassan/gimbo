@@ -29,6 +29,7 @@ import {
 import type { DescriptionSuggestion } from '@/lib/utils'
 import DatePicker from '@/components/DatePicker'
 import Select from '@/components/Select'
+import CategorySelect from '@/components/CategorySelect'
 import MobileSheet from '@/components/MobileSheet'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import type { Transaction, TransactionType, RecurrenceFrequency } from '@/types'
@@ -1015,17 +1016,12 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
               <label className="label text-on-surface/40 block mb-2">
                 {t('transactions.category')}
               </label>
-              <Select
+              <CategorySelect
                 value={categoryId}
                 onChange={setCategoryId}
                 ariaLabel={t('transactions.category')}
-                options={[
-                  { value: '', label: t('transactions.category') },
-                  ...categories.map((c) => ({
-                    value: c.id,
-                    label: c.parentId ? `— ${c.name}` : c.name,
-                  })),
-                ]}
+                placeholder={t('transactions.category')}
+                categories={categories}
                 className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
