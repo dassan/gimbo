@@ -13,6 +13,7 @@ import {
   CloudOff,
   DatabaseBackup,
   RefreshCw,
+  Search,
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -50,9 +51,10 @@ const BOTTOM_NAV_ITEMS = [
 interface NavbarProps {
   vaultName?: string
   onNewTransaction?: () => void
+  onOpenSearch?: () => void
 }
 
-export default function Navbar({ vaultName = '', onNewTransaction }: NavbarProps) {
+export default function Navbar({ vaultName = '', onNewTransaction, onOpenSearch }: NavbarProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   // Usability follow-up (CS-16), generalized for CS-09: discreet sync status indicator, hidden
@@ -170,6 +172,14 @@ export default function Navbar({ vaultName = '', onNewTransaction }: NavbarProps
           </button>
 
           <button
+            aria-label={t('nav.search')}
+            onClick={onOpenSearch}
+            className="hidden sm:flex h-8 w-8 items-center justify-center rounded-full text-on-surface/40 hover:bg-surface-container-low hover:text-on-surface/70 transition-colors"
+          >
+            <Search size={18} strokeWidth={1.5} />
+          </button>
+
+          <button
             aria-label={t('nav.settings')}
             onClick={() => {
               void navigate('/settings')
@@ -223,6 +233,16 @@ export default function Navbar({ vaultName = '', onNewTransaction }: NavbarProps
               </button>
             </div>
             <div className="px-2 pb-4">
+              <button
+                onClick={() => {
+                  setVaultMenuOpen(false)
+                  onOpenSearch?.()
+                }}
+                className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium text-on-surface hover:bg-surface-container-high"
+              >
+                <Search size={18} strokeWidth={1.75} className="text-on-surface/60" />
+                {t('nav.search')}
+              </button>
               <button
                 onClick={() => {
                   setVaultMenuOpen(false)
