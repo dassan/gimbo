@@ -117,8 +117,10 @@ export default function CategorySelect({
           onClick={() => handleSelect(c.id)}
           onMouseEnter={() => setActiveIndex(i)}
           className={cn(
-            'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-left text-sm transition-colors',
-            c.parentId && 'pl-9',
+            'flex w-full items-center gap-2.5 rounded-lg pr-2.5 py-2.5 text-left text-sm transition-colors',
+            // pl-11 (44px) lines up a child's text with a root's: pl-2.5 (10px) + the icon
+            // badge (h-6 = 24px) + the gap-2.5 between them (10px) = 44px = pl-11.
+            c.parentId ? 'pl-11' : 'pl-2.5',
             c.id === value
               ? 'bg-primary/10 text-primary font-semibold'
               : i === activeIndex

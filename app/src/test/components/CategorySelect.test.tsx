@@ -103,11 +103,12 @@ describe('CategorySelect — desktop (default jsdom viewport)', () => {
 
     const rootOption = within(listbox).getByRole('option', { name: 'Alimentação' })
     expect(rootOption.querySelector('svg')).not.toBeNull()
-    expect(rootOption.className).not.toMatch(/pl-9/)
+    expect(rootOption.className).toMatch(/pl-2\.5/)
 
     const childOption = within(listbox).getByRole('option', { name: 'Delivery' })
     expect(childOption.querySelector('svg')).toBeNull()
-    expect(childOption.className).toMatch(/pl-9/)
+    // pl-11 (44px) lines up with the root's text start: pl-2.5 (10px) + icon (24px) + gap-2.5 (10px).
+    expect(childOption.className).toMatch(/pl-11/)
   })
 
   it('filters by search text, keeping the parent visible for context when only a child matches', async () => {
