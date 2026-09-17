@@ -9,8 +9,16 @@ import type { Transaction } from '@/types'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
+const translationCalls: Array<[string, Record<string, unknown>?]> = []
+
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'pt-BR' } }),
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) => {
+      translationCalls.push([key, opts])
+      return key
+    },
+    i18n: { language: 'pt-BR' },
+  }),
 }))
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -54,6 +62,7 @@ const testTransaction: Transaction = {
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
+  translationCalls.length = 0
   useDataStore.setState({
     data: makeDataFile({ accounts: [testAccount], categories: [testCategory] }),
   })
@@ -1205,5 +1214,28 @@ describe('TransactionDrawer — original purchase date in edit mode (M-95)', () 
   it('omits it in create mode', () => {
     renderDrawer()
     expect(screen.queryByText('transactions.originalPurchaseDate')).not.toBeInTheDocument()
+  })
+
+  it('passes the original purchase total (sum of the installment group) to the translation', () => {
+    const tx: Transaction = {
+      ...testTransaction,
+      id: 'tx-2',
+      amount: 123.46,
+      installment: { parentId: 'p1', currentIndex: 2, total: 3, purchaseDate: '2024-01-10' },
+    }
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [testAccount],
+        categories: [testCategory],
+        transactions: [
+          { ...testTransaction, id: 'tx-1', amount: 123.45, installment: tx.installment },
+          tx,
+          { ...testTransaction, id: 'tx-3', amount: 123.45, installment: tx.installment },
+        ],
+      }),
+    })
+    renderDrawer({ transaction: tx })
+    const call = translationCalls.find(([key]) => key === 'transactions.originalPurchaseDate')
+    expect(call?.[1]?.amount).toEqual(expect.stringContaining('370,36'))
   })
 })

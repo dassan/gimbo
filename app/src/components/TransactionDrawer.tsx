@@ -477,6 +477,23 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   // CC-23: Per-installment amount for hint
   const perInstallmentAmount = installmentCount >= 2 ? amount / installmentCount : 0
 
+  // Original purchase total for the "Compra original em" hint below — not stored anywhere on the
+  // installment itself, so it's rebuilt by summing every transaction in the group (parentId);
+  // that sum is exact by construction (addTransaction puts the rounding remainder on the 1st
+  // installment, see useDataStore.ts), and stays correct even if the user edits one installment's
+  // amount later.
+  const parentId = transaction?.installment?.parentId
+  const originalPurchaseAmount = useMemo(
+    () =>
+      parentId
+        ? (data?.transactions ?? []).reduce(
+            (sum, t) => (t.installment?.parentId === parentId ? sum + t.amount : sum),
+            0
+          )
+        : 0,
+    [data, parentId]
+  )
+
   // M-80: description autocomplete — create mode only (avoids surprise-overwriting an existing
   // transaction's category/account/tags while the user is just tweaking its description), and
   // scoped to the current type so a suggestion's categoryId is always valid for the visible
@@ -538,24 +555,29 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
           className="w-full rounded-xl bg-surface-container-low py-3 pl-9 pr-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
         />
       </div>
-      {/* M-95: original purchase date for installments past the 1st — moved here from the
-          credit-card invoice list (M-64), which showed it inline on every row regardless of
-          whether the user cared; only relevant when reviewing a specific installment. */}
-      {isEditMode &&
-        transaction?.installment &&
-        transaction.installment.purchaseDate &&
-        transaction.installment.currentIndex > 1 && (
-          <p className="mt-2 text-xs text-on-surface/40">
-            {t('transactions.originalPurchaseDate', {
-              date: parseDateLocal(transaction.installment.purchaseDate).toLocaleDateString(
-                i18n.language,
-                { day: '2-digit', month: '2-digit', year: 'numeric' }
-              ),
-            })}
-          </p>
-        )}
     </div>
   )
+
+  // M-95: original purchase date (+ total, added later) for installments past the 1st —
+  // moved here from the credit-card invoice list (M-64), which showed it inline on every row
+  // regardless of whether the user cared; only relevant when reviewing a specific installment.
+  // Rendered as a col-span-full grid item in the standard-case account+date row (not inside
+  // dateField) so the line gets the whole drawer's width — needed to stay on one line — and a
+  // tight `gap-3` from that row instead of the parent's `space-y-6` sibling spacing.
+  const originalPurchaseHint = isEditMode &&
+    transaction?.installment &&
+    transaction.installment.purchaseDate &&
+    transaction.installment.currentIndex > 1 && (
+      <p className="col-span-full text-xs text-on-surface/40">
+        {t('transactions.originalPurchaseDate', {
+          date: parseDateLocal(transaction.installment.purchaseDate).toLocaleDateString(
+            i18n.language,
+            { day: '2-digit', month: '2-digit', year: 'numeric' }
+          ),
+          amount: formatCurrency(originalPurchaseAmount),
+        })}
+      </p>
+    )
 
   // dassan/ui-adjustments: label stacked directly above its own toggle, both centered in a
   // narrow (content-width) column — same "label above control" rhythm as every other field in
@@ -858,6 +880,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
               ) : (
                 dateField
               )}
+              {originalPurchaseHint}
             </div>
           )}
 
