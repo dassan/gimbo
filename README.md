@@ -295,6 +295,12 @@ Fora de escopo para o ciclo atual:
 
 ---
 
+## Contato
+
+contato@gimbo.com.br
+
+---
+
 ## Licença
 
 MIT — ver [`LICENSE`](LICENSE).

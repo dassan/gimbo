@@ -26,6 +26,7 @@ import type { Locale } from '@/types'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const GITHUB_REPO_URL = 'https://github.com/dassan/gimbo'
+const CONTACT_EMAIL = 'contato@gimbo.com.br'
 
 export default function Landing() {
   const { t, i18n } = useTranslation()
@@ -364,6 +365,12 @@ export default function Landing() {
             >
               <GithubIcon size={13} />
               {t('landing.footer.github')}
+            </a>
+            <a
+              href={`mailto:${CONTACT_EMAIL}`}
+              className="text-xs text-on-surface/50 transition-colors hover:text-on-surface"
+            >
+              {CONTACT_EMAIL}
             </a>
           </div>
         </div>
