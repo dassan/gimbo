@@ -114,6 +114,7 @@ type Section =
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const GITHUB_REPO_URL = 'https://github.com/dassan/gimbo'
+const CONTACT_EMAIL = 'contato@gimbo.com.br'
 
 // ─── Credit issuer config ─────────────────────────────────────────────────────
 
@@ -854,6 +855,12 @@ export default function Settings() {
               <GithubIcon size={12} />
               <span>v{__APP_VERSION__}</span>
             </a>
+            <a
+              href={`mailto:${CONTACT_EMAIL}`}
+              className="mt-1 inline-flex items-center px-3 text-[11px] text-on-surface/25 transition-colors hover:text-on-surface/50"
+            >
+              {CONTACT_EMAIL}
+            </a>
           </div>
         )}
 
@@ -904,6 +911,12 @@ export default function Settings() {
             >
               <GithubIcon size={12} />
               <span>v{__APP_VERSION__}</span>
+            </a>
+            <a
+              href={`mailto:${CONTACT_EMAIL}`}
+              className="mt-1 inline-flex items-center px-3 text-[11px] text-on-surface/25 transition-colors hover:text-on-surface/50"
+            >
+              {CONTACT_EMAIL}
             </a>
           </aside>
 
