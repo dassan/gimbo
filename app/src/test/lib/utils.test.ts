@@ -325,11 +325,22 @@ describe('getLoanLiability (HE-07)', () => {
 
 // ─── Financial Health — Debt Engine (HE-08) ──────────────────────────────────
 
-/** Adds `n` months to a "YYYY-MM-DD" date string, returning a new "YYYY-MM-DD" string. */
+/**
+ * Adds `n` months to a "YYYY-MM-DD" date string, returning a new "YYYY-MM-DD" string.
+ *
+ * Clamps the day to the target month's length instead of letting `Date.setMonth` overflow
+ * into the following month (B-42): on day 29-31, subtracting months that land on a shorter
+ * month — typically February — rolls the date past it (e.g. day 30 - 7 months from Sept 30
+ * lands on "Feb 30", which JS normalizes to Mar 2). These tests only care about the target
+ * *month bucket* (via `_monthKey`), so clamping is exact where plain overflow was wrong.
+ */
 function addMonths(dateStr: string, n: number): string {
   const d = parseDateLocal(dateStr)
-  d.setMonth(d.getMonth() + n)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const targetMonthIndex = d.getMonth() + n
+  const daysInTargetMonth = new Date(d.getFullYear(), targetMonthIndex + 1, 0).getDate()
+  const day = Math.min(d.getDate(), daysInTargetMonth)
+  const result = new Date(d.getFullYear(), targetMonthIndex, day)
+  return `${result.getFullYear()}-${String(result.getMonth() + 1).padStart(2, '0')}-${String(result.getDate()).padStart(2, '0')}`
 }
 
 /** Builds the N materialized installment transactions for a single purchase (mirrors the
