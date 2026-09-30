@@ -13,10 +13,14 @@ vi.mock('react-i18next', () => ({
 }))
 
 const mockNavigate = vi.fn()
+// Mutable so individual tests can simulate arriving via the Dashboard's "Meus Cartões" link
+// with router state (initialPeriodOffset) — reset to no-state in beforeEach.
+const mockLocation: { state: unknown } = { state: undefined }
 vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
   useParams: () => ({ accountId: 'acc-credit' }),
   useOutletContext: () => ({ openTransactionDrawer: vi.fn() }),
+  useLocation: () => mockLocation,
 }))
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -59,6 +63,7 @@ function makeTransaction(overrides: Partial<Transaction> = {}): Transaction {
 beforeEach(() => {
   useDataStore.setState({ data: null })
   mockNavigate.mockReset()
+  mockLocation.state = undefined
 })
 
 // ─── M-31: Spending summary in right column ───────────────────────────────────
@@ -549,5 +554,52 @@ describe('CreditCardPage — M-94: account name on invoice rows', () => {
     render(<CreditCardPage />)
 
     expect(screen.getByText(`· ${retail.name}`)).toBeInTheDocument()
+  })
+})
+
+// ─── Invoice status badge: closing-day-aware, not payment-only ────────────────
+
+describe('CreditCardPage — invoice status badge distinguishes open from closed-unpaid', () => {
+  it('shows "open" for the currently displayed period — it is, by definition, always the one still accruing charges', () => {
+    const account = makeCreditAccountFixed()
+    // No referenceMonth override: lands in the same period CreditCardPage defaults to
+    // (periodOffset=0), which getInvoicePeriod always resolves to a not-yet-closed period.
+    const charge = makeTransaction({ amount: 300 })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account], transactions: [charge] }),
+    })
+
+    render(<CreditCardPage />)
+
+    expect(screen.getAllByText('creditCard.statusOpen').length).toBeGreaterThan(0)
+    expect(screen.queryByText('creditCard.statusClosed')).not.toBeInTheDocument()
+  })
+
+  it('shows "closed" (not "open") once navigated to the previous, already-closed invoice', () => {
+    const account = makeCreditAccountFixed()
+    const base = getInvoicePeriod(todayStr, account.creditMetadata!.closingDay)
+    let month = base.month - 1
+    let year = base.year
+    if (month < 1) {
+      month = 12
+      year -= 1
+    }
+    const prevKey = invoicePeriodKey({ year, month })
+    const closedCharge = makeTransaction({ amount: 400, referenceMonth: prevKey })
+    // Simulates the Dashboard's "Meus Cartões" link for a closed-but-unpaid invoice
+    // (getDashboardInvoiceState), which passes initialPeriodOffset=-1 via router state.
+    mockLocation.state = { initialPeriodOffset: -1 }
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account], transactions: [closedCharge] }),
+    })
+
+    render(<CreditCardPage />)
+
+    expect(screen.getAllByText('creditCard.statusClosed').length).toBeGreaterThan(0)
+    expect(screen.queryByText('creditCard.statusOpen')).not.toBeInTheDocument()
+    // Still payable — closed-unpaid must not be confused with paid (M-57 hides the button then).
+    expect(screen.getAllByText('creditCard.payNow').length).toBeGreaterThan(0)
   })
 })

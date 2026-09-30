@@ -715,6 +715,49 @@ export function getOpenCreditBalance(transactions: Transaction[], account: Accou
   )
 }
 
+export type DashboardInvoiceState = 'open' | 'closed'
+
+/**
+ * Invoice state for the Dashboard's "Meus Cartões" list. Each card has its own closing
+ * day, so "this month's invoice" can already be closed for one card while still open for
+ * another — a plain month reference doesn't disambiguate what the displayed amount means.
+ *
+ * getCurrentInvoiceBalance/getOpenCreditBalance always look at the period currently
+ * accruing new charges (getInvoicePeriod's roll-forward past the closing day), which is
+ * right for the limit/liability figures but wrong for this display: the instant the
+ * closing day passes, they'd jump straight to the barely-started next invoice, hiding the
+ * just-closed one while it's still unpaid. This instead keeps showing the closed invoice —
+ * frozen at its closed total, ignoring partial payments — for as long as it stays unpaid.
+ *
+ * 'open': no unpaid invoice has closed yet — either still accruing (before the closing
+ * day) or the previous invoice was already paid. Amount is the accruing invoice's running
+ * total (0 right after a payment settles the previous one, until new charges land).
+ * 'closed': the previous invoice reached its closing day and hasn't been fully paid.
+ * Amount is frozen at that invoice's total.
+ *
+ * Returns { state: 'open', amount: 0 } without creditMetadata.
+ */
+export function getDashboardInvoiceState(
+  transactions: Transaction[],
+  account: Account
+): { state: DashboardInvoiceState; amount: number } {
+  if (!account.creditMetadata) return { state: 'open', amount: 0 }
+  const openPeriod = getInvoicePeriod(todayStr(), account.creditMetadata.closingDay)
+  let prevMonth = openPeriod.month - 1
+  let prevYear = openPeriod.year
+  if (prevMonth < 1) {
+    prevMonth = 12
+    prevYear -= 1
+  }
+  const prevPeriod = { year: prevYear, month: prevMonth }
+  const prevTotal = getInvoiceTotal(transactions, account, prevPeriod)
+  const prevPaid = getInvoicePaid(transactions, account, prevPeriod)
+  if (prevTotal > INVOICE_EPSILON && getInvoiceStatus(prevTotal, prevPaid) !== 'paid') {
+    return { state: 'closed', amount: prevTotal }
+  }
+  return { state: 'open', amount: getInvoiceTotal(transactions, account, openPeriod) }
+}
+
 /**
  * Total liability of a LOAN account for net-worth purposes = outstandingBalance,
  * the user-maintained figure (no transaction replay — HE-06).
