@@ -185,6 +185,7 @@
     "shortcutHint": "Pressione Enter para salvar rapidamente",
     "creditPayment": "Pag. Fatura",
     "cardToPay": "Cartão a pagar",
+    "paymentInvoiceHint": "Fatura de {{month}}",
     "payFrom": "Pagar com",
     "transferTitle": "Transferência",
     "transferFrom": "Conta de origem",
