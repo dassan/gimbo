@@ -24,12 +24,13 @@ import {
   formatCurrency,
   cn,
   parseDateLocal,
-  getCurrentInvoiceBalance,
+  getDashboardInvoiceState,
   getOpenCreditBalance,
   getEffectiveCashFlowDate,
   computeAccountBalances,
   isCardCredit,
 } from '@/lib/utils'
+import type { DashboardInvoiceState } from '@/lib/utils'
 import StatCard from '@/components/StatCard'
 import type { Account, Transaction, AccountType } from '@/types'
 
@@ -165,11 +166,13 @@ export default function Dashboard() {
   }, [data])
 
   // ── Total invoice balance across all CREDIT accounts ─────────────────────
+  // Sums the same per-card amount shown below (getDashboardInvoiceState) so this total keeps
+  // matching the rows even after a card's invoice closes but isn't paid yet.
   const totalInvoiceBalance = useMemo(() => {
     if (!data) return 0
     return data.accounts
       .filter((a) => a.type === 'CREDIT' && a.creditMetadata != null)
-      .reduce((sum, acc) => sum + getCurrentInvoiceBalance(data.transactions, acc), 0)
+      .reduce((sum, acc) => sum + getDashboardInvoiceState(data.transactions, acc).amount, 0)
   }, [data])
 
   // ── Expenses by category (donut) ──────────────────────────────────────────
@@ -325,16 +328,25 @@ export default function Dashboard() {
             <p className="py-8 text-center text-sm text-on-surface/40">{t('dashboard.noCards')}</p>
           ) : (
             <div className="space-y-1">
-              {creditAccounts.map((acc) => (
-                <CreditCardRow
-                  key={acc.id}
-                  account={acc}
-                  invoiceBalance={
-                    acc.creditMetadata ? getCurrentInvoiceBalance(data.transactions, acc) : 0
-                  }
-                  onDetails={() => void navigate(`/credit-card/${acc.id}`)}
-                />
-              ))}
+              {creditAccounts.map((acc) => {
+                const { state, amount } = getDashboardInvoiceState(data.transactions, acc)
+                return (
+                  <CreditCardRow
+                    key={acc.id}
+                    account={acc}
+                    invoiceState={state}
+                    invoiceBalance={amount}
+                    onDetails={() =>
+                      void navigate(`/credit-card/${acc.id}`, {
+                        // The card's own invoice is closed but unpaid (getDashboardInvoiceState) —
+                        // land on that closed statement instead of the barely-started next one
+                        // CreditCardPage would default to (see its periodOffset comment).
+                        state: state === 'closed' ? { initialPeriodOffset: -1 } : undefined,
+                      })
+                    }
+                  />
+                )
+              })}
             </div>
           )}
         </div>
@@ -424,10 +436,12 @@ function AccountRow({
 
 function CreditCardRow({
   account,
+  invoiceState,
   invoiceBalance,
   onDetails,
 }: {
   account: Account
+  invoiceState: DashboardInvoiceState
   invoiceBalance: number
   onDetails?: () => void
 }) {
@@ -449,11 +463,31 @@ function CreditCardRow({
       >
         <CreditCard size={18} strokeWidth={1.5} />
       </div>
-      <p className="text-sm font-medium text-on-surface truncate flex-1">{account.name}</p>
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <p className="text-sm font-medium text-on-surface truncate min-w-0">{account.name}</p>
+        {/* Each card has its own closing day, so the same calendar month can be an
+            already-closed-but-unpaid invoice for one card and still accruing for another —
+            this badge disambiguates which one `invoiceBalance` refers to. */}
+        <DashboardInvoiceStateBadge state={invoiceState} />
+      </div>
       <span className="text-sm font-semibold shrink-0 tabular-nums text-on-surface">
         {formatCurrency(invoiceBalance)}
       </span>
     </div>
+  )
+}
+
+function DashboardInvoiceStateBadge({ state }: { state: DashboardInvoiceState }) {
+  const { t } = useTranslation()
+  const cfg: Record<DashboardInvoiceState, { label: string; cls: string }> = {
+    open: { label: t('dashboard.invoiceOpen'), cls: 'bg-tertiary/15 text-tertiary' },
+    closed: { label: t('dashboard.invoiceClosed'), cls: 'bg-amber-500/15 text-amber-600' },
+  }
+  const { label, cls } = cfg[state]
+  return (
+    <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold', cls)}>
+      {label}
+    </span>
   )
 }
 

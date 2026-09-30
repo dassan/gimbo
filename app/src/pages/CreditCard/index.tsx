@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, ChevronDown, CreditCard, Filter, Search, X } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
@@ -17,9 +17,9 @@ import {
   getOpenCreditBalance,
   getInvoiceStatus,
   invoicePeriodKey,
+  todayStr,
   uuid,
 } from '@/lib/utils'
-import type { InvoiceStatus } from '@/lib/utils'
 import type { AppLayoutContext } from '@/components/AppLayout'
 import DatePicker from '@/components/DatePicker'
 import type { Account, Transaction } from '@/types'
@@ -55,6 +55,7 @@ function monthName(locale: string, month: number): string {
 export default function CreditCardPage() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
+  const location = useLocation()
   const { accountId } = useParams<{ accountId: string }>()
   const data = useDataStore((s) => s.data)
   const addTransaction = useDataStore((s) => s.addTransaction)
@@ -63,8 +64,14 @@ export default function CreditCardPage() {
   )
   const { openTransactionDrawer } = useOutletContext<AppLayoutContext>()
 
-  // Invoice period navigation offset (0 = current, -1 = previous, etc.)
-  const [periodOffset, setPeriodOffset] = useState(0)
+  // Invoice period navigation offset (0 = current, -1 = previous, etc.). The Dashboard's
+  // "Meus Cartões" link passes -1 via router state when the card's invoice is closed but
+  // unpaid (getDashboardInvoiceState) — without this, landing here always defaults to the
+  // period currently accruing charges, which is the wrong (barely-started) invoice for a
+  // card the user clicked specifically to see/pay its just-closed statement.
+  const [periodOffset, setPeriodOffset] = useState(
+    () => (location.state as { initialPeriodOffset?: number } | null)?.initialPeriodOffset ?? 0
+  )
   // Category filter
   const [filterCategory, setFilterCategory] = useState<string>('all')
   // M-54: collapsible category filter bar (replaces the M-31 horizontal chips)
@@ -193,6 +200,13 @@ export default function CreditCardPage() {
   )
   const invoiceRemaining = invoiceTotal - invoicePaid
   const invoiceStatus = getInvoiceStatus(invoiceTotal, invoicePaid)
+  // getInvoiceStatus is purely payment-based: an unpaid invoice reads 'open' whether it's
+  // still accruing charges or already past its closing day. The badge needs to tell those
+  // apart (same ambiguity fixed for the Dashboard via getDashboardInvoiceState), so split
+  // 'open' into 'open' (before closing) vs 'closed' (past closing, still unpaid) here.
+  const hasClosed = closingDateStr !== '' && todayStr() >= closingDateStr
+  const invoiceDisplayStatus: InvoiceDisplayStatus =
+    invoiceStatus === 'open' && hasClosed ? 'closed' : invoiceStatus
   const availableLimit =
     account?.creditMetadata && data
       ? account.creditMetadata.limit - getOpenCreditBalance(data.transactions, account)
@@ -448,7 +462,7 @@ export default function CreditCardPage() {
             <p className="text-xs text-on-surface/40 uppercase tracking-widest">
               {t('creditCard.invoicePeriod')}
             </p>
-            <InvoiceStatusBadge status={invoiceStatus} />
+            <InvoiceStatusBadge status={invoiceDisplayStatus} />
           </div>
           <h2 className="text-3xl font-bold text-on-surface -mt-2">{monthLabel}</h2>
 
@@ -584,7 +598,7 @@ export default function CreditCardPage() {
                 <p className="text-[10px] text-on-surface/40 uppercase tracking-widest">
                   {t('dashboard.invoice')}
                 </p>
-                <InvoiceStatusBadge status={invoiceStatus} />
+                <InvoiceStatusBadge status={invoiceDisplayStatus} />
               </div>
               <p className="text-2xl font-bold tabular-nums text-on-surface">
                 {formatCurrency(invoiceTotal)}
@@ -675,10 +689,15 @@ export default function CreditCardPage() {
 
 // ─── InvoiceStatusBadge ───────────────────────────────────────────────────────
 
-function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
+// Payment status ('open'/'partial'/'paid', from getInvoiceStatus) plus 'closed' — the
+// closing-day-aware split of 'open' computed above (hasClosed).
+type InvoiceDisplayStatus = 'open' | 'closed' | 'partial' | 'paid'
+
+function InvoiceStatusBadge({ status }: { status: InvoiceDisplayStatus }) {
   const { t } = useTranslation()
-  const cfg: Record<InvoiceStatus, { label: string; cls: string }> = {
+  const cfg: Record<InvoiceDisplayStatus, { label: string; cls: string }> = {
     open: { label: t('creditCard.statusOpen'), cls: 'bg-tertiary/15 text-tertiary' },
+    closed: { label: t('creditCard.statusClosed'), cls: 'bg-amber-500/15 text-amber-600' },
     partial: { label: t('creditCard.statusPartial'), cls: 'bg-amber-500/15 text-amber-600' },
     paid: { label: t('creditCard.statusPaid'), cls: 'bg-primary/15 text-primary' },
   }

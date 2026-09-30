@@ -3,6 +3,7 @@ import { render, screen, within, fireEvent } from '@testing-library/react'
 import Dashboard from '@/pages/Dashboard'
 import { useDataStore } from '@/store/useDataStore'
 import { makeDataFile } from '@/test/fixtures/dataFile'
+import { getInvoicePeriod, invoicePeriodKey, todayStr as utilTodayStr } from '@/lib/utils'
 import type { Account, Transaction } from '@/types'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -232,6 +233,134 @@ describe('Dashboard — CC-14: Meus Cartões section', () => {
     // The manage button is gone; the total invoices label is shown instead
     expect(screen.queryByText('dashboard.manage')).not.toBeInTheDocument()
     expect(screen.getByText(/dashboard\.totalInvoices/)).toBeInTheDocument()
+  })
+})
+
+// ─── Meus Cartões: closing-day-aware invoice state badge ("aberta"/"fechada") ──
+
+describe('Dashboard — Meus Cartões invoice state badge', () => {
+  it('shows the open-invoice badge and the accruing total before the closing day', () => {
+    // closingDay=28: any day 1-28 stays within the still-accruing invoice, regardless of
+    // which day this test runs on (mirrors the existing getCurrentInvoiceBalance convention).
+    const creditAccount = makeCreditAccount({
+      creditMetadata: { limit: 12000, closingDay: 28, dueDay: 10 },
+    })
+    // PAST_DATE keeps this out of current-month stat cards/donut (which bucket by tx.date);
+    // an explicit referenceMonth binds it to the currently-accruing invoice regardless
+    // (Option 2 association — authoritative over the date-derived default).
+    const openKey = invoicePeriodKey(getInvoicePeriod(utilTodayStr(), 28))
+    const charge = makeTransaction({
+      accountId: 'acc-credit',
+      amount: 555,
+      date: PAST_DATE,
+      referenceMonth: openKey,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [creditAccount], transactions: [charge] }),
+    })
+
+    render(<Dashboard />)
+
+    // Scope to the card row itself — the header total ("Faturas de {mês}") also matches
+    // the same amount when there is only one card.
+    const row = screen.getByText('Nexus Visa Gold').closest('div.flex.items-center.gap-3')
+    expect(row).not.toBeNull()
+    const rowScope = within(row as HTMLElement)
+    expect(rowScope.getByText('dashboard.invoiceOpen')).toBeInTheDocument()
+    expect(rowScope.queryByText('dashboard.invoiceClosed')).not.toBeInTheDocument()
+    expect(rowScope.getByText(/555,00/)).toBeInTheDocument()
+  })
+
+  it('shows the closed-invoice badge and freezes the amount once the closing day has passed and it is unpaid', () => {
+    // closingDay=1 guarantees today's day-of-month rolls forward past the closing day, so the
+    // period one month before "today's period" is always the most recently closed invoice —
+    // deterministic regardless of which day this test runs on.
+    const creditAccount = makeCreditAccount({
+      creditMetadata: { limit: 12000, closingDay: 1, dueDay: 10 },
+    })
+    const openPeriod = getInvoicePeriod(utilTodayStr(), 1)
+    let month = openPeriod.month - 1
+    let year = openPeriod.year
+    if (month < 1) {
+      month = 12
+      year -= 1
+    }
+    const prevKey = invoicePeriodKey({ year, month })
+    const closedCharge = makeTransaction({
+      accountId: 'acc-credit',
+      amount: 777,
+      date: PAST_DATE,
+      referenceMonth: prevKey,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [creditAccount], transactions: [closedCharge] }),
+    })
+
+    render(<Dashboard />)
+
+    // Scope to the card row itself — the header total and the "Saldo Previsto" stat card
+    // also match the same amount (a CREDIT expense's effective cash-flow date follows its
+    // invoice due date, landing this past-dated charge in the current month's projection too).
+    const row = screen.getByText('Nexus Visa Gold').closest('div.flex.items-center.gap-3')
+    expect(row).not.toBeNull()
+    const rowScope = within(row as HTMLElement)
+    expect(rowScope.getByText('dashboard.invoiceClosed')).toBeInTheDocument()
+    expect(rowScope.queryByText('dashboard.invoiceOpen')).not.toBeInTheDocument()
+    expect(rowScope.getByText(/777,00/)).toBeInTheDocument()
+  })
+})
+
+// ─── Meus Cartões: clicking a card routes to its actual invoice state ─────────
+
+describe('Dashboard — Meus Cartões navigates to the right invoice period', () => {
+  it('navigates without an initial period override for an open (still accruing) invoice', () => {
+    const creditAccount = makeCreditAccount({
+      creditMetadata: { limit: 12000, closingDay: 28, dueDay: 10 },
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [creditAccount], transactions: [] }),
+    })
+
+    render(<Dashboard />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Nexus Visa Gold/ }))
+
+    expect(mockNavigate).toHaveBeenCalledWith('/credit-card/acc-credit', { state: undefined })
+  })
+
+  it('navigates with initialPeriodOffset=-1 to land on the closed-but-unpaid invoice', () => {
+    const creditAccount = makeCreditAccount({
+      creditMetadata: { limit: 12000, closingDay: 1, dueDay: 10 },
+    })
+    const openPeriod = getInvoicePeriod(utilTodayStr(), 1)
+    let month = openPeriod.month - 1
+    let year = openPeriod.year
+    if (month < 1) {
+      month = 12
+      year -= 1
+    }
+    const prevKey = invoicePeriodKey({ year, month })
+    const closedCharge = makeTransaction({
+      accountId: 'acc-credit',
+      amount: 777,
+      date: PAST_DATE,
+      referenceMonth: prevKey,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [creditAccount], transactions: [closedCharge] }),
+    })
+
+    render(<Dashboard />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Nexus Visa Gold/ }))
+
+    expect(mockNavigate).toHaveBeenCalledWith('/credit-card/acc-credit', {
+      state: { initialPeriodOffset: -1 },
+    })
   })
 })
 

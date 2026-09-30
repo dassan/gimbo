@@ -5,6 +5,7 @@ import {
   setCurrencyDefaults,
   getCurrentInvoiceBalance,
   getOpenCreditBalance,
+  getDashboardInvoiceState,
   getEffectiveCashFlowDate,
   getInvoiceDueDate,
   getInvoicePaid,
@@ -324,11 +325,22 @@ describe('getLoanLiability (HE-07)', () => {
 
 // ─── Financial Health — Debt Engine (HE-08) ──────────────────────────────────
 
-/** Adds `n` months to a "YYYY-MM-DD" date string, returning a new "YYYY-MM-DD" string. */
+/**
+ * Adds `n` months to a "YYYY-MM-DD" date string, returning a new "YYYY-MM-DD" string.
+ *
+ * Clamps the day to the target month's length instead of letting `Date.setMonth` overflow
+ * into the following month (B-42): on day 29-31, subtracting months that land on a shorter
+ * month — typically February — rolls the date past it (e.g. day 30 - 7 months from Sept 30
+ * lands on "Feb 30", which JS normalizes to Mar 2). These tests only care about the target
+ * *month bucket* (via `_monthKey`), so clamping is exact where plain overflow was wrong.
+ */
 function addMonths(dateStr: string, n: number): string {
   const d = parseDateLocal(dateStr)
-  d.setMonth(d.getMonth() + n)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const targetMonthIndex = d.getMonth() + n
+  const daysInTargetMonth = new Date(d.getFullYear(), targetMonthIndex + 1, 0).getDate()
+  const day = Math.min(d.getDate(), daysInTargetMonth)
+  const result = new Date(d.getFullYear(), targetMonthIndex, day)
+  return `${result.getFullYear()}-${String(result.getMonth() + 1).padStart(2, '0')}-${String(result.getDate()).padStart(2, '0')}`
 }
 
 /** Builds the N materialized installment transactions for a single purchase (mirrors the
@@ -1081,6 +1093,77 @@ describe('getOpenCreditBalance', () => {
     expect(
       getOpenCreditBalance([past, current, future, credit, payCurrent, payPast], account)
     ).toBe(320)
+  })
+})
+
+describe('getDashboardInvoiceState', () => {
+  it('returns open with amount 0 when the account has no creditMetadata', () => {
+    const account = makeAccount({ creditMetadata: undefined, type: 'RETAIL' })
+    expect(getDashboardInvoiceState([makeTx()], account)).toEqual({ state: 'open', amount: 0 })
+  })
+
+  it('is open with the accruing invoice total before the closing day', () => {
+    // closingDay=28: day 1–28 always stays in the current (still-open) invoice period,
+    // regardless of what day this test runs on (mirrors getCurrentInvoiceBalance's tests).
+    const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 28, dueDay: 10 } })
+    const tx = makeTx({ amount: 400, date: todayStr() })
+    expect(getDashboardInvoiceState([tx], account)).toEqual({ state: 'open', amount: 400 })
+  })
+
+  // closingDay=1 guarantees today's day-of-month is always >= closingDay, so
+  // getInvoicePeriod(today, 1) always rolls forward — the invoice period one month before
+  // that is always the most recently closed one, deterministically regardless of run date.
+  function previousClosedPeriodKey(): string {
+    const openPeriod = getInvoicePeriod(todayStr(), 1)
+    let month = openPeriod.month - 1
+    let year = openPeriod.year
+    if (month < 1) {
+      month = 12
+      year -= 1
+    }
+    return invoicePeriodKey({ year, month })
+  }
+
+  it('is closed with the frozen previous-invoice total once the closing day has passed and it is unpaid', () => {
+    const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 1, dueDay: 10 } })
+    const prevKey = previousClosedPeriodKey()
+    const closedCharge = makeTx({ amount: 900, referenceMonth: prevKey })
+    expect(getDashboardInvoiceState([closedCharge], account)).toEqual({
+      state: 'closed',
+      amount: 900,
+    })
+  })
+
+  it('stays frozen at the closed total (not the remaining balance) when partially paid', () => {
+    const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 1, dueDay: 10 } })
+    const prevKey = previousClosedPeriodKey()
+    const closedCharge = makeTx({ id: 'a', amount: 900, referenceMonth: prevKey })
+    const partialPayment = makeTx({
+      id: 'b',
+      type: 'CREDIT_PAYMENT',
+      amount: 300,
+      referenceMonth: prevKey,
+    })
+    expect(getDashboardInvoiceState([closedCharge, partialPayment], account)).toEqual({
+      state: 'closed',
+      amount: 900,
+    })
+  })
+
+  it('returns to open once the previous invoice is fully paid', () => {
+    const account = makeAccount({ creditMetadata: { limit: 5000, closingDay: 1, dueDay: 10 } })
+    const prevKey = previousClosedPeriodKey()
+    const closedCharge = makeTx({ id: 'a', amount: 900, referenceMonth: prevKey })
+    const fullPayment = makeTx({
+      id: 'b',
+      type: 'CREDIT_PAYMENT',
+      amount: 900,
+      referenceMonth: prevKey,
+    })
+    expect(getDashboardInvoiceState([closedCharge, fullPayment], account)).toEqual({
+      state: 'open',
+      amount: 0,
+    })
   })
 })
 
