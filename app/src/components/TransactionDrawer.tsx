@@ -17,6 +17,7 @@ import {
   uuid,
   formatCurrency,
   getCurrentInvoiceBalance,
+  getInvoicePeriod,
   getTxInvoicePeriod,
   invoicePeriodKey,
   parseDateLocal,
@@ -32,11 +33,39 @@ import Select from '@/components/Select'
 import CategorySelect from '@/components/CategorySelect'
 import MobileSheet from '@/components/MobileSheet'
 import { useIsMobile } from '@/hooks/useIsMobile'
-import type { Transaction, TransactionType, RecurrenceFrequency } from '@/types'
+import type { Account, Transaction, TransactionType, RecurrenceFrequency } from '@/types'
 
 // M-80: minimum characters typed before the description autocomplete opens — short queries
 // (1 char) match too broadly to be useful and add noise.
 const DESCRIPTION_SUGGESTION_MIN_CHARS = 2
+
+// Localized month name for the "which invoice this payment posts to" hint below the card
+// selector — capitalized to match the pt-BR/en-US visual convention (Intl returns lowercase
+// for pt-BR, e.g. "outubro"). Same helper as pages/CreditCard/index.tsx's monthName.
+function monthName(locale: string, month: number): string {
+  const raw = new Date(2000, month, 1).toLocaleDateString(locale, { month: 'long' })
+  return raw.charAt(0).toUpperCase() + raw.slice(1)
+}
+
+// dassan/ui-adjustments: which invoice a charge/payment on a CREDIT account posts to — used
+// both by the standard EXPENSE/INCOME account selector (a card purchase) and by the
+// CREDIT_PAYMENT "cardToPay" selector (settling a bill). Mirrors the same rule the save logic
+// relies on (Option 2: a transaction without an explicit referenceMonth defaults to
+// getInvoicePeriod(tx.date, closingDay)); editing an existing one keeps showing its actual
+// referenceMonth instead of recomputing from the (possibly unchanged) date field.
+function computeTargetInvoicePeriod(
+  account: Account | undefined,
+  date: string,
+  isEditMode: boolean,
+  transaction: Transaction | undefined
+): { year: number; month: number } | undefined {
+  if (!account?.creditMetadata) return undefined
+  if (isEditMode && transaction?.referenceMonth) {
+    const [year, month] = transaction.referenceMonth.split('-').map(Number)
+    return { year, month }
+  }
+  return getInvoicePeriod(date, account.creditMetadata.closingDay)
+}
 
 export interface TransactionDrawerProps {
   open: boolean
@@ -152,6 +181,24 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
     () => filterArchivedAccounts(nonCreditAccounts),
     [nonCreditAccounts]
   )
+
+  // dassan/ui-adjustments: standard "Conta" selector — grouped into Contas/Cartões de Crédito
+  // (mixing both, plain-alphabetical, made it easy to fat-finger the wrong one when a retail
+  // account and a card share a similar name), alphabetical within each group.
+  const accountGroupOptions = useMemo(() => {
+    const byName = (a: Account, b: Account) => a.name.localeCompare(b.name, i18n.language)
+    const toOption = (group: string) => (a: Account) => ({ value: a.id, label: a.name, group })
+    return [
+      ...filterArchivedAccounts(nonCreditAccounts, accountId)
+        .slice()
+        .sort(byName)
+        .map(toOption(t('settings.accounts'))),
+      ...filterArchivedAccounts(creditAccounts, accountId)
+        .slice()
+        .sort(byName)
+        .map(toOption(t('settings.creditCards'))),
+    ]
+  }, [nonCreditAccounts, creditAccounts, accountId, i18n.language, t])
 
   // Derived: selected account for standard (non-CREDIT_PAYMENT) mode
   const selectedAccount = useMemo(
@@ -472,6 +519,30 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
     [type, accountId, data]
   )
 
+  // Which invoice this payment posts to (Option 2's referenceMonth default) — see
+  // computeTargetInvoicePeriod above.
+  const paymentInvoicePeriod = useMemo(
+    () =>
+      type === 'CREDIT_PAYMENT'
+        ? computeTargetInvoicePeriod(selectedCreditAccount, date, isEditMode, transaction)
+        : undefined,
+    [type, selectedCreditAccount, isEditMode, transaction, date]
+  )
+
+  // Which invoice a CREDIT-account charge posts to — standard EXPENSE/INCOME account selector
+  // (a card purchase/estorno), as opposed to paymentInvoicePeriod above (settling the bill).
+  // Hidden during installments: each installment can land on a different invoice, so a single
+  // period would be misleading — same reasoning as isPaidApplicable disabling isPaid there.
+  const chargeInvoicePeriod = useMemo(
+    () =>
+      (type === 'EXPENSE' || type === 'INCOME') &&
+      !installmentsEnabled &&
+      selectedAccount?.type === 'CREDIT'
+        ? computeTargetInvoicePeriod(selectedAccount, date, isEditMode, transaction)
+        : undefined,
+    [type, installmentsEnabled, selectedAccount, isEditMode, transaction, date]
+  )
+
   const cfg = TYPE_CONFIG[type]
 
   // CC-23: Per-installment amount for hint
@@ -774,6 +845,13 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                     }))}
                     className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                   />
+                  {paymentInvoicePeriod && (
+                    <p className="mt-1.5 text-xs text-on-surface/50">
+                      {t('transactions.paymentInvoiceHint', {
+                        month: monthName(i18n.language, paymentInvoicePeriod.month - 1),
+                      })}
+                    </p>
+                  )}
                 </div>
 
                 {/* Pay from */}
@@ -865,12 +943,16 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                   onChange={handleAccountChange}
                   ariaLabel={t('transactions.account')}
                   placeholder={t('common.noData')}
-                  options={filterArchivedAccounts(data?.accounts ?? [], accountId).map((a) => ({
-                    value: a.id,
-                    label: a.name,
-                  }))}
+                  options={accountGroupOptions}
                   className="rounded-xl bg-surface-container-low py-3 px-4 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
                 />
+                {chargeInvoicePeriod && (
+                  <p className="mt-1.5 text-xs text-on-surface/50">
+                    {t('transactions.paymentInvoiceHint', {
+                      month: monthName(i18n.language, chargeInvoicePeriod.month - 1),
+                    })}
+                  </p>
+                )}
               </div>
               {isPaidApplicable ? (
                 <div className="grid grid-cols-[1fr_auto] gap-3 sm:contents">
@@ -888,11 +970,16 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
               account type since CC-35), mutually exclusive via auto-off-on-click instead of
               hiding the other's whole section, create mode only ── */}
           {showToggleRow && (
-            <div className="rounded-xl bg-surface-container-low px-4 py-3 space-y-3">
-              {/* Toggle row — 2 columns when both apply, 1 when only recurrence does (INCOME) */}
+            <div className="rounded-xl bg-surface-container-low py-3 space-y-3">
+              {/* Toggle row — 2 columns when both apply, 1 when only recurrence does (INCOME).
+                  dassan/ui-adjustments: no right padding here (unlike the rest of the box's
+                  content, wrapped in its own px-4 below) so the recurrence toggle's justify-end
+                  lands flush on the box's outer edge — the same edge the "Pago" toggle sits on
+                  in the account/date row above, since neither has anything narrower boxing it
+                  in. Left padding stays so the installments toggle still reads as indented. */}
               <div
                 className={cn(
-                  'grid gap-4',
+                  'grid gap-4 pl-4',
                   canToggleInstallments && canToggleRecurrence ? 'grid-cols-2' : 'grid-cols-1'
                 )}
               >
@@ -927,7 +1014,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                   </div>
                 )}
                 {canToggleRecurrence && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-end gap-2">
                     <label className="text-sm font-medium text-on-surface">
                       {t('transactions.recurrence')}
                     </label>
@@ -955,9 +1042,10 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                 )}
               </div>
 
-              {/* Count field + hint (installments) */}
+              {/* Count field + hint (installments) — own px-4 wrapper since the box itself no
+                  longer pads horizontally (see toggle row above). */}
               {installmentsEnabled && (
-                <>
+                <div className="px-4 space-y-3">
                   <div>
                     <label className="label text-on-surface/40 block mb-2">
                       {t('transactions.installmentCount')}
@@ -981,12 +1069,13 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                       })}
                     </p>
                   )}
-                </>
+                </div>
               )}
 
-              {/* Frequency selector + end date + hint (recurrence) */}
+              {/* Frequency selector + end date + hint (recurrence) — same px-4 wrapper reasoning
+                  as installments above. */}
               {recurrenceEnabled && (
-                <>
+                <div className="px-4 space-y-3">
                   <div>
                     <label className="label text-on-surface/40 block mb-2">
                       {t('transactions.recurrenceFrequency')}
@@ -1028,7 +1117,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
                       ? t('transactions.recurrenceHintEnd')
                       : t('transactions.recurrenceHintHorizon')}
                   </p>
-                </>
+                </div>
               )}
             </div>
           )}
