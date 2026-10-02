@@ -83,9 +83,9 @@ export default function CreditCardPage() {
 
   const account = useMemo(() => data?.accounts.find((a) => a.id === accountId), [data, accountId])
 
-  // M-30: accounts that can be used to pay (non-CREDIT)
+  // M-30: accounts that can be used to pay (non-CREDIT, não arquivadas)
   const nonCreditAccounts = useMemo(
-    () => (data?.accounts ?? []).filter((a) => a.type !== 'CREDIT'),
+    () => (data?.accounts ?? []).filter((a) => a.type !== 'CREDIT' && !a.archived),
     [data]
   )
 

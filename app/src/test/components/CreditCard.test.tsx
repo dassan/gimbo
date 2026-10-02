@@ -344,6 +344,31 @@ describe('CreditCardPage — M-30: PayInvoiceModal', () => {
     expect(screen.queryByText('Outro Cartão')).not.toBeInTheDocument()
   })
 
+  it('excludes archived accounts from the Conta selector', () => {
+    const creditAccount = makeCreditAccountFixed()
+    const retailAccount = makeRetailAccount({ name: 'NuConta' })
+    const archivedAccount = makeRetailAccount({
+      id: 'acc-retail-archived',
+      name: 'Conta Antiga',
+      archived: true,
+    })
+
+    useDataStore.setState({
+      data: makeDataFile({
+        accounts: [creditAccount, retailAccount, archivedAccount],
+        transactions: [],
+      }),
+    })
+
+    render(<CreditCardPage />)
+    fireEvent.click(screen.getAllByText('creditCard.payNow')[0])
+
+    // Active retail account appears as an option
+    expect(screen.getByText('NuConta')).toBeInTheDocument()
+    // The archived account does NOT appear in the payment account selector
+    expect(screen.queryByText('Conta Antiga')).not.toBeInTheDocument()
+  })
+
   it('closes the modal when backdrop is clicked', () => {
     const creditAccount = makeCreditAccountFixed()
     useDataStore.setState({
