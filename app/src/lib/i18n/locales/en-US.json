@@ -185,6 +185,7 @@
     "shortcutHint": "Press Enter to save quickly",
     "creditPayment": "Bill Payment",
     "cardToPay": "Card to pay",
+    "paymentInvoiceHint": "{{month}} invoice",
     "payFrom": "Pay from",
     "transferTitle": "Transfer",
     "transferFrom": "From account",

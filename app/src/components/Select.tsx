@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useIsMobile } from '@/hooks/useIsMobile'
@@ -12,6 +12,25 @@ import MobileSheet from '@/components/MobileSheet'
 export interface SelectOption {
   value: string
   label: string
+  // Optional group heading (e.g. "Contas" vs "Cartões de Crédito") — options sharing the same
+  // group render together under it; ungrouped options render as a flat list, same as before.
+  group?: string
+}
+
+// Splits a flat, already-ordered option list into `[groupLabel, options][]` runs, preserving
+// each group's first-appearance order — callers are expected to have already sorted within
+// each group (e.g. alphabetically) before handing options to Select.
+function groupOptions(options: SelectOption[]): [string | undefined, SelectOption[]][] {
+  const groups: [string | undefined, SelectOption[]][] = []
+  for (const option of options) {
+    const last = groups[groups.length - 1]
+    if (last && last[0] === option.group) {
+      last[1].push(option)
+    } else {
+      groups.push([option.group, [option]])
+    }
+  }
+  return groups
 }
 
 export interface SelectProps {
@@ -55,11 +74,20 @@ export default function Select({
           onChange={(e) => onChange(e.target.value)}
           className={cn(className, 'w-full appearance-none')}
         >
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
+          {groupOptions(options).map(([group, groupedOptions], i) => {
+            const optionEls = groupedOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))
+            return group ? (
+              <optgroup key={group} label={group}>
+                {optionEls}
+              </optgroup>
+            ) : (
+              <Fragment key={i}>{optionEls}</Fragment>
+            )
+          })}
           {options.length === 0 && <option value="">{placeholder}</option>}
         </select>
         <ChevronDown
@@ -103,22 +131,27 @@ export default function Select({
         ariaLabel={ariaLabel}
         contentClassName="px-3 pb-2"
       >
-        {options.map((o) => (
-          <button
-            key={o.value}
-            type="button"
-            role="option"
-            aria-selected={o.value === value}
-            onClick={() => handleSelect(o.value)}
-            className={cn(
-              'w-full rounded-xl px-4 py-3 text-left text-sm transition-colors',
-              o.value === value
-                ? 'bg-primary/10 text-primary font-semibold'
-                : 'text-on-surface hover:bg-surface-container-high'
-            )}
-          >
-            {o.label}
-          </button>
+        {groupOptions(options).map(([group, groupedOptions], i) => (
+          <Fragment key={group ?? i}>
+            {group && <p className="label text-on-surface/40 px-4 pt-3 pb-1 first:pt-1">{group}</p>}
+            {groupedOptions.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                role="option"
+                aria-selected={o.value === value}
+                onClick={() => handleSelect(o.value)}
+                className={cn(
+                  'w-full rounded-xl px-4 py-3 text-left text-sm transition-colors',
+                  o.value === value
+                    ? 'bg-primary/10 text-primary font-semibold'
+                    : 'text-on-surface hover:bg-surface-container-high'
+                )}
+              >
+                {o.label}
+              </button>
+            ))}
+          </Fragment>
         ))}
         {options.length === 0 && (
           <p className="px-4 py-3 text-sm text-center text-on-surface/40">{placeholder}</p>
