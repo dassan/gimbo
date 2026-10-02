@@ -149,6 +149,46 @@ describe('Settings — BK-08: manual sync now', () => {
   })
 })
 
+// ─── Settings — BK-11: manual export/import of a single .db file ────────────
+// The fallback that works in every browser, unlike Level 1's folder backup (needs the File
+// System Access API, Chromium-only — Firefox users had no way to get their vault out of the
+// app at all before this).
+
+describe('Settings — BK-11: manual export/import', () => {
+  it('downloads the whole vault as a .db file without requiring a configured folder', async () => {
+    const user = userEvent.setup()
+    renderSettings()
+    await user.click((await screen.findAllByText('settings.backupSync'))[0])
+
+    await user.click(await screen.findByText('settings.exportDb'))
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- vi.fn() mock, no `this` use
+    expect(vi.mocked(storage).exportBlob).toHaveBeenCalled()
+  })
+
+  it('asks for confirmation before replacing the vault, then imports the chosen file', async () => {
+    const user = userEvent.setup()
+    vi.mocked(storage).loadDataFile.mockResolvedValueOnce(makeDataFile())
+    const { container } = renderSettings()
+    await user.click((await screen.findAllByText('settings.backupSync'))[0])
+
+    const file = new File(['bytes'], 'meu-cofre.db')
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    await user.upload(input, file)
+
+    // Destructive — picking a file alone must not import it yet.
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- vi.fn() mock, no `this` use
+    expect(vi.mocked(storage).importBlob).not.toHaveBeenCalled()
+    expect(await screen.findByText('settings.backupRestoreConfirm')).toBeInTheDocument()
+
+    await user.click(screen.getByText('settings.manualImportConfirm'))
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- vi.fn() mock, no `this` use
+    expect(vi.mocked(storage).importBlob).toHaveBeenCalledWith(file)
+    expect(await screen.findByText('settings.importSuccess')).toBeInTheDocument()
+  })
+})
+
 // ─── Settings — import runs B-22/BX-07 maintenance right away (same gap CS-34 found for
 // table_hashes: App.tsx's boot effect is the only other place these run) ─────────────────────
 

@@ -11,6 +11,7 @@ import {
   Sliders,
   Plus,
   Upload,
+  Download,
   History,
   PlusCircle,
   Pencil,
@@ -326,6 +327,10 @@ export default function Settings() {
     localStorage.getItem('gimbo_backup_last_saved')
   )
   const [confirmFolderRestore, setConfirmFolderRestore] = useState(false)
+  // BK-11: manual export/import of a single .db file — the fallback that works in every
+  // browser (Level 1's folder backup needs the File System Access API, Chromium-only).
+  const [pendingManualImport, setPendingManualImport] = useState<File | null>(null)
+  const manualImportInputRef = useRef<HTMLInputElement>(null)
   // BK-08: manual backup ("Sincronizar agora") — needed because the local backup only
   // auto-writes on mutations, and the initial import (fresh start) happens before a folder
   // is ever configured, leaving the first backup stale until the user forces one.
@@ -395,6 +400,32 @@ export default function Settings() {
     } catch {
       setSyncState('error')
     }
+  }
+
+  // BK-11: downloads the whole vault as a single .db file — no directory picker involved, so
+  // this works in Firefox (and any other browser without the File System Access API), unlike
+  // Level 1's folder backup below.
+  async function handleExportDb() {
+    const blob = await storage.exportBlob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const stamp = new Date().toISOString().slice(0, 10)
+    a.href = url
+    a.download = `${vaultName.trim() || 'gimbo'}-backup-${stamp}.db`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function handleManualImportFileSelected(file: File) {
+    setImportResult(null)
+    setPendingManualImport(file)
+  }
+
+  async function handleConfirmManualImport() {
+    if (!pendingManualImport) return
+    const file = pendingManualImport
+    setPendingManualImport(null)
+    await handleImportDb(file)
   }
 
   async function handleRestoreFromBackupDir() {
@@ -1405,8 +1436,74 @@ export default function Settings() {
 
             {/* Backup & Sync */}
             {activeSection === 'backup' && (
-              <Section title={t('settings.backupSync')}>
+              <Section title={t('settings.backupManualTitle')}>
                 <div className="space-y-6">
+                  {/* ── Backup manual — exportar/importar um único arquivo .db ─ */}
+                  <div className="rounded-2xl bg-surface-container p-5 space-y-3">
+                    <p className="text-sm text-on-surface/60">{t('settings.manualBackupDesc')}</p>
+                    <button
+                      onClick={() => void handleExportDb()}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-semibold text-on-primary hover:opacity-90 transition-opacity"
+                    >
+                      <Download size={14} strokeWidth={2} />
+                      {t('settings.exportDb')}
+                    </button>
+                    <input
+                      ref={manualImportInputRef}
+                      type="file"
+                      accept=".db"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) handleManualImportFileSelected(file)
+                        e.target.value = ''
+                      }}
+                    />
+                    {pendingManualImport ? (
+                      <div className="flex items-center justify-between gap-3 rounded-xl bg-tertiary/10 px-4 py-3 text-xs text-tertiary">
+                        <span>{t('settings.backupRestoreConfirm')}</span>
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            onClick={() => void handleConfirmManualImport()}
+                            className="rounded-md bg-tertiary/15 px-2.5 py-1 font-semibold hover:bg-tertiary/25 transition-colors"
+                          >
+                            {t('settings.manualImportConfirm')}
+                          </button>
+                          <button
+                            onClick={() => setPendingManualImport(null)}
+                            className="rounded-md px-2.5 py-1 font-semibold hover:bg-tertiary/10 transition-colors"
+                          >
+                            {t('settings.manualImportCancel')}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => manualImportInputRef.current?.click()}
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-container-low py-2.5 text-sm font-semibold text-on-surface/60 hover:bg-surface-container-high transition-colors"
+                      >
+                        <Upload size={14} strokeWidth={2} />
+                        {t('settings.importDb')}
+                      </button>
+                    )}
+                    {importResult?.status === 'error' && (
+                      <p className="text-xs text-tertiary">{importResult.message}</p>
+                    )}
+                    {importResult?.status === 'success' && (
+                      <Toast
+                        message={t('settings.importSuccess')}
+                        onDismiss={() => setImportResult(null)}
+                      />
+                    )}
+                  </div>
+
+                  <div>
+                    <hr className="mb-6 border-t border-surface-container-high" />
+                    <p className="text-base font-semibold text-on-surface">
+                      {t('settings.syncSectionTitle')}
+                    </p>
+                  </div>
+
                   {/* ── Nível 1 — Backup neste computador ───────────────────── */}
                   <div>
                     <LevelHeader
@@ -1476,15 +1573,6 @@ export default function Settings() {
                               ? t('settings.backupRestoreConfirm')
                               : t('settings.backupRestoreFolder')}
                           </button>
-                          {importResult?.status === 'error' && (
-                            <p className="text-xs text-tertiary">{importResult.message}</p>
-                          )}
-                          {importResult?.status === 'success' && (
-                            <Toast
-                              message={t('settings.importSuccess')}
-                              onDismiss={() => setImportResult(null)}
-                            />
-                          )}
                         </div>
                       ) : (
                         <button
