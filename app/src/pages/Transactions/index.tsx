@@ -131,12 +131,13 @@ export default function Transactions() {
           })
         }
 
-        // Account filter — a CREDIT_PAYMENT belongs to its funding account (transferAccountId)
+        // Account filter — a CREDIT_PAYMENT belongs to its funding account (transferAccountId);
+        // a TRANSFER belongs to both its source (accountId) and its destination (transferAccountId)
         if (filterAccountId !== 'all')
           txs = txs.filter((tx) => {
-            const ledgerAccountId =
-              tx.type === 'CREDIT_PAYMENT' ? tx.transferAccountId : tx.accountId
-            return ledgerAccountId === filterAccountId
+            if (tx.type === 'CREDIT_PAYMENT') return tx.transferAccountId === filterAccountId
+            if (tx.type === 'TRANSFER' && tx.transferAccountId === filterAccountId) return true
+            return tx.accountId === filterAccountId
           })
 
         // Status filter
