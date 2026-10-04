@@ -466,6 +466,13 @@
     "importErrorNewerSchema": "Este backup foi criado por uma versão mais nova do Gimbo. Atualize o app e tente de novo — seus dados atuais não foram alterados."
   },
   "creditCard": {
+    "export": "Exportar",
+    "exportDate": "Data",
+    "exportDescription": "Descrição",
+    "exportCategory": "Categoria",
+    "exportInstallment": "Parcela",
+    "exportAmount": "Valor",
+    "exportTotal": "Total",
     "invoicePeriod": "Período da Fatura",
     "previousMonth": "Mês anterior",
     "nextMonth": "Próximo mês",
