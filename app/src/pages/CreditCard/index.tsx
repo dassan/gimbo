@@ -1,7 +1,16 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, ChevronDown, CreditCard, Filter, Search, X } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  CreditCard,
+  Download,
+  Filter,
+  Search,
+  X,
+} from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import { useWorkspaceStore } from '@/store/useWorkspaceStore'
 import { useOutletContext } from 'react-router-dom'
@@ -22,6 +31,8 @@ import {
 } from '@/lib/utils'
 import type { AppLayoutContext } from '@/components/AppLayout'
 import DatePicker from '@/components/DatePicker'
+import { downloadInvoiceCsv, downloadInvoicePdf } from '@/lib/invoiceExport'
+import type { InvoiceExportInput } from '@/lib/invoiceExport'
 import type { Account, Transaction } from '@/types'
 
 // ─── Credit issuer colors (M-23) ─────────────────────────────────────────────
@@ -223,6 +234,35 @@ export default function CreditCardPage() {
   }
 
   const monthLabel = monthName(i18n.language, (resolvedPeriod.month - 1 + 12) % 12)
+
+  // Exports exactly what the list shows (category/search filters included).
+  function buildExportInput(): InvoiceExportInput {
+    return {
+      cardName: account!.name,
+      periodLabel: `${monthLabel} ${resolvedPeriod.year}`,
+      closingDate: closingDateStr,
+      dueDate: dueDateStr,
+      closingLabel: t('creditCard.closingDate'),
+      dueLabel: t('creditCard.dueDate'),
+      transactions: filteredTransactions,
+      categories: data!.categories,
+      accounts: data!.accounts,
+      locale: i18n.language,
+      labels: {
+        date: t('creditCard.exportDate'),
+        description: t('creditCard.exportDescription'),
+        category: t('creditCard.exportCategory'),
+        installment: t('creditCard.exportInstallment'),
+        amount: t('creditCard.exportAmount'),
+        payment: t('transactions.creditPayment'),
+        total: t('creditCard.exportTotal'),
+      },
+    }
+  }
+  function handleExport(format: 'csv' | 'pdf') {
+    if (format === 'csv') downloadInvoiceCsv(buildExportInput())
+    else void downloadInvoicePdf(buildExportInput())
+  }
 
   // M-30: handle payment confirmation — creates a CREDIT_PAYMENT bound to the displayed
   // invoice period via referenceMonth (Option 2), so the payment settles that statement.
@@ -505,6 +545,7 @@ export default function CreditCardPage() {
               </div>
             </div>
           )}
+          <ExportMenu onExport={handleExport} />
 
           <div className="border-t border-surface-container-low pt-3 space-y-1">
             <div className="flex items-center justify-between">
@@ -576,6 +617,9 @@ export default function CreditCardPage() {
                 </div>
               </div>
             )}
+            <div className="mt-3">
+              <ExportMenu onExport={handleExport} />
+            </div>
           </div>
 
           {/* Right: balance + pay button */}
@@ -704,6 +748,51 @@ function InvoiceStatusBadge({ status }: { status: InvoiceDisplayStatus }) {
   const { label, cls } = cfg[status]
   return (
     <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', cls)}>{label}</span>
+  )
+}
+
+// ─── ExportMenu ───────────────────────────────────────────────────────────────
+
+function ExportMenu({ onExport }: { onExport: (format: 'csv' | 'pdf') => void }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative inline-block">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 rounded-xl bg-surface-container-high px-3 py-1.5 text-xs font-semibold text-on-surface/70 hover:text-on-surface transition-colors"
+      >
+        <Download size={14} strokeWidth={1.5} />
+        {t('creditCard.export')}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div
+            role="menu"
+            className="absolute left-0 z-20 mt-1 min-w-[120px] overflow-hidden rounded-xl bg-surface-container-lowest shadow-card"
+          >
+            {(['pdf', 'csv'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false)
+                  onExport(f)
+                }}
+                className="block w-full px-4 py-2 text-left text-xs font-semibold text-on-surface hover:bg-surface-container-low"
+              >
+                {f.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
