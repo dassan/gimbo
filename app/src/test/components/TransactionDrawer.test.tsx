@@ -227,6 +227,71 @@ describe('TransactionDrawer — edit mode', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
+  describe('edição em série (parcelas)', () => {
+    const inst = (idx: number): Transaction => ({
+      ...testTransaction,
+      id: `i-${idx}`,
+      date: `2024-0${idx}-15`,
+      description: `Geladeira (${idx}/3)`,
+      installment: { parentId: 'i-1', currentIndex: idx, total: 3 },
+    })
+
+    function seed() {
+      useDataStore.setState({
+        data: makeDataFile({
+          accounts: [testAccount],
+          categories: [testCategory],
+          transactions: [inst(1), inst(2), inst(3)],
+        }),
+      })
+    }
+
+    it('asks for the scope when the installment has later ones, and saves only this on choice', async () => {
+      seed()
+      const updateTransaction = vi.fn()
+      const following = vi.fn()
+      vi.spyOn(useDataStore.getState(), 'updateTransaction').mockImplementation(updateTransaction)
+      vi.spyOn(useDataStore.getState(), 'updateTransactionAndFollowing').mockImplementation(
+        following
+      )
+      const onClose = vi.fn()
+      render(<TransactionDrawer open={true} onClose={onClose} transaction={inst(2)} />)
+
+      await userEvent.click(screen.getByRole('button', { name: /transactions\.saveUpdate/i }))
+      expect(updateTransaction).not.toHaveBeenCalled()
+      await userEvent.click(screen.getByText('transactions.editOnlyThis'))
+
+      expect(updateTransaction).toHaveBeenCalledOnce()
+      expect(following).not.toHaveBeenCalled()
+      expect(onClose).toHaveBeenCalledOnce()
+    })
+
+    it('saves this and following when chosen', async () => {
+      seed()
+      const following = vi.fn()
+      vi.spyOn(useDataStore.getState(), 'updateTransactionAndFollowing').mockImplementation(
+        following
+      )
+      render(<TransactionDrawer open={true} onClose={vi.fn()} transaction={inst(2)} />)
+
+      await userEvent.click(screen.getByRole('button', { name: /transactions\.saveUpdate/i }))
+      await userEvent.click(screen.getByText('transactions.editThisAndFollowing'))
+
+      expect(following).toHaveBeenCalledWith(expect.objectContaining({ id: 'i-2' }))
+    })
+
+    it('does not ask when the installment is the last one', async () => {
+      seed()
+      const updateTransaction = vi.fn()
+      vi.spyOn(useDataStore.getState(), 'updateTransaction').mockImplementation(updateTransaction)
+      render(<TransactionDrawer open={true} onClose={vi.fn()} transaction={inst(3)} />)
+
+      await userEvent.click(screen.getByRole('button', { name: /transactions\.saveUpdate/i }))
+      expect(updateTransaction).toHaveBeenCalledOnce()
+      expect(screen.queryByText('transactions.editOnlyThis')).not.toBeInTheDocument()
+    })
+  })
+
   it('updateTransaction preserves the original id', async () => {
     const updateTransaction = vi.fn()
     vi.spyOn(useDataStore.getState(), 'updateTransaction').mockImplementation(updateTransaction)

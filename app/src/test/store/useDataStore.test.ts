@@ -994,6 +994,154 @@ describe('M-35: deleteRecurrenceFrom', () => {
   })
 })
 
+// ─── Edição em série: updateTransactionAndFollowing ───────────────────────────
+
+describe('updateTransactionAndFollowing', () => {
+  const account = makeAccount({ id: 'acc-s' })
+  const account2 = makeAccount({ id: 'acc-s2' })
+  const category = makeCategory({ id: 'cat-s', type: 'EXPENSE' })
+  const category2 = makeCategory({ id: 'cat-s2', type: 'EXPENSE' })
+
+  function seedInstallments(startDate: string) {
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account, account2], categories: [category, category2] }),
+    })
+    useDataStore.getState().addTransaction(
+      makeTransaction({
+        id: 'inst-parent',
+        accountId: 'acc-s',
+        categoryId: 'cat-s',
+        type: 'EXPENSE',
+        amount: 500,
+        date: startDate,
+        description: 'Geladeira',
+        installment: { parentId: 'inst-parent', currentIndex: 1, total: 5 },
+      })
+    )
+    const txs = () =>
+      [...(useDataStore.getState().data?.transactions ?? [])].sort(
+        (a, b) => a.installment!.currentIndex - b.installment!.currentIndex
+      )
+    return txs
+  }
+
+  it('propagates description, category, account, tags and amount only to later installments', () => {
+    const txs = seedInstallments('2026-01-10')
+    const second = txs()[1]
+    useDataStore.getState().updateTransactionAndFollowing({
+      ...second,
+      description: 'Geladeira nova (2/5)',
+      categoryId: 'cat-s2',
+      accountId: 'acc-s2',
+      tags: ['t1'],
+      amount: 120,
+    })
+    const after = txs()
+    expect(after[0].description).toBe('Geladeira (1/5)')
+    expect(after[0].amount).toBe(100)
+    expect(after[0].categoryId).toBe('cat-s')
+    expect(after[2].description).toBe('Geladeira nova (3/5)')
+    expect(after[4].description).toBe('Geladeira nova (5/5)')
+    for (const t of after.slice(1)) {
+      expect(t.categoryId).toBe('cat-s2')
+      expect(t.accountId).toBe('acc-s2')
+      expect(t.tags).toEqual(['t1'])
+      expect(t.amount).toBe(120)
+    }
+  })
+
+  it('does not overwrite fields the user did not change', () => {
+    const txs = seedInstallments('2026-01-10')
+    // personalização prévia de uma parcela futura
+    const fourth = txs()[3]
+    useDataStore.getState().updateTransaction({ ...fourth, amount: 77 })
+    const second = txs()[1]
+    useDataStore.getState().updateTransactionAndFollowing({ ...second, categoryId: 'cat-s2' })
+    const after = txs()
+    expect(after[3].amount).toBe(77)
+    expect(after[3].categoryId).toBe('cat-s2')
+  })
+
+  it('moving the day within the same month moves later installments to that day', () => {
+    const txs = seedInstallments('2026-01-10')
+    const second = txs()[1] // 2026-02-10
+    useDataStore.getState().updateTransactionAndFollowing({ ...second, date: '2026-02-20' })
+    expect(txs().map((t) => t.date)).toEqual([
+      '2026-01-10',
+      '2026-02-20',
+      '2026-03-20',
+      '2026-04-20',
+      '2026-05-20',
+    ])
+  })
+
+  it('moving to a different month shifts later installments by the same number of months', () => {
+    const txs = seedInstallments('2026-01-10')
+    const second = txs()[1] // 2026-02-10 → 2026-04-15 (+2 meses)
+    useDataStore.getState().updateTransactionAndFollowing({ ...second, date: '2026-04-15' })
+    expect(txs().map((t) => t.date)).toEqual([
+      '2026-01-10',
+      '2026-04-15',
+      '2026-05-15',
+      '2026-06-15',
+      '2026-07-15',
+    ])
+  })
+
+  it('moving earlier by months works across the year boundary and clamps short months', () => {
+    const txs = seedInstallments('2026-11-10')
+    const second = txs()[1] // 2026-12-10 → 2026-11-30 (-1 mês, dia 30)
+    useDataStore.getState().updateTransactionAndFollowing({ ...second, date: '2026-11-30' })
+    expect(txs().map((t) => t.date)).toEqual([
+      '2026-11-10',
+      '2026-11-30',
+      '2026-12-30',
+      '2027-01-30',
+      '2027-02-28', // fevereiro: dia 30 limitado ao último dia
+    ])
+  })
+
+  it('leaves later installments untouched when the date did not change', () => {
+    const txs = seedInstallments('2026-01-31')
+    const before = txs().map((t) => t.date)
+    const second = txs()[1]
+    useDataStore.getState().updateTransactionAndFollowing({ ...second, categoryId: 'cat-s2' })
+    expect(txs().map((t) => t.date)).toEqual(before)
+  })
+
+  it('applies to recurring series: monthly by month rule, weekly by exact days', () => {
+    useDataStore.setState({
+      data: makeDataFile({ accounts: [account], categories: [category] }),
+    })
+    useDataStore.getState().addTransaction(
+      makeTransaction({
+        id: 'wk',
+        accountId: 'acc-s',
+        categoryId: 'cat-s',
+        type: 'EXPENSE',
+        amount: 10,
+        date: '2026-01-05',
+        description: 'Feira',
+        recurrence: { frequency: 'weekly', parentId: 'wk', endDate: '2026-01-26' },
+      })
+    )
+    const sorted = () =>
+      [...(useDataStore.getState().data?.transactions ?? [])].sort((a, b) =>
+        a.date.localeCompare(b.date)
+      )
+    const second = sorted()[1] // 2026-01-12
+    useDataStore
+      .getState()
+      .updateTransactionAndFollowing({ ...second, date: '2026-01-14', amount: 15 })
+    expect(sorted().map((t) => [t.date, t.amount])).toEqual([
+      ['2026-01-05', 10],
+      ['2026-01-14', 15],
+      ['2026-01-21', 15],
+      ['2026-01-28', 15],
+    ])
+  })
+})
+
 // ─── B-22: refreshRecurrenceHorizons — rolling window top-up ──────────────────
 
 describe('B-22: refreshRecurrenceHorizons', () => {
