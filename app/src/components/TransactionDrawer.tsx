@@ -117,6 +117,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   const data = useDataStore((s) => s.data)
   const addTransaction = useDataStore((s) => s.addTransaction)
   const updateTransaction = useDataStore((s) => s.updateTransaction)
+  const updateTransactionAndFollowing = useDataStore((s) => s.updateTransactionAndFollowing)
   const deleteTransaction = useDataStore((s) => s.deleteTransaction)
   const deleteInstallmentGroup = useDataStore((s) => s.deleteInstallmentGroup)
   const deleteRecurrenceFrom = useDataStore((s) => s.deleteRecurrenceFrom)
@@ -161,6 +162,8 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   const [recurrenceFrequency, setRecurrenceFrequency] = useState<RecurrenceFrequency>('monthly')
   const [recurrenceEndDate, setRecurrenceEndDate] = useState('')
   const [showRecurrenceDeleteModal, setShowRecurrenceDeleteModal] = useState(false)
+  // Edição em série: payload aguardando o usuário escolher o escopo (só esta / esta e seguintes)
+  const [pendingEdit, setPendingEdit] = useState<Transaction | null>(null)
 
   // Derived account lists for CREDIT_PAYMENT selectors
   const creditAccounts = useMemo(
@@ -281,6 +284,7 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
       setInstallmentsEnabled(false)
       setInstallmentCount(2)
       setShowInstallmentDeleteModal(false)
+      setPendingEdit(null)
       setRecurrenceEnabled(false)
       setRecurrenceFrequency('monthly')
       setRecurrenceEndDate('')
@@ -445,10 +449,35 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
         : {}),
     }
     if (isEditMode) {
+      // Parcela/recorrência com ocorrências seguintes: pergunta o escopo antes de gravar.
+      const inst = transaction.installment
+      const rec = transaction.recurrence
+      const hasFollowers =
+        (inst !== undefined || rec !== undefined) &&
+        data.transactions.some((t) =>
+          inst
+            ? t.installment?.parentId === inst.parentId &&
+              t.installment.currentIndex > inst.currentIndex
+            : t.recurrence?.parentId === rec?.parentId &&
+              t.id !== transaction.id &&
+              t.date.slice(0, 10) > transaction.date.slice(0, 10)
+        )
+      if (hasFollowers) {
+        setPendingEdit(payload)
+        return
+      }
       updateTransaction(payload)
     } else {
       addTransaction(payload)
     }
+    onClose()
+  }
+
+  function handleConfirmEdit(scope: 'this' | 'following') {
+    if (!pendingEdit) return
+    if (scope === 'following') updateTransactionAndFollowing(pendingEdit)
+    else updateTransaction(pendingEdit)
+    setPendingEdit(null)
     onClose()
   }
 
@@ -1346,6 +1375,37 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
             </button>
           )}
         </div>
+
+        {/* ── Edição em série: escopo (só esta / esta e as seguintes) ───────── */}
+        {pendingEdit && (
+          <div className="absolute inset-0 z-10 flex items-end bg-on-surface/30 backdrop-blur-sm">
+            <div className="w-full rounded-t-2xl bg-surface-container-low border-t border-outline-variant px-6 pb-8 pt-6 space-y-3">
+              <h3 className="text-base font-semibold text-on-surface">
+                {transaction?.installment
+                  ? t('transactions.editInstallmentTitle')
+                  : t('transactions.editRecurrenceTitle')}
+              </h3>
+              <button
+                onClick={() => handleConfirmEdit('this')}
+                className="w-full rounded-2xl border border-primary/30 py-3 text-sm font-medium text-primary hover:bg-primary/5 transition-colors"
+              >
+                {t('transactions.editOnlyThis')}
+              </button>
+              <button
+                onClick={() => handleConfirmEdit('following')}
+                className="w-full rounded-2xl bg-primary py-3 text-sm font-semibold text-white hover:brightness-110 transition-all"
+              >
+                {t('transactions.editThisAndFollowing')}
+              </button>
+              <button
+                onClick={() => setPendingEdit(null)}
+                className="w-full rounded-2xl py-3 text-sm font-medium text-on-surface/50 hover:bg-surface-container-low transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ── CC-26: Installment deletion modal ────────────────────────────── */}
         {showInstallmentDeleteModal && transaction?.installment && (
