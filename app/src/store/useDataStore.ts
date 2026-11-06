@@ -30,6 +30,7 @@ import {
   todayStr,
   advanceMonths,
   advanceByFrequency,
+  addDays,
   RESERVE_ELIGIBLE_TYPES,
 } from '@/lib/utils'
 import { isDemoMode } from '@/lib/demo'
@@ -176,6 +177,51 @@ function withAutoQuadranteLink(tx: Transaction, budgets: Budget[]): Transaction 
   return { ...tx, budgetIds: [...(tx.budgetIds ?? []), match.id] }
 }
 
+// Edição em série ("esta e as seguintes"): move a data das ocorrências seguintes a partir do
+// movimento feito na ocorrência editada.
+//  - modo 'month' (parcelas e recorrência mensal): as seguintes ganham o mesmo deslocamento em
+//    meses e passam a cair no mesmo dia-do-mês da data nova (limitado ao último dia do mês).
+//    Mudança dentro do mesmo mês = deslocamento zero → só o dia muda.
+//  - modo 'days' (recorrência semanal/quinzenal): o dia-do-mês não faz sentido, então as
+//    seguintes ganham exatamente o mesmo número de dias de deslocamento.
+function shiftFollowerDate(
+  followerDate: string,
+  prevDate: string,
+  newDate: string,
+  mode: 'month' | 'days'
+): string {
+  const [py, pm, pd] = prevDate.slice(0, 10).split('-').map(Number)
+  const [ny, nm, nd] = newDate.slice(0, 10).split('-').map(Number)
+  if (mode === 'days') {
+    const diff = Math.round((Date.UTC(ny, nm - 1, nd) - Date.UTC(py, pm - 1, pd)) / 86_400_000)
+    return addDays(followerDate, diff)
+  }
+  const monthDiff = ny * 12 + nm - (py * 12 + pm)
+  const [fy, fm] = followerDate.slice(0, 10).split('-').map(Number)
+  const idx = fy * 12 + (fm - 1) + monthDiff
+  const y = Math.floor(idx / 12)
+  const m = (idx % 12) + 1
+  const day = Math.min(nd, new Date(y, m, 0).getDate())
+  return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+// BX-08: só reavalia o vínculo automático quando a *data* de fato muda — uma edição que não
+// mexe na data não reaciona a regra, e não reimpõe um vínculo que o usuário removeu
+// manualmente pelo picker (plan/BUDGETS.md §5.6).
+function relinkQuadranteOnDateChange(
+  prev: Transaction,
+  next: Transaction,
+  budgets: Budget[]
+): Transaction {
+  if (prev.date.slice(0, 10) === next.date.slice(0, 10)) return next
+  const quadranteIds = new Set(
+    budgets.filter((b) => b.recipeSlug === QUADRANTE_SLUG).map((b) => b.id)
+  )
+  const manualIds = (next.budgetIds ?? []).filter((id) => !quadranteIds.has(id))
+  const match = next.type === 'EXPENSE' ? findQuadranteForDate(budgets, next.date) : undefined
+  return { ...next, budgetIds: match ? [...manualIds, match.id] : manualIds }
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 interface DataStore {
@@ -213,6 +259,10 @@ interface DataStore {
 
   addTransaction: (tx: Transaction) => void
   updateTransaction: (tx: Transaction) => void
+  // Edição em série: grava `tx` e propaga aos seguintes (parcelas com currentIndex maior, ou
+  // ocorrências recorrentes com data posterior) só os campos que mudaram em relação ao estado
+  // atual da própria `tx` — descrição, categoria, conta, tags, valor e data.
+  updateTransactionAndFollowing: (tx: Transaction) => void
   deleteTransaction: (id: string) => void
   deleteInstallmentGroup: (parentId: string) => void
   // M-35: delete a recurring occurrence and all later ones in the same series
@@ -619,18 +669,7 @@ export const useDataStore = create<DataStore>((set, get) => ({
           if (i !== -1) {
             const prev = d.transactions[i]
             let next: Transaction = { ...tx, updatedAt: now() }
-            // BX-08: só reavalia o vínculo automático quando a *data* de fato muda — uma edição
-            // que não mexe na data não reaciona a regra, e não reimpõe um vínculo que o usuário
-            // removeu manualmente pelo picker (plan/BUDGETS.md §5.6).
-            if (prev.date.slice(0, 10) !== next.date.slice(0, 10)) {
-              const quadranteIds = new Set(
-                d.budgets.filter((b) => b.recipeSlug === QUADRANTE_SLUG).map((b) => b.id)
-              )
-              const manualIds = (next.budgetIds ?? []).filter((id) => !quadranteIds.has(id))
-              const match =
-                next.type === 'EXPENSE' ? findQuadranteForDate(d.budgets, next.date) : undefined
-              next = { ...next, budgetIds: match ? [...manualIds, match.id] : manualIds }
-            }
+            next = relinkQuadranteOnDateChange(prev, next, d.budgets)
             d.transactions[i] = next
           }
           const catName = d.categories.find((c) => c.id === tx.categoryId)?.name ?? ''
@@ -641,6 +680,73 @@ export const useDataStore = create<DataStore>((set, get) => ({
               'transaction',
               tx.id,
               buildSummary('UPDATE', 'transaction', tx.description || catName)
+            )
+          )
+        },
+        'transaction_updated'
+      )
+    ),
+
+  updateTransactionAndFollowing: (tx) =>
+    set((s) =>
+      mutate(
+        s,
+        (d) => {
+          const i = d.transactions.findIndex((t) => t.id === tx.id)
+          if (i === -1) return
+          const prev = d.transactions[i]
+          const next = relinkQuadranteOnDateChange(prev, { ...tx, updatedAt: now() }, d.budgets)
+          d.transactions[i] = next
+
+          const inst = prev.installment
+          const rec = prev.recurrence
+          const stripSuffix = (desc: string) => desc.replace(/\s*\(\d+\/\d+\)$/, '')
+          const followers = inst
+            ? d.transactions.filter(
+                (t) =>
+                  t.installment?.parentId === inst.parentId &&
+                  t.installment.currentIndex > inst.currentIndex
+              )
+            : rec
+              ? d.transactions.filter(
+                  (t) =>
+                    t.recurrence?.parentId === rec.parentId &&
+                    t.id !== prev.id &&
+                    t.date.slice(0, 10) > prev.date.slice(0, 10)
+                )
+              : []
+
+          const descChanged = next.description !== prev.description
+          const dateChanged = next.date.slice(0, 10) !== prev.date.slice(0, 10)
+          const tagsChanged = JSON.stringify(next.tags) !== JSON.stringify(prev.tags)
+          const dateMode = rec && rec.frequency !== 'monthly' ? 'days' : 'month'
+
+          for (const f of followers) {
+            let upd: Transaction = { ...f, updatedAt: now() }
+            if (descChanged) {
+              upd.description = f.installment
+                ? `${stripSuffix(next.description)} (${f.installment.currentIndex}/${f.installment.total})`.trim()
+                : next.description
+            }
+            if (next.categoryId !== prev.categoryId) upd.categoryId = next.categoryId
+            if (next.accountId !== prev.accountId) upd.accountId = next.accountId
+            if (tagsChanged) upd.tags = [...next.tags]
+            if (next.amount !== prev.amount) upd.amount = next.amount
+            if (dateChanged) {
+              upd.date = shiftFollowerDate(f.date, prev.date, next.date, dateMode)
+              upd = relinkQuadranteOnDateChange(f, upd, d.budgets)
+            }
+            d.transactions[d.transactions.findIndex((t) => t.id === f.id)] = upd
+          }
+
+          const label = next.description || prev.description
+          addAudit(
+            d,
+            makeEntry(
+              'UPDATE',
+              'transaction',
+              tx.id,
+              `${buildSummary('UPDATE', 'transaction', label)} (+${followers.length} seguinte(s))`
             )
           )
         },
