@@ -162,6 +162,7 @@
     "edit": "Editar Transação",
     "saveUpdate": "Salvar Alterações",
     "deleteTransaction": "Remover Transação",
+    "copyTransaction": "Copiar Transação",
     "income": "Receita",
     "expense": "Despesa",
     "transfer": "Transf.",
