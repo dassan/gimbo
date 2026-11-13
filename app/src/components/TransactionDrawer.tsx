@@ -10,6 +10,7 @@ import {
   Trash2,
   CreditCard,
   StickyNote,
+  Copy,
 } from 'lucide-react'
 import { useDataStore } from '@/store/useDataStore'
 import {
@@ -111,7 +112,11 @@ const TYPE_CONFIG: Record<TxType, { label: string; color: string; bg: string; bt
     },
   }
 
-export default function TransactionDrawer({ open, onClose, transaction }: TransactionDrawerProps) {
+export default function TransactionDrawer({
+  open,
+  onClose,
+  transaction: transactionProp,
+}: TransactionDrawerProps) {
   const { t, i18n } = useTranslation()
   const isMobile = useIsMobile()
   const data = useDataStore((s) => s.data)
@@ -121,6 +126,12 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   const deleteTransaction = useDataStore((s) => s.deleteTransaction)
   const deleteInstallmentGroup = useDataStore((s) => s.deleteInstallmentGroup)
   const deleteRecurrenceFrom = useDataStore((s) => s.deleteRecurrenceFrom)
+
+  // M-110: "Copiar" turns an edit session into a create session pre-filled from the original.
+  // Nothing is persisted until the user submits — `copySource` only feeds the form defaults.
+  const [copySource, setCopySource] = useState<Transaction | null>(null)
+  const transaction = copySource ? undefined : transactionProp
+  const prefillSource = transaction ?? copySource ?? undefined
 
   const isEditMode = transaction !== undefined
 
@@ -253,20 +264,25 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
   // Reset or pre-fill on open — intentional setState-in-effect to initialise form fields
   useEffect(() => {
     if (open) {
-      if (transaction) {
+      if (prefillSource) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setType(transaction.type)
-        setAmount(transaction.amount)
-        setAmountStr(transaction.amount.toFixed(2).replace('.', ','))
-        setDate(transaction.date.slice(0, 10))
-        setAccountId(transaction.accountId)
-        setTransferAccountId(transaction.transferAccountId ?? '')
-        setCategoryId(transaction.categoryId)
-        setDescription(transaction.description)
-        setNotes(transaction.notes ?? '')
-        setNotesExpanded(Boolean(transaction.notes))
-        setSelectedTags(transaction.tags)
-        setIsPaid(transaction.isPaid)
+        setType(prefillSource.type)
+        setAmount(prefillSource.amount)
+        setAmountStr(prefillSource.amount.toFixed(2).replace('.', ','))
+        setDate(prefillSource.date.slice(0, 10))
+        setAccountId(prefillSource.accountId)
+        setTransferAccountId(prefillSource.transferAccountId ?? '')
+        setCategoryId(prefillSource.categoryId)
+        // A copy is a standalone transaction: drop the "(n/N)" installment suffix.
+        setDescription(
+          copySource
+            ? prefillSource.description.replace(/\s*\(\d+\/\d+\)\s*$/, '')
+            : prefillSource.description
+        )
+        setNotes(prefillSource.notes ?? '')
+        setNotesExpanded(Boolean(prefillSource.notes))
+        setSelectedTags(prefillSource.tags)
+        setIsPaid(prefillSource.isPaid)
       } else {
         setType('EXPENSE')
         setAmount(0)
@@ -293,15 +309,23 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
       setShowDescSuggestions(false)
       setActiveSuggestionIndex(-1)
     }
-  }, [open, transaction, data, activeAccounts, activeNonCreditAccounts])
+  }, [open, prefillSource, copySource, data, activeAccounts, activeNonCreditAccounts])
 
-  // M-20: auto-focus the amount field whenever the drawer opens
+  // M-20: auto-focus the amount field whenever the drawer opens (and after "Copiar", M-110)
   useEffect(() => {
     if (open) {
       const id = setTimeout(() => amountInputRef.current?.focus(), 0)
       return () => clearTimeout(id)
     }
-  }, [open])
+  }, [open, copySource])
+
+  // M-110: a copy never outlives the session it was started in
+  useEffect(() => {
+    if (!open || transactionProp === undefined) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCopySource(null)
+    }
+  }, [open, transactionProp])
 
   // Close tag menu / description suggestions when clicking outside
   useEffect(() => {
@@ -1366,13 +1390,24 @@ export default function TransactionDrawer({ open, onClose, transaction }: Transa
               : `${t(`transactions.save.${type.toLowerCase()}`)} →`}
           </button>
           {isEditMode && (
-            <button
-              onClick={handleDelete}
-              className="w-full flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-medium text-tertiary hover:bg-tertiary/5 transition-colors"
-            >
-              <Trash2 size={15} />
-              {t('transactions.deleteTransaction')}
-            </button>
+            <div className="flex gap-3">
+              {transaction.type !== 'CREDIT_PAYMENT' && (
+                <button
+                  onClick={() => setCopySource(transaction)}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-medium text-on-surface/70 hover:bg-surface-container-high transition-colors"
+                >
+                  <Copy size={15} />
+                  {t('transactions.copyTransaction')}
+                </button>
+              )}
+              <button
+                onClick={handleDelete}
+                className="flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-medium text-tertiary hover:bg-tertiary/5 transition-colors"
+              >
+                <Trash2 size={15} />
+                {t('transactions.deleteTransaction')}
+              </button>
+            </div>
           )}
         </div>
 

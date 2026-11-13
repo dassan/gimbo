@@ -1304,3 +1304,89 @@ describe('TransactionDrawer — original purchase date in edit mode (M-95)', () 
     expect(call?.[1]?.amount).toEqual(expect.stringContaining('370,36'))
   })
 })
+
+describe('TransactionDrawer — copiar transação (M-110)', () => {
+  const installmentTx: Transaction = {
+    ...testTransaction,
+    id: 'tx-inst',
+    description: 'Geladeira (2/5)',
+    installment: { parentId: 'p1', currentIndex: 2, total: 5 },
+    createdAt: '2024-01-01T00:00:00.000Z',
+  }
+
+  it('shows the copy button only when editing', () => {
+    const { unmount } = render(<TransactionDrawer open={true} onClose={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: /transactions\.copyTransaction/i })).toBeNull()
+    unmount()
+    render(<TransactionDrawer open={true} onClose={vi.fn()} transaction={testTransaction} />)
+    expect(
+      screen.getByRole('button', { name: /transactions\.copyTransaction/i })
+    ).toBeInTheDocument()
+  })
+
+  it('hides the copy button for CREDIT_PAYMENT', () => {
+    render(
+      <TransactionDrawer
+        open={true}
+        onClose={vi.fn()}
+        transaction={{ ...testTransaction, type: 'CREDIT_PAYMENT', categoryId: '' }}
+      />
+    )
+    expect(screen.queryByRole('button', { name: /transactions\.copyTransaction/i })).toBeNull()
+  })
+
+  it('switches to create mode keeping the values, and saves a new transaction', async () => {
+    const addTransaction = vi.fn()
+    const updateTransaction = vi.fn()
+    vi.spyOn(useDataStore.getState(), 'addTransaction').mockImplementation(addTransaction)
+    vi.spyOn(useDataStore.getState(), 'updateTransaction').mockImplementation(updateTransaction)
+    const onClose = vi.fn()
+
+    render(<TransactionDrawer open={true} onClose={onClose} transaction={testTransaction} />)
+    await userEvent.click(screen.getByRole('button', { name: /transactions\.copyTransaction/i }))
+
+    expect(screen.getByDisplayValue('150,00')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Almoço')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /transactions\.deleteTransaction/i })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: /transactions\.save\.expense/i }))
+
+    expect(updateTransaction).not.toHaveBeenCalled()
+    expect(addTransaction).toHaveBeenCalledOnce()
+    const saved = addTransaction.mock.calls[0][0] as Transaction
+    expect(saved.id).not.toBe(testTransaction.id)
+    expect(saved).toMatchObject({
+      amount: 150,
+      description: 'Almoço',
+      categoryId: 'cat-1',
+      accountId: 'acc-1',
+      date: '2024-03-15',
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('does not carry installment/createdAt over and strips the "(n/N)" suffix', async () => {
+    const addTransaction = vi.fn()
+    vi.spyOn(useDataStore.getState(), 'addTransaction').mockImplementation(addTransaction)
+
+    render(<TransactionDrawer open={true} onClose={vi.fn()} transaction={installmentTx} />)
+    await userEvent.click(screen.getByRole('button', { name: /transactions\.copyTransaction/i }))
+    expect(screen.getByDisplayValue('Geladeira')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /transactions\.save\.expense/i }))
+    const saved = addTransaction.mock.calls[0][0] as Transaction
+    expect(saved.installment).toBeUndefined()
+    expect(saved.createdAt).toBeUndefined()
+    expect(saved.description).toBe('Geladeira')
+  })
+
+  it('discards the copy when the drawer is closed and reopened on the same transaction', async () => {
+    const { rerender } = render(
+      <TransactionDrawer open={true} onClose={vi.fn()} transaction={testTransaction} />
+    )
+    await userEvent.click(screen.getByRole('button', { name: /transactions\.copyTransaction/i }))
+    rerender(<TransactionDrawer open={false} onClose={vi.fn()} transaction={testTransaction} />)
+    rerender(<TransactionDrawer open={true} onClose={vi.fn()} transaction={testTransaction} />)
+    expect(screen.getByRole('button', { name: /transactions\.saveUpdate/i })).toBeInTheDocument()
+  })
+})
